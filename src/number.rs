@@ -4,37 +4,27 @@ use serde::Deserialize;
 
 use crate::define_type_functions;
 
-#[derive(Deserialize, Debug)]
-pub struct Sum(pub Vec<ValueNumber>);
-
-impl Sum {
-    pub fn compute(&self) -> Result<f64> {
+define_type_functions!(
+    Number,
+    f64,
+    Sum {
+        terms: Vec<ValueNumber>
+    } self {
         let mut result = 0f64;
-        for term in self.0.iter() {
+        for term in self.terms.iter() {
             result += term.compute()?;
         }
         Ok(result)
     }
-}
-
-#[derive(Deserialize, Debug)]
-pub struct Multiply(pub Vec<ValueNumber>);
-
-impl Multiply {
-    pub fn compute(&self) -> Result<f64> {
+    Multiply {
+        terms: Vec<ValueNumber>
+    } self {
         let mut result = 1f64;
-        for term in self.0.iter() {
+        for term in self.terms.iter() {
             result *= term.compute()?;
         }
         Ok(result)
     }
-}
-
-define_type_functions!(
-    Number,
-    f64,
-    Sum
-    Multiply
 );
 
 #[cfg(test)]
@@ -53,26 +43,32 @@ mod tests {
     fn test_example() {
         execute_and_assert_number(
             "Sum:
-             - Sum:
-               - 1
-               - 2
-             - 3",
+               terms:
+                 - Sum:
+                     terms:
+                       - 1
+                       - 2
+                 - 3",
             6f64,
         );
         execute_and_assert_number(
             "Sum:
-             - Sum:
-               - 1.2
-               - 2.3
-             - 3.4",
+               terms:
+                 - Sum:
+                     terms:
+                       - 1.2
+                       - 2.3
+                 - 3.4",
             6.9f64,
         );
         execute_and_assert_number(
             "Sum:
-             - Multiply:
-               - 1
-               - 2
-             - 3",
+               terms:
+                 - Multiply:
+                     terms:
+                       - 1
+                       - 2
+                 - 3",
             5f64,
         );
     }

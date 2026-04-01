@@ -4,7 +4,11 @@ macro_rules! define_type_functions {
         $type_name:ident,
         $raw_type:ty,
         $(
-            $function_name:ident
+            $function_name:ident {
+                $(
+                    $function_argument_name:ident: $function_argument_type:ty
+                )+
+            } $function_self:ident $function_code:block
         )+
     ) => {
         paste! {
@@ -21,6 +25,19 @@ macro_rules! define_type_functions {
                 Computable([<Computable $type_name>]),
                 Raw($raw_type),
             }
+
+            $(
+                #[derive(Deserialize, Debug)]
+                pub struct $function_name {
+                    $(
+                        $function_argument_name: $function_argument_type,
+                    )+
+                }
+
+                impl $function_name {
+                    pub fn compute(&$function_self) -> Result<$raw_type> $function_code
+                }
+            )+
 
             impl [<Value $type_name>] {
                 pub fn compute(&self) -> Result<$raw_type> {
