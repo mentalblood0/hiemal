@@ -4,7 +4,7 @@
 
 Design experiment
 
-Functional programming language on top of YAML
+Functional programming language on top of popular serialization formats such as JSON, YAML, TOML etc.
 
 Interpreter serializes program directly into operable types, so the language
 

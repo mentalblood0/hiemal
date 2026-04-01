@@ -35,7 +35,6 @@ mod tests {
 
     fn execute_and_assert_number<'a>(program_text: &'a str, correct_result: f64) {
         let program: ValueNumber = serde_saphyr::from_str::<'a>(program_text).unwrap();
-        dbg!(&program);
         assert_eq!(program.compute().unwrap(), correct_result);
     }
 
