@@ -1,5 +1,8 @@
 use anyhow::Result;
+use paste::paste;
 use serde::Deserialize;
+
+use crate::define_type_functions;
 
 use crate::number::ValueNumber;
 
@@ -30,30 +33,12 @@ impl Repeat {
     }
 }
 
-#[derive(Deserialize, Debug)]
-pub enum ComputableString {
-    Concat(Concat),
-    Repeat(Repeat),
-}
-
-#[derive(Deserialize, Debug)]
-#[serde(untagged)]
-pub enum ValueString {
-    Computable(ComputableString),
-    Raw(String),
-}
-
-impl ValueString {
-    pub fn compute(&self) -> Result<String> {
-        match self {
-            ValueString::Computable(computable) => match computable {
-                ComputableString::Concat(computable) => computable.compute(),
-                ComputableString::Repeat(computable) => computable.compute(),
-            },
-            ValueString::Raw(raw_value) => Ok(raw_value.clone()),
-        }
-    }
-}
+define_type_functions!(
+    String,
+    String,
+    Concat
+    Repeat
+);
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,8 @@
 use anyhow::Result;
+use paste::paste;
 use serde::Deserialize;
+
+use crate::define_type_functions;
 
 #[derive(Deserialize, Debug)]
 pub struct Sum(pub Vec<ValueNumber>);
@@ -27,30 +30,12 @@ impl Multiply {
     }
 }
 
-#[derive(Deserialize, Debug)]
-pub enum ComputableNumber {
-    Sum(Sum),
-    Multiply(Multiply),
-}
-
-#[derive(Deserialize, Debug)]
-#[serde(untagged)]
-pub enum ValueNumber {
-    Computable(ComputableNumber),
-    Raw(f64),
-}
-
-impl ValueNumber {
-    pub fn compute(&self) -> Result<f64> {
-        match self {
-            ValueNumber::Computable(computable) => match computable {
-                ComputableNumber::Sum(computable) => computable.compute(),
-                ComputableNumber::Multiply(computable) => computable.compute(),
-            },
-            ValueNumber::Raw(raw_value) => Ok(raw_value.clone()),
-        }
-    }
-}
+define_type_functions!(
+    Number,
+    f64,
+    Sum
+    Multiply
+);
 
 #[cfg(test)]
 mod tests {

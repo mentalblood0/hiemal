@@ -9,6 +9,7 @@ serde-saphyr = { git = "https://github.com/bourumir-wyngs/serde-saphyr" }
 anyhow = { version = "1.0", features = ["std", "backtrace"] }
 serde_json = "1.0.149"
 typetag = "0.2.21"
+paste = "1.0.15"
 
 [dev-dependencies]
 nanorand = "0.8"
