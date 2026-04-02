@@ -12,14 +12,14 @@ macro_rules! define_type_functions {
         )+
     ) => {
         paste! {
-            #[derive(Deserialize, Debug, PartialEq)]
+            #[derive(Serialize, Deserialize, Debug, PartialEq)]
             pub enum [<Computable $type_name>] {
                 $(
                     $function_name($function_name),
                 )+
             }
 
-            #[derive(Deserialize, Debug, PartialEq)]
+            #[derive(Serialize, Deserialize, Debug, PartialEq)]
             #[serde(untagged)]
             pub enum [<Value $type_name>] {
                 Computable([<Computable $type_name>]),
@@ -27,7 +27,7 @@ macro_rules! define_type_functions {
             }
 
             $(
-                #[derive(Deserialize, Debug, PartialEq)]
+                #[derive(Serialize, Deserialize, Debug, PartialEq)]
                 pub struct $function_name {
                     $(
                         $function_argument_name: $function_argument_type,

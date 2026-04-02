@@ -1,16 +1,18 @@
 use anyhow::Result;
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
+use crate::array::ValueStringArray;
 use crate::number::ValueNumber;
 use crate::string::ValueString;
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(untagged)]
 pub enum ValueAny {
     Number(ValueNumber),
     String(ValueString),
+    StringArray(ValueStringArray),
     Array(Vec<ValueAny>),
     Object(BTreeMap<String, ValueAny>),
 }
@@ -18,20 +20,19 @@ pub enum ValueAny {
 impl ValueAny {
     pub fn compute(&self) -> Result<serde_json::Value> {
         Ok(match self {
-            ValueAny::Number(value_number) => serde_json::Value::Number(
-                serde_json::Number::from_f64(value_number.compute()?).unwrap(),
-            ),
-            ValueAny::String(value_string) => serde_json::Value::String(value_string.compute()?),
-            ValueAny::Array(list) => {
+            ValueAny::Number(value) => serde_json::to_value(value.compute()?)?,
+            ValueAny::String(value) => serde_json::to_value(value.compute()?)?,
+            ValueAny::StringArray(value) => serde_json::to_value(value.compute()?)?,
+            ValueAny::Array(array) => {
                 let mut result = vec![];
-                for value_any in list {
+                for value_any in array {
                     result.push(value_any.compute()?);
                 }
                 serde_json::Value::Array(result)
             }
-            ValueAny::Object(list) => {
+            ValueAny::Object(map) => {
                 let mut result = serde_json::Map::new();
-                for (key, value_any) in list {
+                for (key, value_any) in map {
                     result.insert(key.clone(), value_any.compute()?);
                 }
                 serde_json::Value::Object(result)
@@ -133,6 +134,15 @@ mod tests {
                 ],
                 "key": "lalalo"
             }),
+        );
+        execute_and_assert(
+            json!({
+                "Split": {
+                    "string": "la la la",
+                    "delimiter": " "
+                }
+            }),
+            json!(["la", "la", "la"]),
         );
     }
 }

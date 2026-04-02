@@ -1,6 +1,6 @@
 use anyhow::Result;
 use paste::paste;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::define_type_functions;
 
