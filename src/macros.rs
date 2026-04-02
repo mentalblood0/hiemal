@@ -2,9 +2,8 @@
 macro_rules! define_types_functions {
     (
         $(
+            computed $type_name:ident is $raw_type:ty
             {
-                $type_name:ident,
-                $raw_type:ty,
                 $(
                     $function_name:ident {
                         $(

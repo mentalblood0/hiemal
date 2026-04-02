@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::define_types_functions;
 
 define_types_functions!(
-    {
-        Number,
-        f64,
+    computed Number is f64 {
         Sum {
             terms: Vec<ValueNumber>
         } self {
@@ -29,9 +27,7 @@ define_types_functions!(
             Ok(result)
         }
     }
-    {
-        String,
-        String,
+    computed String is String {
         Concat {
             strings: Vec<ValueString>
         } self {
@@ -50,9 +46,7 @@ define_types_functions!(
             Ok(string.repeat(amount))
         }
     }
-    {
-        StringArray,
-        Vec<String>,
+    computed StringArray is Vec<String> {
         Split {
             string: ValueString
             delimiter: ValueString
