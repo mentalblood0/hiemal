@@ -1,45 +1,68 @@
 use anyhow::Result;
+use paste::paste;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::array::ValueStringArray;
-use crate::number::ValueNumber;
-use crate::string::ValueString;
+use crate::define_types_functions;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-#[serde(untagged)]
-pub enum ValueAny {
-    Number(ValueNumber),
-    String(ValueString),
-    StringArray(ValueStringArray),
-    Array(Vec<ValueAny>),
-    Object(BTreeMap<String, ValueAny>),
-}
-
-impl ValueAny {
-    pub fn compute(&self) -> Result<serde_json::Value> {
-        Ok(match self {
-            ValueAny::Number(value) => serde_json::to_value(value.compute()?)?,
-            ValueAny::String(value) => serde_json::to_value(value.compute()?)?,
-            ValueAny::StringArray(value) => serde_json::to_value(value.compute()?)?,
-            ValueAny::Array(array) => {
-                let mut result = vec![];
-                for value_any in array {
-                    result.push(value_any.compute()?);
-                }
-                serde_json::Value::Array(result)
+define_types_functions!(
+    {
+        Number,
+        f64,
+        Sum {
+            terms: Vec<ValueNumber>
+        } self {
+            let mut result = 0f64;
+            for term in self.terms.iter() {
+                result += term.compute()?;
             }
-            ValueAny::Object(map) => {
-                let mut result = serde_json::Map::new();
-                for (key, value_any) in map {
-                    result.insert(key.clone(), value_any.compute()?);
-                }
-                serde_json::Value::Object(result)
+            Ok(result)
+        }
+        Multiply {
+            terms: Vec<ValueNumber>
+        } self {
+            let mut result = 1f64;
+            for term in self.terms.iter() {
+                result *= term.compute()?;
             }
-        })
+            Ok(result)
+        }
     }
-}
+    {
+        String,
+        String,
+        Concat {
+            strings: Vec<ValueString>
+        } self {
+            let mut result = "".to_string();
+            for string in self.strings.iter() {
+                result += &string.compute()?;
+            }
+            Ok(result)
+        }
+        Repeat {
+            string: Box<ValueString>
+            amount: ValueNumber
+        } self {
+            let string = self.string.compute()?;
+            let amount = self.amount.compute()? as usize;
+            Ok(string.repeat(amount))
+        }
+    }
+    {
+        StringArray,
+        Vec<String>,
+        Split {
+            string: ValueString
+            delimiter: ValueString
+        } self {
+            let string = self.string.compute()?;
+            let delimiter = self.delimiter.compute()?;
+            Ok(string.split(&delimiter).map(|s| s.to_string()).collect())
+        }
+    }
+);
 
 #[cfg(test)]
 mod tests {
