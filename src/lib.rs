@@ -23,6 +23,7 @@ macro_rules! define_types_functions {
         paste! {
             $(
                 #[derive(Serialize, Deserialize, Debug, PartialEq)]
+                #[serde(rename_all="SCREAMING_SNAKE_CASE")]
                 pub enum [<Computable $type_name>] {
                     $(
                         $function_name($function_name),
@@ -172,10 +173,10 @@ mod tests {
     fn test_examples() {
         execute_and_assert(
             json!({
-                "Sum": {
+                "SUM": {
                     "terms": [
                         {
-                            "Sum": {
+                            "SUM": {
                                 "terms": [1, 2]
                             }
                         },
@@ -187,10 +188,10 @@ mod tests {
         );
         execute_and_assert(
             json!({
-                "Sum": {
+                "SUM": {
                     "terms": [
                         {
-                            "Sum": {
+                            "SUM": {
                                 "terms": [1.2, 2.3]
                             }
                         },
@@ -202,10 +203,10 @@ mod tests {
         );
         execute_and_assert(
             json!({
-                "Sum": {
+                "SUM": {
                     "terms": [
                         {
-                            "Multiply": {
+                            "MULTIPLY": {
                                 "terms": [1, 2]
                             }
                         },
@@ -222,13 +223,13 @@ mod tests {
                     "values"
                 ],
                 "key": {
-                    "Concat": {
+                    "CONCAT": {
                         "strings": [
                             {
-                                "Repeat": {
+                                "REPEAT": {
                                     "string": "la",
                                     "amount": {
-                                        "Sum": {
+                                        "SUM": {
                                             "terms": [0, 2]
                                         }
                                     }
@@ -249,7 +250,7 @@ mod tests {
         );
         execute_and_assert(
             json!({
-                "Split": {
+                "SPLIT": {
                     "string": "la la la",
                     "delimiter": " "
                 }
