@@ -25,7 +25,7 @@ macro_rules! define_types_functions {
 
                 #[derive(Serialize, Deserialize, Debug, PartialEq)]
                 #[serde(untagged)]
-                pub enum [<Value $type_name>] {
+                pub enum [<ComputableOrRaw $type_name>] {
                     Computable([<Computable $type_name>]),
                     Raw($raw_type),
                 }
@@ -43,15 +43,15 @@ macro_rules! define_types_functions {
                     }
                 )+
 
-                impl [<Value $type_name>] {
+                impl [<ComputableOrRaw $type_name>] {
                     pub fn compute(&self) -> Result<$raw_type> {
                         match self {
-                            [<Value $type_name>]::Computable(computable) => match computable {
+                            [<ComputableOrRaw $type_name>]::Computable(computable) => match computable {
                                 $(
                                     [<Computable $type_name>]::$function_name(computable) => computable.compute(),
                                 )+
                             }
-                            [<Value $type_name>]::Raw(raw_value) => Ok(raw_value.clone())
+                            [<ComputableOrRaw $type_name>]::Raw(raw_value) => Ok(raw_value.clone())
                         }
                     }
                 }
@@ -59,28 +59,28 @@ macro_rules! define_types_functions {
 
             #[derive(Serialize, Deserialize, Debug, PartialEq)]
             #[serde(untagged)]
-            pub enum ValueAny {
+            pub enum ComputableOrRawAny {
                 $(
-                    $type_name([<Value $type_name>]),
+                    $type_name([<ComputableOrRaw $type_name>]),
                 )+
-                TransparentArray(Vec<ValueAny>),
-                TransparentObject(BTreeMap<String, ValueAny>),
+                TransparentArray(Vec<ComputableOrRawAny>),
+                TransparentObject(BTreeMap<String, ComputableOrRawAny>),
             }
 
-            impl ValueAny {
+            impl ComputableOrRawAny {
                 pub fn compute(&self) -> Result<serde_json::Value> {
                     Ok(match self {
                         $(
-                            ValueAny::$type_name(value) => serde_json::to_value(value.compute()?)?,
+                            ComputableOrRawAny::$type_name(value) => serde_json::to_value(value.compute()?)?,
                         )+
-                        ValueAny::TransparentArray(array) => {
+                        ComputableOrRawAny::TransparentArray(array) => {
                             let mut result = vec![];
                             for value_any in array {
                                 result.push(value_any.compute()?);
                             }
                             serde_json::Value::Array(result)
                         }
-                        ValueAny::TransparentObject(map) => {
+                        ComputableOrRawAny::TransparentObject(map) => {
                             let mut result = serde_json::Map::new();
                             for (key, value_any) in map {
                                 result.insert(key.clone(), value_any.compute()?);

@@ -9,7 +9,7 @@ use crate::define_types_functions;
 define_types_functions!(
     computed Number is f64 {
         Sum {
-            terms: Vec<ValueNumber>
+            terms: Vec<ComputableOrRawNumber>
         } self {
             let mut result = 0f64;
             for term in self.terms.iter() {
@@ -18,7 +18,7 @@ define_types_functions!(
             Ok(result)
         }
         Multiply {
-            terms: Vec<ValueNumber>
+            terms: Vec<ComputableOrRawNumber>
         } self {
             let mut result = 1f64;
             for term in self.terms.iter() {
@@ -29,7 +29,7 @@ define_types_functions!(
     }
     computed String is String {
         Concat {
-            strings: Vec<ValueString>
+            strings: Vec<ComputableOrRawString>
         } self {
             let mut result = "".to_string();
             for string in self.strings.iter() {
@@ -38,8 +38,8 @@ define_types_functions!(
             Ok(result)
         }
         Repeat {
-            string: Box<ValueString>
-            amount: ValueNumber
+            string: Box<ComputableOrRawString>
+            amount: ComputableOrRawNumber
         } self {
             let string = self.string.compute()?;
             let amount = self.amount.compute()? as usize;
@@ -48,8 +48,8 @@ define_types_functions!(
     }
     computed StringArray is Vec<String> {
         Split {
-            string: ValueString
-            delimiter: ValueString
+            string: ComputableOrRawString
+            delimiter: ComputableOrRawString
         } self {
             let string = self.string.compute()?;
             let delimiter = self.delimiter.compute()?;
@@ -60,7 +60,7 @@ define_types_functions!(
 
 #[cfg(test)]
 mod tests {
-    use crate::any::ValueAny;
+    use crate::any::ComputableOrRawAny;
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
@@ -68,7 +68,7 @@ mod tests {
         program_structure: serde_json::Value,
         correct_result: serde_json::Value,
     ) {
-        let program: ValueAny = serde_json::from_value(program_structure).unwrap();
+        let program: ComputableOrRawAny = serde_json::from_value(program_structure).unwrap();
         let result = serde_json::to_value(program.compute().unwrap()).unwrap();
         assert_eq!(result, correct_result);
     }
