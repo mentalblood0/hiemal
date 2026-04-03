@@ -8,8 +8,7 @@ use serde::{Deserialize, Serialize};
 macro_rules! define_types_functions {
     (
         $(
-            computed $type_name:ident is $raw_type:ty, default is $raw_type_default:expr;
-            {
+            computed $type_name:ident is $raw_type:ty {
                 $(
                     $function_name:ident {
                         $(
@@ -40,7 +39,8 @@ macro_rules! define_types_functions {
 
                 impl Default for [<ComputableOrRaw $type_name>] {
                     fn default() -> Self {
-                        Self::Raw($raw_type_default)
+                        let default_raw_value: $raw_type = ::std::default::Default::default();
+                        Self::Raw(default_raw_value)
                     }
                 }
 
@@ -110,7 +110,7 @@ macro_rules! define_types_functions {
 }
 
 define_types_functions!(
-    computed Number is f64, default is 0f64; {
+    computed Number is f64 {
         Sum {
             terms: Vec<ComputableOrRawNumber>
         } self {
@@ -130,7 +130,7 @@ define_types_functions!(
             Ok(result)
         }
     }
-    computed String is String, default is "".to_string(); {
+    computed String is String {
         Concat {
             strings: Vec<ComputableOrRawString>
         } self {
@@ -149,7 +149,7 @@ define_types_functions!(
             Ok(string.repeat(amount))
         }
     }
-    computed StringArray is Vec<String>, default is vec![]; {
+    computed StringArray is Vec<String> {
         Split {
             string: ComputableOrRawString
             delimiter: ComputableOrRawString
