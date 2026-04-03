@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 macro_rules! define_types_functions {
     (
         $(
-            computed $type_name:ident is $raw_type:ty
+            computed $type_name:ident is $raw_type:ty, default is $raw_type_default:expr;
             {
                 $(
                     $function_name:ident {
@@ -24,6 +24,7 @@ macro_rules! define_types_functions {
             $(
                 #[derive(Serialize, Deserialize, Debug, PartialEq)]
                 #[serde(rename_all="SCREAMING_SNAKE_CASE")]
+                #[serde(deny_unknown_fields)]
                 pub enum [<Computable $type_name>] {
                     $(
                         $function_name($function_name),
@@ -37,6 +38,12 @@ macro_rules! define_types_functions {
                     Raw($raw_type),
                 }
 
+                impl Default for [<ComputableOrRaw $type_name>] {
+                    fn default() -> Self {
+                        Self::Raw($raw_type_default)
+                    }
+                }
+
                 $(
                     #[derive(Serialize, Deserialize, Debug, PartialEq)]
                     pub struct $function_name {
@@ -46,19 +53,19 @@ macro_rules! define_types_functions {
                     }
 
                     impl $function_name {
-                        pub fn compute(&$function_self) -> Result<$raw_type> $function_code
+                        pub fn compute($function_self) -> Result<$raw_type> $function_code
                     }
                 )+
 
                 impl [<ComputableOrRaw $type_name>] {
-                    pub fn compute(&self) -> Result<$raw_type> {
+                    pub fn compute(self) -> Result<$raw_type> {
                         match self {
                             [<ComputableOrRaw $type_name>]::Computable(computable) => match computable {
                                 $(
                                     [<Computable $type_name>]::$function_name(computable) => computable.compute(),
                                 )+
                             }
-                            [<ComputableOrRaw $type_name>]::Raw(raw_value) => Ok(raw_value.clone())
+                            [<ComputableOrRaw $type_name>]::Raw(raw_value) => Ok(raw_value.clone()),
                         }
                     }
                 }
@@ -66,6 +73,7 @@ macro_rules! define_types_functions {
 
             #[derive(Serialize, Deserialize, Debug, PartialEq)]
             #[serde(untagged)]
+            #[serde(deny_unknown_fields)]
             pub enum ComputableOrRawAny {
                 $(
                     $type_name([<ComputableOrRaw $type_name>]),
@@ -75,7 +83,7 @@ macro_rules! define_types_functions {
             }
 
             impl ComputableOrRawAny {
-                pub fn compute(&self) -> Result<serde_json::Value> {
+                pub fn compute(self) -> Result<serde_json::Value> {
                     Ok(match self {
                         $(
                             ComputableOrRawAny::$type_name(value) => serde_json::to_value(value.compute()?)?,
@@ -102,13 +110,13 @@ macro_rules! define_types_functions {
 }
 
 define_types_functions!(
-    computed Number is f64 {
+    computed Number is f64, default is 0f64; {
         Sum {
             terms: Vec<ComputableOrRawNumber>
         } self {
             let mut result = 0f64;
-            for term in self.terms.iter() {
-                result += term.compute()?;
+            for mut term in self.terms {
+                result += std::mem::take(&mut term).compute()?;
             }
             Ok(result)
         }
@@ -116,18 +124,18 @@ define_types_functions!(
             terms: Vec<ComputableOrRawNumber>
         } self {
             let mut result = 1f64;
-            for term in self.terms.iter() {
-                result *= term.compute()?;
+            for mut term in self.terms {
+                result *= std::mem::take(&mut term).compute()?;
             }
             Ok(result)
         }
     }
-    computed String is String {
+    computed String is String, default is "".to_string(); {
         Concat {
             strings: Vec<ComputableOrRawString>
         } self {
             let mut result = "".to_string();
-            for string in self.strings.iter() {
+            for string in self.strings {
                 result += &string.compute()?;
             }
             Ok(result)
@@ -141,7 +149,7 @@ define_types_functions!(
             Ok(string.repeat(amount))
         }
     }
-    computed StringArray is Vec<String> {
+    computed StringArray is Vec<String>, default is vec![]; {
         Split {
             string: ComputableOrRawString
             delimiter: ComputableOrRawString
