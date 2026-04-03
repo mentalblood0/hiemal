@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 serde-saphyr = { git = "https://github.com/bourumir-wyngs/serde-saphyr" }
 anyhow = { version = "1.0", features = ["std", "backtrace"] }
 serde_json = { version = "1.0.149", features = ["preserve_order"] }

@@ -1,6 +1,8 @@
-use anyhow::Result;
-use paste::paste;
 use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use anyhow::{anyhow, Result};
+use paste::paste;
 
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +16,7 @@ macro_rules! define_types_functions {
                         $(
                             $function_argument_name:ident: $function_argument_type:ty
                         )+
-                    } $function_self:ident $function_code:block
+                    } $function_self:ident $function_context:ident $function_code:block
                 )+
             }
         )+
@@ -28,6 +30,7 @@ macro_rules! define_types_functions {
                     $(
                         $function_name($function_name),
                     )+
+                    Placeholder(String)
                 }
 
                 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -48,22 +51,42 @@ macro_rules! define_types_functions {
                     #[derive(Serialize, Deserialize, Debug, PartialEq)]
                     pub struct $function_name {
                         $(
-                            $function_argument_name: $function_argument_type,
+                            pub $function_argument_name: $function_argument_type,
                         )+
                     }
 
                     impl $function_name {
-                        pub fn compute($function_self) -> Result<$raw_type> $function_code
+                        pub fn validate_placeholders_with_context(&self, context: &mut PlaceholdersValidationContext) -> Result<()> {
+                            $(
+                                self.$function_argument_name.validate_placeholders_with_context(context);
+                            )+
+                        }
+
+                        pub fn compute_with_context(&$function_self, $function_context: &mut ComputationContext) -> Result<$raw_type> $function_code
                     }
                 )+
 
+
                 impl [<ComputableOrRaw $type_name>] {
-                    pub fn compute(self) -> Result<$raw_type> {
+                    pub fn validate_placeholders_with_context(&self, context: &mut PlaceholdersValidationContext) -> Result<()> {
                         match self {
                             [<ComputableOrRaw $type_name>]::Computable(computable) => match computable {
                                 $(
-                                    [<Computable $type_name>]::$function_name(computable) => computable.compute(),
+                                    [<Computable $type_name>]::$function_name(computable) => computable.validate_placeholders_with_context(context),
                                 )+
+                                [<Computable $type_name>]::Placeholder(_) => Err(anyhow!("Computation of programs with placeholders is not supported yet")),
+                            }
+                            [<ComputableOrRaw $type_name>]::Raw(raw_value) => Ok(()),
+                        }
+                    }
+
+                    fn compute_with_context(&self, context: &mut ComputationContext) -> Result<$raw_type> {
+                        match self {
+                            [<ComputableOrRaw $type_name>]::Computable(computable) => match computable {
+                                $(
+                                    [<Computable $type_name>]::$function_name(computable) => computable.compute_with_context(context),
+                                )+
+                                [<Computable $type_name>]::Placeholder(_) => Err(anyhow!("Computation of programs with placeholders is not supported yet")),
                             }
                             [<ComputableOrRaw $type_name>]::Raw(raw_value) => Ok(raw_value.clone()),
                         }
@@ -71,34 +94,94 @@ macro_rules! define_types_functions {
                 }
             )+
 
+            pub struct PlaceholdersValidationContext {
+                pub available_values: BTreeMap<String, Vec<Arc<Any>>>,
+                pub path: Vec<String>
+            }
+
+            pub struct ComputationContext {
+                pub available_values: BTreeMap<String, Vec<Arc<Any>>>,
+            }
+
+            #[derive(Serialize, Deserialize, Debug, PartialEq)]
+            #[serde(deny_unknown_fields)]
+            pub struct With {
+                pub values: BTreeMap<String, Arc<Any>>,
+                pub compute: Arc<Any>
+            }
+
             #[derive(Serialize, Deserialize, Debug, PartialEq)]
             #[serde(untagged)]
             #[serde(deny_unknown_fields)]
-            pub enum ComputableOrRawAny {
+            pub enum Any {
                 $(
                     $type_name([<ComputableOrRaw $type_name>]),
                 )+
-                TransparentArray(Vec<ComputableOrRawAny>),
-                TransparentObject(BTreeMap<String, ComputableOrRawAny>),
+                With(With),
+                TransparentArray(Vec<Any>),
+                TransparentObject(BTreeMap<String, Any>),
             }
 
-            impl ComputableOrRawAny {
-                pub fn compute(self) -> Result<serde_json::Value> {
+            impl Any {
+                pub fn validate_placeholders(&self) -> Result<()> {
+                    self.validate_placeholders_with_context(&mut PlaceholdersValidationContext {
+                        available_values: BTreeMap::new(),
+                        path: vec![]
+                    })
+                }
+
+                fn validate_placeholders_with_context(&self, context: &mut PlaceholdersValidationContext) -> Result<()> {
+                    match self {
+                        $(
+                            Any::$type_name(value) => value.validate_placeholders_with_context(context)?,
+                        )+
+                        Any::With(with_values_compute) => {
+                            for (key, new_value) in with_values_compute.values.iter() {
+                                context.available_values.entry(key.clone()).or_insert(vec![]).push(new_value.clone());
+                            }
+                        }
+                        Any::TransparentArray(array) => {
+                            for any in array {
+                                any.validate_placeholders_with_context(context)?;
+                            }
+                        }
+                        Any::TransparentObject(map) => {
+                            for (_, any) in map {
+                                any.validate_placeholders_with_context(context)?;
+                            }
+                        }
+                    }
+                    Ok(())
+                }
+
+                pub fn compute(&self) -> Result<serde_json::Value> {
+                    self.compute_with_context(&mut ComputationContext {
+                        available_values: BTreeMap::new()
+                    })
+                }
+
+                fn compute_with_context(&self, context: &mut ComputationContext) -> Result<serde_json::Value> {
                     Ok(match self {
                         $(
-                            ComputableOrRawAny::$type_name(value) => serde_json::to_value(value.compute()?)?,
+                            Any::$type_name(value) => serde_json::to_value(value.compute_with_context(context)?)?,
                         )+
-                        ComputableOrRawAny::TransparentArray(array) => {
+                        Any::With(with_values_compute) => {
+                            for (key, new_value) in with_values_compute.values.iter() {
+                                context.available_values.entry(key.clone()).or_insert(vec![]).push(new_value.clone());
+                            }
+                            with_values_compute.compute.compute_with_context(context)?
+                        }
+                        Any::TransparentArray(array) => {
                             let mut result = vec![];
                             for value_any in array {
-                                result.push(value_any.compute()?);
+                                result.push(value_any.compute_with_context(context)?);
                             }
                             serde_json::Value::Array(result)
                         }
-                        ComputableOrRawAny::TransparentObject(map) => {
+                        Any::TransparentObject(map) => {
                             let mut result = serde_json::Map::new();
                             for (key, value_any) in map {
-                                result.insert(key.clone(), value_any.compute()?);
+                                result.insert(key.clone(), value_any.compute_with_context(context)?);
                             }
                             serde_json::Value::Object(result)
                         }
@@ -113,19 +196,19 @@ define_types_functions!(
     computed Number is f64 {
         Sum {
             terms: Vec<ComputableOrRawNumber>
-        } self {
+        } self context {
             let mut result = 0f64;
-            for mut term in self.terms {
-                result += std::mem::take(&mut term).compute()?;
+            for term in self.terms.iter() {
+                result += term.compute_with_context(context)?;
             }
             Ok(result)
         }
         Multiply {
             terms: Vec<ComputableOrRawNumber>
-        } self {
+        } self context {
             let mut result = 1f64;
-            for mut term in self.terms {
-                result *= std::mem::take(&mut term).compute()?;
+            for term in self.terms.iter() {
+                result *= term.compute_with_context(context)?;
             }
             Ok(result)
         }
@@ -133,19 +216,19 @@ define_types_functions!(
     computed String is String {
         Concat {
             strings: Vec<ComputableOrRawString>
-        } self {
+        } self context {
             let mut result = "".to_string();
-            for string in self.strings {
-                result += &string.compute()?;
+            for string in self.strings.iter() {
+                result += &string.compute_with_context(context)?;
             }
             Ok(result)
         }
         Repeat {
             string: Box<ComputableOrRawString>
             amount: ComputableOrRawNumber
-        } self {
-            let string = self.string.compute()?;
-            let amount = self.amount.compute()? as usize;
+        } self context {
+            let string = self.string.compute_with_context(context)?;
+            let amount = self.amount.compute_with_context(context)? as usize;
             Ok(string.repeat(amount))
         }
     }
@@ -153,9 +236,9 @@ define_types_functions!(
         Split {
             string: ComputableOrRawString
             delimiter: ComputableOrRawString
-        } self {
-            let string = self.string.compute()?;
-            let delimiter = self.delimiter.compute()?;
+        } self context {
+            let string = self.string.compute_with_context(context)?;
+            let delimiter = self.delimiter.compute_with_context(context)?;
             Ok(string.split(&delimiter).map(|s| s.to_string()).collect())
         }
     }
@@ -172,7 +255,8 @@ mod tests {
         program_structure: serde_json::Value,
         correct_result: serde_json::Value,
     ) {
-        let program: ComputableOrRawAny = serde_json::from_value(program_structure).unwrap();
+        let program = serde_json::from_value::<Any>(program_structure).unwrap();
+        program.validate_placeholders().unwrap();
         let result = serde_json::to_value(program.compute().unwrap()).unwrap();
         assert_eq!(result, correct_result);
     }
