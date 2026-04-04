@@ -58,8 +58,9 @@ macro_rules! define_types_functions {
                     impl $function_name {
                         pub fn validate_placeholders_with_context(&self, context: &mut PlaceholdersValidationContext) -> Result<()> {
                             $(
-                                self.$function_argument_name.validate_placeholders_with_context(context);
+                                self.$function_argument_name.validate_placeholders_with_context(context)?;
                             )+
+                            Ok(())
                         }
 
                         pub fn compute_with_context(&$function_self, $function_context: &mut ComputationContext) -> Result<$raw_type> $function_code
@@ -76,7 +77,7 @@ macro_rules! define_types_functions {
                                 )+
                                 [<Computable $type_name>]::Placeholder(_) => Err(anyhow!("Computation of programs with placeholders is not supported yet")),
                             }
-                            [<ComputableOrRaw $type_name>]::Raw(raw_value) => Ok(()),
+                            [<ComputableOrRaw $type_name>]::Raw(_) => Ok(()),
                         }
                     }
 
@@ -111,13 +112,18 @@ macro_rules! define_types_functions {
             }
 
             #[derive(Serialize, Deserialize, Debug, PartialEq)]
+            pub enum Closure {
+                With(With)
+            }
+
+            #[derive(Serialize, Deserialize, Debug, PartialEq)]
             #[serde(untagged)]
             #[serde(deny_unknown_fields)]
             pub enum Any {
                 $(
                     $type_name([<ComputableOrRaw $type_name>]),
                 )+
-                With(With),
+                Closure(Closure),
                 TransparentArray(Vec<Any>),
                 TransparentObject(BTreeMap<String, Any>),
             }
@@ -135,9 +141,17 @@ macro_rules! define_types_functions {
                         $(
                             Any::$type_name(value) => value.validate_placeholders_with_context(context)?,
                         )+
-                        Any::With(with_values_compute) => {
-                            for (key, new_value) in with_values_compute.values.iter() {
-                                context.available_values.entry(key.clone()).or_insert(vec![]).push(new_value.clone());
+                        Any::Closure(closure) => match closure {
+                            Closure::With(with_values_compute) => {
+                                for (key, new_value) in with_values_compute.values.iter() {
+                                    context.available_values.entry(key.clone()).or_insert(vec![]).push(new_value.clone());
+                                }
+                                for key in with_values_compute.values.keys() {
+                                    context.available_values.entry(key.clone());
+                                    if let Some(current_values_at_key) = context.available_values.get_mut(key) {
+                                        current_values_at_key.pop();
+                                    }
+                                }
                             }
                         }
                         Any::TransparentArray(array) => {
@@ -165,11 +179,20 @@ macro_rules! define_types_functions {
                         $(
                             Any::$type_name(value) => serde_json::to_value(value.compute_with_context(context)?)?,
                         )+
-                        Any::With(with_values_compute) => {
-                            for (key, new_value) in with_values_compute.values.iter() {
-                                context.available_values.entry(key.clone()).or_insert(vec![]).push(new_value.clone());
+                        Any::Closure(closure) => match closure {
+                            Closure::With(with_values_compute) => {
+                                for (key, new_value) in with_values_compute.values.iter() {
+                                    context.available_values.entry(key.clone()).or_insert(vec![]).push(new_value.clone());
+                                }
+                                let result = with_values_compute.compute.compute_with_context(context)?;
+                                for key in with_values_compute.values.keys() {
+                                    context.available_values.entry(key.clone());
+                                    if let Some(current_values_at_key) = context.available_values.get_mut(key) {
+                                        current_values_at_key.pop();
+                                    }
+                                }
+                                result
                             }
-                            with_values_compute.compute.compute_with_context(context)?
                         }
                         Any::TransparentArray(array) => {
                             let mut result = vec![];
@@ -195,31 +218,31 @@ macro_rules! define_types_functions {
 define_types_functions!(
     computed Number is f64 {
         Sum {
-            terms: Vec<ComputableOrRawNumber>
+            terms: Box<ComputableOrRawNumberArray>
         } self context {
             let mut result = 0f64;
-            for term in self.terms.iter() {
-                result += term.compute_with_context(context)?;
+            for term in self.terms.compute_with_context(context)?.iter() {
+                result += term;
             }
             Ok(result)
         }
         Multiply {
-            terms: Vec<ComputableOrRawNumber>
+            terms: Box<ComputableOrRawNumberArray>
         } self context {
             let mut result = 1f64;
-            for term in self.terms.iter() {
-                result *= term.compute_with_context(context)?;
+            for term in self.terms.compute_with_context(context)?.iter() {
+                result *= term;
             }
             Ok(result)
         }
     }
     computed String is String {
         Concat {
-            strings: Vec<ComputableOrRawString>
+            strings: Box<ComputableOrRawStringArray>
         } self context {
             let mut result = "".to_string();
-            for string in self.strings.iter() {
-                result += &string.compute_with_context(context)?;
+            for string in self.strings.compute_with_context(context)?.iter() {
+                result += string;
             }
             Ok(result)
         }
@@ -242,6 +265,14 @@ define_types_functions!(
             Ok(string.split(&delimiter).map(|s| s.to_string()).collect())
         }
     }
+    computed NumberArray is Vec<f64> {
+        Bytes {
+            string: ComputableOrRawString
+        } self context {
+            let string = self.string.compute_with_context(context)?;
+            Ok(string.bytes().map(|byte| byte as f64).collect())
+        }
+    }
 );
 
 #[cfg(test)]
@@ -254,11 +285,13 @@ mod tests {
     fn execute_and_assert<'a>(
         program_structure: serde_json::Value,
         correct_result: serde_json::Value,
-    ) {
-        let program = serde_json::from_value::<Any>(program_structure).unwrap();
+    ) -> Result<()> {
+        let program = serde_json::from_value::<Any>(program_structure)?;
+        dbg!(&program);
         program.validate_placeholders().unwrap();
-        let result = serde_json::to_value(program.compute().unwrap()).unwrap();
+        let result = serde_json::to_value(program.compute()?)?;
         assert_eq!(result, correct_result);
+        Ok(())
     }
 
     #[test]
@@ -272,12 +305,13 @@ mod tests {
                                 "terms": [1, 2]
                             }
                         },
-                        3
+                        4
                     ]
                 }
             }),
-            json!(6.0),
-        );
+            json!(7.0),
+        )
+        .unwrap();
         execute_and_assert(
             json!({
                 "SUM": {
@@ -292,7 +326,8 @@ mod tests {
                 }
             }),
             json!(6.9),
-        );
+        )
+        .unwrap();
         execute_and_assert(
             json!({
                 "SUM": {
@@ -307,7 +342,8 @@ mod tests {
                 }
             }),
             json!(5.0),
-        );
+        )
+        .unwrap();
         execute_and_assert(
             json!({
                 "some": [
@@ -339,7 +375,8 @@ mod tests {
                 ],
                 "key": "lalalo"
             }),
-        );
+        )
+        .unwrap();
         execute_and_assert(
             json!({
                 "SPLIT": {
@@ -348,6 +385,7 @@ mod tests {
                 }
             }),
             json!(["la", "la", "la"]),
-        );
+        )
+        .unwrap();
     }
 }
