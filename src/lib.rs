@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::{anyhow, Result};
+use paste::paste;
 
 #[derive(PartialEq, Debug)]
 pub enum Type {
@@ -22,28 +23,68 @@ pub struct Interpreter {
     pub supported_functions: BTreeMap<String, Function>,
 }
 
-pub fn sum(argument: &serde_json::Value) -> Result<serde_json::Value> {
-    let mut result = 0f64;
-    for element in argument.as_array().unwrap().iter() {
-        result += element.as_number().unwrap().as_f64().unwrap();
-    }
-    Ok(serde_json::to_value(result).unwrap())
+#[macro_export]
+macro_rules! define_default_interpreter_supported_functions {
+    (
+        $(
+            $function_name:ident
+            $function_argument_type:expr, $function_return_type:expr, $function_argument:ident $function_code:block
+        )*
+    ) => {
+        paste! {
+            $(
+                pub fn [<$function_name:lower>]($function_argument: &serde_json::Value) -> Result<serde_json::Value> $function_code
+            )*
+
+            impl Default for Interpreter {
+                fn default() -> Interpreter {
+                    Interpreter {
+                        supported_functions: BTreeMap::from([
+                            $(
+                                (
+                                    stringify!($function_name).to_string(),
+                                    Function {
+                                        argument_type: $function_argument_type,
+                                        return_type: $function_return_type,
+                                        function: [<$function_name:lower>],
+                                    },
+                                ),
+                            )*
+                        ]),
+                    }
+                }
+            }
+        }
+    };
 }
 
-impl Default for Interpreter {
-    fn default() -> Interpreter {
-        Interpreter {
-            supported_functions: BTreeMap::from([(
-                "SUM".to_string(),
-                Function {
-                    argument_type: Type::Array(Box::new(Type::Number)),
-                    return_type: Type::Number,
-                    function: sum,
-                },
-            )]),
+define_default_interpreter_supported_functions!(
+    SUM Type::Array(Box::new(Type::Number)), Type::Number, argument {
+        let mut result = 0f64;
+        for element in argument.as_array().unwrap().iter() {
+            result += element.as_number().unwrap().as_f64().unwrap();
         }
+        Ok(serde_json::to_value(result).unwrap())
     }
-}
+    MULTIPLY Type::Array(Box::new(Type::Number)), Type::Number, argument {
+        let mut result = 1f64;
+        for element in argument.as_array().unwrap().iter() {
+            result *= element.as_number().unwrap().as_f64().unwrap();
+        }
+        Ok(serde_json::to_value(result).unwrap())
+    }
+    LEN Type::String, Type::Number, argument {
+        let result = argument.as_str().unwrap().len();
+        Ok(serde_json::to_value(result).unwrap())
+    }
+    CONCAT Type::Array(Box::new(Type::String)), Type::String, argument {
+        let mut result = String::new();
+        for element in argument.as_array().unwrap().iter() {
+            result += element.as_str().unwrap();
+        }
+        Ok(serde_json::to_value(result).unwrap())
+    }
+);
 
 pub struct TypeCheckingContext {
     pub path: Vec<String>,
@@ -189,8 +230,9 @@ mod tests {
             .assert_type(
                 &json!({
                     "SUM": [
-                        {"SUM": [1, 2]},
-                        3
+                        {"MULTIPLY": [2, 3]},
+                        {"LEN": {"CONCAT": ["lala", "lolo"]}},
+                        4
                     ]
                 }),
                 &Type::Number,
