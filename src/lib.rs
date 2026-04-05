@@ -224,31 +224,34 @@ impl Interpreter {
                     }
                 } else {
                     return Err(anyhow!(
-                        "Expected type {expected_type:?} at path {:?}, but got array {array:?}",
+                        "Expected type {expected_type:?} at path {:?}, but got {program:?}",
                         context.path
                     ));
                 }
             }
-            Value::Number(number) => {
+            Value::Number(_) => {
                 if expected_type != &Type::Number {
                     return Err(anyhow!(
-                        "Expected type {expected_type:?} at path {:?}, but got number {number:?}",
+                        "Expected value of type {expected_type:?} at path {:?}, but got \
+                         {program:?}",
                         context.path
                     ));
                 }
             }
-            Value::String(string) => {
+            Value::String(_) => {
                 if expected_type != &Type::String {
                     return Err(anyhow!(
-                        "Expected type {expected_type:?} at path {:?}, but got string {string:?}",
+                        "Expected value of type {expected_type:?} at path {:?}, but got \
+                         {program:?}",
                         context.path
                     ));
                 }
             }
-            Value::Bool(bool) => {
+            Value::Bool(_) => {
                 if expected_type != &Type::Bool {
                     return Err(anyhow!(
-                        "Expected type {expected_type:?} at path {:?}, but got boolean {bool:?}",
+                        "Expected value of type {expected_type:?} at path {:?}, but got \
+                         {program:?}",
                         context.path
                     ));
                 }
@@ -256,7 +259,8 @@ impl Interpreter {
             Value::Null => {
                 if expected_type != &Type::Null {
                     return Err(anyhow!(
-                        "Expected type {expected_type:?} at path {:?}, but got null",
+                        "Expected value of type {expected_type:?} at path {:?}, but got \
+                         {program:?}",
                         context.path
                     ));
                 }
@@ -278,7 +282,7 @@ mod tests {
             .assert_type(
                 &serde_json::from_value(json!({
                     "SUM": [
-                        {"MULTIPLY": [2, 3]},
+                        {"MULTIPLY": [2, 3, "l"]},
                         {"LEN": {"CONCAT": ["lala", "lolo"]}},
                         4
                     ]
