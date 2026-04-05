@@ -13,10 +13,58 @@ pub enum Type {
     Object(BTreeMap<String, Type>),
 }
 
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
+#[serde(untagged)]
+pub enum Value {
+    Number(f64),
+    String(String),
+    Bool(bool),
+    Null,
+    Array(Vec<Value>),
+    Object(BTreeMap<String, Value>),
+}
+
+impl Value {
+    pub fn as_number(&self) -> Option<f64> {
+        match self {
+            Value::Number(result) => Some(*result),
+            _ => None,
+        }
+    }
+
+    pub fn as_string(&self) -> Option<&String> {
+        match self {
+            Value::String(result) => Some(result),
+            _ => None,
+        }
+    }
+
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Value::Bool(result) => Some(*result),
+            _ => None,
+        }
+    }
+
+    pub fn as_array(&self) -> Option<&Vec<Value>> {
+        match self {
+            Value::Array(result) => Some(result),
+            _ => None,
+        }
+    }
+
+    pub fn as_object(&self) -> Option<&BTreeMap<String, Value>> {
+        match self {
+            Value::Object(result) => Some(result),
+            _ => None,
+        }
+    }
+}
+
 pub struct Function {
     pub argument_type: Type,
     pub return_type: Type,
-    pub function: fn(&serde_json::Value) -> Result<serde_json::Value>,
+    pub function: fn(&Value) -> Result<Value>,
 }
 
 pub struct Interpreter {
@@ -33,7 +81,7 @@ macro_rules! define_default_interpreter_supported_functions {
     ) => {
         paste! {
             $(
-                pub fn [<$function_name:lower>]($function_argument: &serde_json::Value) -> Result<serde_json::Value> $function_code
+                pub fn [<$function_name:lower>]($function_argument: &Value) -> Result<Value> $function_code
             )*
 
             impl Default for Interpreter {
@@ -62,27 +110,27 @@ define_default_interpreter_supported_functions!(
     SUM Type::Array(Box::new(Type::Number)), Type::Number, argument {
         let mut result = 0f64;
         for element in argument.as_array().unwrap().iter() {
-            result += element.as_number().unwrap().as_f64().unwrap();
+            result += element.as_number().unwrap();
         }
-        Ok(serde_json::to_value(result).unwrap())
+        Ok(Value::Number(result))
     }
     MULTIPLY Type::Array(Box::new(Type::Number)), Type::Number, argument {
         let mut result = 1f64;
         for element in argument.as_array().unwrap().iter() {
-            result *= element.as_number().unwrap().as_f64().unwrap();
+            result *= element.as_number().unwrap();
         }
-        Ok(serde_json::to_value(result).unwrap())
+        Ok(Value::Number(result))
     }
     LEN Type::String, Type::Number, argument {
-        let result = argument.as_str().unwrap().len();
-        Ok(serde_json::to_value(result).unwrap())
+        let result = argument.as_string().unwrap().len() as f64;
+        Ok(Value::Number(result))
     }
     CONCAT Type::Array(Box::new(Type::String)), Type::String, argument {
         let mut result = String::new();
         for element in argument.as_array().unwrap().iter() {
-            result += element.as_str().unwrap();
+            result += element.as_string().unwrap();
         }
-        Ok(serde_json::to_value(result).unwrap())
+        Ok(Value::String(result))
     }
 );
 
@@ -91,7 +139,7 @@ pub struct TypeCheckingContext {
 }
 
 impl Interpreter {
-    pub fn assert_type(&self, program: &serde_json::Value, expected_type: &Type) -> Result<()> {
+    pub fn assert_type(&self, program: &Value, expected_type: &Type) -> Result<()> {
         self.assert_type_with_context(
             program,
             expected_type,
@@ -101,12 +149,12 @@ impl Interpreter {
 
     fn assert_type_with_context(
         &self,
-        program: &serde_json::Value,
+        program: &Value,
         expected_type: &Type,
         context: &mut TypeCheckingContext,
     ) -> Result<()> {
         match program {
-            serde_json::Value::Object(object) => {
+            Value::Object(object) => {
                 if object.len() == 1 {
                     let (function_name, function_argument) = object.iter().next().unwrap();
                     if let Some(function) = self.supported_functions.get(function_name) {
@@ -163,7 +211,7 @@ impl Interpreter {
                     }
                 }
             }
-            serde_json::Value::Array(array) => {
+            Value::Array(array) => {
                 if let Type::Array(expected_array_element_type) = expected_type {
                     for (element_index, element) in array.iter().enumerate() {
                         context.path.push(element_index.to_string());
@@ -181,7 +229,7 @@ impl Interpreter {
                     ));
                 }
             }
-            serde_json::Value::Number(number) => {
+            Value::Number(number) => {
                 if expected_type != &Type::Number {
                     return Err(anyhow!(
                         "Expected type {expected_type:?} at path {:?}, but got number {number:?}",
@@ -189,7 +237,7 @@ impl Interpreter {
                     ));
                 }
             }
-            serde_json::Value::String(string) => {
+            Value::String(string) => {
                 if expected_type != &Type::String {
                     return Err(anyhow!(
                         "Expected type {expected_type:?} at path {:?}, but got string {string:?}",
@@ -197,7 +245,7 @@ impl Interpreter {
                     ));
                 }
             }
-            serde_json::Value::Bool(bool) => {
+            Value::Bool(bool) => {
                 if expected_type != &Type::Bool {
                     return Err(anyhow!(
                         "Expected type {expected_type:?} at path {:?}, but got boolean {bool:?}",
@@ -205,7 +253,7 @@ impl Interpreter {
                     ));
                 }
             }
-            serde_json::Value::Null => {
+            Value::Null => {
                 if expected_type != &Type::Null {
                     return Err(anyhow!(
                         "Expected type {expected_type:?} at path {:?}, but got null",
@@ -228,13 +276,14 @@ mod tests {
         let interpreter = Interpreter::default();
         interpreter
             .assert_type(
-                &json!({
+                &serde_json::from_value(json!({
                     "SUM": [
                         {"MULTIPLY": [2, 3]},
                         {"LEN": {"CONCAT": ["lala", "lolo"]}},
                         4
                     ]
-                }),
+                }))
+                .unwrap(),
                 &Type::Number,
             )
             .unwrap();
