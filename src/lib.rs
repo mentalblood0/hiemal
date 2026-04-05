@@ -282,7 +282,7 @@ mod tests {
             .assert_type(
                 &serde_json::from_value(json!({
                     "SUM": [
-                        {"MULTIPLY": [2, 3, "l"]},
+                        {"MULTIPLY": [2, 3]},
                         {"LEN": {"CONCAT": ["lala", "lolo"]}},
                         4
                     ]
