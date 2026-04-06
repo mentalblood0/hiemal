@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use paste::paste;
@@ -14,6 +15,19 @@ pub enum Type {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
+pub struct With {
+    aliases: BTreeMap<String, Arc<Value>>,
+    compute: Box<Value>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Clause {
+    With(With),
+    Alias(String),
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
 #[serde(untagged)]
 pub enum Value {
     Number(f64),
@@ -21,6 +35,7 @@ pub enum Value {
     Bool(bool),
     Null,
     Array(Vec<Value>),
+    Clause(Clause),
     Object(BTreeMap<String, Value>),
 }
 
@@ -136,6 +151,7 @@ define_default_interpreter_supported_functions!(
 
 pub struct TypeCheckingContext {
     pub path: Vec<String>,
+    pub aliases: BTreeMap<String, Vec<Arc<Value>>>,
 }
 
 impl Interpreter {
@@ -143,7 +159,10 @@ impl Interpreter {
         self.assert_type_with_context(
             program,
             expected_type,
-            &mut TypeCheckingContext { path: vec![] },
+            &mut TypeCheckingContext {
+                path: vec![],
+                aliases: BTreeMap::new(),
+            },
         )
     }
 
@@ -154,6 +173,40 @@ impl Interpreter {
         context: &mut TypeCheckingContext,
     ) -> Result<()> {
         match program {
+            Value::Clause(clause) => match clause {
+                Clause::With(with_clause) => {
+                    for (alias_name, alias_value) in with_clause.aliases.iter() {
+                        context
+                            .aliases
+                            .entry(alias_name.clone())
+                            .or_default()
+                            .push(alias_value.clone());
+                    }
+                    self.assert_type_with_context(&with_clause.compute, expected_type, context)?;
+                    for alias_name in with_clause.aliases.keys() {
+                        context.aliases.entry(alias_name.clone()).and_modify(
+                            |aliases_with_this_name| {
+                                aliases_with_this_name.pop();
+                            },
+                        );
+                    }
+                }
+                Clause::Alias(alias) => {
+                    let aliased_value = context
+                        .aliases
+                        .get(alias)
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "Expected to already know alias {alias:?} at path {:?}",
+                                context.path
+                            )
+                        })?
+                        .last()
+                        .unwrap()
+                        .clone();
+                    self.assert_type_with_context(&aliased_value, expected_type, context)?;
+                }
+            },
             Value::Object(object) => {
                 if object.len() == 1 {
                     let (function_name, function_argument) = object.iter().next().unwrap();
@@ -283,6 +336,24 @@ mod tests {
                 &serde_json::from_value(json!({
                     "SUM": [
                         {"MULTIPLY": [2, 3]},
+                        {"LEN": {"CONCAT": ["lala", "lolo"]}},
+                        4
+                    ]
+                }))
+                .unwrap(),
+                &Type::Number,
+            )
+            .unwrap();
+        interpreter
+            .assert_type(
+                &serde_json::from_value(json!({
+                    "SUM": [
+                        {
+                            "WITH": {
+                                "aliases": {"x": 2, "y": 3},
+                                "compute": {"MULTIPLY": [{"ALIAS": "x"}, {"ALIAS": "y"}]}
+                            }
+                        },
                         {"LEN": {"CONCAT": ["lala", "lolo"]}},
                         4
                     ]
