@@ -351,7 +351,31 @@ mod tests {
                         {
                             "WITH": {
                                 "aliases": {"x": 2, "y": 3},
-                                "compute": {"MULTIPLY": [{"ALIAS": "x"}, {"ALIAS": "y"}]}
+                                "compute": {"MULTIPLY": [{"ALIAS": "x"}, {"ALIAS": "x"}, {"ALIAS": "y"}]}
+                            }
+                        },
+                        {"LEN": {"CONCAT": ["lala", "lolo"]}},
+                        4
+                    ]
+                }))
+                .unwrap(),
+                &Type::Number,
+            )
+            .unwrap();
+        interpreter
+            .assert_type(
+                &serde_json::from_value(json!({
+                    "SUM": [
+                        {
+                            "WITH": {
+                                "aliases": {
+                                    "SQUARE": {"MULTIPLY": [{"ALIAS": "x"}, {"ALIAS": "x"}]},
+                                    "y": 3
+                                },
+                                "compute": {"MULTIPLY": [
+                                    {"WITH": {"aliases": {"x": 2}, "compute": {"ALIAS": "SQUARE"}}},
+                                    {"ALIAS": "y"}
+                                ]}
                             }
                         },
                         {"LEN": {"CONCAT": ["lala", "lolo"]}},
