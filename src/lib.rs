@@ -11,6 +11,7 @@ pub enum Type {
     Bool,
     Null,
     Array(Box<Type>),
+    AnyObject,
     Object(BTreeMap<String, Type>),
 }
 
@@ -24,7 +25,6 @@ pub struct With {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Clause {
     With(With),
-    Alias(String),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
@@ -36,7 +36,7 @@ pub enum Value {
     Null,
     Array(Vec<Value>),
     Clause(Clause),
-    Object(BTreeMap<String, Value>),
+    Object(BTreeMap<String, Arc<Value>>),
 }
 
 impl Value {
@@ -68,7 +68,7 @@ impl Value {
         }
     }
 
-    pub fn as_object(&self) -> Option<&BTreeMap<String, Value>> {
+    pub fn as_object(&self) -> Option<&BTreeMap<String, Arc<Value>>> {
         match self {
             Value::Object(result) => Some(result),
             _ => None,
@@ -191,45 +191,53 @@ impl Interpreter {
                         );
                     }
                 }
-                Clause::Alias(alias) => {
-                    let aliased_value = context
-                        .aliases
-                        .get(alias)
-                        .ok_or_else(|| {
-                            anyhow!(
-                                "Expected to already know alias {alias:?} at path {:?}",
-                                context.path
-                            )
-                        })?
-                        .last()
-                        .unwrap()
-                        .clone();
-                    self.assert_type_with_context(&aliased_value, expected_type, context)?;
-                }
             },
             Value::Object(object) => {
                 if object.len() == 1 {
-                    let (function_name, function_argument) = object.iter().next().unwrap();
-                    if let Some(function) = self.supported_functions.get(function_name) {
+                    let (name, arguments) = object.iter().next().unwrap();
+                    if let Value::Object(ref aliases) = **arguments {
+                        if let Some(aliased_value) = context
+                            .aliases
+                            .get(name)
+                            .and_then(|aliases_with_this_name| aliases_with_this_name.last())
+                            .cloned()
+                        {
+                            for (alias_name, alias_value) in aliases.iter() {
+                                context
+                                    .aliases
+                                    .entry(alias_name.clone())
+                                    .or_default()
+                                    .push(alias_value.clone());
+                            }
+                            context.path.push(name.clone());
+                            self.assert_type_with_context(&aliased_value, expected_type, context)?;
+                            context.path.pop();
+                            for alias_name in aliases.keys() {
+                                context.aliases.entry(alias_name.clone()).and_modify(
+                                    |aliases_with_this_name| {
+                                        aliases_with_this_name.pop();
+                                    },
+                                );
+                            }
+                            return Ok(());
+                        }
+                    }
+                    if let Some(function) = self.supported_functions.get(name) {
                         if expected_type != &function.return_type {
                             return Err(anyhow!(
                                 "Expected type {expected_type:?} at path {:?}, but got function \
-                                 {function_name:?} which returns {:?}",
+                                 {name:?} which returns {:?}",
                                 context.path,
                                 function.return_type
                             ));
                         }
-                        context.path.push(function_name.clone());
-                        self.assert_type_with_context(
-                            function_argument,
-                            &function.argument_type,
-                            context,
-                        )?;
+                        context.path.push(name.clone());
+                        self.assert_type_with_context(arguments, &function.argument_type, context)?;
                         context.path.pop();
                     } else {
                         return Err(anyhow!(
                             "Expected supported function at path {:?}, but got unsupported \
-                             function {function_name:?}. Supported functions are: {:?}",
+                             function {name:?}. Supported functions are: {:?}",
                             context.path,
                             self.supported_functions
                                 .keys()
@@ -291,8 +299,15 @@ impl Interpreter {
                     ));
                 }
             }
-            Value::String(_) => {
-                if expected_type != &Type::String {
+            Value::String(string) => {
+                if let Some(aliased_value) = context
+                    .aliases
+                    .get(string)
+                    .and_then(|values_for_this_name| values_for_this_name.last())
+                    .cloned()
+                {
+                    self.assert_type_with_context(&aliased_value, expected_type, context)?;
+                } else if expected_type != &Type::String {
                     return Err(anyhow!(
                         "Expected value of type {expected_type:?} at path {:?}, but got \
                          {program:?}",
@@ -351,7 +366,7 @@ mod tests {
                         {
                             "WITH": {
                                 "aliases": {"x": 2, "y": 3},
-                                "compute": {"MULTIPLY": [{"ALIAS": "x"}, {"ALIAS": "x"}, {"ALIAS": "y"}]}
+                                "compute": {"MULTIPLY": ["x", "x", "y"]}
                             }
                         },
                         {"LEN": {"CONCAT": ["lala", "lolo"]}},
@@ -369,12 +384,12 @@ mod tests {
                         {
                             "WITH": {
                                 "aliases": {
-                                    "SQUARE": {"MULTIPLY": [{"ALIAS": "x"}, {"ALIAS": "x"}]},
+                                    "SQUARE": {"MULTIPLY": ["x", "x"]},
                                     "y": 3
                                 },
                                 "compute": {"MULTIPLY": [
-                                    {"WITH": {"aliases": {"x": 2}, "compute": {"ALIAS": "SQUARE"}}},
-                                    {"ALIAS": "y"}
+                                    {"SQUARE": {"x": 2}},
+                                    "y"
                                 ]}
                             }
                         },
