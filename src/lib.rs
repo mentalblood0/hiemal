@@ -15,14 +15,14 @@ pub enum Type {
     Object(BTreeMap<String, Type>),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct With {
     with: BTreeMap<String, Arc<Value>>,
     compute: Box<Value>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum Value {
     Number(f64),
@@ -149,19 +149,28 @@ pub struct TypeCheckingContext {
     pub aliases: BTreeMap<String, Vec<Arc<Value>>>,
 }
 
+pub struct ComputationContext {
+    pub path: Vec<String>,
+    pub aliases: BTreeMap<String, Vec<Arc<Value>>>,
+}
+
 impl Interpreter {
-    pub fn check_types(&self, program: &Value) -> Result<Type> {
-        self.get_type(
+    pub fn compute(&self, program: &Value) -> Result<Value> {
+        self.check_types(program)?;
+        self.compute_with_context(
             program,
-            &mut TypeCheckingContext {
+            &mut ComputationContext {
                 path: vec![],
                 aliases: BTreeMap::new(),
             },
         )
     }
 
-    fn get_type(&self, program: &Value, context: &mut TypeCheckingContext) -> Result<Type> {
-        let result: Type;
+    fn compute_with_context(
+        &self,
+        program: &Value,
+        context: &mut ComputationContext,
+    ) -> Result<Value> {
         Ok(match program {
             Value::With(with_clause) => {
                 for (alias_name, alias_value) in with_clause.with.iter() {
@@ -171,7 +180,7 @@ impl Interpreter {
                         .or_default()
                         .push(alias_value.clone());
                 }
-                result = self.get_type(&with_clause.compute, context)?;
+                let result = self.compute_with_context(&with_clause.compute, context)?;
                 for alias_name in with_clause.with.keys() {
                     context.aliases.entry(alias_name.clone()).and_modify(
                         |aliases_with_this_name| {
@@ -199,7 +208,107 @@ impl Interpreter {
                                     .push(alias_value.clone());
                             }
                             context.path.push(name.clone());
-                            result = self.get_type(&aliased_value, context)?;
+                            let result = self.compute_with_context(&aliased_value, context)?;
+                            context.path.pop();
+                            for alias_name in aliases.keys() {
+                                context.aliases.entry(alias_name.clone()).and_modify(
+                                    |aliases_with_this_name| {
+                                        aliases_with_this_name.pop();
+                                    },
+                                );
+                            }
+                            return Ok(result);
+                        }
+                    }
+                    let function = self.supported_functions.get(name).unwrap();
+                    context.path.push(name.clone());
+                    let arguments = self.compute_with_context(arguments, context)?;
+                    let result = (function.function)(&arguments)?;
+                    context.path.pop();
+                    result
+                } else {
+                    let mut result_map = BTreeMap::new();
+                    for (key, value) in object {
+                        result_map.insert(
+                            key.clone(),
+                            Arc::new(self.compute_with_context(value, context)?),
+                        );
+                    }
+                    Value::Object(result_map)
+                }
+            }
+            Value::Array(array) => {
+                let mut result_array = vec![];
+                for array_element in array.iter() {
+                    result_array.push(self.compute_with_context(array_element, context)?)
+                }
+                Value::Array(result_array)
+            }
+            Value::String(string) => {
+                if let Some(aliased_value) = context
+                    .aliases
+                    .get(string)
+                    .and_then(|values_for_this_name| values_for_this_name.last())
+                    .cloned()
+                {
+                    self.compute_with_context(&aliased_value, context)?
+                } else {
+                    Value::String(string.clone())
+                }
+            }
+            value => value.clone(),
+        })
+    }
+
+    pub fn check_types(&self, program: &Value) -> Result<Type> {
+        self.get_type(
+            program,
+            &mut TypeCheckingContext {
+                path: vec![],
+                aliases: BTreeMap::new(),
+            },
+        )
+    }
+
+    fn get_type(&self, program: &Value, context: &mut TypeCheckingContext) -> Result<Type> {
+        Ok(match program {
+            Value::With(with_clause) => {
+                for (alias_name, alias_value) in with_clause.with.iter() {
+                    context
+                        .aliases
+                        .entry(alias_name.clone())
+                        .or_default()
+                        .push(alias_value.clone());
+                }
+                let result = self.get_type(&with_clause.compute, context)?;
+                for alias_name in with_clause.with.keys() {
+                    context.aliases.entry(alias_name.clone()).and_modify(
+                        |aliases_with_this_name| {
+                            aliases_with_this_name.pop();
+                        },
+                    );
+                }
+                result
+            }
+            Value::Object(object) => {
+                if object.len() == 1 {
+                    let (name, arguments) = object.iter().next().unwrap();
+                    if let Value::Object(ref aliases) = **arguments {
+                        if let Some(aliased_value) = context
+                            .aliases
+                            .get(name)
+                            .and_then(|aliases_with_this_name| aliases_with_this_name.last())
+                            .cloned()
+                        {
+                            for (alias_name, alias_value) in aliases.iter() {
+                                context
+                                    .aliases
+                                    .entry(alias_name.clone())
+                                    .or_default()
+                                    .push(alias_value.clone());
+                            }
+                            context.path.push(name.clone());
+                            let result = self.get_type(&aliased_value, context)?;
                             context.path.pop();
                             for alias_name in aliases.keys() {
                                 context.aliases.entry(alias_name.clone()).and_modify(
@@ -287,58 +396,68 @@ impl Interpreter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use serde_json::json;
 
     #[test]
     fn test_examples() {
         let interpreter = Interpreter::default();
-        interpreter
-            .check_types(
-                &serde_json::from_value(json!({
-                    "SUM": [
-                        {"MULTIPLY": [2, 3]},
-                        {"LEN": {"CONCAT": ["lala", "lolo"]}},
-                        4
-                    ]
-                }))
+        assert_eq!(
+            interpreter
+                .compute(
+                    &serde_json::from_value(json!({
+                        "SUM": [
+                            {"MULTIPLY": [2, 3]},
+                            {"LEN": {"CONCAT": ["lala", "lolo"]}},
+                            4
+                        ]
+                    }))
+                    .unwrap(),
+                )
                 .unwrap(),
-            )
-            .unwrap();
-        interpreter
-            .check_types(
-                &serde_json::from_value(json!({
-                    "SUM": [
-                        {
-                            "WITH": {"x": 2, "y": 3},
-                            "COMPUTE": {"MULTIPLY": ["x", "x", "y"]}
-                        },
-                        {"LEN": {"CONCAT": ["lala", "lolo"]}},
-                        4
-                    ]
-                }))
-                .unwrap(),
-            )
-            .unwrap();
-        interpreter
-            .check_types(
-                &serde_json::from_value(json!({
-                    "SUM": [
-                        {
-                            "WITH": {
-                                "SQUARE": {"MULTIPLY": ["x", "x"]},
-                                "y": 3
+            Value::Number(18.0)
+        );
+        assert_eq!(
+            interpreter
+                .compute(
+                    &serde_json::from_value(json!({
+                        "SUM": [
+                            {
+                                "WITH": {"x": 2, "y": 3},
+                                "COMPUTE": {"MULTIPLY": ["x", "x", "y"]}
                             },
-                            "COMPUTE": {"MULTIPLY": [
-                                {"SQUARE": {"x": 2}},
-                                "y"
-                            ]}
-                        },
-                        {"LEN": {"CONCAT": ["lala", "lolo"]}},
-                        4
-                    ]
-                }))
+                            {"LEN": {"CONCAT": ["lala", "lolo"]}},
+                            4
+                        ]
+                    }))
+                    .unwrap(),
+                )
                 .unwrap(),
-            )
-            .unwrap();
+            Value::Number(24.0)
+        );
+        assert_eq!(
+            interpreter
+                .compute(
+                    &serde_json::from_value(json!({
+                        "SUM": [
+                            {
+                                "WITH": {
+                                    "SQUARE": {"MULTIPLY": ["x", "x"]},
+                                    "y": 3
+                                },
+                                "COMPUTE": {"MULTIPLY": [
+                                    {"SQUARE": {"x": 2}},
+                                    "y"
+                                ]}
+                            },
+                            {"LEN": {"CONCAT": ["lala", "lolo"]}},
+                            4
+                        ]
+                    }))
+                    .unwrap(),
+                )
+                .unwrap(),
+            Value::Number(24.0)
+        );
     }
 }
