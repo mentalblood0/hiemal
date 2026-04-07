@@ -16,6 +16,7 @@ pub enum Type {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct With {
     with: BTreeMap<String, Arc<Value>>,
     compute: Box<Value>,
@@ -282,15 +283,6 @@ impl Interpreter {
                     ));
                 }
             }
-            Value::Number(_) => {
-                if expected_type != &Type::Number {
-                    return Err(anyhow!(
-                        "Expected value of type {expected_type:?} at path {:?}, but got \
-                         {program:?}",
-                        context.path
-                    ));
-                }
-            }
             Value::String(string) => {
                 if let Some(aliased_value) = context
                     .aliases
@@ -307,24 +299,18 @@ impl Interpreter {
                     ));
                 }
             }
-            Value::Bool(_) => {
-                if expected_type != &Type::Bool {
+            _ => match (program, expected_type) {
+                (Value::Number(_), &Type::Number) => {}
+                (Value::Bool(_), &Type::Bool) => {}
+                (Value::Null, &Type::Null) => {}
+                _ => {
                     return Err(anyhow!(
                         "Expected value of type {expected_type:?} at path {:?}, but got \
                          {program:?}",
                         context.path
                     ));
                 }
-            }
-            Value::Null => {
-                if expected_type != &Type::Null {
-                    return Err(anyhow!(
-                        "Expected value of type {expected_type:?} at path {:?}, but got \
-                         {program:?}",
-                        context.path
-                    ));
-                }
-            }
+            },
         }
         Ok(())
     }
@@ -356,8 +342,8 @@ mod tests {
                 &serde_json::from_value(json!({
                     "SUM": [
                         {
-                            "with": {"x": 2, "y": 3},
-                            "compute": {"MULTIPLY": ["x", "x", "y"]}
+                            "WITH": {"x": 2, "y": 3},
+                            "COMPUTE": {"MULTIPLY": ["x", "x", "y"]}
                         },
                         {"LEN": {"CONCAT": ["lala", "lolo"]}},
                         4
@@ -372,11 +358,11 @@ mod tests {
                 &serde_json::from_value(json!({
                     "SUM": [
                         {
-                            "with": {
+                            "WITH": {
                                 "SQUARE": {"MULTIPLY": ["x", "x"]},
                                 "y": 3
                             },
-                            "compute": {"MULTIPLY": [
+                            "COMPUTE": {"MULTIPLY": [
                                 {"SQUARE": {"x": 2}},
                                 "y"
                             ]}
