@@ -201,7 +201,7 @@ impl Interpreter {
     ) -> Result<()> {
         match generic {
             Type::GenericArgument(id) => {
-                values
+                *generic = values
                     .get(id)
                     .ok_or_else(|| {
                         anyhow!(
@@ -209,7 +209,7 @@ impl Interpreter {
                              types"
                         )
                     })
-                    .cloned();
+                    .cloned()?;
             }
             Type::Object(object) => {
                 for value in object.values_mut() {
@@ -600,13 +600,13 @@ mod tests {
             Value::Number(76.0)
         );
         interpreter
-            .assert_generic_types_usage(&BTreeMap::from([(
-                Type::Array(Box::new(Type::GenericArgument(0))),
-                Type::Array(Box::new(Type::Number)),
-            )]))
-            .unwrap();
-        interpreter
-            .assert_generic_types_usage(&BTreeMap::from([(Type::GenericArgument(0), Type::Number)]))
+            .assert_generic_types_usage(&BTreeMap::from([
+                (
+                    Type::Array(Box::new(Type::GenericArgument(0))),
+                    Type::Array(Box::new(Type::Number)),
+                ),
+                (Type::GenericArgument(0), Type::Number),
+            ]))
             .unwrap();
         // assert_eq!(
         //     interpreter
