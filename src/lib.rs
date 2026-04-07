@@ -199,8 +199,10 @@ impl Interpreter {
                         .and_then(|aliases_with_this_name| aliases_with_this_name.last())
                         .cloned()
                     {
+                        let mut aliases_names = vec![];
                         if let Value::Object(ref aliases) = **arguments {
                             if aliases.len() == 1 {
+                                aliases_names.push("_".to_string());
                                 context
                                     .aliases
                                     .entry("_".to_string())
@@ -208,6 +210,7 @@ impl Interpreter {
                                     .push(arguments.clone());
                             } else {
                                 for (alias_name, alias_value) in aliases.iter() {
+                                    aliases_names.push(alias_name.clone());
                                     context
                                         .aliases
                                         .entry(alias_name.clone())
@@ -216,6 +219,7 @@ impl Interpreter {
                                 }
                             }
                         } else {
+                            aliases_names.push("_".to_string());
                             context
                                 .aliases
                                 .entry("_".to_string())
@@ -225,24 +229,8 @@ impl Interpreter {
                         context.path.push(name.clone());
                         let result = self.compute_with_context(&aliased_value, context)?;
                         context.path.pop();
-                        if let Value::Object(ref aliases) = **arguments {
-                            if aliases.len() == 1 {
-                                context.aliases.entry("_".to_string()).and_modify(
-                                    |aliases_with_this_name| {
-                                        aliases_with_this_name.pop();
-                                    },
-                                );
-                            } else {
-                                for alias_name in aliases.keys() {
-                                    context.aliases.entry(alias_name.clone()).and_modify(
-                                        |aliases_with_this_name| {
-                                            aliases_with_this_name.pop();
-                                        },
-                                    );
-                                }
-                            }
-                        } else {
-                            context.aliases.entry("_".to_string()).and_modify(
+                        for alias_name in aliases_names {
+                            context.aliases.entry(alias_name.clone()).and_modify(
                                 |aliases_with_this_name| {
                                     aliases_with_this_name.pop();
                                 },
@@ -329,8 +317,10 @@ impl Interpreter {
                         .and_then(|aliases_with_this_name| aliases_with_this_name.last())
                         .cloned()
                     {
+                        let mut aliases_names = vec![];
                         if let Value::Object(ref aliases) = **arguments {
                             if aliases.len() == 1 {
+                                aliases_names.push("_".to_string());
                                 context
                                     .aliases
                                     .entry("_".to_string())
@@ -338,6 +328,7 @@ impl Interpreter {
                                     .push(arguments.clone());
                             } else {
                                 for (alias_name, alias_value) in aliases.iter() {
+                                    aliases_names.push(alias_name.clone());
                                     context
                                         .aliases
                                         .entry(alias_name.clone())
@@ -346,6 +337,7 @@ impl Interpreter {
                                 }
                             }
                         } else {
+                            aliases_names.push("_".to_string());
                             context
                                 .aliases
                                 .entry("_".to_string())
@@ -355,24 +347,8 @@ impl Interpreter {
                         context.path.push(name.clone());
                         let result = self.get_type(&aliased_value, context)?;
                         context.path.pop();
-                        if let Value::Object(ref aliases) = **arguments {
-                            if aliases.len() == 1 {
-                                context.aliases.entry("_".to_string()).and_modify(
-                                    |aliases_with_this_name| {
-                                        aliases_with_this_name.pop();
-                                    },
-                                );
-                            } else {
-                                for alias_name in aliases.keys() {
-                                    context.aliases.entry(alias_name.clone()).and_modify(
-                                        |aliases_with_this_name| {
-                                            aliases_with_this_name.pop();
-                                        },
-                                    );
-                                }
-                            }
-                        } else {
-                            context.aliases.entry("_".to_string()).and_modify(
+                        for alias_name in aliases_names {
+                            context.aliases.entry(alias_name.clone()).and_modify(
                                 |aliases_with_this_name| {
                                     aliases_with_this_name.pop();
                                 },
