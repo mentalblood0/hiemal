@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use paste::paste;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Type {
     Number,
     String,
@@ -150,10 +150,9 @@ pub struct TypeCheckingContext {
 }
 
 impl Interpreter {
-    pub fn assert_type(&self, program: &Value, expected_type: &Type) -> Result<()> {
-        self.assert_type_with_context(
+    pub fn check_types(&self, program: &Value) -> Result<Type> {
+        self.get_type(
             program,
-            expected_type,
             &mut TypeCheckingContext {
                 path: vec![],
                 aliases: BTreeMap::new(),
@@ -161,13 +160,9 @@ impl Interpreter {
         )
     }
 
-    fn assert_type_with_context(
-        &self,
-        program: &Value,
-        expected_type: &Type,
-        context: &mut TypeCheckingContext,
-    ) -> Result<()> {
-        match program {
+    fn get_type(&self, program: &Value, context: &mut TypeCheckingContext) -> Result<Type> {
+        let result: Type;
+        Ok(match program {
             Value::With(with_clause) => {
                 for (alias_name, alias_value) in with_clause.with.iter() {
                     context
@@ -176,7 +171,7 @@ impl Interpreter {
                         .or_default()
                         .push(alias_value.clone());
                 }
-                self.assert_type_with_context(&with_clause.compute, expected_type, context)?;
+                result = self.get_type(&with_clause.compute, context)?;
                 for alias_name in with_clause.with.keys() {
                     context.aliases.entry(alias_name.clone()).and_modify(
                         |aliases_with_this_name| {
@@ -184,6 +179,7 @@ impl Interpreter {
                         },
                     );
                 }
+                result
             }
             Value::Object(object) => {
                 if object.len() == 1 {
@@ -203,7 +199,7 @@ impl Interpreter {
                                     .push(alias_value.clone());
                             }
                             context.path.push(name.clone());
-                            self.assert_type_with_context(&aliased_value, expected_type, context)?;
+                            result = self.get_type(&aliased_value, context)?;
                             context.path.pop();
                             for alias_name in aliases.keys() {
                                 context.aliases.entry(alias_name.clone()).and_modify(
@@ -212,21 +208,22 @@ impl Interpreter {
                                     },
                                 );
                             }
-                            return Ok(());
+                            return Ok(result);
                         }
                     }
                     if let Some(function) = self.supported_functions.get(name) {
-                        if expected_type != &function.return_type {
+                        context.path.push(name.clone());
+                        let arguments_type = self.get_type(arguments, context)?;
+                        if arguments_type != function.argument_type {
                             return Err(anyhow!(
-                                "Expected type {expected_type:?} at path {:?}, but got function \
-                                 {name:?} which returns {:?}",
-                                context.path,
-                                function.return_type
+                                "Expected type {:?} of argument for function at path {:?}, but \
+                                 got {arguments_type:?}",
+                                &function.argument_type,
+                                context.path
                             ));
                         }
-                        context.path.push(name.clone());
-                        self.assert_type_with_context(arguments, &function.argument_type, context)?;
                         context.path.pop();
+                        function.return_type.clone()
                     } else {
                         return Err(anyhow!(
                             "Expected supported function at path {:?}, but got unsupported \
@@ -240,48 +237,33 @@ impl Interpreter {
                         ));
                     }
                 } else {
-                    if let Type::Object(object_keys_types) = expected_type {
-                        for expected_key in object_keys_types.keys() {
-                            if !object.contains_key(expected_key) {
-                                return Err(anyhow!(
-                                    "Expected key {expected_key:?} in object at path {:?}",
-                                    context.path
-                                ));
-                            }
-                        }
-                        for (key, expected_key_type) in object_keys_types {
-                            self.assert_type_with_context(
-                                object.get(key).unwrap(),
-                                expected_key_type,
-                                context,
-                            )?;
-                        }
-                    } else {
-                        return Err(anyhow!(
-                            "Expected type {expected_type:?} at path {:?}, but got object \
-                             {object:?}",
-                            context.path
-                        ));
+                    let mut result_map = BTreeMap::new();
+                    for (key, value) in object {
+                        result_map.insert(key.clone(), self.get_type(value, context)?);
                     }
+                    Type::Object(result_map)
                 }
             }
             Value::Array(array) => {
-                if let Type::Array(expected_array_element_type) = expected_type {
-                    for (element_index, element) in array.iter().enumerate() {
-                        context.path.push(element_index.to_string());
-                        self.assert_type_with_context(
-                            element,
-                            &expected_array_element_type,
-                            context,
-                        )?;
-                        context.path.pop();
+                let array_element_type = self.get_type(
+                    array.first().ok_or_else(|| {
+                        anyhow!("Eexpected non-empty array at path {:?}", context.path)
+                    })?,
+                    context,
+                )?;
+                for (array_element_index, array_element) in array[1..].iter().enumerate() {
+                    let current_array_element_type = self.get_type(array_element, context)?;
+                    if current_array_element_type != array_element_type {
+                        return Err(anyhow!(
+                            "Expected all elements of array at path {:?} to be of type \
+                             {array_element_type:?} (as first element), but got element of type \
+                             {current_array_element_type:?} at index {}",
+                            context.path,
+                            array_element_index + 1
+                        ));
                     }
-                } else {
-                    return Err(anyhow!(
-                        "Expected type {expected_type:?} at path {:?}, but got {program:?}",
-                        context.path
-                    ));
                 }
+                Type::Array(Box::new(array_element_type))
             }
             Value::String(string) => {
                 if let Some(aliased_value) = context
@@ -290,29 +272,15 @@ impl Interpreter {
                     .and_then(|values_for_this_name| values_for_this_name.last())
                     .cloned()
                 {
-                    self.assert_type_with_context(&aliased_value, expected_type, context)?;
-                } else if expected_type != &Type::String {
-                    return Err(anyhow!(
-                        "Expected value of type {expected_type:?} at path {:?}, but got \
-                         {program:?}",
-                        context.path
-                    ));
+                    self.get_type(&aliased_value, context)?
+                } else {
+                    Type::String
                 }
             }
-            _ => match (program, expected_type) {
-                (Value::Number(_), &Type::Number) => {}
-                (Value::Bool(_), &Type::Bool) => {}
-                (Value::Null, &Type::Null) => {}
-                _ => {
-                    return Err(anyhow!(
-                        "Expected value of type {expected_type:?} at path {:?}, but got \
-                         {program:?}",
-                        context.path
-                    ));
-                }
-            },
-        }
-        Ok(())
+            Value::Number(_) => Type::Number,
+            Value::Bool(_) => Type::Bool,
+            Value::Null => Type::Null,
+        })
     }
 }
 
@@ -325,7 +293,7 @@ mod tests {
     fn test_examples() {
         let interpreter = Interpreter::default();
         interpreter
-            .assert_type(
+            .check_types(
                 &serde_json::from_value(json!({
                     "SUM": [
                         {"MULTIPLY": [2, 3]},
@@ -334,11 +302,10 @@ mod tests {
                     ]
                 }))
                 .unwrap(),
-                &Type::Number,
             )
             .unwrap();
         interpreter
-            .assert_type(
+            .check_types(
                 &serde_json::from_value(json!({
                     "SUM": [
                         {
@@ -350,11 +317,10 @@ mod tests {
                     ]
                 }))
                 .unwrap(),
-                &Type::Number,
             )
             .unwrap();
         interpreter
-            .assert_type(
+            .check_types(
                 &serde_json::from_value(json!({
                     "SUM": [
                         {
@@ -372,7 +338,6 @@ mod tests {
                     ]
                 }))
                 .unwrap(),
-                &Type::Number,
             )
             .unwrap();
     }
