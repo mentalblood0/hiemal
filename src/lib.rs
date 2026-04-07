@@ -1,4 +1,4 @@
-mod embedded_functions;
+pub mod embedded_functions;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
