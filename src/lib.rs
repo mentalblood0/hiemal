@@ -17,7 +17,7 @@ pub enum Type {
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
 pub struct With {
-    aliases: BTreeMap<String, Arc<Value>>,
+    with: BTreeMap<String, Arc<Value>>,
     compute: Box<Value>,
 }
 
@@ -168,7 +168,7 @@ impl Interpreter {
     ) -> Result<()> {
         match program {
             Value::With(with_clause) => {
-                for (alias_name, alias_value) in with_clause.aliases.iter() {
+                for (alias_name, alias_value) in with_clause.with.iter() {
                     context
                         .aliases
                         .entry(alias_name.clone())
@@ -176,7 +176,7 @@ impl Interpreter {
                         .push(alias_value.clone());
                 }
                 self.assert_type_with_context(&with_clause.compute, expected_type, context)?;
-                for alias_name in with_clause.aliases.keys() {
+                for alias_name in with_clause.with.keys() {
                     context.aliases.entry(alias_name.clone()).and_modify(
                         |aliases_with_this_name| {
                             aliases_with_this_name.pop();
@@ -356,7 +356,7 @@ mod tests {
                 &serde_json::from_value(json!({
                     "SUM": [
                         {
-                            "aliases": {"x": 2, "y": 3},
+                            "with": {"x": 2, "y": 3},
                             "compute": {"MULTIPLY": ["x", "x", "y"]}
                         },
                         {"LEN": {"CONCAT": ["lala", "lolo"]}},
@@ -372,7 +372,7 @@ mod tests {
                 &serde_json::from_value(json!({
                     "SUM": [
                         {
-                            "aliases": {
+                            "with": {
                                 "SQUARE": {"MULTIPLY": ["x", "x"]},
                                 "y": 3
                             },
