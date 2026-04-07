@@ -1,8 +1,9 @@
+mod embedded_functions;
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
-use paste::paste;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Type {
@@ -115,34 +116,6 @@ macro_rules! define_default_interpreter_supported_functions {
         }
     };
 }
-
-define_default_interpreter_supported_functions!(
-    SUM Type::Array(Box::new(Type::Number)), Type::Number, argument {
-        let mut result = 0f64;
-        for element in argument.as_array().unwrap().iter() {
-            result += element.as_number().unwrap();
-        }
-        Ok(Value::Number(result))
-    }
-    MULTIPLY Type::Array(Box::new(Type::Number)), Type::Number, argument {
-        let mut result = 1f64;
-        for element in argument.as_array().unwrap().iter() {
-            result *= element.as_number().unwrap();
-        }
-        Ok(Value::Number(result))
-    }
-    LEN Type::String, Type::Number, argument {
-        let result = argument.as_string().unwrap().len() as f64;
-        Ok(Value::Number(result))
-    }
-    CONCAT Type::Array(Box::new(Type::String)), Type::String, argument {
-        let mut result = String::new();
-        for element in argument.as_array().unwrap().iter() {
-            result += element.as_string().unwrap();
-        }
-        Ok(Value::String(result))
-    }
-);
 
 pub struct TypeCheckingContext {
     pub path: Vec<String>,
