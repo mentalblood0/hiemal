@@ -3,7 +3,7 @@ pub mod embedded_functions;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Type {
@@ -14,6 +14,7 @@ pub enum Type {
     Array(Box<Type>),
     AnyObject,
     Object(BTreeMap<String, Type>),
+    GenericArgument(String),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -128,6 +129,125 @@ pub struct ComputationContext {
 }
 
 impl Interpreter {
+    fn get_generic_arguments_values(
+        &self,
+        generic: &Type,
+        actual: &Type,
+    ) -> Result<BTreeMap<String, Type>> {
+        let mut result = BTreeMap::new();
+        self.get_generic_arguments_values_into_vec(generic, actual, &mut result)?;
+        Ok(result)
+    }
+
+    fn get_generic_arguments_values_into_vec(
+        &self,
+        generic: &Type,
+        actual: &Type,
+        result: &mut BTreeMap<String, Type>,
+    ) -> Result<()> {
+        match (generic, actual) {
+            (Type::GenericArgument(name), _) => {
+                result.insert(name.clone(), actual.clone());
+            }
+            (Type::Object(generic_object_argument), Type::Object(actual_object_argument)) => {
+                for (key, generic_value_type) in generic_object_argument {
+                    self.get_generic_arguments_values_into_vec(
+                        generic_value_type,
+                        actual_object_argument.get(key).ok_or_else(|| {
+                            anyhow!(
+                                "Actual type {actual:?} does not match generic type {generic:?} \
+                                 because generic type contains key {key:?} while actual type is \
+                                 not"
+                            )
+                        })?,
+                        result,
+                    )
+                    .with_context(|| {
+                        format!(
+                            "Actual {actual:?} does not match generic type {generic:?} because \
+                             actual type value type at key {key:?} does not match that of generic \
+                             type"
+                        )
+                    })?;
+                }
+            }
+            (Type::Array(generic_array_argument), Type::Array(actual_array_argument)) => {
+                self.get_generic_arguments_values_into_vec(
+                    generic_array_argument,
+                    actual_array_argument,
+                    result,
+                )
+                .with_context(|| {
+                    format!("Actual {actual:?} does not match generic type {generic:?}")
+                })?;
+            }
+            (Type::Number, Type::Number) => {}
+            (Type::String, Type::String) => {}
+            (Type::Bool, Type::Bool) => {}
+            (Type::Null, Type::Null) => {}
+            _ => {
+                return Err(anyhow!(
+                    "Actual type {actual:?} does not match generic type {generic:?}"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn substitute_generic_arguments_values(
+        &self,
+        generic: &mut Type,
+        values: &BTreeMap<String, Type>,
+    ) -> Result<()> {
+        match generic {
+            Type::GenericArgument(name) => {
+                values
+                    .get(name)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Can not resolve generic argument {name:?} from other generic-actual \
+                             types"
+                        )
+                    })
+                    .cloned();
+            }
+            Type::Object(object) => {
+                for value in object.values_mut() {
+                    self.substitute_generic_arguments_values(value, values)?;
+                }
+            }
+            Type::Array(element) => {
+                self.substitute_generic_arguments_values(element, values)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn assert_generic_types_usage(
+        &self,
+        generic_and_actual_pairs: &BTreeMap<Type, Type>,
+    ) -> Result<()> {
+        let mut generic_and_actual_pairs_iterator = generic_and_actual_pairs.iter();
+        let (first_generic, first_actual) = generic_and_actual_pairs_iterator.next().unwrap();
+        let generic_arguments_values =
+            self.get_generic_arguments_values(first_generic, first_actual)?;
+        for (other_generic, other_actual) in generic_and_actual_pairs_iterator {
+            let mut substitution_result = other_generic.clone();
+            self.substitute_generic_arguments_values(
+                &mut substitution_result,
+                &generic_arguments_values,
+            )?;
+            if &substitution_result != other_actual {
+                return Err(anyhow!(
+                    "Generic type {other_generic:?} for {generic_arguments_values:?} does not \
+                     match actual type {other_actual:?}"
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub fn compute(&self, program: &Value) -> Result<Value> {
         self.check_types(program)?;
         self.compute_with_context(
