@@ -200,12 +200,20 @@ impl Interpreter {
                         .cloned()
                     {
                         if let Value::Object(ref aliases) = **arguments {
-                            for (alias_name, alias_value) in aliases.iter() {
+                            if aliases.len() == 1 {
                                 context
                                     .aliases
-                                    .entry(alias_name.clone())
+                                    .entry("_".to_string())
                                     .or_default()
-                                    .push(alias_value.clone());
+                                    .push(arguments.clone());
+                            } else {
+                                for (alias_name, alias_value) in aliases.iter() {
+                                    context
+                                        .aliases
+                                        .entry(alias_name.clone())
+                                        .or_default()
+                                        .push(alias_value.clone());
+                                }
                             }
                         } else {
                             context
@@ -218,12 +226,20 @@ impl Interpreter {
                         let result = self.compute_with_context(&aliased_value, context)?;
                         context.path.pop();
                         if let Value::Object(ref aliases) = **arguments {
-                            for alias_name in aliases.keys() {
-                                context.aliases.entry(alias_name.clone()).and_modify(
+                            if aliases.len() == 1 {
+                                context.aliases.entry("_".to_string()).and_modify(
                                     |aliases_with_this_name| {
                                         aliases_with_this_name.pop();
                                     },
                                 );
+                            } else {
+                                for alias_name in aliases.keys() {
+                                    context.aliases.entry(alias_name.clone()).and_modify(
+                                        |aliases_with_this_name| {
+                                            aliases_with_this_name.pop();
+                                        },
+                                    );
+                                }
                             }
                         } else {
                             context.aliases.entry("_".to_string()).and_modify(
@@ -314,12 +330,20 @@ impl Interpreter {
                         .cloned()
                     {
                         if let Value::Object(ref aliases) = **arguments {
-                            for (alias_name, alias_value) in aliases.iter() {
+                            if aliases.len() == 1 {
                                 context
                                     .aliases
-                                    .entry(alias_name.clone())
+                                    .entry("_".to_string())
                                     .or_default()
-                                    .push(alias_value.clone());
+                                    .push(arguments.clone());
+                            } else {
+                                for (alias_name, alias_value) in aliases.iter() {
+                                    context
+                                        .aliases
+                                        .entry(alias_name.clone())
+                                        .or_default()
+                                        .push(alias_value.clone());
+                                }
                             }
                         } else {
                             context
@@ -332,12 +356,20 @@ impl Interpreter {
                         let result = self.get_type(&aliased_value, context)?;
                         context.path.pop();
                         if let Value::Object(ref aliases) = **arguments {
-                            for alias_name in aliases.keys() {
-                                context.aliases.entry(alias_name.clone()).and_modify(
+                            if aliases.len() == 1 {
+                                context.aliases.entry("_".to_string()).and_modify(
                                     |aliases_with_this_name| {
                                         aliases_with_this_name.pop();
                                     },
                                 );
+                            } else {
+                                for alias_name in aliases.keys() {
+                                    context.aliases.entry(alias_name.clone()).and_modify(
+                                        |aliases_with_this_name| {
+                                            aliases_with_this_name.pop();
+                                        },
+                                    );
+                                }
                             }
                         } else {
                             context.aliases.entry("_".to_string()).and_modify(
@@ -389,7 +421,9 @@ impl Interpreter {
                     context,
                 )?;
                 for (array_element_index, array_element) in array[1..].iter().enumerate() {
+                    context.path.push(array_element_index.to_string());
                     let current_array_element_type = self.get_type(array_element, context)?;
+                    context.path.pop();
                     if current_array_element_type != array_element_type {
                         return Err(anyhow!(
                             "Expected all elements of array at path {:?} to be of type \
@@ -475,8 +509,16 @@ mod tests {
                                 },
                                 "COMPUTE": {"MULTIPLY": [
                                     {"SQUARE": {"_": 2}},
-                                    {"SQUARE": 2},
-                                    "y"
+                                    {
+                                        "SQUARE": {
+                                            "SQUARE": {
+                                                "MULTIPLY": [
+                                                    {"SQUARE": 1},
+                                                    {"SUM": ["y", -1]}
+                                                ]
+                                            }
+                                        }
+                                    }
                                 ]}
                             },
                             {"LEN": {"CONCAT": ["lala", "lolo"]}},
@@ -486,7 +528,7 @@ mod tests {
                     .unwrap(),
                 )
                 .unwrap(),
-            Value::Number(60.0)
+            Value::Number(76.0)
         );
     }
 }
