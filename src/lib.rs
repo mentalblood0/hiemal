@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, PartialOrd, Ord, Eq)]
 pub enum Type {
     Number,
     String,
@@ -14,7 +14,7 @@ pub enum Type {
     Array(Box<Type>),
     AnyObject,
     Object(BTreeMap<String, Type>),
-    GenericArgument(String),
+    GenericArgument(u8),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -133,7 +133,7 @@ impl Interpreter {
         &self,
         generic: &Type,
         actual: &Type,
-    ) -> Result<BTreeMap<String, Type>> {
+    ) -> Result<BTreeMap<u8, Type>> {
         let mut result = BTreeMap::new();
         self.get_generic_arguments_values_into_vec(generic, actual, &mut result)?;
         Ok(result)
@@ -143,11 +143,11 @@ impl Interpreter {
         &self,
         generic: &Type,
         actual: &Type,
-        result: &mut BTreeMap<String, Type>,
+        result: &mut BTreeMap<u8, Type>,
     ) -> Result<()> {
         match (generic, actual) {
-            (Type::GenericArgument(name), _) => {
-                result.insert(name.clone(), actual.clone());
+            (Type::GenericArgument(id), _) => {
+                result.insert(*id, actual.clone());
             }
             (Type::Object(generic_object_argument), Type::Object(actual_object_argument)) => {
                 for (key, generic_value_type) in generic_object_argument {
@@ -197,15 +197,15 @@ impl Interpreter {
     fn substitute_generic_arguments_values(
         &self,
         generic: &mut Type,
-        values: &BTreeMap<String, Type>,
+        values: &BTreeMap<u8, Type>,
     ) -> Result<()> {
         match generic {
-            Type::GenericArgument(name) => {
+            Type::GenericArgument(id) => {
                 values
-                    .get(name)
+                    .get(id)
                     .ok_or_else(|| {
                         anyhow!(
-                            "Can not resolve generic argument {name:?} from other generic-actual \
+                            "Can not resolve generic argument {id:?} from other generic-actual \
                              types"
                         )
                     })
@@ -454,7 +454,7 @@ impl Interpreter {
                         let arguments_type = self.get_type(arguments, context)?;
                         if arguments_type != function.argument_type {
                             return Err(anyhow!(
-                                "Expected type {:?} of argument for function at path {:?}, but \
+                                "Expected argument of type {:?} for function at path {:?}, but \
                                  got {arguments_type:?}",
                                 &function.argument_type,
                                 context.path
@@ -599,5 +599,20 @@ mod tests {
                 .unwrap(),
             Value::Number(76.0)
         );
+        interpreter
+            .assert_generic_types_usage(&BTreeMap::from([(
+                Type::Array(Box::new(Type::GenericArgument(0))),
+                Type::Array(Box::new(Type::Number)),
+            )]))
+            .unwrap();
+        interpreter
+            .assert_generic_types_usage(&BTreeMap::from([(Type::GenericArgument(0), Type::Number)]))
+            .unwrap();
+        // assert_eq!(
+        //     interpreter
+        //         .compute(&serde_json::from_value(json!({"SIZE": [1, 2, 3]})).unwrap())
+        //         .unwrap(),
+        //     Value::Number(3.0)
+        // );
     }
 }

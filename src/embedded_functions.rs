@@ -21,8 +21,10 @@ define_default_interpreter_supported_functions!(
         Ok(Value::Number(result))
     }
     LEN Type::String, Type::Number, argument {
-        let result = argument.as_string().unwrap().len() as f64;
-        Ok(Value::Number(result))
+        Ok(Value::Number(argument.as_string().unwrap().len() as f64))
+    }
+    SIZE Type::Array(Box::new(Type::GenericArgument(0))), Type::GenericArgument(0), argument {
+        Ok(Value::Number(argument.as_array().unwrap().len() as f64))
     }
     CONCAT Type::Array(Box::new(Type::String)), Type::String, argument {
         let mut result = String::new();
