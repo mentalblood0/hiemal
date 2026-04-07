@@ -193,13 +193,13 @@ impl Interpreter {
             Value::Object(object) => {
                 if object.len() == 1 {
                     let (name, arguments) = object.iter().next().unwrap();
-                    if let Value::Object(ref aliases) = **arguments {
-                        if let Some(aliased_value) = context
-                            .aliases
-                            .get(name)
-                            .and_then(|aliases_with_this_name| aliases_with_this_name.last())
-                            .cloned()
-                        {
+                    if let Some(aliased_value) = context
+                        .aliases
+                        .get(name)
+                        .and_then(|aliases_with_this_name| aliases_with_this_name.last())
+                        .cloned()
+                    {
+                        if let Value::Object(ref aliases) = **arguments {
                             for (alias_name, alias_value) in aliases.iter() {
                                 context
                                     .aliases
@@ -207,9 +207,17 @@ impl Interpreter {
                                     .or_default()
                                     .push(alias_value.clone());
                             }
-                            context.path.push(name.clone());
-                            let result = self.compute_with_context(&aliased_value, context)?;
-                            context.path.pop();
+                        } else {
+                            context
+                                .aliases
+                                .entry("_".to_string())
+                                .or_default()
+                                .push(arguments.clone());
+                        }
+                        context.path.push(name.clone());
+                        let result = self.compute_with_context(&aliased_value, context)?;
+                        context.path.pop();
+                        if let Value::Object(ref aliases) = **arguments {
                             for alias_name in aliases.keys() {
                                 context.aliases.entry(alias_name.clone()).and_modify(
                                     |aliases_with_this_name| {
@@ -217,8 +225,14 @@ impl Interpreter {
                                     },
                                 );
                             }
-                            return Ok(result);
+                        } else {
+                            context.aliases.entry("_".to_string()).and_modify(
+                                |aliases_with_this_name| {
+                                    aliases_with_this_name.pop();
+                                },
+                            );
                         }
+                        return Ok(result);
                     }
                     let function = self.supported_functions.get(name).unwrap();
                     context.path.push(name.clone());
@@ -293,13 +307,13 @@ impl Interpreter {
             Value::Object(object) => {
                 if object.len() == 1 {
                     let (name, arguments) = object.iter().next().unwrap();
-                    if let Value::Object(ref aliases) = **arguments {
-                        if let Some(aliased_value) = context
-                            .aliases
-                            .get(name)
-                            .and_then(|aliases_with_this_name| aliases_with_this_name.last())
-                            .cloned()
-                        {
+                    if let Some(aliased_value) = context
+                        .aliases
+                        .get(name)
+                        .and_then(|aliases_with_this_name| aliases_with_this_name.last())
+                        .cloned()
+                    {
+                        if let Value::Object(ref aliases) = **arguments {
                             for (alias_name, alias_value) in aliases.iter() {
                                 context
                                     .aliases
@@ -307,9 +321,17 @@ impl Interpreter {
                                     .or_default()
                                     .push(alias_value.clone());
                             }
-                            context.path.push(name.clone());
-                            let result = self.get_type(&aliased_value, context)?;
-                            context.path.pop();
+                        } else {
+                            context
+                                .aliases
+                                .entry("_".to_string())
+                                .or_default()
+                                .push(arguments.clone());
+                        }
+                        context.path.push(name.clone());
+                        let result = self.get_type(&aliased_value, context)?;
+                        context.path.pop();
+                        if let Value::Object(ref aliases) = **arguments {
                             for alias_name in aliases.keys() {
                                 context.aliases.entry(alias_name.clone()).and_modify(
                                     |aliases_with_this_name| {
@@ -317,8 +339,14 @@ impl Interpreter {
                                     },
                                 );
                             }
-                            return Ok(result);
+                        } else {
+                            context.aliases.entry("_".to_string()).and_modify(
+                                |aliases_with_this_name| {
+                                    aliases_with_this_name.pop();
+                                },
+                            );
                         }
+                        return Ok(result);
                     }
                     if let Some(function) = self.supported_functions.get(name) {
                         context.path.push(name.clone());
@@ -442,11 +470,12 @@ mod tests {
                         "SUM": [
                             {
                                 "WITH": {
-                                    "SQUARE": {"MULTIPLY": ["x", "x"]},
+                                    "SQUARE": {"MULTIPLY": ["_", "_"]},
                                     "y": 3
                                 },
                                 "COMPUTE": {"MULTIPLY": [
-                                    {"SQUARE": {"x": 2}},
+                                    {"SQUARE": {"_": 2}},
+                                    {"SQUARE": 2},
                                     "y"
                                 ]}
                             },
@@ -457,7 +486,7 @@ mod tests {
                     .unwrap(),
                 )
                 .unwrap(),
-            Value::Number(24.0)
+            Value::Number(60.0)
         );
     }
 }
