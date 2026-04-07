@@ -22,12 +22,6 @@ pub struct With {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum Clause {
-    With(With),
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
 #[serde(untagged)]
 pub enum Value {
     Number(f64),
@@ -35,7 +29,7 @@ pub enum Value {
     Bool(bool),
     Null,
     Array(Vec<Value>),
-    Clause(Clause),
+    With(With),
     Object(BTreeMap<String, Arc<Value>>),
 }
 
@@ -173,25 +167,23 @@ impl Interpreter {
         context: &mut TypeCheckingContext,
     ) -> Result<()> {
         match program {
-            Value::Clause(clause) => match clause {
-                Clause::With(with_clause) => {
-                    for (alias_name, alias_value) in with_clause.aliases.iter() {
-                        context
-                            .aliases
-                            .entry(alias_name.clone())
-                            .or_default()
-                            .push(alias_value.clone());
-                    }
-                    self.assert_type_with_context(&with_clause.compute, expected_type, context)?;
-                    for alias_name in with_clause.aliases.keys() {
-                        context.aliases.entry(alias_name.clone()).and_modify(
-                            |aliases_with_this_name| {
-                                aliases_with_this_name.pop();
-                            },
-                        );
-                    }
+            Value::With(with_clause) => {
+                for (alias_name, alias_value) in with_clause.aliases.iter() {
+                    context
+                        .aliases
+                        .entry(alias_name.clone())
+                        .or_default()
+                        .push(alias_value.clone());
                 }
-            },
+                self.assert_type_with_context(&with_clause.compute, expected_type, context)?;
+                for alias_name in with_clause.aliases.keys() {
+                    context.aliases.entry(alias_name.clone()).and_modify(
+                        |aliases_with_this_name| {
+                            aliases_with_this_name.pop();
+                        },
+                    );
+                }
+            }
             Value::Object(object) => {
                 if object.len() == 1 {
                     let (name, arguments) = object.iter().next().unwrap();
@@ -364,10 +356,8 @@ mod tests {
                 &serde_json::from_value(json!({
                     "SUM": [
                         {
-                            "WITH": {
-                                "aliases": {"x": 2, "y": 3},
-                                "compute": {"MULTIPLY": ["x", "x", "y"]}
-                            }
+                            "aliases": {"x": 2, "y": 3},
+                            "compute": {"MULTIPLY": ["x", "x", "y"]}
                         },
                         {"LEN": {"CONCAT": ["lala", "lolo"]}},
                         4
@@ -382,16 +372,14 @@ mod tests {
                 &serde_json::from_value(json!({
                     "SUM": [
                         {
-                            "WITH": {
-                                "aliases": {
-                                    "SQUARE": {"MULTIPLY": ["x", "x"]},
-                                    "y": 3
-                                },
-                                "compute": {"MULTIPLY": [
-                                    {"SQUARE": {"x": 2}},
-                                    "y"
-                                ]}
-                            }
+                            "aliases": {
+                                "SQUARE": {"MULTIPLY": ["x", "x"]},
+                                "y": 3
+                            },
+                            "compute": {"MULTIPLY": [
+                                {"SQUARE": {"x": 2}},
+                                "y"
+                            ]}
                         },
                         {"LEN": {"CONCAT": ["lala", "lolo"]}},
                         4
