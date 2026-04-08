@@ -24,10 +24,16 @@ pub struct With {
     compute: Arc<Value>,
 }
 
+fn default_alias() -> String {
+    "_".to_string()
+}
+
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Map {
     map: Arc<Value>,
+    #[serde(default = "default_alias")]
+    as_alias: String,
     through: Arc<Value>,
 }
 
@@ -35,6 +41,8 @@ pub struct Map {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Filter {
     filter: Arc<Value>,
+    #[serde(default = "default_alias")]
+    as_alias: String,
     through: Arc<Value>,
 }
 
@@ -287,13 +295,13 @@ impl Interpreter {
                 for element in array.iter() {
                     context
                         .aliases
-                        .entry("_".to_string())
+                        .entry(map_clause.as_alias.clone())
                         .or_default()
                         .push(element.clone());
                     result.push(self.compute_with_context(map_clause.through.clone(), context)?);
                     context
                         .aliases
-                        .entry("_".to_string())
+                        .entry(map_clause.as_alias.clone())
                         .and_modify(|aliases_with_this_name| {
                             aliases_with_this_name.pop();
                         });
@@ -310,7 +318,7 @@ impl Interpreter {
                 for element in array.iter() {
                     context
                         .aliases
-                        .entry("_".to_string())
+                        .entry(filter_clause.as_alias.clone())
                         .or_default()
                         .push(element.clone());
                     if self
@@ -322,7 +330,7 @@ impl Interpreter {
                     }
                     context
                         .aliases
-                        .entry("_".to_string())
+                        .entry(filter_clause.as_alias.clone())
                         .and_modify(|aliases_with_this_name| {
                             aliases_with_this_name.pop();
                         });
@@ -457,16 +465,17 @@ impl Interpreter {
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context
                             .aliases
-                            .entry("_".to_string())
+                            .entry(map_clause.as_alias.clone())
                             .or_default()
                             .push(TypeOrValue::Type(*array_element_type.clone()));
                         let result =
                             self.get_type(TypeOrValue::Value(map_clause.through.clone()), context)?;
-                        context.aliases.entry("_".to_string()).and_modify(
-                            |aliases_with_this_name| {
+                        context
+                            .aliases
+                            .entry(map_clause.as_alias.clone())
+                            .and_modify(|aliases_with_this_name| {
                                 aliases_with_this_name.pop();
-                            },
-                        );
+                            });
                         Type::Array(Box::new(result))
                     } else {
                         return Err(anyhow!(
@@ -481,7 +490,7 @@ impl Interpreter {
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context
                             .aliases
-                            .entry("_".to_string())
+                            .entry(filter_clause.as_alias.clone())
                             .or_default()
                             .push(TypeOrValue::Type(*array_element_type.clone()));
                         let actual_through_type = self
@@ -493,11 +502,12 @@ impl Interpreter {
                                 context.path
                             ));
                         }
-                        context.aliases.entry("_".to_string()).and_modify(
-                            |aliases_with_this_name| {
+                        context
+                            .aliases
+                            .entry(filter_clause.as_alias.clone())
+                            .and_modify(|aliases_with_this_name| {
                                 aliases_with_this_name.pop();
-                            },
-                        );
+                            });
                         Type::Array(array_element_type.clone())
                     } else {
                         return Err(anyhow!(
@@ -812,7 +822,8 @@ mod tests {
                                 2,
                                 1
                             ],
-                            "THROUGH": {"IS_SORTED": ["_", 2]}
+                            "AS_ALIAS": "x",
+                            "THROUGH": {"IS_SORTED": ["x", 2]}
                         }
                     }))
                     .unwrap()
