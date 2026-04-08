@@ -25,6 +25,13 @@ pub struct With {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub struct Map {
+    map: Arc<Value>,
+    through: Arc<Value>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum Value {
     Number(f64),
@@ -33,6 +40,7 @@ pub enum Value {
     Null,
     Array(Vec<Arc<Value>>),
     With(With),
+    Map(Map),
     Object(BTreeMap<String, Arc<Value>>),
 }
 
@@ -118,9 +126,15 @@ macro_rules! define_default_interpreter_supported_functions {
     };
 }
 
+#[derive(Clone)]
+pub enum TypeOrValue {
+    Type(Type),
+    Value(Arc<Value>),
+}
+
 pub struct TypeCheckingContext {
     pub path: Vec<String>,
-    pub aliases: BTreeMap<String, Vec<Arc<Value>>>,
+    pub aliases: BTreeMap<String, Vec<TypeOrValue>>,
 }
 
 pub struct ComputationContext {
@@ -255,6 +269,29 @@ impl Interpreter {
                 }
                 result
             }
+            Value::Map(ref map_clause) => {
+                let array = self
+                    .compute_with_context(map_clause.map.clone(), context)?
+                    .as_array()
+                    .unwrap()
+                    .clone();
+                let mut result = vec![];
+                for element in array.iter() {
+                    context
+                        .aliases
+                        .entry("_".to_string())
+                        .or_default()
+                        .push(element.clone());
+                    result.push(self.compute_with_context(map_clause.through.clone(), context)?);
+                    context
+                        .aliases
+                        .entry("_".to_string())
+                        .and_modify(|aliases_with_this_name| {
+                            aliases_with_this_name.pop();
+                        });
+                }
+                Arc::new(Value::Array(result))
+            }
             Value::Object(ref object) => {
                 if object.len() == 1 {
                     let (name, arguments) = object.iter().next().unwrap();
@@ -346,7 +383,7 @@ impl Interpreter {
 
     pub fn check_types(&self, program: Arc<Value>) -> Result<Type> {
         self.get_type(
-            program,
+            TypeOrValue::Value(program),
             &mut TypeCheckingContext {
                 path: vec![],
                 aliases: BTreeMap::new(),
@@ -354,169 +391,203 @@ impl Interpreter {
         )
     }
 
-    fn get_type(&self, program: Arc<Value>, context: &mut TypeCheckingContext) -> Result<Type> {
-        Ok(match *program {
-            Value::With(ref with_clause) => {
-                for (alias_name, alias_value) in with_clause.with.iter() {
-                    context
-                        .aliases
-                        .entry(alias_name.clone())
-                        .or_default()
-                        .push(alias_value.clone());
+    fn get_type(&self, program: TypeOrValue, context: &mut TypeCheckingContext) -> Result<Type> {
+        Ok(match program {
+            TypeOrValue::Type(program_type) => program_type.clone(),
+            TypeOrValue::Value(program) => match *program {
+                Value::With(ref with_clause) => {
+                    for (alias_name, alias_value) in with_clause.with.iter() {
+                        context
+                            .aliases
+                            .entry(alias_name.clone())
+                            .or_default()
+                            .push(TypeOrValue::Value(alias_value.clone()));
+                    }
+                    let result =
+                        self.get_type(TypeOrValue::Value(with_clause.compute.clone()), context)?;
+                    for alias_name in with_clause.with.keys() {
+                        context.aliases.entry(alias_name.clone()).and_modify(
+                            |aliases_with_this_name| {
+                                aliases_with_this_name.pop();
+                            },
+                        );
+                    }
+                    result
                 }
-                let result = self.get_type(with_clause.compute.clone(), context)?;
-                for alias_name in with_clause.with.keys() {
-                    context.aliases.entry(alias_name.clone()).and_modify(
-                        |aliases_with_this_name| {
-                            aliases_with_this_name.pop();
-                        },
-                    );
+                Value::Map(ref map_clause) => {
+                    let actual_array_type =
+                        self.get_type(TypeOrValue::Value(map_clause.map.clone()), context)?;
+                    if let Type::Array(ref array_element_type) = actual_array_type {
+                        context
+                            .aliases
+                            .entry("_".to_string())
+                            .or_default()
+                            .push(TypeOrValue::Type(*array_element_type.clone()));
+                        let result =
+                            self.get_type(TypeOrValue::Value(map_clause.through.clone()), context)?;
+                        context.aliases.entry("_".to_string()).and_modify(
+                            |aliases_with_this_name| {
+                                aliases_with_this_name.pop();
+                            },
+                        );
+                        Type::Array(Box::new(result))
+                    } else {
+                        return Err(anyhow!(
+                            "Expected array for map clause at path {:?}, got {actual_array_type:?}",
+                            context.path
+                        ));
+                    }
                 }
-                result
-            }
-            Value::Object(ref object) => {
-                if object.len() == 1 {
-                    let (name, arguments) = object.iter().next().unwrap();
-                    if let Some(aliased_value) = context
-                        .aliases
-                        .get(name)
-                        .and_then(|aliases_with_this_name| aliases_with_this_name.last())
-                        .cloned()
-                    {
-                        let mut aliases_names = vec![];
-                        if let Value::Object(ref aliases) = **arguments {
-                            if aliases.len() == 1 {
+                Value::Object(ref object) => {
+                    if object.len() == 1 {
+                        let (name, arguments) = object.iter().next().unwrap();
+                        if let Some(aliased_value) = context
+                            .aliases
+                            .get(name)
+                            .and_then(|aliases_with_this_name| aliases_with_this_name.last())
+                            .cloned()
+                        {
+                            let mut aliases_names = vec![];
+                            if let Value::Object(ref aliases) = **arguments {
+                                if aliases.len() == 1 {
+                                    aliases_names.push("_".to_string());
+                                    context
+                                        .aliases
+                                        .entry("_".to_string())
+                                        .or_default()
+                                        .push(TypeOrValue::Value(arguments.clone()));
+                                } else {
+                                    for (alias_name, alias_value) in aliases.iter() {
+                                        aliases_names.push(alias_name.clone());
+                                        context
+                                            .aliases
+                                            .entry(alias_name.clone())
+                                            .or_default()
+                                            .push(TypeOrValue::Value(alias_value.clone()));
+                                    }
+                                }
+                            } else {
                                 aliases_names.push("_".to_string());
                                 context
                                     .aliases
                                     .entry("_".to_string())
                                     .or_default()
-                                    .push(arguments.clone());
-                            } else {
-                                for (alias_name, alias_value) in aliases.iter() {
-                                    aliases_names.push(alias_name.clone());
-                                    context
-                                        .aliases
-                                        .entry(alias_name.clone())
-                                        .or_default()
-                                        .push(alias_value.clone());
-                                }
+                                    .push(TypeOrValue::Value(arguments.clone()));
                             }
-                        } else {
-                            aliases_names.push("_".to_string());
-                            context
-                                .aliases
-                                .entry("_".to_string())
-                                .or_default()
-                                .push(arguments.clone());
+                            context.path.push(name.clone());
+                            let result = self.get_type(aliased_value, context)?;
+                            context.path.pop();
+                            for alias_name in aliases_names {
+                                context.aliases.entry(alias_name.clone()).and_modify(
+                                    |aliases_with_this_name| {
+                                        aliases_with_this_name.pop();
+                                    },
+                                );
+                            }
+                            return Ok(result);
                         }
-                        context.path.push(name.clone());
-                        let result = self.get_type(aliased_value, context)?;
-                        context.path.pop();
-                        for alias_name in aliases_names {
-                            context.aliases.entry(alias_name.clone()).and_modify(
-                                |aliases_with_this_name| {
-                                    aliases_with_this_name.pop();
-                                },
-                            );
-                        }
-                        return Ok(result);
-                    }
-                    if let Some(function) = self.supported_functions.get(name) {
-                        context.path.push(name.clone());
-                        let arguments_type = self.get_type(arguments.clone(), context)?;
-                        let generic_arguments_values = &self.get_generic_arguments_values(
-                            &function.argument_type,
-                            &arguments_type,
-                        )?;
-                        let concrete_arguments_type = {
-                            let mut result = function.argument_type.clone();
-                            self.substitute_generic_arguments_values(
-                                &mut result,
-                                generic_arguments_values,
-                            )?;
-                            result
-                        };
-                        let concrete_return_type = {
-                            let mut result = function.return_type.clone();
-                            self.substitute_generic_arguments_values(
-                                &mut result,
-                                generic_arguments_values,
-                            )?;
-                            result
-                        };
-                        if arguments_type != concrete_arguments_type {
-                            return Err(anyhow!(
-                                "Expected argument of type {:?} for function at path {:?}, but \
-                                 got {arguments_type:?}",
+                        if let Some(function) = self.supported_functions.get(name) {
+                            context.path.push(name.clone());
+                            let arguments_type =
+                                self.get_type(TypeOrValue::Value(arguments.clone()), context)?;
+                            let generic_arguments_values = &self.get_generic_arguments_values(
                                 &function.argument_type,
-                                context.path
+                                &arguments_type,
+                            )?;
+                            let concrete_arguments_type = {
+                                let mut result = function.argument_type.clone();
+                                self.substitute_generic_arguments_values(
+                                    &mut result,
+                                    generic_arguments_values,
+                                )?;
+                                result
+                            };
+                            let concrete_return_type = {
+                                let mut result = function.return_type.clone();
+                                self.substitute_generic_arguments_values(
+                                    &mut result,
+                                    generic_arguments_values,
+                                )?;
+                                result
+                            };
+                            if arguments_type != concrete_arguments_type {
+                                return Err(anyhow!(
+                                    "Expected argument of type {:?} for function at path {:?}, \
+                                     but got {arguments_type:?}",
+                                    &function.argument_type,
+                                    context.path
+                                ));
+                            }
+                            context.path.pop();
+                            concrete_return_type
+                        } else {
+                            return Err(anyhow!(
+                                "Expected supported function at path {:?}, but got unsupported \
+                                 function {name:?}. Supported functions are: {:?}",
+                                context.path,
+                                self.supported_functions
+                                    .keys()
+                                    .cloned()
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
                             ));
                         }
-                        context.path.pop();
-                        concrete_return_type
                     } else {
-                        return Err(anyhow!(
-                            "Expected supported function at path {:?}, but got unsupported \
-                             function {name:?}. Supported functions are: {:?}",
-                            context.path,
-                            self.supported_functions
-                                .keys()
-                                .cloned()
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ));
-                    }
-                } else {
-                    let mut result_map = BTreeMap::new();
-                    for (key, value) in object {
-                        result_map.insert(key.clone(), self.get_type(value.clone(), context)?);
-                    }
-                    Type::Object(result_map)
-                }
-            }
-            Value::Array(ref array) => {
-                let array_element_type = self.get_type(
-                    array
-                        .first()
-                        .ok_or_else(|| {
-                            anyhow!("Expected non-empty array at path {:?}", context.path)
-                        })?
-                        .clone(),
-                    context,
-                )?;
-                for (array_element_index, array_element) in array[1..].iter().enumerate() {
-                    context.path.push(array_element_index.to_string());
-                    let current_array_element_type =
-                        self.get_type(array_element.clone(), context)?;
-                    context.path.pop();
-                    if current_array_element_type != array_element_type {
-                        return Err(anyhow!(
-                            "Expected all elements of array at path {:?} to be of type \
-                             {array_element_type:?} (as first element), but got element of type \
-                             {current_array_element_type:?} at index {}",
-                            context.path,
-                            array_element_index + 1
-                        ));
+                        let mut result_map = BTreeMap::new();
+                        for (key, value) in object {
+                            result_map.insert(
+                                key.clone(),
+                                self.get_type(TypeOrValue::Value(value.clone()), context)?,
+                            );
+                        }
+                        Type::Object(result_map)
                     }
                 }
-                Type::Array(Box::new(array_element_type))
-            }
-            Value::String(ref string) => {
-                if let Some(aliased_value) = context
-                    .aliases
-                    .get(string)
-                    .and_then(|values_for_this_name| values_for_this_name.last())
-                    .cloned()
-                {
-                    self.get_type(aliased_value.clone(), context)?
-                } else {
-                    Type::String
+                Value::Array(ref array) => {
+                    let array_element_type = self.get_type(
+                        TypeOrValue::Value(
+                            array
+                                .first()
+                                .ok_or_else(|| {
+                                    anyhow!("Expected non-empty array at path {:?}", context.path)
+                                })?
+                                .clone(),
+                        ),
+                        context,
+                    )?;
+                    for (array_element_index, array_element) in array[1..].iter().enumerate() {
+                        context.path.push(array_element_index.to_string());
+                        let current_array_element_type =
+                            self.get_type(TypeOrValue::Value(array_element.clone()), context)?;
+                        context.path.pop();
+                        if current_array_element_type != array_element_type {
+                            return Err(anyhow!(
+                                "Expected all elements of array at path {:?} to be of type \
+                                 {array_element_type:?} (as first element), but got element of \
+                                 type {current_array_element_type:?} at index {}",
+                                context.path,
+                                array_element_index + 1
+                            ));
+                        }
+                    }
+                    Type::Array(Box::new(array_element_type))
                 }
-            }
-            Value::Number(_) => Type::Number,
-            Value::Bool(_) => Type::Bool,
-            Value::Null => Type::Null,
+                Value::String(ref string) => {
+                    if let Some(aliased_value) = context
+                        .aliases
+                        .get(string)
+                        .and_then(|values_for_this_name| values_for_this_name.last())
+                        .cloned()
+                    {
+                        self.get_type(aliased_value.clone(), context)?
+                    } else {
+                        Type::String
+                    }
+                }
+                Value::Number(_) => Type::Number,
+                Value::Bool(_) => Type::Bool,
+                Value::Null => Type::Null,
+            },
         })
     }
 }
@@ -524,14 +595,21 @@ impl Interpreter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::OnceLock;
+
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
+    fn default_interpreter() -> &'static Interpreter {
+        static INTERPRETER: OnceLock<Interpreter> = OnceLock::new();
+        INTERPRETER.get_or_init(|| Interpreter::default())
+    }
+
     #[test]
-    fn test_examples() {
-        let interpreter = Interpreter::default();
+    fn test_simple_embedded_functions() {
         assert_eq!(
-            interpreter
+            *default_interpreter()
                 .compute(
                     serde_json::from_value(json!({
                         "SUM": [
@@ -543,10 +621,14 @@ mod tests {
                     .unwrap(),
                 )
                 .unwrap(),
-            Arc::new(Value::Number(18.0))
+            Value::Number(18.0)
         );
+    }
+
+    #[test]
+    fn test_with() {
         assert_eq!(
-            interpreter
+            *default_interpreter()
                 .compute(Arc::new(
                     serde_json::from_value(json!({
                         "SUM": [
@@ -561,10 +643,14 @@ mod tests {
                     .unwrap(),
                 ))
                 .unwrap(),
-            Arc::new(Value::Number(24.0))
+            Value::Number(24.0)
         );
+    }
+
+    #[test]
+    fn test_user_functions_definitions() {
         assert_eq!(
-            interpreter
+            *default_interpreter()
                 .compute(Arc::new(
                     serde_json::from_value(json!({
                         "SUM": [
@@ -594,10 +680,14 @@ mod tests {
                     .unwrap()
                 ),)
                 .unwrap(),
-            Arc::new(Value::Number(76.0))
+            Value::Number(76.0)
         );
+    }
+
+    #[test]
+    fn test_generics() {
         assert_eq!(
-            interpreter
+            *default_interpreter()
                 .compute(Arc::new(
                     serde_json::from_value(json!({
                         "SUM": [
@@ -616,7 +706,36 @@ mod tests {
                     .unwrap()
                 ))
                 .unwrap(),
-            Arc::new(Value::Number(3.0))
+            Value::Number(3.0)
+        );
+    }
+
+    #[test]
+    fn test_map() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
+                        "SUM": {
+                            "MAP": [
+                                {
+                                    "GET_ELEMENT": {
+                                        "from": [
+                                            {"SIZE": [1, 2, 3]},
+                                            {"SIZE": ["a", "b"]},
+                                        ],
+                                        "at": 1
+                                    }
+                                },
+                                1
+                            ],
+                            "THROUGH": {"SUM": ["_", 1]}
+                        }
+                    }))
+                    .unwrap()
+                ))
+                .unwrap(),
+            Value::Number(5.0)
         );
     }
 }
