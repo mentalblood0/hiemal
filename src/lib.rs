@@ -133,8 +133,8 @@ impl Interpreter {
         &self,
         generic: &Type,
         actual: &Type,
-    ) -> Result<BTreeMap<u8, Type>> {
-        let mut result = BTreeMap::new();
+    ) -> Result<[Option<Type>; 256]> {
+        let mut result: [Option<Type>; 256] = std::array::from_fn(|_| None);
         self.get_generic_arguments_values_into_dict(generic, actual, &mut result)?;
         Ok(result)
     }
@@ -143,11 +143,11 @@ impl Interpreter {
         &self,
         generic: &Type,
         actual: &Type,
-        result: &mut BTreeMap<u8, Type>,
+        result: &mut [Option<Type>; 256],
     ) -> Result<()> {
         match (generic, actual) {
             (Type::GenericArgument(id), _) => {
-                result.insert(*id, actual.clone());
+                result[*id as usize] = Some(actual.clone());
             }
             (Type::Object(generic_object_argument), Type::Object(actual_object_argument)) => {
                 for (key, generic_value_type) in generic_object_argument {
@@ -197,19 +197,15 @@ impl Interpreter {
     fn substitute_generic_arguments_values(
         &self,
         generic: &mut Type,
-        values: &BTreeMap<u8, Type>,
+        values: &[Option<Type>; 256],
     ) -> Result<()> {
         match generic {
             Type::GenericArgument(id) => {
-                *generic = values
-                    .get(id)
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "Can not resolve generic argument {id:?} from other generic-actual \
-                             types"
-                        )
-                    })
-                    .cloned()?;
+                *generic = values.get(*id as usize).unwrap().clone().with_context(|| {
+                    format!(
+                        "Can not resolve generic argument {id:?} from other generic-actual types"
+                    )
+                })?;
             }
             Type::Object(object) => {
                 for value in object.values_mut() {
