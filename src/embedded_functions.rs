@@ -23,8 +23,17 @@ define_default_interpreter_supported_functions!(
     LEN Type::String, Type::Number, argument {
         Ok(Value::Number(argument.as_string().unwrap().len() as f64))
     }
-    SIZE Type::Array(Box::new(Type::GenericArgument(0))), Type::GenericArgument(0), argument {
+    SIZE Type::Array(Box::new(Type::GenericArgument(0))), Type::Number, argument {
         Ok(Value::Number(argument.as_array().unwrap().len() as f64))
+    }
+    GET_ELEMENT Type::Object(BTreeMap::from([
+        ("from".to_string(), Type::Array(Box::new(Type::GenericArgument(0)))),
+        ("at".to_string(), Type::Number)
+    ])), Type::GenericArgument(0), argument {
+        let arguments = argument.as_object().unwrap();
+        let array = arguments.get("from").unwrap().as_array().unwrap();
+        let index = arguments.get("at").unwrap().as_number().unwrap() as usize;
+        Ok(array.get(index).unwrap().clone())
     }
     CONCAT Type::Array(Box::new(Type::String)), Type::String, argument {
         let mut result = String::new();

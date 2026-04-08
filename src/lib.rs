@@ -135,11 +135,11 @@ impl Interpreter {
         actual: &Type,
     ) -> Result<BTreeMap<u8, Type>> {
         let mut result = BTreeMap::new();
-        self.get_generic_arguments_values_into_vec(generic, actual, &mut result)?;
+        self.get_generic_arguments_values_into_dict(generic, actual, &mut result)?;
         Ok(result)
     }
 
-    fn get_generic_arguments_values_into_vec(
+    fn get_generic_arguments_values_into_dict(
         &self,
         generic: &Type,
         actual: &Type,
@@ -151,7 +151,7 @@ impl Interpreter {
             }
             (Type::Object(generic_object_argument), Type::Object(actual_object_argument)) => {
                 for (key, generic_value_type) in generic_object_argument {
-                    self.get_generic_arguments_values_into_vec(
+                    self.get_generic_arguments_values_into_dict(
                         generic_value_type,
                         actual_object_argument.get(key).ok_or_else(|| {
                             anyhow!(
@@ -172,7 +172,7 @@ impl Interpreter {
                 }
             }
             (Type::Array(generic_array_argument), Type::Array(actual_array_argument)) => {
-                self.get_generic_arguments_values_into_vec(
+                self.get_generic_arguments_values_into_dict(
                     generic_array_argument,
                     actual_array_argument,
                     result,
@@ -220,30 +220,6 @@ impl Interpreter {
                 self.substitute_generic_arguments_values(element, values)?;
             }
             _ => {}
-        }
-        Ok(())
-    }
-
-    fn assert_generic_types_usage(
-        &self,
-        generic_and_actual_pairs: &BTreeMap<Type, Type>,
-    ) -> Result<()> {
-        let mut generic_and_actual_pairs_iterator = generic_and_actual_pairs.iter();
-        let (first_generic, first_actual) = generic_and_actual_pairs_iterator.next().unwrap();
-        let generic_arguments_values =
-            self.get_generic_arguments_values(first_generic, first_actual)?;
-        for (other_generic, other_actual) in generic_and_actual_pairs_iterator {
-            let mut substitution_result = other_generic.clone();
-            self.substitute_generic_arguments_values(
-                &mut substitution_result,
-                &generic_arguments_values,
-            )?;
-            if &substitution_result != other_actual {
-                return Err(anyhow!(
-                    "Generic type {other_generic:?} for {generic_arguments_values:?} does not \
-                     match actual type {other_actual:?}"
-                ));
-            }
         }
         Ok(())
     }
@@ -452,7 +428,27 @@ impl Interpreter {
                     if let Some(function) = self.supported_functions.get(name) {
                         context.path.push(name.clone());
                         let arguments_type = self.get_type(arguments, context)?;
-                        if arguments_type != function.argument_type {
+                        let generic_arguments_values = &self.get_generic_arguments_values(
+                            &function.argument_type,
+                            &arguments_type,
+                        )?;
+                        let concrete_arguments_type = {
+                            let mut result = function.argument_type.clone();
+                            self.substitute_generic_arguments_values(
+                                &mut result,
+                                generic_arguments_values,
+                            )?;
+                            result
+                        };
+                        let concrete_return_type = {
+                            let mut result = function.return_type.clone();
+                            self.substitute_generic_arguments_values(
+                                &mut result,
+                                generic_arguments_values,
+                            )?;
+                            result
+                        };
+                        if arguments_type != concrete_arguments_type {
                             return Err(anyhow!(
                                 "Expected argument of type {:?} for function at path {:?}, but \
                                  got {arguments_type:?}",
@@ -461,7 +457,7 @@ impl Interpreter {
                             ));
                         }
                         context.path.pop();
-                        function.return_type.clone()
+                        concrete_return_type
                     } else {
                         return Err(anyhow!(
                             "Expected supported function at path {:?}, but got unsupported \
@@ -485,7 +481,7 @@ impl Interpreter {
             Value::Array(array) => {
                 let array_element_type = self.get_type(
                     array.first().ok_or_else(|| {
-                        anyhow!("Eexpected non-empty array at path {:?}", context.path)
+                        anyhow!("Expected non-empty array at path {:?}", context.path)
                     })?,
                     context,
                 )?;
@@ -599,20 +595,27 @@ mod tests {
                 .unwrap(),
             Value::Number(76.0)
         );
-        interpreter
-            .assert_generic_types_usage(&BTreeMap::from([
-                (
-                    Type::Array(Box::new(Type::GenericArgument(0))),
-                    Type::Array(Box::new(Type::Number)),
-                ),
-                (Type::GenericArgument(0), Type::Number),
-            ]))
-            .unwrap();
-        // assert_eq!(
-        //     interpreter
-        //         .compute(&serde_json::from_value(json!({"SIZE": [1, 2, 3]})).unwrap())
-        //         .unwrap(),
-        //     Value::Number(3.0)
-        // );
+        assert_eq!(
+            interpreter
+                .compute(
+                    &serde_json::from_value(json!({
+                        "SUM": [
+                            {
+                                "GET_ELEMENT": {
+                                    "from": [
+                                        {"SIZE": [1, 2, 3]},
+                                        {"SIZE": ["a", "b"]},
+                                    ],
+                                    "at": 1
+                                }
+                            },
+                            1
+                        ]
+                    }))
+                    .unwrap()
+                )
+                .unwrap(),
+            Value::Number(3.0)
+        );
     }
 }
