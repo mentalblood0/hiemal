@@ -21,7 +21,7 @@ pub enum Type {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct With {
     with: BTreeMap<String, Arc<Value>>,
-    compute: Box<Value>,
+    compute: Arc<Value>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -31,7 +31,7 @@ pub enum Value {
     String(String),
     Bool(bool),
     Null,
-    Array(Vec<Value>),
+    Array(Vec<Arc<Value>>),
     With(With),
     Object(BTreeMap<String, Arc<Value>>),
 }
@@ -58,7 +58,7 @@ impl Value {
         }
     }
 
-    pub fn as_array(&self) -> Option<&Vec<Value>> {
+    pub fn as_array(&self) -> Option<&Vec<Arc<Value>>> {
         match self {
             Value::Array(result) => Some(result),
             _ => None,
@@ -76,7 +76,7 @@ impl Value {
 pub struct Function {
     pub argument_type: Type,
     pub return_type: Type,
-    pub function: fn(&Value) -> Result<Value>,
+    pub function: fn(Arc<Value>) -> Result<Arc<Value>>,
 }
 
 pub struct Interpreter {
@@ -93,7 +93,7 @@ macro_rules! define_default_interpreter_supported_functions {
     ) => {
         paste! {
             $(
-                pub fn [<$function_name:lower>]($function_argument: &Value) -> Result<Value> $function_code
+                pub fn [<$function_name:lower>]($function_argument: Arc<Value>) -> Result<Arc<Value>> $function_code
             )*
 
             impl Default for Interpreter {
@@ -220,8 +220,8 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn compute(&self, program: &Value) -> Result<Value> {
-        self.check_types(program)?;
+    pub fn compute(&self, program: Arc<Value>) -> Result<Arc<Value>> {
+        self.check_types(program.clone())?;
         self.compute_with_context(
             program,
             &mut ComputationContext {
@@ -233,11 +233,11 @@ impl Interpreter {
 
     fn compute_with_context(
         &self,
-        program: &Value,
+        program: Arc<Value>,
         context: &mut ComputationContext,
-    ) -> Result<Value> {
-        Ok(match program {
-            Value::With(with_clause) => {
+    ) -> Result<Arc<Value>> {
+        Ok(match *program {
+            Value::With(ref with_clause) => {
                 for (alias_name, alias_value) in with_clause.with.iter() {
                     context
                         .aliases
@@ -245,7 +245,7 @@ impl Interpreter {
                         .or_default()
                         .push(alias_value.clone());
                 }
-                let result = self.compute_with_context(&with_clause.compute, context)?;
+                let result = self.compute_with_context(with_clause.compute.clone(), context)?;
                 for alias_name in with_clause.with.keys() {
                     context.aliases.entry(alias_name.clone()).and_modify(
                         |aliases_with_this_name| {
@@ -255,7 +255,7 @@ impl Interpreter {
                 }
                 result
             }
-            Value::Object(object) => {
+            Value::Object(ref object) => {
                 if object.len() == 1 {
                     let (name, arguments) = object.iter().next().unwrap();
                     if let Some(aliased_value) = context
@@ -292,7 +292,7 @@ impl Interpreter {
                                 .push(arguments.clone());
                         }
                         context.path.push(name.clone());
-                        let result = self.compute_with_context(&aliased_value, context)?;
+                        let result = self.compute_with_context(aliased_value, context)?;
                         context.path.pop();
                         for alias_name in aliases_names {
                             context.aliases.entry(alias_name.clone()).and_modify(
@@ -305,8 +305,9 @@ impl Interpreter {
                     }
                     let function = self.supported_functions.get(name).unwrap();
                     context.path.push(name.clone());
-                    let arguments = self.compute_with_context(arguments, context)?;
-                    let result = (function.function)(&arguments)?;
+                    let function_arguments =
+                        self.compute_with_context(arguments.clone(), context)?;
+                    let result = (function.function)(function_arguments)?;
                     context.path.pop();
                     result
                 } else {
@@ -314,36 +315,36 @@ impl Interpreter {
                     for (key, value) in object {
                         result_map.insert(
                             key.clone(),
-                            Arc::new(self.compute_with_context(value, context)?),
+                            self.compute_with_context(value.clone(), context)?,
                         );
                     }
-                    Value::Object(result_map)
+                    Arc::new(Value::Object(result_map))
                 }
             }
-            Value::Array(array) => {
+            Value::Array(ref array) => {
                 let mut result_array = vec![];
                 for array_element in array.iter() {
-                    result_array.push(self.compute_with_context(array_element, context)?)
+                    result_array.push(self.compute_with_context(array_element.clone(), context)?)
                 }
-                Value::Array(result_array)
+                Arc::new(Value::Array(result_array))
             }
-            Value::String(string) => {
+            Value::String(ref string) => {
                 if let Some(aliased_value) = context
                     .aliases
                     .get(string)
                     .and_then(|values_for_this_name| values_for_this_name.last())
                     .cloned()
                 {
-                    self.compute_with_context(&aliased_value, context)?
+                    self.compute_with_context(aliased_value, context)?
                 } else {
-                    Value::String(string.clone())
+                    Arc::new(Value::String(string.clone()))
                 }
             }
-            value => value.clone(),
+            ref value => Arc::new(value.clone()),
         })
     }
 
-    pub fn check_types(&self, program: &Value) -> Result<Type> {
+    pub fn check_types(&self, program: Arc<Value>) -> Result<Type> {
         self.get_type(
             program,
             &mut TypeCheckingContext {
@@ -353,9 +354,9 @@ impl Interpreter {
         )
     }
 
-    fn get_type(&self, program: &Value, context: &mut TypeCheckingContext) -> Result<Type> {
-        Ok(match program {
-            Value::With(with_clause) => {
+    fn get_type(&self, program: Arc<Value>, context: &mut TypeCheckingContext) -> Result<Type> {
+        Ok(match *program {
+            Value::With(ref with_clause) => {
                 for (alias_name, alias_value) in with_clause.with.iter() {
                     context
                         .aliases
@@ -363,7 +364,7 @@ impl Interpreter {
                         .or_default()
                         .push(alias_value.clone());
                 }
-                let result = self.get_type(&with_clause.compute, context)?;
+                let result = self.get_type(with_clause.compute.clone(), context)?;
                 for alias_name in with_clause.with.keys() {
                     context.aliases.entry(alias_name.clone()).and_modify(
                         |aliases_with_this_name| {
@@ -373,7 +374,7 @@ impl Interpreter {
                 }
                 result
             }
-            Value::Object(object) => {
+            Value::Object(ref object) => {
                 if object.len() == 1 {
                     let (name, arguments) = object.iter().next().unwrap();
                     if let Some(aliased_value) = context
@@ -410,7 +411,7 @@ impl Interpreter {
                                 .push(arguments.clone());
                         }
                         context.path.push(name.clone());
-                        let result = self.get_type(&aliased_value, context)?;
+                        let result = self.get_type(aliased_value, context)?;
                         context.path.pop();
                         for alias_name in aliases_names {
                             context.aliases.entry(alias_name.clone()).and_modify(
@@ -423,7 +424,7 @@ impl Interpreter {
                     }
                     if let Some(function) = self.supported_functions.get(name) {
                         context.path.push(name.clone());
-                        let arguments_type = self.get_type(arguments, context)?;
+                        let arguments_type = self.get_type(arguments.clone(), context)?;
                         let generic_arguments_values = &self.get_generic_arguments_values(
                             &function.argument_type,
                             &arguments_type,
@@ -469,21 +470,25 @@ impl Interpreter {
                 } else {
                     let mut result_map = BTreeMap::new();
                     for (key, value) in object {
-                        result_map.insert(key.clone(), self.get_type(value, context)?);
+                        result_map.insert(key.clone(), self.get_type(value.clone(), context)?);
                     }
                     Type::Object(result_map)
                 }
             }
-            Value::Array(array) => {
+            Value::Array(ref array) => {
                 let array_element_type = self.get_type(
-                    array.first().ok_or_else(|| {
-                        anyhow!("Expected non-empty array at path {:?}", context.path)
-                    })?,
+                    array
+                        .first()
+                        .ok_or_else(|| {
+                            anyhow!("Expected non-empty array at path {:?}", context.path)
+                        })?
+                        .clone(),
                     context,
                 )?;
                 for (array_element_index, array_element) in array[1..].iter().enumerate() {
                     context.path.push(array_element_index.to_string());
-                    let current_array_element_type = self.get_type(array_element, context)?;
+                    let current_array_element_type =
+                        self.get_type(array_element.clone(), context)?;
                     context.path.pop();
                     if current_array_element_type != array_element_type {
                         return Err(anyhow!(
@@ -497,14 +502,14 @@ impl Interpreter {
                 }
                 Type::Array(Box::new(array_element_type))
             }
-            Value::String(string) => {
+            Value::String(ref string) => {
                 if let Some(aliased_value) = context
                     .aliases
                     .get(string)
                     .and_then(|values_for_this_name| values_for_this_name.last())
                     .cloned()
                 {
-                    self.get_type(&aliased_value, context)?
+                    self.get_type(aliased_value.clone(), context)?
                 } else {
                     Type::String
                 }
@@ -528,7 +533,7 @@ mod tests {
         assert_eq!(
             interpreter
                 .compute(
-                    &serde_json::from_value(json!({
+                    serde_json::from_value(json!({
                         "SUM": [
                             {"MULTIPLY": [2, 3]},
                             {"LEN": {"CONCAT": ["lala", "lolo"]}},
@@ -538,12 +543,12 @@ mod tests {
                     .unwrap(),
                 )
                 .unwrap(),
-            Value::Number(18.0)
+            Arc::new(Value::Number(18.0))
         );
         assert_eq!(
             interpreter
-                .compute(
-                    &serde_json::from_value(json!({
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
                         "SUM": [
                             {
                                 "WITH": {"x": 2, "y": 3},
@@ -554,14 +559,14 @@ mod tests {
                         ]
                     }))
                     .unwrap(),
-                )
+                ))
                 .unwrap(),
-            Value::Number(24.0)
+            Arc::new(Value::Number(24.0))
         );
         assert_eq!(
             interpreter
-                .compute(
-                    &serde_json::from_value(json!({
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
                         "SUM": [
                             {
                                 "WITH": {
@@ -586,15 +591,15 @@ mod tests {
                             4
                         ]
                     }))
-                    .unwrap(),
-                )
+                    .unwrap()
+                ),)
                 .unwrap(),
-            Value::Number(76.0)
+            Arc::new(Value::Number(76.0))
         );
         assert_eq!(
             interpreter
-                .compute(
-                    &serde_json::from_value(json!({
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
                         "SUM": [
                             {
                                 "GET_ELEMENT": {
@@ -609,9 +614,9 @@ mod tests {
                         ]
                     }))
                     .unwrap()
-                )
+                ))
                 .unwrap(),
-            Value::Number(3.0)
+            Arc::new(Value::Number(3.0))
         );
     }
 }
