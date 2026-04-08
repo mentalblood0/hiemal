@@ -48,6 +48,21 @@ define_default_interpreter_supported_functions!(
             Ok(arguments.get("else").unwrap().clone())
         }
     }
+    IS_SORTED Type::Array(Box::new(Type::Number)), Type::Bool, argument {
+        let mut previous = f64::MIN;
+        for current_value in argument.as_array().unwrap() {
+            let current = current_value.as_number().unwrap();
+            if current < previous {
+                return Ok(Arc::new(Value::Bool(false)))
+            }
+            previous = current;
+        }
+        Ok(Arc::new(Value::Bool(true)))
+    }
+    ARE_EQUAL Type::Array(Box::new(Type::GenericArgument(0))), Type::Bool, argument {
+        let array = argument.as_array().unwrap();
+        Ok(Arc::new(Value::Bool(array.get(0).map_or(true, |first| array.iter().all(|x| x == first)))))
+    }
     CONCAT Type::Array(Box::new(Type::String)), Type::String, argument {
         let mut result = String::new();
         for element in argument.as_array().unwrap().iter() {

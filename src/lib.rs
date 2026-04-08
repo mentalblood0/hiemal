@@ -32,6 +32,13 @@ pub struct Map {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub struct Filter {
+    filter: Arc<Value>,
+    through: Arc<Value>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum Value {
     Number(f64),
@@ -41,6 +48,7 @@ pub enum Value {
     Array(Vec<Arc<Value>>),
     With(With),
     Map(Map),
+    Filter(Filter),
     Object(BTreeMap<String, Arc<Value>>),
 }
 
@@ -292,6 +300,35 @@ impl Interpreter {
                 }
                 Arc::new(Value::Array(result))
             }
+            Value::Filter(ref filter_clause) => {
+                let array = self
+                    .compute_with_context(filter_clause.filter.clone(), context)?
+                    .as_array()
+                    .unwrap()
+                    .clone();
+                let mut result = vec![];
+                for element in array.iter() {
+                    context
+                        .aliases
+                        .entry("_".to_string())
+                        .or_default()
+                        .push(element.clone());
+                    if self
+                        .compute_with_context(filter_clause.through.clone(), context)?
+                        .as_bool()
+                        .unwrap()
+                    {
+                        result.push(element.clone());
+                    }
+                    context
+                        .aliases
+                        .entry("_".to_string())
+                        .and_modify(|aliases_with_this_name| {
+                            aliases_with_this_name.pop();
+                        });
+                }
+                Arc::new(Value::Array(result))
+            }
             Value::Object(ref object) => {
                 if object.len() == 1 {
                     let (name, arguments) = object.iter().next().unwrap();
@@ -434,6 +471,38 @@ impl Interpreter {
                     } else {
                         return Err(anyhow!(
                             "Expected array for map clause at path {:?}, got {actual_array_type:?}",
+                            context.path
+                        ));
+                    }
+                }
+                Value::Filter(ref filter_clause) => {
+                    let actual_array_type =
+                        self.get_type(TypeOrValue::Value(filter_clause.filter.clone()), context)?;
+                    if let Type::Array(ref array_element_type) = actual_array_type {
+                        context
+                            .aliases
+                            .entry("_".to_string())
+                            .or_default()
+                            .push(TypeOrValue::Type(*array_element_type.clone()));
+                        let actual_through_type = self
+                            .get_type(TypeOrValue::Value(filter_clause.through.clone()), context)?;
+                        if actual_through_type != Type::Bool {
+                            return Err(anyhow!(
+                                "Expected filter at path {:?} use function wich returns boolean \
+                                 value, but it returns {actual_through_type:?}",
+                                context.path
+                            ));
+                        }
+                        context.aliases.entry("_".to_string()).and_modify(
+                            |aliases_with_this_name| {
+                                aliases_with_this_name.pop();
+                            },
+                        );
+                        Type::Array(array_element_type.clone())
+                    } else {
+                        return Err(anyhow!(
+                            "Expected array for filter clause at path {:?}, got \
+                             {actual_array_type:?}",
                             context.path
                         ));
                     }
@@ -718,15 +787,7 @@ mod tests {
                     serde_json::from_value(json!({
                         "SUM": {
                             "MAP": [
-                                {
-                                    "GET_ELEMENT": {
-                                        "from": [
-                                            {"SIZE": [1, 2, 3]},
-                                            {"SIZE": ["a", "b"]},
-                                        ],
-                                        "at": 1
-                                    }
-                                },
+                                {"SIZE": [1, 2, 3]},
                                 1
                             ],
                             "THROUGH": {"SUM": ["_", 1]}
@@ -735,7 +796,29 @@ mod tests {
                     .unwrap()
                 ))
                 .unwrap(),
-            Value::Number(5.0)
+            Value::Number(6.0)
+        );
+    }
+
+    #[test]
+    fn test_filter() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
+                        "SUM": {
+                            "FILTER": [
+                                {"SIZE": [1, 2, 3]},
+                                2,
+                                1
+                            ],
+                            "THROUGH": {"IS_SORTED": ["_", 2]}
+                        }
+                    }))
+                    .unwrap()
+                ))
+                .unwrap(),
+            Value::Number(3.0)
         );
     }
 }
