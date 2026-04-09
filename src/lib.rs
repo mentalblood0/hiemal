@@ -904,4 +904,32 @@ mod tests {
             Value::Number(14.0)
         );
     }
+
+    #[test]
+    fn test_factorial() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
+                        "WITH": {
+                            "FACTORIAL": {
+                                "MULTIPLY": {
+                                    "SEQUENCE": {
+                                        "from": 1,
+                                        "to": "_",
+                                        "step": 1
+                                    }
+                                }
+                            }
+                        },
+                        "COMPUTE": {
+                            "FACTORIAL": 5
+                        }
+                    }))
+                    .unwrap()
+                ))
+                .unwrap(),
+            Value::Number(120.0)
+        );
+    }
 }

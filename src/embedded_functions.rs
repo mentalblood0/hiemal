@@ -70,4 +70,26 @@ define_default_interpreter_supported_functions!(
         }
         Ok(Arc::new(Value::String(result)))
     }
+    SEQUENCE Type::Object(BTreeMap::from([
+        ("from".to_string(), Type::Number),
+        ("to".to_string(), Type::Number),
+        ("step".to_string(), Type::Number)
+    ])), Type::Array(Box::new(Type::Number)), argument {
+        let arguments = argument.as_object().unwrap();
+        let from = arguments.get("from").unwrap().as_number().unwrap();
+        let to = arguments.get("to").unwrap().as_number().unwrap();
+        let step = arguments.get("step").unwrap().as_number().unwrap();
+        let estimated_capacity = (to - from) / step;
+        if estimated_capacity <= 0.0 {
+            Ok(Arc::new(Value::Array(vec![])))
+        } else {
+            let mut result = Vec::with_capacity(estimated_capacity as usize);
+            let mut current = from;
+            while current <= to {
+                result.push(Arc::new(Value::Number(current)));
+                current += step;
+            }
+            Ok(Arc::new(Value::Array(result)))
+        }
+    }
 );
