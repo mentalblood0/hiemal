@@ -46,6 +46,26 @@ pub struct Filter {
     through: Arc<Value>,
 }
 
+fn default_current_value_alias() -> String {
+    "current".to_string()
+}
+
+fn default_accumulator_value_alias() -> String {
+    "accumulator".to_string()
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub struct Reduce {
+    reduce: Arc<Value>,
+    #[serde(default = "default_current_value_alias")]
+    as_alias: String,
+    starting_with: Arc<Value>,
+    #[serde(default = "default_accumulator_value_alias")]
+    accumulating_in_alias: String,
+    through: Arc<Value>,
+}
+
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum Value {
@@ -57,6 +77,7 @@ pub enum Value {
     With(With),
     Map(Map),
     Filter(Filter),
+    Reduce(Reduce),
     Object(BTreeMap<String, Arc<Value>>),
 }
 
@@ -97,6 +118,7 @@ impl Value {
     }
 }
 
+#[derive(Debug)]
 pub struct Function {
     pub argument_type: Type,
     pub return_type: Type,
@@ -142,7 +164,7 @@ macro_rules! define_default_interpreter_supported_functions {
     };
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum TypeOrValue {
     Type(Type),
     Value(Arc<Value>),
@@ -153,9 +175,37 @@ pub struct TypeCheckingContext {
     pub aliases: BTreeMap<String, Vec<TypeOrValue>>,
 }
 
+impl TypeCheckingContext {
+    pub fn add_alias(&mut self, name: String, type_or_value: TypeOrValue) {
+        self.aliases.entry(name).or_default().push(type_or_value);
+    }
+
+    pub fn remove_alias(&mut self, name: String) {
+        self.aliases
+            .entry(name)
+            .and_modify(|aliases_with_this_name| {
+                aliases_with_this_name.pop();
+            });
+    }
+}
+
 pub struct ComputationContext {
     pub path: Vec<String>,
     pub aliases: BTreeMap<String, Vec<Arc<Value>>>,
+}
+
+impl ComputationContext {
+    pub fn add_alias(&mut self, name: String, value: Arc<Value>) {
+        self.aliases.entry(name).or_default().push(value);
+    }
+
+    pub fn remove_alias(&mut self, name: String) {
+        self.aliases
+            .entry(name)
+            .and_modify(|aliases_with_this_name| {
+                aliases_with_this_name.pop();
+            });
+    }
 }
 
 impl Interpreter {
@@ -185,7 +235,7 @@ impl Interpreter {
                         generic_value_type,
                         actual_object_argument.get(key).ok_or_else(|| {
                             anyhow!(
-                                "Actual type {actual:?} does not match generic type {generic:?} \
+                                "Actual type {actual:?} does not match expected type {generic:?} \
                                  because generic type contains key {key:?} while actual type is \
                                  not"
                             )
@@ -194,9 +244,9 @@ impl Interpreter {
                     )
                     .with_context(|| {
                         format!(
-                            "Actual {actual:?} does not match generic type {generic:?} because \
-                             actual type value type at key {key:?} does not match that of generic \
-                             type"
+                            "Actual type {actual:?} does not match expected type {generic:?} \
+                             because actual type value type at key {key:?} does not match that of \
+                             generic type"
                         )
                     })?;
                 }
@@ -208,7 +258,7 @@ impl Interpreter {
                     result,
                 )
                 .with_context(|| {
-                    format!("Actual {actual:?} does not match generic type {generic:?}")
+                    format!("Actual type {actual:?} does not match expected type {generic:?}")
                 })?;
             }
             (Type::Number, Type::Number) => {}
@@ -217,7 +267,7 @@ impl Interpreter {
             (Type::Null, Type::Null) => {}
             _ => {
                 return Err(anyhow!(
-                    "Actual type {actual:?} does not match generic type {generic:?}"
+                    "Actual type {actual:?} does not match expected type {generic:?}"
                 ));
             }
         }
@@ -269,19 +319,11 @@ impl Interpreter {
         Ok(match *program {
             Value::With(ref with_clause) => {
                 for (alias_name, alias_value) in with_clause.with.iter() {
-                    context
-                        .aliases
-                        .entry(alias_name.clone())
-                        .or_default()
-                        .push(alias_value.clone());
+                    context.add_alias(alias_name.clone(), alias_value.clone());
                 }
                 let result = self.compute_with_context(with_clause.compute.clone(), context)?;
                 for alias_name in with_clause.with.keys() {
-                    context.aliases.entry(alias_name.clone()).and_modify(
-                        |aliases_with_this_name| {
-                            aliases_with_this_name.pop();
-                        },
-                    );
+                    context.remove_alias(alias_name.clone());
                 }
                 result
             }
@@ -293,18 +335,9 @@ impl Interpreter {
                     .clone();
                 let mut result = vec![];
                 for element in array.iter() {
-                    context
-                        .aliases
-                        .entry(map_clause.as_alias.clone())
-                        .or_default()
-                        .push(element.clone());
+                    context.add_alias(map_clause.as_alias.clone(), element.clone());
                     result.push(self.compute_with_context(map_clause.through.clone(), context)?);
-                    context
-                        .aliases
-                        .entry(map_clause.as_alias.clone())
-                        .and_modify(|aliases_with_this_name| {
-                            aliases_with_this_name.pop();
-                        });
+                    context.remove_alias(map_clause.as_alias.clone());
                 }
                 Arc::new(Value::Array(result))
             }
@@ -316,11 +349,7 @@ impl Interpreter {
                     .clone();
                 let mut result = vec![];
                 for element in array.iter() {
-                    context
-                        .aliases
-                        .entry(filter_clause.as_alias.clone())
-                        .or_default()
-                        .push(element.clone());
+                    context.add_alias(filter_clause.as_alias.clone(), element.clone());
                     if self
                         .compute_with_context(filter_clause.through.clone(), context)?
                         .as_bool()
@@ -328,14 +357,26 @@ impl Interpreter {
                     {
                         result.push(element.clone());
                     }
-                    context
-                        .aliases
-                        .entry(filter_clause.as_alias.clone())
-                        .and_modify(|aliases_with_this_name| {
-                            aliases_with_this_name.pop();
-                        });
+                    context.remove_alias(filter_clause.as_alias.clone());
                 }
                 Arc::new(Value::Array(result))
+            }
+            Value::Reduce(ref reduce_clause) => {
+                let array = self
+                    .compute_with_context(reduce_clause.reduce.clone(), context)?
+                    .as_array()
+                    .unwrap()
+                    .clone();
+                let mut result =
+                    self.compute_with_context(reduce_clause.starting_with.clone(), context)?;
+                for element in array.iter() {
+                    context.add_alias(reduce_clause.as_alias.clone(), element.clone());
+                    context.add_alias(reduce_clause.accumulating_in_alias.clone(), result.clone());
+                    result = self.compute_with_context(reduce_clause.through.clone(), context)?;
+                    context.remove_alias(reduce_clause.as_alias.clone());
+                    context.remove_alias(reduce_clause.accumulating_in_alias.clone());
+                }
+                result
             }
             Value::Object(ref object) => {
                 if object.len() == 1 {
@@ -350,38 +391,22 @@ impl Interpreter {
                         if let Value::Object(ref aliases) = **arguments {
                             if aliases.len() == 1 {
                                 aliases_names.push("_".to_string());
-                                context
-                                    .aliases
-                                    .entry("_".to_string())
-                                    .or_default()
-                                    .push(arguments.clone());
+                                context.add_alias("_".to_string(), arguments.clone());
                             } else {
                                 for (alias_name, alias_value) in aliases.iter() {
                                     aliases_names.push(alias_name.clone());
-                                    context
-                                        .aliases
-                                        .entry(alias_name.clone())
-                                        .or_default()
-                                        .push(alias_value.clone());
+                                    context.add_alias(alias_name.clone(), alias_value.clone());
                                 }
                             }
                         } else {
                             aliases_names.push("_".to_string());
-                            context
-                                .aliases
-                                .entry("_".to_string())
-                                .or_default()
-                                .push(arguments.clone());
+                            context.add_alias("_".to_string(), arguments.clone());
                         }
                         context.path.push(name.clone());
                         let result = self.compute_with_context(aliased_value, context)?;
                         context.path.pop();
                         for alias_name in aliases_names {
-                            context.aliases.entry(alias_name.clone()).and_modify(
-                                |aliases_with_this_name| {
-                                    aliases_with_this_name.pop();
-                                },
-                            );
+                            context.remove_alias(alias_name);
                         }
                         return Ok(result);
                     }
@@ -437,25 +462,18 @@ impl Interpreter {
     }
 
     fn get_type(&self, program: TypeOrValue, context: &mut TypeCheckingContext) -> Result<Type> {
-        Ok(match program {
+        let result = match &program {
             TypeOrValue::Type(program_type) => program_type.clone(),
-            TypeOrValue::Value(program) => match *program {
+            TypeOrValue::Value(program) => match **program {
                 Value::With(ref with_clause) => {
                     for (alias_name, alias_value) in with_clause.with.iter() {
                         context
-                            .aliases
-                            .entry(alias_name.clone())
-                            .or_default()
-                            .push(TypeOrValue::Value(alias_value.clone()));
+                            .add_alias(alias_name.clone(), TypeOrValue::Value(alias_value.clone()));
                     }
                     let result =
                         self.get_type(TypeOrValue::Value(with_clause.compute.clone()), context)?;
                     for alias_name in with_clause.with.keys() {
-                        context.aliases.entry(alias_name.clone()).and_modify(
-                            |aliases_with_this_name| {
-                                aliases_with_this_name.pop();
-                            },
-                        );
+                        context.remove_alias(alias_name.clone());
                     }
                     result
                 }
@@ -463,19 +481,13 @@ impl Interpreter {
                     let actual_array_type =
                         self.get_type(TypeOrValue::Value(map_clause.map.clone()), context)?;
                     if let Type::Array(ref array_element_type) = actual_array_type {
-                        context
-                            .aliases
-                            .entry(map_clause.as_alias.clone())
-                            .or_default()
-                            .push(TypeOrValue::Type(*array_element_type.clone()));
+                        context.add_alias(
+                            map_clause.as_alias.clone(),
+                            TypeOrValue::Type(*array_element_type.clone()),
+                        );
                         let result =
                             self.get_type(TypeOrValue::Value(map_clause.through.clone()), context)?;
-                        context
-                            .aliases
-                            .entry(map_clause.as_alias.clone())
-                            .and_modify(|aliases_with_this_name| {
-                                aliases_with_this_name.pop();
-                            });
+                        context.remove_alias(map_clause.as_alias.clone());
                         Type::Array(Box::new(result))
                     } else {
                         return Err(anyhow!(
@@ -488,30 +500,63 @@ impl Interpreter {
                     let actual_array_type =
                         self.get_type(TypeOrValue::Value(filter_clause.filter.clone()), context)?;
                     if let Type::Array(ref array_element_type) = actual_array_type {
-                        context
-                            .aliases
-                            .entry(filter_clause.as_alias.clone())
-                            .or_default()
-                            .push(TypeOrValue::Type(*array_element_type.clone()));
-                        let actual_through_type = self
+                        context.add_alias(
+                            filter_clause.as_alias.clone(),
+                            TypeOrValue::Type(*array_element_type.clone()),
+                        );
+                        let through_type = self
                             .get_type(TypeOrValue::Value(filter_clause.through.clone()), context)?;
-                        if actual_through_type != Type::Bool {
+                        if through_type != Type::Bool {
                             return Err(anyhow!(
-                                "Expected filter at path {:?} use function wich returns boolean \
-                                 value, but it returns {actual_through_type:?}",
+                                "Expected filter at path {:?} to use function which returns \
+                                 boolean value, but it returns {through_type:?}",
                                 context.path
                             ));
                         }
-                        context
-                            .aliases
-                            .entry(filter_clause.as_alias.clone())
-                            .and_modify(|aliases_with_this_name| {
-                                aliases_with_this_name.pop();
-                            });
+                        context.remove_alias(filter_clause.as_alias.clone());
                         Type::Array(array_element_type.clone())
                     } else {
                         return Err(anyhow!(
                             "Expected array for filter clause at path {:?}, got \
+                             {actual_array_type:?}",
+                            context.path
+                        ));
+                    }
+                }
+                Value::Reduce(ref reduce_clause) => {
+                    let actual_array_type =
+                        self.get_type(TypeOrValue::Value(reduce_clause.reduce.clone()), context)?;
+                    if let Type::Array(ref array_element_type) = actual_array_type {
+                        let starting_with_type = self.get_type(
+                            TypeOrValue::Value(reduce_clause.starting_with.clone()),
+                            context,
+                        )?;
+                        context.add_alias(
+                            reduce_clause.as_alias.clone(),
+                            TypeOrValue::Type(*array_element_type.clone()),
+                        );
+                        context.add_alias(
+                            reduce_clause.accumulating_in_alias.clone(),
+                            TypeOrValue::Type(starting_with_type.clone()),
+                        );
+                        let through_type = self
+                            .get_type(TypeOrValue::Value(reduce_clause.through.clone()), context)?;
+                        if through_type != starting_with_type {
+                            return Err(anyhow!(
+                                "Expected reduce at path {:?} to use function which returns value \
+                                 of type {starting_with_type:?} (as is starting value), but it \
+                                 returns {through_type:?}",
+                                context.path
+                            ));
+                        }
+                        let result = self
+                            .get_type(TypeOrValue::Value(reduce_clause.through.clone()), context)?;
+                        context.remove_alias(reduce_clause.as_alias.clone());
+                        context.remove_alias(reduce_clause.accumulating_in_alias.clone());
+                        Type::Array(Box::new(result))
+                    } else {
+                        return Err(anyhow!(
+                            "Expected array for reduce clause at path {:?}, got \
                              {actual_array_type:?}",
                             context.path
                         ));
@@ -530,38 +575,31 @@ impl Interpreter {
                             if let Value::Object(ref aliases) = **arguments {
                                 if aliases.len() == 1 {
                                     aliases_names.push("_".to_string());
-                                    context
-                                        .aliases
-                                        .entry("_".to_string())
-                                        .or_default()
-                                        .push(TypeOrValue::Value(arguments.clone()));
+                                    context.add_alias(
+                                        "_".to_string(),
+                                        TypeOrValue::Value(arguments.clone()),
+                                    );
                                 } else {
                                     for (alias_name, alias_value) in aliases.iter() {
                                         aliases_names.push(alias_name.clone());
-                                        context
-                                            .aliases
-                                            .entry(alias_name.clone())
-                                            .or_default()
-                                            .push(TypeOrValue::Value(alias_value.clone()));
+                                        context.add_alias(
+                                            alias_name.clone(),
+                                            TypeOrValue::Value(alias_value.clone()),
+                                        );
                                     }
                                 }
                             } else {
                                 aliases_names.push("_".to_string());
-                                context
-                                    .aliases
-                                    .entry("_".to_string())
-                                    .or_default()
-                                    .push(TypeOrValue::Value(arguments.clone()));
+                                context.add_alias(
+                                    "_".to_string(),
+                                    TypeOrValue::Value(arguments.clone()),
+                                );
                             }
                             context.path.push(name.clone());
                             let result = self.get_type(aliased_value, context)?;
                             context.path.pop();
                             for alias_name in aliases_names {
-                                context.aliases.entry(alias_name.clone()).and_modify(
-                                    |aliases_with_this_name| {
-                                        aliases_with_this_name.pop();
-                                    },
-                                );
+                                context.remove_alias(alias_name);
                             }
                             return Ok(result);
                         }
@@ -569,10 +607,17 @@ impl Interpreter {
                             context.path.push(name.clone());
                             let arguments_type =
                                 self.get_type(TypeOrValue::Value(arguments.clone()), context)?;
-                            let generic_arguments_values = &self.get_generic_arguments_values(
-                                &function.argument_type,
-                                &arguments_type,
-                            )?;
+                            let generic_arguments_values = &self
+                                .get_generic_arguments_values(
+                                    &function.argument_type,
+                                    &arguments_type,
+                                )
+                                .with_context(|| {
+                                    format!(
+                                        "Error while getting generic arguments values at path {:?}",
+                                        context.path
+                                    )
+                                })?;
                             let concrete_arguments_type = {
                                 let mut result = function.argument_type.clone();
                                 self.substitute_generic_arguments_values(
@@ -667,7 +712,8 @@ impl Interpreter {
                 Value::Bool(_) => Type::Bool,
                 Value::Null => Type::Null,
             },
-        })
+        };
+        Ok(result)
     }
 }
 
@@ -830,6 +876,32 @@ mod tests {
                 ))
                 .unwrap(),
             Value::Number(3.0)
+        );
+    }
+
+    #[test]
+    fn test_reduce() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
+                        "REDUCE": [
+                            {"SIZE": [1, 2, 3]},
+                            2,
+                            1
+                        ],
+                        "STARTING_WITH": 0,
+                        "THROUGH": {
+                            "SUM": [
+                                "accumulator",
+                                {"MULTIPLY": ["current", "current"]}
+                            ]
+                        }
+                    }))
+                    .unwrap()
+                ))
+                .unwrap(),
+            Value::Number(14.0)
         );
     }
 }
