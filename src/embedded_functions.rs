@@ -36,18 +36,6 @@ define_default_interpreter_supported_functions!(
         let index = arguments.get("at").unwrap().as_number().unwrap() as usize;
         Ok(array.get(index).unwrap().clone())
     }
-    BRANCHING Type::Object(BTreeMap::from([
-        ("if".to_string(), Type::Bool),
-        ("then".to_string(), Type::GenericArgument(0)),
-        ("else".to_string(), Type::GenericArgument(0))
-    ])), Type::GenericArgument(0), argument {
-        let arguments = argument.as_object().unwrap();
-        if arguments.get("if").unwrap().as_bool().unwrap() {
-            Ok(arguments.get("then").unwrap().clone())
-        } else {
-            Ok(arguments.get("else").unwrap().clone())
-        }
-    }
     IS_SORTED Type::Array(Box::new(Type::Number)), Type::Bool, argument {
         let mut previous = f64::MIN;
         for current_value in argument.as_array().unwrap() {

@@ -76,6 +76,16 @@ pub struct Reduce {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub struct Branching {
+    #[serde(rename = "IF")]
+    if_: Arc<Value>,
+    then: Arc<Value>,
+    #[serde(rename = "ELSE")]
+    else_: Arc<Value>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum Value {
     Number(f64),
@@ -87,6 +97,7 @@ pub enum Value {
     Map(Map),
     Filter(Filter),
     Reduce(Reduce),
+    Branching(Branching),
     Object(BTreeMap<String, Arc<Value>>),
 }
 
@@ -392,6 +403,17 @@ impl Interpreter {
                 }
                 result
             }
+            Value::Branching(ref branching_clause) => {
+                if self
+                    .compute_with_context(branching_clause.if_.clone(), context)?
+                    .as_bool()
+                    .unwrap()
+                {
+                    self.compute_with_context(branching_clause.then.clone(), context)?
+                } else {
+                    self.compute_with_context(branching_clause.else_.clone(), context)?
+                }
+            }
             Value::Object(ref object) => {
                 if object.len() == 1 {
                     let (name, arguments) = object.iter().next().unwrap();
@@ -580,6 +602,30 @@ impl Interpreter {
                             context.path
                         ));
                     }
+                }
+                Value::Branching(ref branching_clause) => {
+                    let if_branch_type =
+                        self.get_type(TypeOrValue::Value(branching_clause.if_.clone()), context)?;
+                    if if_branch_type != Type::Bool {
+                        return Err(anyhow!(
+                            "Expected condition at path {:?} to be of boolean type, but it is of \
+                             type {if_branch_type:?}",
+                            context.path
+                        ));
+                    }
+                    let then_branch_type =
+                        self.get_type(TypeOrValue::Value(branching_clause.then.clone()), context)?;
+                    let else_branch_type =
+                        self.get_type(TypeOrValue::Value(branching_clause.else_.clone()), context)?;
+                    if then_branch_type != else_branch_type {
+                        return Err(anyhow!(
+                            "Expected 'then' and 'else' branches at path {:?} to be of the same \
+                             type, but 'then' branch is of type {then_branch_type:?} and 'else' \
+                             branch is of type {else_branch_type:?}",
+                            context.path
+                        ));
+                    }
+                    then_branch_type
                 }
                 Value::Object(ref object) => {
                     if object.len() == 1 {
@@ -978,6 +1024,23 @@ mod tests {
                 Arc::new(Value::Number(2.0)),
                 Arc::new(Value::Number(1.0))
             ])
+        );
+    }
+
+    #[test]
+    fn test_branching() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
+                        "IF": true,
+                        "THEN": 1,
+                        "ELSE": 0
+                    }))
+                    .unwrap()
+                ))
+                .unwrap(),
+            Value::Number(1.0)
         );
     }
 }
