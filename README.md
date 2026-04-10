@@ -170,6 +170,6 @@ Every value of some type T can be replaced with expression which computes to val
 
 ### No metaprogramming
 
-Because with it static type-checking become nearly impossible
+Because with it static type-checking would become nearly impossible
 
 Computation done in one pass
