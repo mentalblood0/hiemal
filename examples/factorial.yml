@@ -1,0 +1,10 @@
+WITH:
+  DEFINITIONS:
+    FACTORIAL:
+      MULTIPLY:
+        SEQUENCE:
+          from: 1
+          to: _
+          step: 1
+COMPUTE:
+  FACTORIAL: 5
