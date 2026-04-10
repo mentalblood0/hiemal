@@ -2,10 +2,10 @@
 
 [![tests](https://github.com/mentalblood0/hiemal/actions/workflows/tests.yml/badge.svg)](https://github.com/mentalblood0/hiemal/actions/workflows/tests.yml)
 
-Design experiment
+Programming language which uses deserialization of abstract syntax tree as parsing
 
-Functional programming language on top of popular serialization formats such as JSON, YAML, TOML etc.
+- functional
+- infers and statically checks types
+- effectively a configuration files preprocessor
 
-Interpreter deserializes program into own types using `serde`, so the language has no own syntax
-
-Interpreter does type checking before program executing, so the language is statically typed
+Command line utility supports `YAML` and `JSON` through `serde`, yet library is fully format-agnostic as works with deserialized structures
