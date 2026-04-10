@@ -47,6 +47,7 @@ cat examples/factorial.json | hiemal json
 - IS_SORTED: [1, 2, 3]
 - ARE_EQUAL: [1, 2, 3]
 - ARE_EQUAL: [a, a, a]
+- ARE_EQUAL: [[1, 2], [1, 2], [1, 2]]
 - CONCAT: [ab, cd, efg]
 - SEQUENCE:
     from: 1
@@ -82,14 +83,14 @@ If function argument is object, it will be 'destructured':
 
 ```yaml
 WITH:
-  DEFINITIONS:
+  DEFINITIONS: # may be omitted
     FACTORIAL:
       MULTIPLY:
         SEQUENCE:
           from: 1
           to: a
           step: 1
-  CONSTANTS:
+  CONSTANTS: # may be omitted
     x:
       SUM: [2, 3]
 COMPUTE:
@@ -97,11 +98,9 @@ COMPUTE:
     a: x
 ```
 
-Definition computed when and each time it is needed in `COMPUTE`
+Definition is computed when and each time it is needed in `COMPUTE`
 
-Constant computed once before `COMPUTE`
-
-Both `DEFINITIONS` and `CONSTANTS` may be omitted, defaulting to empty objects
+Constant is computed once before `COMPUTE`
 
 Both definitions and constants become available only in `COMPUTE`, that's why
 
@@ -125,18 +124,16 @@ computes to `[2.0, 1.0]`
 
 ```yaml
 MAP: [1, 2, 3]
-AS_ALIAS: x # may be omitted, defaulting to "current"
+AS_ALIAS: x # may be omitted, defaulting to "_"
 THROUGH:
   MULTIPLY: [x, 2]
 ```
-
-`AS_ALIAS` may be omitted, defaulting to underscore `_`
 
 #### FILTER AS_ALIAS THROUGH
 
 ```yaml
 FILTER: [1, 2, 3]
-AS_ALIAS: x # may be omitted, defaulting to "current"
+AS_ALIAS: x # may be omitted, defaulting to "_"
 THROUGH:
   IS_SORTED: [x, 2]
 ```
@@ -166,7 +163,7 @@ ELSE: 2
 
 ### Composability
 
-Every value of some type T can be replaced with expression which computes to value of type T
+Every value of some type `T` can be replaced with expression which computes to value of type `T`
 
 ### No metaprogramming
 
