@@ -170,3 +170,7 @@ Every value of some type `T` can be replaced with expression which computes to v
 Because with it static type-checking would become nearly impossible
 
 Computation done in one pass
+
+## Name
+
+Named after [Hiemal](https://hiemalambient.bandcamp.com/) Dark/Drone Ambient artist from France
