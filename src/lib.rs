@@ -20,7 +20,16 @@ pub enum Type {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct With {
-    with: BTreeMap<String, Arc<Value>>,
+    #[serde(default)]
+    definitions: BTreeMap<String, Arc<Value>>,
+    #[serde(default)]
+    constants: BTreeMap<String, Arc<Value>>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub struct WithCompute {
+    with: With,
     compute: Arc<Value>,
 }
 
@@ -74,7 +83,7 @@ pub enum Value {
     Bool(bool),
     Null,
     Array(Vec<Arc<Value>>),
-    With(With),
+    With(WithCompute),
     Map(Map),
     Filter(Filter),
     Reduce(Reduce),
@@ -318,11 +327,16 @@ impl Interpreter {
     ) -> Result<Arc<Value>> {
         Ok(match *program {
             Value::With(ref with_clause) => {
-                for (alias_name, alias_value) in with_clause.with.iter() {
+                for (alias_name, alias_value) in with_clause.with.definitions.iter() {
                     context.add_alias(alias_name.clone(), alias_value.clone());
                 }
+                for (alias_name, alias_value) in with_clause.with.constants.iter() {
+                    let precomputed_value =
+                        self.compute_with_context(alias_value.clone(), context)?;
+                    context.add_alias(alias_name.clone(), precomputed_value);
+                }
                 let result = self.compute_with_context(with_clause.compute.clone(), context)?;
-                for alias_name in with_clause.with.keys() {
+                for alias_name in with_clause.with.definitions.keys() {
                     context.remove_alias(alias_name.clone());
                 }
                 result
@@ -466,13 +480,18 @@ impl Interpreter {
             TypeOrValue::Type(program_type) => program_type.clone(),
             TypeOrValue::Value(program) => match **program {
                 Value::With(ref with_clause) => {
-                    for (alias_name, alias_value) in with_clause.with.iter() {
+                    for (alias_name, alias_value) in with_clause.with.definitions.iter() {
                         context
                             .add_alias(alias_name.clone(), TypeOrValue::Value(alias_value.clone()));
                     }
+                    for (alias_name, alias_value) in with_clause.with.constants.iter() {
+                        let precomputed_type =
+                            self.get_type(TypeOrValue::Value(alias_value.clone()), context)?;
+                        context.add_alias(alias_name.clone(), TypeOrValue::Type(precomputed_type));
+                    }
                     let result =
                         self.get_type(TypeOrValue::Value(with_clause.compute.clone()), context)?;
-                    for alias_name in with_clause.with.keys() {
+                    for alias_name in with_clause.with.definitions.keys() {
                         context.remove_alias(alias_name.clone());
                     }
                     result
@@ -758,7 +777,7 @@ mod tests {
                     serde_json::from_value(json!({
                         "SUM": [
                             {
-                                "WITH": {"x": 2, "y": 3},
+                                "WITH": {"DEFINITIONS": {"x": 2, "y": 3}},
                                 "COMPUTE": {"MULTIPLY": ["x", "x", "y"]}
                             },
                             {"LEN": {"CONCAT": ["lala", "lolo"]}},
@@ -781,8 +800,10 @@ mod tests {
                         "SUM": [
                             {
                                 "WITH": {
-                                    "SQUARE": {"MULTIPLY": ["_", "_"]},
-                                    "y": 3
+                                    "DEFINITIONS": {
+                                        "SQUARE": {"MULTIPLY": ["_", "_"]},
+                                        "y": 3
+                                    }
                                 },
                                 "COMPUTE": {"MULTIPLY": [
                                     {"SQUARE": {"_": 2}},
@@ -912,12 +933,14 @@ mod tests {
                 .compute(Arc::new(
                     serde_json::from_value(json!({
                         "WITH": {
-                            "FACTORIAL": {
-                                "MULTIPLY": {
-                                    "SEQUENCE": {
-                                        "from": 1,
-                                        "to": "_",
-                                        "step": 1
+                            "DEFINITIONS": {
+                                "FACTORIAL": {
+                                    "MULTIPLY": {
+                                        "SEQUENCE": {
+                                            "from": 1,
+                                            "to": "_",
+                                            "step": 1
+                                        }
                                     }
                                 }
                             }
@@ -930,6 +953,31 @@ mod tests {
                 ))
                 .unwrap(),
             Value::Number(120.0)
+        );
+    }
+
+    #[test]
+    fn test_definitions_vs_constants() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
+                        "WITH": {"CONSTANTS": {"x": 1}},
+                        "COMPUTE": {
+                            "WITH": {
+                                "DEFINITIONS": {"definition": "x"},
+                                "CONSTANTS": {"x": 2, "constant": "x"}
+                            },
+                            "COMPUTE": ["definition", "constant"]
+                        }
+                    }))
+                    .unwrap()
+                ))
+                .unwrap(),
+            Value::Array(vec![
+                Arc::new(Value::Number(2.0)),
+                Arc::new(Value::Number(1.0))
+            ])
         );
     }
 }
