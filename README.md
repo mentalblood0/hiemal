@@ -15,7 +15,7 @@ Command line utility supports `YAML` and `JSON` through `serde`, yet library is 
 [Install Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html), then
 
 ```bash
-cargo install --git cargo install --git https://github.com/mentalblood0/hiemal
+cargo install --git https://github.com/mentalblood0/hiemal
 ```
 
 ## Usage
