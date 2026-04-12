@@ -501,6 +501,7 @@ impl Interpreter {
     }
 
     fn get_type(&self, program: TypeOrValue, context: &mut TypeCheckingContext) -> Result<Type> {
+        println!("get_type {program:?}");
         let result = match &program {
             TypeOrValue::Type(program_type) => program_type.clone(),
             TypeOrValue::Value(program) => match **program {

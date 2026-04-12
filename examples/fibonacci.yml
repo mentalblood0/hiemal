@@ -2,14 +2,17 @@ WITH:
   DEFINITIONS:
     FIBONACCI:
       IF:
-        IS_SORTED: [x, 1]
-      THEN: x
+        IS_SORTED: [_, 1]
+      THEN: _
       ELSE:
-        SUM:
-          - FIBONACCI:
-              SUM: [x, -1]
-          - FIBONACCI:
-              SUM: [x, -2]
+        WITH:
+          CONSTANTS:
+            x: _
+        COMPUTE:
+          SUM:
+            - FIBONACCI:
+                SUM: [x, -1]
+            - FIBONACCI:
+                SUM: [x, -2]
 COMPUTE:
-  FIBONACCI:
-    x: 10
+  FIBONACCI: 10
