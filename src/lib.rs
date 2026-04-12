@@ -350,6 +350,9 @@ impl Interpreter {
                 for alias_name in with_clause.with.definitions.keys() {
                     context.remove_alias(alias_name.clone());
                 }
+                for alias_name in with_clause.with.constants.keys() {
+                    context.remove_alias(alias_name.clone());
+                }
                 result
             }
             Value::Map(ref map_clause) => {
@@ -498,6 +501,7 @@ impl Interpreter {
     }
 
     fn get_type(&self, program: TypeOrValue, context: &mut TypeCheckingContext) -> Result<Type> {
+        println!("get_type {program:?}");
         let result = match &program {
             TypeOrValue::Type(program_type) => program_type.clone(),
             TypeOrValue::Value(program) => match **program {
@@ -514,6 +518,9 @@ impl Interpreter {
                     let result =
                         self.get_type(TypeOrValue::Value(with_clause.compute.clone()), context)?;
                     for alias_name in with_clause.with.definitions.keys() {
+                        context.remove_alias(alias_name.clone());
+                    }
+                    for alias_name in with_clause.with.constants.keys() {
                         context.remove_alias(alias_name.clone());
                     }
                     result
@@ -628,6 +635,7 @@ impl Interpreter {
                     then_branch_type
                 }
                 Value::Object(ref object) => {
+                    dbg!(&object);
                     if object.len() == 1 {
                         let (name, arguments) = object.iter().next().unwrap();
                         if let Some(aliased_value) = context
@@ -638,20 +646,12 @@ impl Interpreter {
                         {
                             let mut aliases_names = vec![];
                             if let Value::Object(ref aliases) = **arguments {
-                                if aliases.len() == 1 {
-                                    aliases_names.push("_".to_string());
+                                for (alias_name, alias_value) in aliases.iter() {
+                                    aliases_names.push(alias_name.clone());
                                     context.add_alias(
-                                        "_".to_string(),
-                                        TypeOrValue::Value(arguments.clone()),
+                                        alias_name.clone(),
+                                        TypeOrValue::Value(alias_value.clone()),
                                     );
-                                } else {
-                                    for (alias_name, alias_value) in aliases.iter() {
-                                        aliases_names.push(alias_name.clone());
-                                        context.add_alias(
-                                            alias_name.clone(),
-                                            TypeOrValue::Value(alias_value.clone()),
-                                        );
-                                    }
                                 }
                             } else {
                                 aliases_names.push("_".to_string());
