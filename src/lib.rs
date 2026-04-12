@@ -501,7 +501,6 @@ impl Interpreter {
     }
 
     fn get_type(&self, program: TypeOrValue, context: &mut TypeCheckingContext) -> Result<Type> {
-        println!("get_type {program:?}");
         let result = match &program {
             TypeOrValue::Type(program_type) => program_type.clone(),
             TypeOrValue::Value(program) => match **program {
@@ -635,7 +634,6 @@ impl Interpreter {
                     then_branch_type
                 }
                 Value::Object(ref object) => {
-                    dbg!(&object);
                     if object.len() == 1 {
                         let (name, arguments) = object.iter().next().unwrap();
                         if let Some(aliased_value) = context
@@ -646,12 +644,20 @@ impl Interpreter {
                         {
                             let mut aliases_names = vec![];
                             if let Value::Object(ref aliases) = **arguments {
-                                for (alias_name, alias_value) in aliases.iter() {
-                                    aliases_names.push(alias_name.clone());
+                                if aliases.len() == 1 {
+                                    aliases_names.push("_".to_string());
                                     context.add_alias(
-                                        alias_name.clone(),
-                                        TypeOrValue::Value(alias_value.clone()),
+                                        "_".to_string(),
+                                        TypeOrValue::Value(arguments.clone()),
                                     );
+                                } else {
+                                    for (alias_name, alias_value) in aliases.iter() {
+                                        aliases_names.push(alias_name.clone());
+                                        context.add_alias(
+                                            alias_name.clone(),
+                                            TypeOrValue::Value(alias_value.clone()),
+                                        );
+                                    }
                                 }
                             } else {
                                 aliases_names.push("_".to_string());

@@ -1,0 +1,15 @@
+WITH:
+  DEFINITIONS:
+    FIBONACCI:
+      IF:
+        IS_SORTED: [x, 1]
+      THEN: x
+      ELSE:
+        SUM:
+          - FIBONACCI:
+              SUM: [x, -1]
+          - FIBONACCI:
+              SUM: [x, -2]
+COMPUTE:
+  FIBONACCI:
+    x: 10
