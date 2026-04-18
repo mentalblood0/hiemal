@@ -1,6 +1,6 @@
 pub mod embedded_functions;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
@@ -12,9 +12,9 @@ pub enum Type {
     Bool,
     Null,
     Array(Box<Type>),
-    AnyObject,
     Object(BTreeMap<String, Type>),
     GenericArgument(u8),
+    RecursedAlias(String),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -184,6 +184,15 @@ macro_rules! define_default_interpreter_supported_functions {
     };
 }
 
+pub enum PathSegment {
+    ObjectKey(String),
+    Alias(String),
+    EmbeddedFunction(String),
+    ArrayIndex(usize),
+}
+
+pub struct Path(pub Vec<PathSegment>);
+
 #[derive(Clone, Debug)]
 pub enum TypeOrValue {
     Type(Type),
@@ -193,6 +202,8 @@ pub enum TypeOrValue {
 pub struct TypeCheckingContext {
     pub path: Vec<String>,
     pub aliases: BTreeMap<String, Vec<TypeOrValue>>,
+    pub entered_aliases: BTreeSet<String>,
+    pub recursed_aliases_types: BTreeMap<String, Type>,
 }
 
 impl TypeCheckingContext {
@@ -496,6 +507,8 @@ impl Interpreter {
             &mut TypeCheckingContext {
                 path: vec![],
                 aliases: BTreeMap::new(),
+                entered_aliases: BTreeSet::new(),
+                recursed_aliases_types: BTreeMap::new(),
             },
         )
     }
@@ -637,6 +650,18 @@ impl Interpreter {
                 Value::Object(ref object) => {
                     if object.len() == 1 {
                         let (name, arguments) = object.iter().next().unwrap();
+                        if context.entered_aliases.contains(name) {
+                            // return Err(anyhow!("Detected recursion after {:?}", context.path));
+                            if let Some(this_recursed_alias_type) =
+                                context.recursed_aliases_types.get(name)
+                            {
+                                return Ok(this_recursed_alias_type.clone());
+                            } else {
+                                context
+                                    .recursed_aliases_types
+                                    .insert(name.clone(), Type::RecursedAlias(name.clone()));
+                            }
+                        }
                         if let Some(aliased_value) = context
                             .aliases
                             .get(name)
@@ -668,10 +693,13 @@ impl Interpreter {
                                 );
                             }
                             context.path.push(name.clone());
+                            context.entered_aliases.insert(name.clone());
                             let result = self.get_type(aliased_value, context)?;
                             context.path.pop();
+                            context.entered_aliases.remove(name);
                             for alias_name in aliases_names {
-                                context.remove_alias(alias_name);
+                                context.remove_alias(alias_name.clone());
+                                context.recursed_aliases_types.remove(&alias_name);
                             }
                             return Ok(result);
                         }
