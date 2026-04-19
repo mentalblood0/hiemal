@@ -849,16 +849,15 @@ impl Interpreter {
                         context.path.push((array_element_index + 1).to_string());
                         let current_array_element_type =
                             self.get_type(TypeOrValue::Value(array_element.clone()), context)?;
-                        context.path.pop();
                         if current_array_element_type != array_element_type {
                             return Err(anyhow!(
-                                "Expected all elements of array at path {:?} to be of type \
-                                 {array_element_type:?} (as first element), but got element of \
-                                 type {current_array_element_type:?} at index {}",
+                                "Expected {:?} to be of type {array_element_type:?} (as the array \
+                                 first element), but got value of type \
+                                 {current_array_element_type:?}",
                                 context.path,
-                                array_element_index + 1
                             ));
                         }
+                        context.path.pop();
                     }
                     Type::Array(Box::new(array_element_type))
                 }
