@@ -3,7 +3,7 @@ pub mod embedded_functions;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context, Error, Result};
 
 #[derive(PartialEq, Debug, Clone, PartialOrd, Ord, Eq)]
 pub enum Type {
@@ -218,6 +218,121 @@ impl TypeCheckingContext {
                 aliases_with_this_name.pop();
             });
     }
+
+    pub fn error(&self, expected_type: &Type, got_type: &Type) -> Error {
+        anyhow!(
+            "Expected value of type {expected_type:?} but got value of type {got_type:?} at path \
+             {:?}",
+            self.path,
+        )
+    }
+
+    pub fn get_generic_arguments_values(
+        &self,
+        generic: &Type,
+        actual: &Type,
+    ) -> Result<[Option<Type>; 256]> {
+        let mut result: [Option<Type>; 256] = std::array::from_fn(|_| None);
+        self.get_generic_arguments_values_into_dict(generic, actual, &mut result)?;
+        Ok(result)
+    }
+
+    pub fn get_generic_arguments_values_into_dict(
+        &self,
+        generic: &Type,
+        actual: &Type,
+        result: &mut [Option<Type>; 256],
+    ) -> Result<()> {
+        match (generic, actual) {
+            (Type::GenericArgument(id), _) => {
+                result[*id as usize] = Some(actual.clone());
+            }
+            (Type::Object(generic_object_argument), Type::Object(actual_object_argument)) => {
+                for (key, generic_value_type) in generic_object_argument {
+                    self.get_generic_arguments_values_into_dict(
+                        generic_value_type,
+                        actual_object_argument
+                            .get(key)
+                            .ok_or_else(|| self.error(generic, actual))?,
+                        result,
+                    )
+                    .with_context(|| self.error(generic, actual))?;
+                }
+            }
+            (Type::Array(generic_array_argument), Type::Array(actual_array_argument)) => {
+                self.get_generic_arguments_values_into_dict(
+                    generic_array_argument,
+                    actual_array_argument,
+                    result,
+                )
+                .with_context(|| self.error(generic, actual))?;
+            }
+            (Type::Number, Type::Number) => {}
+            (Type::String, Type::String) => {}
+            (Type::Bool, Type::Bool) => {}
+            (Type::Null, Type::Null) => {}
+            (generic, actual) => return Err(self.error(generic, actual).into()),
+        }
+        Ok(())
+    }
+
+    pub fn substitute_generic_arguments_values(
+        &self,
+        generic: &mut Type,
+        values: &[Option<Type>; 256],
+    ) -> Result<()> {
+        match generic {
+            Type::GenericArgument(id) => {
+                *generic = values.get(*id as usize).unwrap().clone().with_context(|| {
+                    format!(
+                        "Can not resolve generic argument {id:?} from other generic-actual types \
+                         at path {:?}",
+                        self.path
+                    )
+                })?;
+            }
+            Type::Object(object) => {
+                for value in object.values_mut() {
+                    self.substitute_generic_arguments_values(value, values)?;
+                }
+            }
+            Type::Array(element) => {
+                self.substitute_generic_arguments_values(element, values)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    pub fn assert_equal(
+        &self,
+        expected_type: &Type,
+        actual_type: &Type,
+    ) -> Result<[Option<Type>; 256]> {
+        let generic_values = self
+            .get_generic_arguments_values(expected_type, actual_type)
+            .with_context(|| {
+                format!(
+                    "Error while getting generic arguments values at path {:?}",
+                    self.path
+                )
+            })?;
+        let concrete_expected_type = {
+            let mut result = actual_type.clone();
+            self.substitute_generic_arguments_values(&mut result, &generic_values)?;
+            result
+        };
+        let concrete_actual_type = {
+            let mut result = actual_type.clone();
+            self.substitute_generic_arguments_values(&mut result, &generic_values)?;
+            result
+        };
+        if concrete_actual_type != concrete_expected_type {
+            Err(self.error(&concrete_expected_type, &concrete_actual_type))
+        } else {
+            Ok(generic_values)
+        }
+    }
 }
 
 pub struct ComputationContext {
@@ -240,132 +355,6 @@ impl ComputationContext {
 }
 
 impl Interpreter {
-    fn get_generic_arguments_values(
-        &self,
-        generic: &Type,
-        actual: &Type,
-    ) -> Result<[Option<Type>; 256]> {
-        let mut result: [Option<Type>; 256] = std::array::from_fn(|_| None);
-        self.get_generic_arguments_values_into_dict(generic, actual, &mut result)?;
-        Ok(result)
-    }
-
-    fn get_generic_arguments_values_into_dict(
-        &self,
-        generic: &Type,
-        actual: &Type,
-        result: &mut [Option<Type>; 256],
-    ) -> Result<()> {
-        match (generic, actual) {
-            (Type::GenericArgument(id), _) => {
-                result[*id as usize] = Some(actual.clone());
-            }
-            (Type::Object(generic_object_argument), Type::Object(actual_object_argument)) => {
-                for (key, generic_value_type) in generic_object_argument {
-                    self.get_generic_arguments_values_into_dict(
-                        generic_value_type,
-                        actual_object_argument.get(key).ok_or_else(|| {
-                            anyhow!(
-                                "Actual type {actual:?} does not match expected type {generic:?} \
-                                 because generic type contains key {key:?} while actual type is \
-                                 not"
-                            )
-                        })?,
-                        result,
-                    )
-                    .with_context(|| {
-                        format!(
-                            "Actual type {actual:?} does not match expected type {generic:?} \
-                             because actual type value type at key {key:?} does not match that of \
-                             generic type"
-                        )
-                    })?;
-                }
-            }
-            (Type::Array(generic_array_argument), Type::Array(actual_array_argument)) => {
-                self.get_generic_arguments_values_into_dict(
-                    generic_array_argument,
-                    actual_array_argument,
-                    result,
-                )
-                .with_context(|| {
-                    format!("Actual type {actual:?} does not match expected type {generic:?}")
-                })?;
-            }
-            (Type::Number, Type::Number) => {}
-            (Type::String, Type::String) => {}
-            (Type::Bool, Type::Bool) => {}
-            (Type::Null, Type::Null) => {}
-            _ => {
-                return Err(anyhow!(
-                    "Actual type {actual:?} does not match expected type {generic:?}"
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    fn substitute_generic_arguments_values(
-        &self,
-        generic: &mut Type,
-        values: &[Option<Type>; 256],
-    ) -> Result<()> {
-        match generic {
-            Type::GenericArgument(id) => {
-                *generic = values.get(*id as usize).unwrap().clone().with_context(|| {
-                    format!(
-                        "Can not resolve generic argument {id:?} from other generic-actual types"
-                    )
-                })?;
-            }
-            Type::Object(object) => {
-                for value in object.values_mut() {
-                    self.substitute_generic_arguments_values(value, values)?;
-                }
-            }
-            Type::Array(element) => {
-                self.substitute_generic_arguments_values(element, values)?;
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn assert_equal(
-        &self,
-        expected_type: &Type,
-        actual_type: &Type,
-        context: &mut TypeCheckingContext,
-    ) -> Result<[Option<Type>; 256]> {
-        let generic_values = self
-            .get_generic_arguments_values(expected_type, actual_type)
-            .with_context(|| {
-                format!(
-                    "Error while getting generic arguments values at path {:?}",
-                    context.path
-                )
-            })?;
-        let concrete_expected_type = {
-            let mut result = actual_type.clone();
-            self.substitute_generic_arguments_values(&mut result, &generic_values)?;
-            result
-        };
-        let concrete_actual_type = {
-            let mut result = actual_type.clone();
-            self.substitute_generic_arguments_values(&mut result, &generic_values)?;
-            result
-        };
-        if concrete_actual_type != concrete_expected_type {
-            Err(anyhow!(
-                "Expected value of type {concrete_expected_type:?} at path {:?} for got value of \
-                 type {concrete_actual_type:?}",
-                context.path,
-            ))
-        } else {
-            Ok(generic_values)
-        }
-    }
-
     pub fn compute(&self, program: Arc<Value>) -> Result<Arc<Value>> {
         self.check_types(program.clone())?;
         self.compute_with_context(
@@ -806,14 +795,14 @@ impl Interpreter {
                             context.path.push(name.clone());
                             let arguments_type =
                                 self.get_type(TypeOrValue::Value(arguments.clone()), context)?;
-                            let generic_values = self.assert_equal(
-                                &function.argument_type,
-                                &arguments_type,
-                                context,
-                            )?;
+                            let generic_values =
+                                context.assert_equal(&function.argument_type, &arguments_type)?;
                             context.path.pop();
                             let mut result = function.return_type.clone();
-                            self.substitute_generic_arguments_values(&mut result, &generic_values)?;
+                            context.substitute_generic_arguments_values(
+                                &mut result,
+                                &generic_values,
+                            )?;
                             result
                         } else {
                             return Err(anyhow!(
