@@ -331,6 +331,41 @@ impl Interpreter {
         Ok(())
     }
 
+    fn assert_equal(
+        &self,
+        expected_type: &Type,
+        actual_type: &Type,
+        context: &mut TypeCheckingContext,
+    ) -> Result<[Option<Type>; 256]> {
+        let generic_values = self
+            .get_generic_arguments_values(expected_type, actual_type)
+            .with_context(|| {
+                format!(
+                    "Error while getting generic arguments values at path {:?}",
+                    context.path
+                )
+            })?;
+        let concrete_expected_type = {
+            let mut result = actual_type.clone();
+            self.substitute_generic_arguments_values(&mut result, &generic_values)?;
+            result
+        };
+        let concrete_actual_type = {
+            let mut result = actual_type.clone();
+            self.substitute_generic_arguments_values(&mut result, &generic_values)?;
+            result
+        };
+        if concrete_actual_type != concrete_expected_type {
+            Err(anyhow!(
+                "Expected value of type {concrete_expected_type:?} at path {:?} for got value of \
+                 type {concrete_actual_type:?}",
+                context.path,
+            ))
+        } else {
+            Ok(generic_values)
+        }
+    }
+
     pub fn compute(&self, program: Arc<Value>) -> Result<Arc<Value>> {
         self.check_types(program.clone())?;
         self.compute_with_context(
@@ -771,43 +806,15 @@ impl Interpreter {
                             context.path.push(name.clone());
                             let arguments_type =
                                 self.get_type(TypeOrValue::Value(arguments.clone()), context)?;
-                            let generic_arguments_values = &self
-                                .get_generic_arguments_values(
-                                    &function.argument_type,
-                                    &arguments_type,
-                                )
-                                .with_context(|| {
-                                    format!(
-                                        "Error while getting generic arguments values at path {:?}",
-                                        context.path
-                                    )
-                                })?;
-                            let concrete_arguments_type = {
-                                let mut result = function.argument_type.clone();
-                                self.substitute_generic_arguments_values(
-                                    &mut result,
-                                    generic_arguments_values,
-                                )?;
-                                result
-                            };
-                            let concrete_return_type = {
-                                let mut result = function.return_type.clone();
-                                self.substitute_generic_arguments_values(
-                                    &mut result,
-                                    generic_arguments_values,
-                                )?;
-                                result
-                            };
-                            if arguments_type != concrete_arguments_type {
-                                return Err(anyhow!(
-                                    "Expected argument of type {:?} for function at path {:?}, \
-                                     but got {arguments_type:?}",
-                                    &function.argument_type,
-                                    context.path
-                                ));
-                            }
+                            let generic_values = self.assert_equal(
+                                &function.argument_type,
+                                &arguments_type,
+                                context,
+                            )?;
                             context.path.pop();
-                            concrete_return_type
+                            let mut result = function.return_type.clone();
+                            self.substitute_generic_arguments_values(&mut result, &generic_values)?;
+                            result
                         } else {
                             return Err(anyhow!(
                                 "Expected supported function at path {:?}, but got unsupported \
