@@ -834,32 +834,56 @@ impl Interpreter {
                     }
                 }
                 Value::Array(ref array) => {
-                    let array_element_type = self.get_type(
-                        TypeOrValue::Value(
-                            array
-                                .first()
-                                .ok_or_else(|| {
-                                    anyhow!("Expected non-empty array at path {:?}", context.path)
-                                })?
-                                .clone(),
-                        ),
-                        context,
-                    )?;
-                    for (array_element_index, array_element) in array[1..].iter().enumerate() {
-                        context.path.push((array_element_index + 1).to_string());
-                        let current_array_element_type =
-                            self.get_type(TypeOrValue::Value(array_element.clone()), context)?;
-                        if current_array_element_type != array_element_type {
-                            return Err(anyhow!(
-                                "Expected {:?} to be of type {array_element_type:?} (as the array \
-                                 first element), but got value of type \
-                                 {current_array_element_type:?}",
-                                context.path,
-                            ));
+                    let mut non_recursed_elements_indexes_and_types =
+                        Vec::with_capacity(array.len());
+                    let mut recursed_elements_aliases_names = vec![];
+                    for (element_index, element) in array.iter().enumerate() {
+                        context.path.push(element_index.to_string());
+                        match self.get_type(TypeOrValue::Value(element.clone()), context)? {
+                            Type::RecursedAlias(recursed_alias_name) => {
+                                recursed_elements_aliases_names.push(recursed_alias_name);
+                            }
+                            non_recursed_type => {
+                                non_recursed_elements_indexes_and_types
+                                    .push((element_index, non_recursed_type));
+                            }
                         }
                         context.path.pop();
                     }
-                    Type::Array(Box::new(array_element_type))
+                    if let Some(first_non_recursed_element_type) =
+                        non_recursed_elements_indexes_and_types
+                            .first()
+                            .and_then(|(_, element_type)| Some(element_type))
+                    {
+                        if let Some((unexpected_type_element_index, unexpected_type)) =
+                            non_recursed_elements_indexes_and_types.iter().find(
+                                |(_, element_type)| element_type != first_non_recursed_element_type,
+                            )
+                        {
+                            context.path.push(unexpected_type_element_index.to_string());
+                            let result_error = Err(anyhow!(
+                                "Expected value at path {:?} to be of type \
+                                 {first_non_recursed_element_type:?}, but it is of type \
+                                 {unexpected_type:?}",
+                                context.path
+                            ));
+                            context.path.pop();
+                            return result_error;
+                        } else {
+                            Type::Array(Box::new(first_non_recursed_element_type.clone()))
+                        }
+                    } else if let Some(first_recursed_element_alias_name) =
+                        recursed_elements_aliases_names.first()
+                    {
+                        Type::Array(Box::new(Type::RecursedAlias(
+                            first_recursed_element_alias_name.clone(),
+                        )))
+                    } else {
+                        return Err(anyhow!(
+                            "Expected non-empty array at path {:?}",
+                            context.path
+                        ));
+                    }
                 }
                 Value::String(ref string) => {
                     if let Some(aliased_value) = context
