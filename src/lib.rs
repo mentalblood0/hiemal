@@ -352,12 +352,19 @@ impl Interpreter {
                 for (alias_name, alias_value) in with_clause.with.definitions.iter() {
                     context.add_alias(alias_name.clone(), alias_value.clone());
                 }
+                context.path.push("WITH".to_string());
+                context.path.push("CONSTANTS".to_string());
                 for (alias_name, alias_value) in with_clause.with.constants.iter() {
+                    context.path.push(alias_name.clone());
                     let precomputed_value =
                         self.compute_with_context(alias_value.clone(), context)?;
+                    context.path.pop();
                     context.add_alias(alias_name.clone(), precomputed_value);
                 }
+                context.path.pop();
+                context.path.push("COMPUTE".to_string());
                 let result = self.compute_with_context(with_clause.compute.clone(), context)?;
+                context.path.pop();
                 for alias_name in with_clause.with.definitions.keys() {
                     context.remove_alias(alias_name.clone());
                 }
@@ -373,11 +380,17 @@ impl Interpreter {
                     .unwrap()
                     .clone();
                 let mut result = vec![];
-                for element in array.iter() {
+                context.path.push("MAP".to_string());
+                for (element_index, element) in array.iter().enumerate() {
                     context.add_alias(map_clause.as_alias.clone(), element.clone());
+                    context.path.push(element_index.to_string());
+                    context.path.push("THROUGH".to_string());
                     result.push(self.compute_with_context(map_clause.through.clone(), context)?);
+                    context.path.pop();
+                    context.path.pop();
                     context.remove_alias(map_clause.as_alias.clone());
                 }
+                context.path.pop();
                 Arc::new(Value::Array(result))
             }
             Value::Filter(ref filter_clause) => {
@@ -387,8 +400,11 @@ impl Interpreter {
                     .unwrap()
                     .clone();
                 let mut result = vec![];
-                for element in array.iter() {
+                context.path.push("FILTER".to_string());
+                for (element_index, element) in array.iter().enumerate() {
                     context.add_alias(filter_clause.as_alias.clone(), element.clone());
+                    context.path.push(element_index.to_string());
+                    context.path.push("THROUGH".to_string());
                     if self
                         .compute_with_context(filter_clause.through.clone(), context)?
                         .as_bool()
@@ -396,8 +412,11 @@ impl Interpreter {
                     {
                         result.push(element.clone());
                     }
+                    context.path.pop();
+                    context.path.pop();
                     context.remove_alias(filter_clause.as_alias.clone());
                 }
+                context.path.pop();
                 Arc::new(Value::Array(result))
             }
             Value::Reduce(ref reduce_clause) => {
@@ -406,27 +425,41 @@ impl Interpreter {
                     .as_array()
                     .unwrap()
                     .clone();
+                context.path.push("STARTING_WITH".to_string());
                 let mut result =
                     self.compute_with_context(reduce_clause.starting_with.clone(), context)?;
-                for element in array.iter() {
+                context.path.pop();
+                context.path.push("REDUCE".to_string());
+                for (element_index, element) in array.iter().enumerate() {
                     context.add_alias(reduce_clause.as_alias.clone(), element.clone());
                     context.add_alias(reduce_clause.accumulating_in_alias.clone(), result.clone());
+                    context.path.push(element_index.to_string());
+                    context.path.push("THROUGH".to_string());
                     result = self.compute_with_context(reduce_clause.through.clone(), context)?;
+                    context.path.pop();
+                    context.path.pop();
                     context.remove_alias(reduce_clause.as_alias.clone());
                     context.remove_alias(reduce_clause.accumulating_in_alias.clone());
                 }
+                context.path.pop();
                 result
             }
             Value::Branching(ref branching_clause) => {
-                if self
+                context.path.push("IF".to_string());
+                let if_result = self
                     .compute_with_context(branching_clause.if_.clone(), context)?
                     .as_bool()
-                    .unwrap()
-                {
+                    .unwrap();
+                context.path.pop();
+                let result = if if_result {
+                    context.path.push("THEN".to_string());
                     self.compute_with_context(branching_clause.then.clone(), context)?
                 } else {
+                    context.path.push("ELSE".to_string());
                     self.compute_with_context(branching_clause.else_.clone(), context)?
-                }
+                };
+                context.path.pop();
+                result
             }
             Value::Object(ref object) => {
                 if object.len() == 1 {
@@ -470,18 +503,22 @@ impl Interpreter {
                 } else {
                     let mut result_map = BTreeMap::new();
                     for (key, value) in object {
+                        context.path.push(key.clone());
                         result_map.insert(
                             key.clone(),
                             self.compute_with_context(value.clone(), context)?,
                         );
+                        context.path.pop();
                     }
                     Arc::new(Value::Object(result_map))
                 }
             }
             Value::Array(ref array) => {
                 let mut result_array = vec![];
-                for array_element in array.iter() {
-                    result_array.push(self.compute_with_context(array_element.clone(), context)?)
+                for (element_index, element) in array.iter().enumerate() {
+                    context.path.push(element_index.to_string());
+                    result_array.push(self.compute_with_context(element.clone(), context)?);
+                    context.path.pop();
                 }
                 Arc::new(Value::Array(result_array))
             }
@@ -492,7 +529,10 @@ impl Interpreter {
                     .and_then(|values_for_this_name| values_for_this_name.last())
                     .cloned()
                 {
-                    self.compute_with_context(aliased_value, context)?
+                    context.path.push(string.clone());
+                    let result = self.compute_with_context(aliased_value, context)?;
+                    context.path.pop();
+                    result
                 } else {
                     Arc::new(Value::String(string.clone()))
                 }
@@ -523,13 +563,21 @@ impl Interpreter {
                         context
                             .add_alias(alias_name.clone(), TypeOrValue::Value(alias_value.clone()));
                     }
+                    context.path.push("WITH".to_string());
+                    context.path.push("CONSTANTS".to_string());
                     for (alias_name, alias_value) in with_clause.with.constants.iter() {
+                        context.path.push(alias_name.clone());
                         let precomputed_type =
                             self.get_type(TypeOrValue::Value(alias_value.clone()), context)?;
+                        context.path.pop();
                         context.add_alias(alias_name.clone(), TypeOrValue::Type(precomputed_type));
                     }
+                    context.path.pop();
+                    context.path.push("COMPUTE".to_string());
                     let result =
                         self.get_type(TypeOrValue::Value(with_clause.compute.clone()), context)?;
+                    context.path.pop();
+                    context.path.pop();
                     for alias_name in with_clause.with.definitions.keys() {
                         context.remove_alias(alias_name.clone());
                     }
@@ -539,15 +587,19 @@ impl Interpreter {
                     result
                 }
                 Value::Map(ref map_clause) => {
+                    context.path.push("MAP".to_string());
                     let actual_array_type =
                         self.get_type(TypeOrValue::Value(map_clause.map.clone()), context)?;
+                    context.path.pop();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context.add_alias(
                             map_clause.as_alias.clone(),
                             TypeOrValue::Type(*array_element_type.clone()),
                         );
+                        context.path.push("THROUGH".to_string());
                         let result =
                             self.get_type(TypeOrValue::Value(map_clause.through.clone()), context)?;
+                        context.path.pop();
                         context.remove_alias(map_clause.as_alias.clone());
                         Type::Array(Box::new(result))
                     } else {
@@ -558,15 +610,19 @@ impl Interpreter {
                     }
                 }
                 Value::Filter(ref filter_clause) => {
+                    context.path.push("FILTER".to_string());
                     let actual_array_type =
                         self.get_type(TypeOrValue::Value(filter_clause.filter.clone()), context)?;
+                    context.path.pop();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context.add_alias(
                             filter_clause.as_alias.clone(),
                             TypeOrValue::Type(*array_element_type.clone()),
                         );
+                        context.path.push("THROUGH".to_string());
                         let through_type = self
                             .get_type(TypeOrValue::Value(filter_clause.through.clone()), context)?;
+                        context.path.pop();
                         if through_type != Type::Bool {
                             return Err(anyhow!(
                                 "Expected filter at path {:?} to use function which returns \
@@ -585,8 +641,10 @@ impl Interpreter {
                     }
                 }
                 Value::Reduce(ref reduce_clause) => {
+                    context.path.push("REDUCE".to_string());
                     let actual_array_type =
                         self.get_type(TypeOrValue::Value(reduce_clause.reduce.clone()), context)?;
+                    context.path.pop();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         let starting_with_type = self.get_type(
                             TypeOrValue::Value(reduce_clause.starting_with.clone()),
@@ -600,8 +658,10 @@ impl Interpreter {
                             reduce_clause.accumulating_in_alias.clone(),
                             TypeOrValue::Type(starting_with_type.clone()),
                         );
+                        context.path.push("THROUGH".to_string());
                         let through_type = self
                             .get_type(TypeOrValue::Value(reduce_clause.through.clone()), context)?;
+                        context.path.pop();
                         if through_type != starting_with_type {
                             return Err(anyhow!(
                                 "Expected reduce at path {:?} to use function which returns value \
@@ -610,11 +670,9 @@ impl Interpreter {
                                 context.path
                             ));
                         }
-                        let result = self
-                            .get_type(TypeOrValue::Value(reduce_clause.through.clone()), context)?;
                         context.remove_alias(reduce_clause.as_alias.clone());
                         context.remove_alias(reduce_clause.accumulating_in_alias.clone());
-                        Type::Array(Box::new(result))
+                        Type::Array(Box::new(through_type))
                     } else {
                         return Err(anyhow!(
                             "Expected array for reduce clause at path {:?}, got \
@@ -624,8 +682,10 @@ impl Interpreter {
                     }
                 }
                 Value::Branching(ref branching_clause) => {
+                    context.path.push("IF".to_string());
                     let if_branch_type =
                         self.get_type(TypeOrValue::Value(branching_clause.if_.clone()), context)?;
+                    context.path.pop();
                     if if_branch_type != Type::Bool {
                         return Err(anyhow!(
                             "Expected condition at path {:?} to be of boolean type, but it is of \
@@ -633,10 +693,14 @@ impl Interpreter {
                             context.path
                         ));
                     }
+                    context.path.push("THEN".to_string());
                     let then_branch_type =
                         self.get_type(TypeOrValue::Value(branching_clause.then.clone()), context)?;
+                    context.path.pop();
+                    context.path.push("ELSE".to_string());
                     let else_branch_type =
                         self.get_type(TypeOrValue::Value(branching_clause.else_.clone()), context)?;
+                    context.path.pop();
                     if then_branch_type != else_branch_type {
                         return Err(anyhow!(
                             "Expected 'then' and 'else' branches at path {:?} to be of the same \
@@ -759,10 +823,12 @@ impl Interpreter {
                     } else {
                         let mut result_map = BTreeMap::new();
                         for (key, value) in object {
+                            context.path.push(key.clone());
                             result_map.insert(
                                 key.clone(),
                                 self.get_type(TypeOrValue::Value(value.clone()), context)?,
                             );
+                            context.path.pop();
                         }
                         Type::Object(result_map)
                     }
@@ -780,7 +846,7 @@ impl Interpreter {
                         context,
                     )?;
                     for (array_element_index, array_element) in array[1..].iter().enumerate() {
-                        context.path.push(array_element_index.to_string());
+                        context.path.push((array_element_index + 1).to_string());
                         let current_array_element_type =
                             self.get_type(TypeOrValue::Value(array_element.clone()), context)?;
                         context.path.pop();
@@ -803,7 +869,10 @@ impl Interpreter {
                         .and_then(|values_for_this_name| values_for_this_name.last())
                         .cloned()
                     {
-                        self.get_type(aliased_value.clone(), context)?
+                        context.path.push(string.clone());
+                        let result = self.get_type(aliased_value.clone(), context)?;
+                        context.path.pop();
+                        result
                     } else {
                         Type::String
                     }
@@ -887,7 +956,7 @@ mod tests {
                                     }
                                 },
                                 "COMPUTE": {"MULTIPLY": [
-                                    {"SQUARE": {"_": 2}},
+                                    {"SQUARE": 2},
                                     {
                                         "SQUARE": {
                                             "SQUARE": {
