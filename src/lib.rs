@@ -228,7 +228,7 @@ impl TypeCheckingContext {
     }
 
     pub fn get_generic_arguments_values(
-        &self,
+        &mut self,
         generic: &Type,
         actual: &Type,
     ) -> Result<[Option<Type>; 256]> {
@@ -238,7 +238,7 @@ impl TypeCheckingContext {
     }
 
     pub fn get_generic_arguments_values_into_dict(
-        &self,
+        &mut self,
         generic: &Type,
         actual: &Type,
         result: &mut [Option<Type>; 256],
@@ -246,6 +246,32 @@ impl TypeCheckingContext {
         match (generic, actual) {
             (Type::GenericArgument(id), _) => {
                 result[*id as usize] = Some(actual.clone());
+            }
+            (Type::RecursedAlias(recursed_alias_name), actual) => {
+                match self.recursed_aliases_types[recursed_alias_name].clone() {
+                    Type::RecursedAlias(_) => {
+                        self.recursed_aliases_types
+                            .insert(recursed_alias_name.clone(), actual.clone());
+                    }
+                    inferred_recursed_alias_type => {
+                        if inferred_recursed_alias_type != *actual {
+                            return Err(self.error(&inferred_recursed_alias_type, actual));
+                        }
+                    }
+                }
+            }
+            (expected, Type::RecursedAlias(recursed_alias_name)) => {
+                match self.recursed_aliases_types[recursed_alias_name].clone() {
+                    Type::RecursedAlias(_) => {
+                        self.recursed_aliases_types
+                            .insert(recursed_alias_name.clone(), expected.clone());
+                    }
+                    inferred_recursed_alias_type => {
+                        if inferred_recursed_alias_type != *expected {
+                            return Err(self.error(&inferred_recursed_alias_type, expected));
+                        }
+                    }
+                }
             }
             (Type::Object(generic_object_argument), Type::Object(actual_object_argument)) => {
                 for (key, generic_value_type) in generic_object_argument {
@@ -305,7 +331,7 @@ impl TypeCheckingContext {
     }
 
     pub fn assert_equal(
-        &self,
+        &mut self,
         expected_type: &Type,
         actual_type: &Type,
     ) -> Result<[Option<Type>; 256]> {
@@ -578,7 +604,6 @@ impl Interpreter {
     }
 
     fn get_type(&self, program: TypeOrValue, context: &mut TypeCheckingContext) -> Result<Type> {
-        println!("get_type {program:?}");
         let result = match &program {
             TypeOrValue::Type(program_type) => program_type.clone(),
             TypeOrValue::Value(program) => match **program {
@@ -1160,6 +1185,152 @@ mod tests {
                 ))
                 .unwrap(),
             Value::Number(1.0)
+        );
+    }
+
+    #[test]
+    fn test_recursive() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
+                      "WITH": {
+                        "DEFINITIONS": {
+                          "FIBONACCI": {
+                            "IF": {
+                              "IS_SORTED": [
+                                "_",
+                                1
+                              ]
+                            },
+                            "THEN": "_",
+                            "ELSE": {
+                              "WITH": {
+                                "CONSTANTS": {
+                                  "x": "_"
+                                }
+                              },
+                              "COMPUTE": {
+                                "SUM": [
+                                  {
+                                    "FIBONACCI": {
+                                      "SUM": [
+                                        "x",
+                                        -1
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "FIBONACCI": {
+                                      "SUM": [
+                                        "x",
+                                        -2
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "COMPUTE": {
+                        "FIBONACCI": 10
+                      }
+                    }))
+                    .unwrap()
+                ))
+                .unwrap(),
+            Value::Number(55.0)
+        );
+        assert_eq!(
+            *default_interpreter()
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
+                      "WITH": {
+                        "DEFINITIONS": {
+                          "FIBONACCI_1": {
+                            "IF": {
+                              "IS_SORTED": [
+                                "_",
+                                1
+                              ]
+                            },
+                            "THEN": "_",
+                            "ELSE": {
+                              "WITH": {
+                                "CONSTANTS": {
+                                  "x": "_"
+                                }
+                              },
+                              "COMPUTE": {
+                                "SUM": [
+                                  {
+                                    "FIBONACCI_2": {
+                                      "SUM": [
+                                        "x",
+                                        -1
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "FIBONACCI_2": {
+                                      "SUM": [
+                                        "x",
+                                        -2
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          "FIBONACCI_2": {
+                            "IF": {
+                              "IS_SORTED": [
+                                "_",
+                                1
+                              ]
+                            },
+                            "THEN": "_",
+                            "ELSE": {
+                              "WITH": {
+                                "CONSTANTS": {
+                                  "x": "_"
+                                }
+                              },
+                              "COMPUTE": {
+                                "SUM": [
+                                  {
+                                    "FIBONACCI_1": {
+                                      "SUM": [
+                                        "x",
+                                        -1
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "FIBONACCI_1": {
+                                      "SUM": [
+                                        "x",
+                                        -2
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "COMPUTE": {
+                        "FIBONACCI_1": 10
+                      }
+                    }))
+                    .unwrap()
+                ))
+                .unwrap(),
+            Value::Number(55.0)
         );
     }
 }

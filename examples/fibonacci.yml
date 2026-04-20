@@ -1,6 +1,6 @@
 WITH:
   DEFINITIONS:
-    FIBONACCI_1:
+    FIBONACCI:
       IF:
         IS_SORTED: [_, 1]
       THEN: _
@@ -10,23 +10,9 @@ WITH:
             x: _
         COMPUTE:
           SUM:
-            - FIBONACCI_2:
+            - FIBONACCI:
                 SUM: [x, -1]
-            - FIBONACCI_2:
-                SUM: [x, -2]
-    FIBONACCI_2:
-      IF:
-        IS_SORTED: [_, 1]
-      THEN: _
-      ELSE:
-        WITH:
-          CONSTANTS:
-            x: _
-        COMPUTE:
-          SUM:
-            - FIBONACCI_1:
-                SUM: [x, -1]
-            - FIBONACCI_1:
+            - FIBONACCI:
                 SUM: [x, -2]
 COMPUTE:
-  FIBONACCI_1: 10
+  FIBONACCI: 10
