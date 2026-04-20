@@ -271,7 +271,7 @@ impl TypeCheckingContext {
             (Type::String, Type::String) => {}
             (Type::Bool, Type::Bool) => {}
             (Type::Null, Type::Null) => {}
-            (generic, actual) => return Err(self.error(generic, actual).into()),
+            (generic, actual) => return Err(self.error(generic, actual)),
         }
         Ok(())
     }
@@ -738,24 +738,20 @@ impl Interpreter {
                 Value::Object(ref object) => {
                     if object.len() == 1 {
                         let (name, arguments) = object.iter().next().unwrap();
-                        if context.entered_aliases.contains(name) {
-                            // return Err(anyhow!("Detected recursion after {:?}", context.path));
-                            if let Some(this_recursed_alias_type) =
-                                context.recursed_aliases_types.get(name)
-                            {
-                                return Ok(this_recursed_alias_type.clone());
-                            } else {
-                                context
-                                    .recursed_aliases_types
-                                    .insert(name.clone(), Type::RecursedAlias(name.clone()));
-                            }
-                        }
                         if let Some(aliased_value) = context
                             .aliases
                             .get(name)
                             .and_then(|aliases_with_this_name| aliases_with_this_name.last())
                             .cloned()
                         {
+                            if context.entered_aliases.contains(name) {
+                                // return Err(anyhow!("Detected recursion after {:?}", context.path));
+                                return Ok(context
+                                    .recursed_aliases_types
+                                    .entry(name.clone())
+                                    .or_insert(Type::RecursedAlias(name.clone()))
+                                    .clone());
+                            }
                             let mut aliases_names = vec![];
                             if let Value::Object(ref aliases) = **arguments {
                                 if aliases.len() == 1 {
