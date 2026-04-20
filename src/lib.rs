@@ -770,12 +770,15 @@ impl Interpreter {
                             .cloned()
                         {
                             if context.entered_aliases.contains(name) {
-                                // return Err(anyhow!("Detected recursion after {:?}", context.path));
-                                return Ok(context
-                                    .recursed_aliases_types
-                                    .entry(name.clone())
-                                    .or_insert(Type::RecursedAlias(name.clone()))
-                                    .clone());
+                                if let Some(this_recursed_alias_type) =
+                                    context.recursed_aliases_types.get(name)
+                                {
+                                    return Ok(this_recursed_alias_type.clone());
+                                } else {
+                                    context
+                                        .recursed_aliases_types
+                                        .insert(name.clone(), Type::RecursedAlias(name.clone()));
+                                }
                             }
                             let mut aliases_names = vec![];
                             if let Value::Object(ref aliases) = **arguments {
@@ -1243,6 +1246,51 @@ mod tests {
                 .unwrap(),
             Value::Number(55.0)
         );
+        assert!(default_interpreter()
+            .compute(Arc::new(
+                serde_json::from_value(json!({
+                  "WITH": {
+                    "DEFINITIONS": {
+                      "FIBONACCI": {
+                        "IF": {
+                          "IS_SORTED": [
+                            "_",
+                            1
+                          ]
+                        },
+                        "THEN": "_",
+                        "ELSE": {
+                          "WITH": {
+                            "CONSTANTS": {
+                              "x": "_"
+                            }
+                          },
+                          "COMPUTE": {
+                            "SUM": [
+                              {
+                                "FIBONACCI": "lalala"
+                              },
+                              {
+                                "FIBONACCI": {
+                                  "SUM": [
+                                    "x",
+                                    -2
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "COMPUTE": {
+                    "FIBONACCI": 10
+                  }
+                }))
+                .unwrap(),
+            ))
+            .is_err());
         assert_eq!(
             *default_interpreter()
                 .compute(Arc::new(
