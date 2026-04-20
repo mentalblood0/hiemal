@@ -672,13 +672,15 @@ impl Interpreter {
                         let through_type = self
                             .get_type(TypeOrValue::Value(filter_clause.through.clone()), context)?;
                         context.path.pop();
-                        if through_type != Type::Bool {
-                            return Err(anyhow!(
-                                "Expected filter at path {:?} to use function which returns \
-                                 boolean value, but it returns {through_type:?}",
-                                context.path
-                            ));
-                        }
+                        context
+                            .assert_equal(&through_type, &Type::Bool)
+                            .with_context(|| {
+                                anyhow!(
+                                    "Expected filter at path {:?} to use function which returns \
+                                     boolean value, but it returns {through_type:?}",
+                                    context.path
+                                )
+                            })?;
                         context.remove_alias(filter_clause.as_alias.clone());
                         Type::Array(array_element_type.clone())
                     } else {
@@ -711,14 +713,16 @@ impl Interpreter {
                         let through_type = self
                             .get_type(TypeOrValue::Value(reduce_clause.through.clone()), context)?;
                         context.path.pop();
-                        if through_type != starting_with_type {
-                            return Err(anyhow!(
-                                "Expected reduce at path {:?} to use function which returns value \
-                                 of type {starting_with_type:?} (as is starting value), but it \
-                                 returns {through_type:?}",
-                                context.path
-                            ));
-                        }
+                        context
+                            .assert_equal(&through_type, &starting_with_type)
+                            .with_context(|| {
+                                anyhow!(
+                                    "Expected reduce at path {:?} to use function which returns \
+                                     value of type {starting_with_type:?} (as is starting value), \
+                                     but it returns {through_type:?}",
+                                    context.path
+                                )
+                            })?;
                         context.remove_alias(reduce_clause.as_alias.clone());
                         context.remove_alias(reduce_clause.accumulating_in_alias.clone());
                         Type::Array(Box::new(through_type))
@@ -750,14 +754,16 @@ impl Interpreter {
                     let else_branch_type =
                         self.get_type(TypeOrValue::Value(branching_clause.else_.clone()), context)?;
                     context.path.pop();
-                    if then_branch_type != else_branch_type {
-                        return Err(anyhow!(
-                            "Expected 'then' and 'else' branches at path {:?} to be of the same \
-                             type, but 'then' branch is of type {then_branch_type:?} and 'else' \
-                             branch is of type {else_branch_type:?}",
-                            context.path
-                        ));
-                    }
+                    context
+                        .assert_equal(&then_branch_type, &else_branch_type)
+                        .with_context(|| {
+                            anyhow!(
+                                "Expected 'then' and 'else' branches at path {:?} to be of the \
+                                 same type, but 'then' branch is of type {then_branch_type:?} and \
+                                 'else' branch is of type {else_branch_type:?}",
+                                context.path
+                            )
+                        })?;
                     then_branch_type
                 }
                 Value::Object(ref object) => {
@@ -1245,6 +1251,47 @@ mod tests {
                 ))
                 .unwrap(),
             Value::Number(55.0)
+        );
+        assert_eq!(
+            *default_interpreter()
+                .compute(Arc::new(
+                    serde_json::from_value(json!({
+                      "WITH": {
+                        "DEFINITIONS": {
+                          "FIBONACCI": {
+                            "IF": {
+                              "IS_SORTED": [
+                                "_",
+                                1
+                              ]
+                            },
+                            "THEN": "_",
+                            "ELSE": {
+                              "WITH": {
+                                "CONSTANTS": {
+                                  "x": "_"
+                                }
+                              },
+                              "COMPUTE": {
+                                "FIBONACCI": {
+                                  "SUM": [
+                                    "x",
+                                    -1
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "COMPUTE": {
+                        "FIBONACCI": 10
+                      }
+                    }))
+                    .unwrap()
+                ))
+                .unwrap(),
+            Value::Number(1.0)
         );
         assert!(default_interpreter()
             .compute(Arc::new(
