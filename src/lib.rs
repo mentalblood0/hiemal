@@ -199,6 +199,7 @@ pub enum TypeOrValue {
     Value(Arc<Value>),
 }
 
+#[derive(Debug)]
 pub struct TypeCheckingContext {
     pub path: Vec<String>,
     pub aliases: BTreeMap<String, Vec<TypeOrValue>>,
@@ -335,6 +336,7 @@ impl TypeCheckingContext {
         expected_type: &Type,
         actual_type: &Type,
     ) -> Result<[Option<Type>; 256]> {
+        println!("assert_equal {expected_type:?} {actual_type:?}");
         let generic_values = self
             .get_generic_arguments_values(expected_type, actual_type)
             .with_context(|| {
@@ -604,9 +606,10 @@ impl Interpreter {
     }
 
     fn get_type(&self, program: TypeOrValue, context: &mut TypeCheckingContext) -> Result<Type> {
-        let result = match &program {
-            TypeOrValue::Type(program_type) => program_type.clone(),
-            TypeOrValue::Value(program) => match **program {
+        println!("{:?} {:?}", context, program);
+        let result = match program {
+            TypeOrValue::Type(program_type) => program_type,
+            TypeOrValue::Value(program) => match *program {
                 Value::With(ref with_clause) => {
                     for (alias_name, alias_value) in with_clause.with.definitions.iter() {
                         context
@@ -912,7 +915,13 @@ impl Interpreter {
                     }
                 }
                 Value::String(ref string) => {
-                    if let Some(aliased_value) = context
+                    if context.entered_aliases.contains(string) {
+                        context
+                            .recursed_aliases_types
+                            .entry(string.clone())
+                            .or_insert(Type::RecursedAlias(string.clone()))
+                            .clone()
+                    } else if let Some(aliased_value) = context
                         .aliases
                         .get(string)
                         .and_then(|values_for_this_name| values_for_this_name.last())
@@ -1198,7 +1207,7 @@ mod tests {
     }
 
     #[test]
-    fn test_recursive() {
+    fn test_recursive_normal() {
         assert_eq!(
             *default_interpreter()
                 .compute(Arc::new(
@@ -1252,6 +1261,9 @@ mod tests {
                 .unwrap(),
             Value::Number(55.0)
         );
+    }
+    #[test]
+    fn test_recursive_short() {
         assert_eq!(
             *default_interpreter()
                 .compute(Arc::new(
@@ -1293,6 +1305,9 @@ mod tests {
                 .unwrap(),
             Value::Number(1.0)
         );
+    }
+    #[test]
+    fn test_recursive_error() {
         assert!(default_interpreter()
             .compute(Arc::new(
                 serde_json::from_value(json!({
@@ -1338,94 +1353,175 @@ mod tests {
                 .unwrap(),
             ))
             .is_err());
-        assert_eq!(
-            *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
-                      "WITH": {
-                        "DEFINITIONS": {
-                          "FIBONACCI_1": {
-                            "IF": {
-                              "IS_SORTED": [
-                                "_",
-                                1
-                              ]
-                            },
-                            "THEN": "_",
-                            "ELSE": {
+    }
+    #[test]
+    fn test_recursive_long() {
+        let builder = std::thread::Builder::new().stack_size(8 * 1024 * 1024);
+        let handler = builder
+            .spawn(|| {
+                assert_eq!(
+                    *default_interpreter()
+                        .compute(Arc::new(
+                            serde_json::from_value(json!({
                               "WITH": {
-                                "CONSTANTS": {
-                                  "x": "_"
+                                "DEFINITIONS": {
+                                  "FIBONACCI_1": {
+                                    "IF": {
+                                      "IS_SORTED": [
+                                        "_",
+                                        1
+                                      ]
+                                    },
+                                    "THEN": "_",
+                                    "ELSE": {
+                                      "WITH": {
+                                        "CONSTANTS": {
+                                          "x": "_"
+                                        }
+                                      },
+                                      "COMPUTE": {
+                                        "SUM": [
+                                          {
+                                            "FIBONACCI_2": {
+                                              "SUM": [
+                                                "x",
+                                                -1
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "FIBONACCI_2": {
+                                              "SUM": [
+                                                "x",
+                                                -2
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "FIBONACCI_2": {
+                                    "IF": {
+                                      "IS_SORTED": [
+                                        "_",
+                                        1
+                                      ]
+                                    },
+                                    "THEN": "_",
+                                    "ELSE": {
+                                      "WITH": {
+                                        "CONSTANTS": {
+                                          "x": "_"
+                                        }
+                                      },
+                                      "COMPUTE": {
+                                        "SUM": [
+                                          {
+                                            "FIBONACCI_3": {
+                                              "SUM": [
+                                                "x",
+                                                -1
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "FIBONACCI_3": {
+                                              "SUM": [
+                                                "x",
+                                                -2
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "FIBONACCI_3": {
+                                    "IF": {
+                                      "IS_SORTED": [
+                                        "_",
+                                        1
+                                      ]
+                                    },
+                                    "THEN": "_",
+                                    "ELSE": {
+                                      "WITH": {
+                                        "CONSTANTS": {
+                                          "x": "_"
+                                        }
+                                      },
+                                      "COMPUTE": {
+                                        "SUM": [
+                                          {
+                                            "FIBONACCI_4": {
+                                              "SUM": [
+                                                "x",
+                                                -1
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "FIBONACCI_4": {
+                                              "SUM": [
+                                                "x",
+                                                -2
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "FIBONACCI_4": {
+                                    "IF": {
+                                      "IS_SORTED": [
+                                        "_",
+                                        1
+                                      ]
+                                    },
+                                    "THEN": "_",
+                                    "ELSE": {
+                                      "WITH": {
+                                        "CONSTANTS": {
+                                          "x": "_"
+                                        }
+                                      },
+                                      "COMPUTE": {
+                                        "SUM": [
+                                          {
+                                            "FIBONACCI_1": {
+                                              "SUM": [
+                                                "x",
+                                                -1
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "FIBONACCI_1": {
+                                              "SUM": [
+                                                "x",
+                                                -2
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
                                 }
                               },
                               "COMPUTE": {
-                                "SUM": [
-                                  {
-                                    "FIBONACCI_2": {
-                                      "SUM": [
-                                        "x",
-                                        -1
-                                      ]
-                                    }
-                                  },
-                                  {
-                                    "FIBONACCI_2": {
-                                      "SUM": [
-                                        "x",
-                                        -2
-                                      ]
-                                    }
-                                  }
-                                ]
+                                "FIBONACCI_1": 10
                               }
-                            }
-                          },
-                          "FIBONACCI_2": {
-                            "IF": {
-                              "IS_SORTED": [
-                                "_",
-                                1
-                              ]
-                            },
-                            "THEN": "_",
-                            "ELSE": {
-                              "WITH": {
-                                "CONSTANTS": {
-                                  "x": "_"
-                                }
-                              },
-                              "COMPUTE": {
-                                "SUM": [
-                                  {
-                                    "FIBONACCI_1": {
-                                      "SUM": [
-                                        "x",
-                                        -1
-                                      ]
-                                    }
-                                  },
-                                  {
-                                    "FIBONACCI_1": {
-                                      "SUM": [
-                                        "x",
-                                        -2
-                                      ]
-                                    }
-                                  }
-                                ]
-                              }
-                            }
-                          }
-                        }
-                      },
-                      "COMPUTE": {
-                        "FIBONACCI_1": 10
-                      }
-                    }))
-                    .unwrap()
-                ))
-                .unwrap(),
-            Value::Number(55.0)
-        );
+                            }))
+                            .unwrap()
+                        ))
+                        .unwrap(),
+                    Value::Number(55.0)
+                );
+            })
+            .unwrap();
+        handler.join().unwrap();
     }
 }
