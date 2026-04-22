@@ -21,9 +21,9 @@ pub enum Type {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct With {
     #[serde(default)]
-    definitions: BTreeMap<String, Arc<Value>>,
+    definitions: Arc<BTreeMap<String, Arc<Value>>>,
     #[serde(default)]
-    constants: BTreeMap<String, Arc<Value>>,
+    constants: Arc<BTreeMap<String, Arc<Value>>>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -382,7 +382,454 @@ impl ComputationContext {
     }
 }
 
+#[derive(Debug)]
+pub struct TypeCheckingStackElement<'a> {
+    recursive_call_result: Option<Type>,
+    step: TypeCheckingStep<'a>,
+}
+
+#[derive(Debug)]
+pub enum TypeCheckingStep<'a> {
+    GetType(Arc<Value>),
+    ProcessValueWith1 {
+        with_clause: Arc<WithCompute>,
+        last_constant_name: String,
+        constants_iterator: std::collections::btree_map::Iter<'a, String, Arc<Value>>,
+    },
+    ProcessValueWith2 {
+        with_clause: Arc<WithCompute>,
+    },
+    ProcessValueMap,
+    ProcessValueFilter,
+    ProcessValueReduce,
+    ProcessValueBranching,
+    ProcessValueObject,
+    ProcessValueArray,
+    ProcessValueString,
+}
+
 impl Interpreter {
+    pub fn check_types(&self, program: Arc<Value>) -> Result<Type> {
+        let mut stack = vec![TypeCheckingStackElement {
+            recursive_call_result: None,
+            step: TypeCheckingStep::GetType(program),
+        }];
+        let mut context = TypeCheckingContext {
+            path: vec![],
+            aliases: BTreeMap::new(),
+            entered_aliases: BTreeSet::new(),
+            recursed_aliases_types: BTreeMap::new(),
+        };
+
+        loop {
+            if let Some(stack_element) = stack.last_mut() {
+                println!("{stack_element:?} {context:?}");
+                match stack_element.step {
+                    TypeCheckingStep::GetType(value) => match *value {
+                        Value::With(with_clause) => {
+                            stack.pop();
+                            for (alias_name, alias_value) in with_clause.with.definitions.iter() {
+                                context.add_alias(
+                                    alias_name.clone(),
+                                    TypeOrValue::Value(alias_value.clone()),
+                                );
+                            }
+                            context.path.push("WITH".to_string());
+                            let mut constants_iterator = with_clause.with.constants.iter();
+                            if let Some((first_constant_name, first_constant_value)) =
+                                constants_iterator.next()
+                            {
+                                context.path.push("CONSTANTS".to_string());
+                                context.path.push(first_constant_name.to_string());
+                                stack.push(TypeCheckingStackElement {
+                                    recursive_call_result: None,
+                                    step: TypeCheckingStep::ProcessValueWith1 {
+                                        last_constant_name: first_constant_name.clone(),
+                                        with_clause: Arc::new(with_clause),
+                                        constants_iterator,
+                                    },
+                                });
+                                stack.push(TypeCheckingStackElement {
+                                    recursive_call_result: None,
+                                    step: TypeCheckingStep::GetType(first_constant_value.clone()),
+                                });
+                            }
+                        }
+                    },
+                    TypeCheckingStep::ProcessValueWith1 {
+                        with_clause,
+                        last_constant_name,
+                        constants_iterator,
+                    } => {
+                        let precomputed_type = stack_element.recursive_call_result.unwrap();
+                        context.add_alias(
+                            last_constant_name.clone(),
+                            TypeOrValue::Type(precomputed_type),
+                        );
+                        if let Some((constant_name, constant_value)) = constants_iterator.next() {
+                            *context.path.last_mut().unwrap() = constant_name.to_string();
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(constant_value.clone()),
+                            });
+                        } else {
+                            *context.path.last_mut().unwrap() = "COMPUTE".to_string();
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(with_clause.compute.clone()),
+                            });
+                        }
+                    }
+                    TypeCheckingStep::ProcessValueWith2 { with_clause } => {
+                        context.path.pop();
+                        context.path.pop();
+                        for alias_name in with_clause.with.definitions.keys() {
+                            context.remove_alias(alias_name.clone());
+                        }
+                        for alias_name in with_clause.with.constants.keys() {
+                            context.remove_alias(alias_name.clone());
+                        }
+                        stack.pop();
+                        if let Some(previous_stack_element) = stack.last_mut() {
+                            previous_stack_element.recursive_call_result =
+                                stack_element.recursive_call_result;
+                        }
+                    }
+                };
+                match program {
+                    TypeOrValue::Type(program_type) => program_type,
+                    TypeOrValue::Value(program) => match *program {
+                        Value::Map(ref map_clause) => {
+                            context.path.push("MAP".to_string());
+                            let actual_array_type =
+                                self.get_type(TypeOrValue::Value(map_clause.map.clone()), context)?;
+                            context.path.pop();
+                            if let Type::Array(ref array_element_type) = actual_array_type {
+                                context.add_alias(
+                                    map_clause.as_alias.clone(),
+                                    TypeOrValue::Type(*array_element_type.clone()),
+                                );
+                                context.path.push("THROUGH".to_string());
+                                let result = self.get_type(
+                                    TypeOrValue::Value(map_clause.through.clone()),
+                                    context,
+                                )?;
+                                context.path.pop();
+                                context.remove_alias(map_clause.as_alias.clone());
+                                Type::Array(Box::new(result))
+                            } else {
+                                return Err(anyhow!(
+                                    "Expected array for map clause at path {:?}, got \
+                                     {actual_array_type:?}",
+                                    context.path
+                                ));
+                            }
+                        }
+                        Value::Filter(ref filter_clause) => {
+                            context.path.push("FILTER".to_string());
+                            let actual_array_type = self.get_type(
+                                TypeOrValue::Value(filter_clause.filter.clone()),
+                                context,
+                            )?;
+                            context.path.pop();
+                            if let Type::Array(ref array_element_type) = actual_array_type {
+                                context.add_alias(
+                                    filter_clause.as_alias.clone(),
+                                    TypeOrValue::Type(*array_element_type.clone()),
+                                );
+                                context.path.push("THROUGH".to_string());
+                                let through_type = self.get_type(
+                                    TypeOrValue::Value(filter_clause.through.clone()),
+                                    context,
+                                )?;
+                                context.path.pop();
+                                context
+                                    .assert_equal(&through_type, &Type::Bool)
+                                    .with_context(|| {
+                                        anyhow!(
+                                            "Expected filter at path {:?} to use function which \
+                                             returns boolean value, but it returns \
+                                             {through_type:?}",
+                                            context.path
+                                        )
+                                    })?;
+                                context.remove_alias(filter_clause.as_alias.clone());
+                                Type::Array(array_element_type.clone())
+                            } else {
+                                return Err(anyhow!(
+                                    "Expected array for filter clause at path {:?}, got \
+                                     {actual_array_type:?}",
+                                    context.path
+                                ));
+                            }
+                        }
+                        Value::Reduce(ref reduce_clause) => {
+                            context.path.push("REDUCE".to_string());
+                            let actual_array_type = self.get_type(
+                                TypeOrValue::Value(reduce_clause.reduce.clone()),
+                                context,
+                            )?;
+                            context.path.pop();
+                            if let Type::Array(ref array_element_type) = actual_array_type {
+                                let starting_with_type = self.get_type(
+                                    TypeOrValue::Value(reduce_clause.starting_with.clone()),
+                                    context,
+                                )?;
+                                context.add_alias(
+                                    reduce_clause.as_alias.clone(),
+                                    TypeOrValue::Type(*array_element_type.clone()),
+                                );
+                                context.add_alias(
+                                    reduce_clause.accumulating_in_alias.clone(),
+                                    TypeOrValue::Type(starting_with_type.clone()),
+                                );
+                                context.path.push("THROUGH".to_string());
+                                let through_type = self.get_type(
+                                    TypeOrValue::Value(reduce_clause.through.clone()),
+                                    context,
+                                )?;
+                                context.path.pop();
+                                context
+                                    .assert_equal(&through_type, &starting_with_type)
+                                    .with_context(|| {
+                                        anyhow!(
+                                            "Expected reduce at path {:?} to use function which \
+                                             returns value of type {starting_with_type:?} (as is \
+                                             starting value), but it returns {through_type:?}",
+                                            context.path
+                                        )
+                                    })?;
+                                context.remove_alias(reduce_clause.as_alias.clone());
+                                context.remove_alias(reduce_clause.accumulating_in_alias.clone());
+                                Type::Array(Box::new(through_type))
+                            } else {
+                                return Err(anyhow!(
+                                    "Expected array for reduce clause at path {:?}, got \
+                                     {actual_array_type:?}",
+                                    context.path
+                                ));
+                            }
+                        }
+                        Value::Branching(ref branching_clause) => {
+                            context.path.push("IF".to_string());
+                            let if_branch_type = self.get_type(
+                                TypeOrValue::Value(branching_clause.if_.clone()),
+                                context,
+                            )?;
+                            context.path.pop();
+                            if if_branch_type != Type::Bool {
+                                return Err(anyhow!(
+                                    "Expected condition at path {:?} to be of boolean type, but \
+                                     it is of type {if_branch_type:?}",
+                                    context.path
+                                ));
+                            }
+                            context.path.push("THEN".to_string());
+                            let then_branch_type = self.get_type(
+                                TypeOrValue::Value(branching_clause.then.clone()),
+                                context,
+                            )?;
+                            context.path.pop();
+                            context.path.push("ELSE".to_string());
+                            let else_branch_type = self.get_type(
+                                TypeOrValue::Value(branching_clause.else_.clone()),
+                                context,
+                            )?;
+                            context.path.pop();
+                            context
+                                .assert_equal(&then_branch_type, &else_branch_type)
+                                .with_context(|| {
+                                    anyhow!(
+                                        "Expected 'then' and 'else' branches at path {:?} to be \
+                                         of the same type, but 'then' branch is of type \
+                                         {then_branch_type:?} and 'else' branch is of type \
+                                         {else_branch_type:?}",
+                                        context.path
+                                    )
+                                })?;
+                            then_branch_type
+                        }
+                        Value::Object(ref object) => {
+                            if object.len() == 1 {
+                                let (name, arguments) = object.iter().next().unwrap();
+                                if let Some(aliased_value) = context
+                                    .aliases
+                                    .get(name)
+                                    .and_then(|aliases_with_this_name| {
+                                        aliases_with_this_name.last()
+                                    })
+                                    .cloned()
+                                {
+                                    if context.entered_aliases.contains(name) {
+                                        if let Some(this_recursed_alias_type) =
+                                            context.recursed_aliases_types.get(name)
+                                        {
+                                            return Ok(this_recursed_alias_type.clone());
+                                        } else {
+                                            context.recursed_aliases_types.insert(
+                                                name.clone(),
+                                                Type::RecursedAlias(name.clone()),
+                                            );
+                                        }
+                                    }
+                                    let mut aliases_names = vec![];
+                                    if let Value::Object(ref aliases) = **arguments {
+                                        if aliases.len() == 1 {
+                                            aliases_names.push("_".to_string());
+                                            context.add_alias(
+                                                "_".to_string(),
+                                                TypeOrValue::Value(arguments.clone()),
+                                            );
+                                        } else {
+                                            for (alias_name, alias_value) in aliases.iter() {
+                                                aliases_names.push(alias_name.clone());
+                                                context.add_alias(
+                                                    alias_name.clone(),
+                                                    TypeOrValue::Value(alias_value.clone()),
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        aliases_names.push("_".to_string());
+                                        context.add_alias(
+                                            "_".to_string(),
+                                            TypeOrValue::Value(arguments.clone()),
+                                        );
+                                    }
+                                    context.path.push(name.clone());
+                                    context.entered_aliases.insert(name.clone());
+                                    let result = self.get_type(aliased_value, context)?;
+                                    context.path.pop();
+                                    context.entered_aliases.remove(name);
+                                    for alias_name in aliases_names {
+                                        context.remove_alias(alias_name.clone());
+                                        context.recursed_aliases_types.remove(&alias_name);
+                                    }
+                                    return Ok(result);
+                                }
+                                if let Some(function) = self.supported_functions.get(name) {
+                                    context.path.push(name.clone());
+                                    let arguments_type = self
+                                        .get_type(TypeOrValue::Value(arguments.clone()), context)?;
+                                    let generic_values = context
+                                        .assert_equal(&function.argument_type, &arguments_type)?;
+                                    context.path.pop();
+                                    let mut result = function.return_type.clone();
+                                    context.substitute_generic_arguments_values(
+                                        &mut result,
+                                        &generic_values,
+                                    )?;
+                                    result
+                                } else {
+                                    return Err(anyhow!(
+                                        "Expected supported function at path {:?}, but got \
+                                         unsupported function {name:?}. Supported functions are: \
+                                         {:?}",
+                                        context.path,
+                                        self.supported_functions
+                                            .keys()
+                                            .cloned()
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    ));
+                                }
+                            } else {
+                                let mut result_map = BTreeMap::new();
+                                for (key, value) in object {
+                                    context.path.push(key.clone());
+                                    result_map.insert(
+                                        key.clone(),
+                                        self.get_type(TypeOrValue::Value(value.clone()), context)?,
+                                    );
+                                    context.path.pop();
+                                }
+                                Type::Object(result_map)
+                            }
+                        }
+                        Value::Array(ref array) => {
+                            let mut non_recursed_elements_indexes_and_types =
+                                Vec::with_capacity(array.len());
+                            let mut recursed_elements_aliases_names = vec![];
+                            for (element_index, element) in array.iter().enumerate() {
+                                context.path.push(element_index.to_string());
+                                match self.get_type(TypeOrValue::Value(element.clone()), context)? {
+                                    Type::RecursedAlias(recursed_alias_name) => {
+                                        recursed_elements_aliases_names.push(recursed_alias_name);
+                                    }
+                                    non_recursed_type => {
+                                        non_recursed_elements_indexes_and_types
+                                            .push((element_index, non_recursed_type));
+                                    }
+                                }
+                                context.path.pop();
+                            }
+                            if let Some(first_non_recursed_element_type) =
+                                non_recursed_elements_indexes_and_types
+                                    .first()
+                                    .and_then(|(_, element_type)| Some(element_type))
+                            {
+                                if let Some((unexpected_type_element_index, unexpected_type)) =
+                                    non_recursed_elements_indexes_and_types.iter().find(
+                                        |(_, element_type)| {
+                                            element_type != first_non_recursed_element_type
+                                        },
+                                    )
+                                {
+                                    context.path.push(unexpected_type_element_index.to_string());
+                                    let result_error = Err(anyhow!(
+                                        "Expected value at path {:?} to be of type \
+                                         {first_non_recursed_element_type:?}, but it is of type \
+                                         {unexpected_type:?}",
+                                        context.path
+                                    ));
+                                    context.path.pop();
+                                    return result_error;
+                                } else {
+                                    Type::Array(Box::new(first_non_recursed_element_type.clone()))
+                                }
+                            } else if let Some(first_recursed_element_alias_name) =
+                                recursed_elements_aliases_names.first()
+                            {
+                                Type::Array(Box::new(Type::RecursedAlias(
+                                    first_recursed_element_alias_name.clone(),
+                                )))
+                            } else {
+                                return Err(anyhow!(
+                                    "Expected non-empty array at path {:?}",
+                                    context.path
+                                ));
+                            }
+                        }
+                        Value::String(ref string) => {
+                            if context.entered_aliases.contains(string) {
+                                context
+                                    .recursed_aliases_types
+                                    .entry(string.clone())
+                                    .or_insert(Type::RecursedAlias(string.clone()))
+                                    .clone()
+                            } else if let Some(aliased_value) = context
+                                .aliases
+                                .get(string)
+                                .and_then(|values_for_this_name| values_for_this_name.last())
+                                .cloned()
+                            {
+                                context.path.push(string.clone());
+                                let result = self.get_type(aliased_value.clone(), context)?;
+                                context.path.pop();
+                                result
+                            } else {
+                                Type::String
+                            }
+                        }
+                        Value::Number(_) => Type::Number,
+                        Value::Bool(_) => Type::Bool,
+                        Value::Null => Type::Null,
+                    },
+                };
+            }
+        }
+    }
+
     pub fn compute(&self, program: Arc<Value>) -> Result<Arc<Value>> {
         self.check_types(program.clone())?;
         self.compute_with_context(
@@ -591,356 +1038,6 @@ impl Interpreter {
             }
             ref value => Arc::new(value.clone()),
         })
-    }
-
-    pub fn check_types(&self, program: Arc<Value>) -> Result<Type> {
-        self.get_type(
-            TypeOrValue::Value(program),
-            &mut TypeCheckingContext {
-                path: vec![],
-                aliases: BTreeMap::new(),
-                entered_aliases: BTreeSet::new(),
-                recursed_aliases_types: BTreeMap::new(),
-            },
-        )
-    }
-
-    fn get_type(&self, program: TypeOrValue, context: &mut TypeCheckingContext) -> Result<Type> {
-        println!("{:?} {:?}", context, program);
-        let result = match program {
-            TypeOrValue::Type(program_type) => program_type,
-            TypeOrValue::Value(program) => match *program {
-                Value::With(ref with_clause) => {
-                    for (alias_name, alias_value) in with_clause.with.definitions.iter() {
-                        context
-                            .add_alias(alias_name.clone(), TypeOrValue::Value(alias_value.clone()));
-                    }
-                    context.path.push("WITH".to_string());
-                    context.path.push("CONSTANTS".to_string());
-                    for (alias_name, alias_value) in with_clause.with.constants.iter() {
-                        context.path.push(alias_name.clone());
-                        let precomputed_type =
-                            self.get_type(TypeOrValue::Value(alias_value.clone()), context)?;
-                        context.path.pop();
-                        context.add_alias(alias_name.clone(), TypeOrValue::Type(precomputed_type));
-                    }
-                    context.path.pop();
-                    context.path.push("COMPUTE".to_string());
-                    let result =
-                        self.get_type(TypeOrValue::Value(with_clause.compute.clone()), context)?;
-                    context.path.pop();
-                    context.path.pop();
-                    for alias_name in with_clause.with.definitions.keys() {
-                        context.remove_alias(alias_name.clone());
-                    }
-                    for alias_name in with_clause.with.constants.keys() {
-                        context.remove_alias(alias_name.clone());
-                    }
-                    result
-                }
-                Value::Map(ref map_clause) => {
-                    context.path.push("MAP".to_string());
-                    let actual_array_type =
-                        self.get_type(TypeOrValue::Value(map_clause.map.clone()), context)?;
-                    context.path.pop();
-                    if let Type::Array(ref array_element_type) = actual_array_type {
-                        context.add_alias(
-                            map_clause.as_alias.clone(),
-                            TypeOrValue::Type(*array_element_type.clone()),
-                        );
-                        context.path.push("THROUGH".to_string());
-                        let result =
-                            self.get_type(TypeOrValue::Value(map_clause.through.clone()), context)?;
-                        context.path.pop();
-                        context.remove_alias(map_clause.as_alias.clone());
-                        Type::Array(Box::new(result))
-                    } else {
-                        return Err(anyhow!(
-                            "Expected array for map clause at path {:?}, got {actual_array_type:?}",
-                            context.path
-                        ));
-                    }
-                }
-                Value::Filter(ref filter_clause) => {
-                    context.path.push("FILTER".to_string());
-                    let actual_array_type =
-                        self.get_type(TypeOrValue::Value(filter_clause.filter.clone()), context)?;
-                    context.path.pop();
-                    if let Type::Array(ref array_element_type) = actual_array_type {
-                        context.add_alias(
-                            filter_clause.as_alias.clone(),
-                            TypeOrValue::Type(*array_element_type.clone()),
-                        );
-                        context.path.push("THROUGH".to_string());
-                        let through_type = self
-                            .get_type(TypeOrValue::Value(filter_clause.through.clone()), context)?;
-                        context.path.pop();
-                        context
-                            .assert_equal(&through_type, &Type::Bool)
-                            .with_context(|| {
-                                anyhow!(
-                                    "Expected filter at path {:?} to use function which returns \
-                                     boolean value, but it returns {through_type:?}",
-                                    context.path
-                                )
-                            })?;
-                        context.remove_alias(filter_clause.as_alias.clone());
-                        Type::Array(array_element_type.clone())
-                    } else {
-                        return Err(anyhow!(
-                            "Expected array for filter clause at path {:?}, got \
-                             {actual_array_type:?}",
-                            context.path
-                        ));
-                    }
-                }
-                Value::Reduce(ref reduce_clause) => {
-                    context.path.push("REDUCE".to_string());
-                    let actual_array_type =
-                        self.get_type(TypeOrValue::Value(reduce_clause.reduce.clone()), context)?;
-                    context.path.pop();
-                    if let Type::Array(ref array_element_type) = actual_array_type {
-                        let starting_with_type = self.get_type(
-                            TypeOrValue::Value(reduce_clause.starting_with.clone()),
-                            context,
-                        )?;
-                        context.add_alias(
-                            reduce_clause.as_alias.clone(),
-                            TypeOrValue::Type(*array_element_type.clone()),
-                        );
-                        context.add_alias(
-                            reduce_clause.accumulating_in_alias.clone(),
-                            TypeOrValue::Type(starting_with_type.clone()),
-                        );
-                        context.path.push("THROUGH".to_string());
-                        let through_type = self
-                            .get_type(TypeOrValue::Value(reduce_clause.through.clone()), context)?;
-                        context.path.pop();
-                        context
-                            .assert_equal(&through_type, &starting_with_type)
-                            .with_context(|| {
-                                anyhow!(
-                                    "Expected reduce at path {:?} to use function which returns \
-                                     value of type {starting_with_type:?} (as is starting value), \
-                                     but it returns {through_type:?}",
-                                    context.path
-                                )
-                            })?;
-                        context.remove_alias(reduce_clause.as_alias.clone());
-                        context.remove_alias(reduce_clause.accumulating_in_alias.clone());
-                        Type::Array(Box::new(through_type))
-                    } else {
-                        return Err(anyhow!(
-                            "Expected array for reduce clause at path {:?}, got \
-                             {actual_array_type:?}",
-                            context.path
-                        ));
-                    }
-                }
-                Value::Branching(ref branching_clause) => {
-                    context.path.push("IF".to_string());
-                    let if_branch_type =
-                        self.get_type(TypeOrValue::Value(branching_clause.if_.clone()), context)?;
-                    context.path.pop();
-                    if if_branch_type != Type::Bool {
-                        return Err(anyhow!(
-                            "Expected condition at path {:?} to be of boolean type, but it is of \
-                             type {if_branch_type:?}",
-                            context.path
-                        ));
-                    }
-                    context.path.push("THEN".to_string());
-                    let then_branch_type =
-                        self.get_type(TypeOrValue::Value(branching_clause.then.clone()), context)?;
-                    context.path.pop();
-                    context.path.push("ELSE".to_string());
-                    let else_branch_type =
-                        self.get_type(TypeOrValue::Value(branching_clause.else_.clone()), context)?;
-                    context.path.pop();
-                    context
-                        .assert_equal(&then_branch_type, &else_branch_type)
-                        .with_context(|| {
-                            anyhow!(
-                                "Expected 'then' and 'else' branches at path {:?} to be of the \
-                                 same type, but 'then' branch is of type {then_branch_type:?} and \
-                                 'else' branch is of type {else_branch_type:?}",
-                                context.path
-                            )
-                        })?;
-                    then_branch_type
-                }
-                Value::Object(ref object) => {
-                    if object.len() == 1 {
-                        let (name, arguments) = object.iter().next().unwrap();
-                        if let Some(aliased_value) = context
-                            .aliases
-                            .get(name)
-                            .and_then(|aliases_with_this_name| aliases_with_this_name.last())
-                            .cloned()
-                        {
-                            if context.entered_aliases.contains(name) {
-                                if let Some(this_recursed_alias_type) =
-                                    context.recursed_aliases_types.get(name)
-                                {
-                                    return Ok(this_recursed_alias_type.clone());
-                                } else {
-                                    context
-                                        .recursed_aliases_types
-                                        .insert(name.clone(), Type::RecursedAlias(name.clone()));
-                                }
-                            }
-                            let mut aliases_names = vec![];
-                            if let Value::Object(ref aliases) = **arguments {
-                                if aliases.len() == 1 {
-                                    aliases_names.push("_".to_string());
-                                    context.add_alias(
-                                        "_".to_string(),
-                                        TypeOrValue::Value(arguments.clone()),
-                                    );
-                                } else {
-                                    for (alias_name, alias_value) in aliases.iter() {
-                                        aliases_names.push(alias_name.clone());
-                                        context.add_alias(
-                                            alias_name.clone(),
-                                            TypeOrValue::Value(alias_value.clone()),
-                                        );
-                                    }
-                                }
-                            } else {
-                                aliases_names.push("_".to_string());
-                                context.add_alias(
-                                    "_".to_string(),
-                                    TypeOrValue::Value(arguments.clone()),
-                                );
-                            }
-                            context.path.push(name.clone());
-                            context.entered_aliases.insert(name.clone());
-                            let result = self.get_type(aliased_value, context)?;
-                            context.path.pop();
-                            context.entered_aliases.remove(name);
-                            for alias_name in aliases_names {
-                                context.remove_alias(alias_name.clone());
-                                context.recursed_aliases_types.remove(&alias_name);
-                            }
-                            return Ok(result);
-                        }
-                        if let Some(function) = self.supported_functions.get(name) {
-                            context.path.push(name.clone());
-                            let arguments_type =
-                                self.get_type(TypeOrValue::Value(arguments.clone()), context)?;
-                            let generic_values =
-                                context.assert_equal(&function.argument_type, &arguments_type)?;
-                            context.path.pop();
-                            let mut result = function.return_type.clone();
-                            context.substitute_generic_arguments_values(
-                                &mut result,
-                                &generic_values,
-                            )?;
-                            result
-                        } else {
-                            return Err(anyhow!(
-                                "Expected supported function at path {:?}, but got unsupported \
-                                 function {name:?}. Supported functions are: {:?}",
-                                context.path,
-                                self.supported_functions
-                                    .keys()
-                                    .cloned()
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            ));
-                        }
-                    } else {
-                        let mut result_map = BTreeMap::new();
-                        for (key, value) in object {
-                            context.path.push(key.clone());
-                            result_map.insert(
-                                key.clone(),
-                                self.get_type(TypeOrValue::Value(value.clone()), context)?,
-                            );
-                            context.path.pop();
-                        }
-                        Type::Object(result_map)
-                    }
-                }
-                Value::Array(ref array) => {
-                    let mut non_recursed_elements_indexes_and_types =
-                        Vec::with_capacity(array.len());
-                    let mut recursed_elements_aliases_names = vec![];
-                    for (element_index, element) in array.iter().enumerate() {
-                        context.path.push(element_index.to_string());
-                        match self.get_type(TypeOrValue::Value(element.clone()), context)? {
-                            Type::RecursedAlias(recursed_alias_name) => {
-                                recursed_elements_aliases_names.push(recursed_alias_name);
-                            }
-                            non_recursed_type => {
-                                non_recursed_elements_indexes_and_types
-                                    .push((element_index, non_recursed_type));
-                            }
-                        }
-                        context.path.pop();
-                    }
-                    if let Some(first_non_recursed_element_type) =
-                        non_recursed_elements_indexes_and_types
-                            .first()
-                            .and_then(|(_, element_type)| Some(element_type))
-                    {
-                        if let Some((unexpected_type_element_index, unexpected_type)) =
-                            non_recursed_elements_indexes_and_types.iter().find(
-                                |(_, element_type)| element_type != first_non_recursed_element_type,
-                            )
-                        {
-                            context.path.push(unexpected_type_element_index.to_string());
-                            let result_error = Err(anyhow!(
-                                "Expected value at path {:?} to be of type \
-                                 {first_non_recursed_element_type:?}, but it is of type \
-                                 {unexpected_type:?}",
-                                context.path
-                            ));
-                            context.path.pop();
-                            return result_error;
-                        } else {
-                            Type::Array(Box::new(first_non_recursed_element_type.clone()))
-                        }
-                    } else if let Some(first_recursed_element_alias_name) =
-                        recursed_elements_aliases_names.first()
-                    {
-                        Type::Array(Box::new(Type::RecursedAlias(
-                            first_recursed_element_alias_name.clone(),
-                        )))
-                    } else {
-                        return Err(anyhow!(
-                            "Expected non-empty array at path {:?}",
-                            context.path
-                        ));
-                    }
-                }
-                Value::String(ref string) => {
-                    if context.entered_aliases.contains(string) {
-                        context
-                            .recursed_aliases_types
-                            .entry(string.clone())
-                            .or_insert(Type::RecursedAlias(string.clone()))
-                            .clone()
-                    } else if let Some(aliased_value) = context
-                        .aliases
-                        .get(string)
-                        .and_then(|values_for_this_name| values_for_this_name.last())
-                        .cloned()
-                    {
-                        context.path.push(string.clone());
-                        let result = self.get_type(aliased_value.clone(), context)?;
-                        context.path.pop();
-                        result
-                    } else {
-                        Type::String
-                    }
-                }
-                Value::Number(_) => Type::Number,
-                Value::Bool(_) => Type::Bool,
-                Value::Null => Type::Null,
-            },
-        };
-        Ok(result)
     }
 }
 

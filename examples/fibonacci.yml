@@ -16,3 +16,16 @@ WITH:
                 SUM: [x, -2]
 COMPUTE:
   FIBONACCI: 10
+
+algorithm:
+  - put program on the stack
+  - proceed to matching
+  - when encounter recursive call:
+      - put current algorithm place indicator and local variables on the stack
+      - put recursive call on the stack
+      - continue loop
+  - when finally got resulting type:
+      if last element on the stack exists:
+        put resulting type into it
+      else:
+        return resulting type
