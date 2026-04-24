@@ -399,9 +399,30 @@ pub enum TypeCheckingStep<'a> {
     ProcessValueWith2 {
         with_clause: Arc<WithCompute>,
     },
-    ProcessValueMap,
-    ProcessValueFilter,
-    ProcessValueReduce,
+    ProcessValueMap1 {
+        map_clause: Arc<Map>,
+    },
+    ProcessValueMap2 {
+        map_clause: Arc<Map>,
+    },
+    ProcessValueFilter1 {
+        filter_clause: Arc<Filter>,
+    },
+    ProcessValueFilter2 {
+        filter_clause: Arc<Filter>,
+        array_element_type: Box<Type>,
+    },
+    ProcessValueReduce1 {
+        reduce_clause: Arc<Reduce>,
+    },
+    ProcessValueReduce2 {
+        reduce_clause: Arc<Reduce>,
+        array_element_type: Box<Type>,
+    },
+    ProcessValueReduce3 {
+        reduce_clause: Arc<Reduce>,
+        starting_with_type: Type,
+    },
     ProcessValueBranching,
     ProcessValueObject,
     ProcessValueArray,
@@ -425,6 +446,139 @@ impl Interpreter {
             if let Some(stack_element) = stack.last_mut() {
                 println!("{stack_element:?} {context:?}");
                 match stack_element.step {
+                    TypeCheckingStep::ProcessValueWith1 {
+                        with_clause,
+                        last_constant_name,
+                        constants_iterator,
+                    } => {
+                        let precomputed_type = stack_element.recursive_call_result.unwrap();
+                        context.add_alias(
+                            last_constant_name.clone(),
+                            TypeOrValue::Type(precomputed_type),
+                        );
+                        if let Some((constant_name, constant_value)) = constants_iterator.next() {
+                            *context.path.last_mut().unwrap() = constant_name.to_string();
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(constant_value.clone()),
+                            });
+                        } else {
+                            stack.pop();
+                            *context.path.last_mut().unwrap() = "COMPUTE".to_string();
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::ProcessValueWith2 { with_clause },
+                            });
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(with_clause.compute.clone()),
+                            });
+                        }
+                    }
+                    TypeCheckingStep::ProcessValueWith2 { with_clause } => {
+                        context.path.pop();
+                        context.path.pop();
+                        for alias_name in with_clause.with.definitions.keys() {
+                            context.remove_alias(alias_name.clone());
+                        }
+                        for alias_name in with_clause.with.constants.keys() {
+                            context.remove_alias(alias_name.clone());
+                        }
+                        stack.pop();
+                        let result = stack_element.recursive_call_result.unwrap();
+                        if let Some(previous_stack_element) = stack.last_mut() {
+                            previous_stack_element.recursive_call_result = Some(result);
+                        } else {
+                            return Ok(result);
+                        }
+                    }
+                    TypeCheckingStep::ProcessValueMap1 { map_clause } => {
+                        stack.pop();
+                        let actual_array_type = stack_element.recursive_call_result.unwrap();
+                        context.path.pop();
+                        if let Type::Array(ref array_element_type) = actual_array_type {
+                            context.add_alias(
+                                map_clause.as_alias.clone(),
+                                TypeOrValue::Type(*array_element_type.clone()),
+                            );
+                            *context.path.last_mut().unwrap() = "THROUGH".to_string();
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::ProcessValueMap2 { map_clause },
+                            });
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(map_clause.through.clone()),
+                            });
+                        } else {
+                            return Err(anyhow!(
+                                "Expected Array for at path {:?}, got {actual_array_type:?}",
+                                context.path
+                            ));
+                        }
+                    }
+                    TypeCheckingStep::ProcessValueMap2 { map_clause } => {
+                        context.path.pop();
+                        context.remove_alias(map_clause.as_alias.clone());
+                        let result =
+                            Type::Array(Box::new(stack_element.recursive_call_result.unwrap()));
+                        if let Some(previous_stack_element) = stack.last_mut() {
+                            previous_stack_element.recursive_call_result = Some(result);
+                        } else {
+                            return Ok(result);
+                        }
+                    }
+                    TypeCheckingStep::ProcessValueFilter1 { filter_clause } => {
+                        stack.pop();
+                        let actual_array_type = stack_element.recursive_call_result.unwrap();
+                        context.path.pop();
+                        if let Type::Array(ref array_element_type) = actual_array_type {
+                            context.add_alias(
+                                filter_clause.as_alias.clone(),
+                                TypeOrValue::Type(*array_element_type.clone()),
+                            );
+                            *context.path.last_mut().unwrap() = "THROUGH".to_string();
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::ProcessValueFilter2 {
+                                    filter_clause,
+                                    array_element_type: array_element_type.clone(),
+                                },
+                            });
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(filter_clause.through.clone()),
+                            });
+                        } else {
+                            return Err(anyhow!(
+                                "Expected Array for at path {:?}, got {actual_array_type:?}",
+                                context.path
+                            ));
+                        }
+                    }
+                    TypeCheckingStep::ProcessValueFilter2 {
+                        filter_clause,
+                        array_element_type,
+                    } => {
+                        let through_type = stack_element.recursive_call_result.unwrap();
+                        context
+                            .assert_equal(&through_type, &Type::Bool)
+                            .with_context(|| {
+                                anyhow!(
+                                    "Expected filter at path {:?} to be of boolean value boolean \
+                                     value, but it is of type {through_type:?}",
+                                    context.path
+                                )
+                            })?;
+                        context.path.pop();
+                        context.remove_alias(filter_clause.as_alias.clone());
+                        let result = Type::Array(array_element_type);
+                        if let Some(previous_stack_element) = stack.last_mut() {
+                            previous_stack_element.recursive_call_result = Some(result);
+                        } else {
+                            return Ok(result);
+                        }
+                    }
                     TypeCheckingStep::GetType(value) => match *value {
                         Value::With(with_clause) => {
                             stack.pop();
@@ -453,163 +607,140 @@ impl Interpreter {
                                     recursive_call_result: None,
                                     step: TypeCheckingStep::GetType(first_constant_value.clone()),
                                 });
+                            } else {
+                                context.path.push("COMPUTE".to_string());
+                                stack.push(TypeCheckingStackElement {
+                                    recursive_call_result: None,
+                                    step: TypeCheckingStep::GetType(with_clause.compute.clone()),
+                                });
+                                stack.push(TypeCheckingStackElement {
+                                    recursive_call_result: None,
+                                    step: TypeCheckingStep::GetType(with_clause.compute.clone()),
+                                });
                             }
                         }
-                    },
-                    TypeCheckingStep::ProcessValueWith1 {
-                        with_clause,
-                        last_constant_name,
-                        constants_iterator,
-                    } => {
-                        let precomputed_type = stack_element.recursive_call_result.unwrap();
-                        context.add_alias(
-                            last_constant_name.clone(),
-                            TypeOrValue::Type(precomputed_type),
-                        );
-                        if let Some((constant_name, constant_value)) = constants_iterator.next() {
-                            *context.path.last_mut().unwrap() = constant_name.to_string();
+                        Value::Map(map_clause) => {
+                            context.path.push("MAP".to_string());
                             stack.push(TypeCheckingStackElement {
                                 recursive_call_result: None,
-                                step: TypeCheckingStep::GetType(constant_value.clone()),
+                                step: TypeCheckingStep::ProcessValueMap1 {
+                                    map_clause: Arc::new(map_clause),
+                                },
+                            });
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(map_clause.map.clone()),
+                            });
+                        }
+                        Value::Filter(filter_clause) => {
+                            context.path.push("FILTER".to_string());
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::ProcessValueFilter1 {
+                                    filter_clause: Arc::new(filter_clause),
+                                },
+                            });
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(filter_clause.filter.clone()),
+                            });
+                        }
+                        Value::Reduce(reduce_clause) => {
+                            context.path.push("REDUCE".to_string());
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::ProcessValueReduce1 {
+                                    reduce_clause: Arc::new(reduce_clause),
+                                },
+                            });
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(reduce_clause.reduce.clone()),
+                            });
+                        }
+                    },
+                    TypeCheckingStep::ProcessValueReduce1 { reduce_clause } => {
+                        stack.pop();
+                        let actual_array_type = stack_element.recursive_call_result.unwrap();
+                        context.path.pop();
+                        if let Type::Array(ref array_element_type) = actual_array_type {
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::ProcessValueReduce2 {
+                                    reduce_clause,
+                                    array_element_type: array_element_type.clone(),
+                                },
+                            });
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(
+                                    reduce_clause.starting_with.clone(),
+                                ),
                             });
                         } else {
-                            *context.path.last_mut().unwrap() = "COMPUTE".to_string();
-                            stack.push(TypeCheckingStackElement {
-                                recursive_call_result: None,
-                                step: TypeCheckingStep::GetType(with_clause.compute.clone()),
-                            });
+                            return Err(anyhow!(
+                                "Expected Array for at path {:?}, got {actual_array_type:?}",
+                                context.path
+                            ));
                         }
                     }
-                    TypeCheckingStep::ProcessValueWith2 { with_clause } => {
-                        context.path.pop();
-                        context.path.pop();
-                        for alias_name in with_clause.with.definitions.keys() {
-                            context.remove_alias(alias_name.clone());
-                        }
-                        for alias_name in with_clause.with.constants.keys() {
-                            context.remove_alias(alias_name.clone());
-                        }
+                    TypeCheckingStep::ProcessValueReduce2 {
+                        reduce_clause,
+                        array_element_type,
+                    } => {
                         stack.pop();
+                        let starting_with_type = stack_element.recursive_call_result.unwrap();
+                        context.add_alias(
+                            reduce_clause.as_alias.clone(),
+                            TypeOrValue::Type(*array_element_type),
+                        );
+                        context.add_alias(
+                            reduce_clause.accumulating_in_alias.clone(),
+                            TypeOrValue::Type(starting_with_type.clone()),
+                        );
+                        *context.path.last_mut().unwrap() = "THROUGH".to_string();
+                        stack.push(TypeCheckingStackElement {
+                            recursive_call_result: None,
+                            step: TypeCheckingStep::ProcessValueReduce3 {
+                                reduce_clause,
+                                starting_with_type,
+                            },
+                        });
+                        stack.push(TypeCheckingStackElement {
+                            recursive_call_result: None,
+                            step: TypeCheckingStep::GetType(reduce_clause.through.clone()),
+                        });
+                    }
+                    TypeCheckingStep::ProcessValueReduce3 {
+                        reduce_clause,
+                        starting_with_type,
+                    } => {
+                        stack.pop();
+                        let through_type = stack_element.recursive_call_result.unwrap();
+                        context.path.pop();
+                        context
+                            .assert_equal(&through_type, &starting_with_type)
+                            .with_context(|| {
+                                anyhow!(
+                                    "Expected reduce at path {:?} to use function which returns \
+                                     value of type {starting_with_type:?} (as is starting value), \
+                                     but it returns {through_type:?}",
+                                    context.path
+                                )
+                            })?;
+                        context.remove_alias(reduce_clause.as_alias.clone());
+                        context.remove_alias(reduce_clause.accumulating_in_alias.clone());
+                        let result = Type::Array(Box::new(through_type));
                         if let Some(previous_stack_element) = stack.last_mut() {
-                            previous_stack_element.recursive_call_result =
-                                stack_element.recursive_call_result;
+                            previous_stack_element.recursive_call_result = Some(result);
+                        } else {
+                            return Ok(result);
                         }
                     }
                 };
                 match program {
                     TypeOrValue::Type(program_type) => program_type,
                     TypeOrValue::Value(program) => match *program {
-                        Value::Map(ref map_clause) => {
-                            context.path.push("MAP".to_string());
-                            let actual_array_type =
-                                self.get_type(TypeOrValue::Value(map_clause.map.clone()), context)?;
-                            context.path.pop();
-                            if let Type::Array(ref array_element_type) = actual_array_type {
-                                context.add_alias(
-                                    map_clause.as_alias.clone(),
-                                    TypeOrValue::Type(*array_element_type.clone()),
-                                );
-                                context.path.push("THROUGH".to_string());
-                                let result = self.get_type(
-                                    TypeOrValue::Value(map_clause.through.clone()),
-                                    context,
-                                )?;
-                                context.path.pop();
-                                context.remove_alias(map_clause.as_alias.clone());
-                                Type::Array(Box::new(result))
-                            } else {
-                                return Err(anyhow!(
-                                    "Expected array for map clause at path {:?}, got \
-                                     {actual_array_type:?}",
-                                    context.path
-                                ));
-                            }
-                        }
-                        Value::Filter(ref filter_clause) => {
-                            context.path.push("FILTER".to_string());
-                            let actual_array_type = self.get_type(
-                                TypeOrValue::Value(filter_clause.filter.clone()),
-                                context,
-                            )?;
-                            context.path.pop();
-                            if let Type::Array(ref array_element_type) = actual_array_type {
-                                context.add_alias(
-                                    filter_clause.as_alias.clone(),
-                                    TypeOrValue::Type(*array_element_type.clone()),
-                                );
-                                context.path.push("THROUGH".to_string());
-                                let through_type = self.get_type(
-                                    TypeOrValue::Value(filter_clause.through.clone()),
-                                    context,
-                                )?;
-                                context.path.pop();
-                                context
-                                    .assert_equal(&through_type, &Type::Bool)
-                                    .with_context(|| {
-                                        anyhow!(
-                                            "Expected filter at path {:?} to use function which \
-                                             returns boolean value, but it returns \
-                                             {through_type:?}",
-                                            context.path
-                                        )
-                                    })?;
-                                context.remove_alias(filter_clause.as_alias.clone());
-                                Type::Array(array_element_type.clone())
-                            } else {
-                                return Err(anyhow!(
-                                    "Expected array for filter clause at path {:?}, got \
-                                     {actual_array_type:?}",
-                                    context.path
-                                ));
-                            }
-                        }
-                        Value::Reduce(ref reduce_clause) => {
-                            context.path.push("REDUCE".to_string());
-                            let actual_array_type = self.get_type(
-                                TypeOrValue::Value(reduce_clause.reduce.clone()),
-                                context,
-                            )?;
-                            context.path.pop();
-                            if let Type::Array(ref array_element_type) = actual_array_type {
-                                let starting_with_type = self.get_type(
-                                    TypeOrValue::Value(reduce_clause.starting_with.clone()),
-                                    context,
-                                )?;
-                                context.add_alias(
-                                    reduce_clause.as_alias.clone(),
-                                    TypeOrValue::Type(*array_element_type.clone()),
-                                );
-                                context.add_alias(
-                                    reduce_clause.accumulating_in_alias.clone(),
-                                    TypeOrValue::Type(starting_with_type.clone()),
-                                );
-                                context.path.push("THROUGH".to_string());
-                                let through_type = self.get_type(
-                                    TypeOrValue::Value(reduce_clause.through.clone()),
-                                    context,
-                                )?;
-                                context.path.pop();
-                                context
-                                    .assert_equal(&through_type, &starting_with_type)
-                                    .with_context(|| {
-                                        anyhow!(
-                                            "Expected reduce at path {:?} to use function which \
-                                             returns value of type {starting_with_type:?} (as is \
-                                             starting value), but it returns {through_type:?}",
-                                            context.path
-                                        )
-                                    })?;
-                                context.remove_alias(reduce_clause.as_alias.clone());
-                                context.remove_alias(reduce_clause.accumulating_in_alias.clone());
-                                Type::Array(Box::new(through_type))
-                            } else {
-                                return Err(anyhow!(
-                                    "Expected array for reduce clause at path {:?}, got \
-                                     {actual_array_type:?}",
-                                    context.path
-                                ));
-                            }
-                        }
                         Value::Branching(ref branching_clause) => {
                             context.path.push("IF".to_string());
                             let if_branch_type = self.get_type(
