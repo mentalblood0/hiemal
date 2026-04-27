@@ -905,8 +905,8 @@ impl Interpreter {
                             return Ok(result);
                         }
                     }
-                    TypeCheckingStep::GetType(value) => match *value {
-                        Value::With(with_clause) => {
+                    TypeCheckingStep::GetType(ref value) => match **value {
+                        Value::With(ref with_clause) => {
                             for (alias_name, alias_value) in with_clause.with.definitions.iter() {
                                 context.add_alias(
                                     alias_name.clone(),
