@@ -1,6 +1,7 @@
 pub mod embedded_functions;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::iter::Enumerate;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Error, Result};
@@ -220,6 +221,13 @@ impl TypeCheckingContext {
             });
     }
 
+    pub fn get_alias(&self, name: &String) -> Option<TypeOrValue> {
+        self.aliases
+            .get(name)
+            .and_then(|aliases_with_this_name| aliases_with_this_name.last())
+            .cloned()
+    }
+
     pub fn error(&self, expected_type: &Type, got_type: &Type) -> Error {
         anyhow!(
             "Expected value of type {expected_type:?} but got value of type {got_type:?} at path \
@@ -423,9 +431,38 @@ pub enum TypeCheckingStep<'a> {
         reduce_clause: Arc<Reduce>,
         starting_with_type: Type,
     },
-    ProcessValueBranching,
-    ProcessValueObject,
-    ProcessValueArray,
+    ProcessValueBranching1 {
+        branching_clause: Arc<Branching>,
+    },
+    ProcessValueBranching2 {
+        branching_clause: Arc<Branching>,
+    },
+    ProcessValueBranching3 {
+        branching_clause: Arc<Branching>,
+        then_branch_type: Type,
+    },
+    ProcessValueObject1 {
+        name: String,
+        aliases_names: Vec<String>,
+    },
+    ProcessValueObject2 {
+        function: Arc<Function>,
+    },
+    ProcessValueObject3 {
+        object_keyvalues_iterator: std::collections::btree_map::Iter<'a, String, Arc<Value>>,
+        result_map: BTreeMap<String, Type>,
+        last_key: String,
+    },
+    ProcessValueArray1 {
+        recursed_elements_aliases_names: Vec<String>,
+        non_recursed_elements_indexes_and_types: Vec<(usize, Type)>,
+        array_iterator: Enumerate<std::slice::Iter<'a, Arc<Value>>>,
+        last_element_index: usize,
+    },
+    ProcessValueArray2 {
+        recursed_elements_aliases_names: Vec<String>,
+        non_recursed_elements_indexes_and_types: Vec<(usize, Type)>,
+    },
     ProcessValueString,
 }
 
@@ -579,86 +616,6 @@ impl Interpreter {
                             return Ok(result);
                         }
                     }
-                    TypeCheckingStep::GetType(value) => match *value {
-                        Value::With(with_clause) => {
-                            stack.pop();
-                            for (alias_name, alias_value) in with_clause.with.definitions.iter() {
-                                context.add_alias(
-                                    alias_name.clone(),
-                                    TypeOrValue::Value(alias_value.clone()),
-                                );
-                            }
-                            context.path.push("WITH".to_string());
-                            let mut constants_iterator = with_clause.with.constants.iter();
-                            if let Some((first_constant_name, first_constant_value)) =
-                                constants_iterator.next()
-                            {
-                                context.path.push("CONSTANTS".to_string());
-                                context.path.push(first_constant_name.to_string());
-                                stack.push(TypeCheckingStackElement {
-                                    recursive_call_result: None,
-                                    step: TypeCheckingStep::ProcessValueWith1 {
-                                        last_constant_name: first_constant_name.clone(),
-                                        with_clause: Arc::new(with_clause),
-                                        constants_iterator,
-                                    },
-                                });
-                                stack.push(TypeCheckingStackElement {
-                                    recursive_call_result: None,
-                                    step: TypeCheckingStep::GetType(first_constant_value.clone()),
-                                });
-                            } else {
-                                context.path.push("COMPUTE".to_string());
-                                stack.push(TypeCheckingStackElement {
-                                    recursive_call_result: None,
-                                    step: TypeCheckingStep::GetType(with_clause.compute.clone()),
-                                });
-                                stack.push(TypeCheckingStackElement {
-                                    recursive_call_result: None,
-                                    step: TypeCheckingStep::GetType(with_clause.compute.clone()),
-                                });
-                            }
-                        }
-                        Value::Map(map_clause) => {
-                            context.path.push("MAP".to_string());
-                            stack.push(TypeCheckingStackElement {
-                                recursive_call_result: None,
-                                step: TypeCheckingStep::ProcessValueMap1 {
-                                    map_clause: Arc::new(map_clause),
-                                },
-                            });
-                            stack.push(TypeCheckingStackElement {
-                                recursive_call_result: None,
-                                step: TypeCheckingStep::GetType(map_clause.map.clone()),
-                            });
-                        }
-                        Value::Filter(filter_clause) => {
-                            context.path.push("FILTER".to_string());
-                            stack.push(TypeCheckingStackElement {
-                                recursive_call_result: None,
-                                step: TypeCheckingStep::ProcessValueFilter1 {
-                                    filter_clause: Arc::new(filter_clause),
-                                },
-                            });
-                            stack.push(TypeCheckingStackElement {
-                                recursive_call_result: None,
-                                step: TypeCheckingStep::GetType(filter_clause.filter.clone()),
-                            });
-                        }
-                        Value::Reduce(reduce_clause) => {
-                            context.path.push("REDUCE".to_string());
-                            stack.push(TypeCheckingStackElement {
-                                recursive_call_result: None,
-                                step: TypeCheckingStep::ProcessValueReduce1 {
-                                    reduce_clause: Arc::new(reduce_clause),
-                                },
-                            });
-                            stack.push(TypeCheckingStackElement {
-                                recursive_call_result: None,
-                                step: TypeCheckingStep::GetType(reduce_clause.reduce.clone()),
-                            });
-                        }
-                    },
                     TypeCheckingStep::ProcessValueReduce1 { reduce_clause } => {
                         stack.pop();
                         let actual_array_type = stack_element.recursive_call_result.unwrap();
@@ -737,60 +694,221 @@ impl Interpreter {
                             return Ok(result);
                         }
                     }
-                };
-                match program {
-                    TypeOrValue::Type(program_type) => program_type,
-                    TypeOrValue::Value(program) => match *program {
-                        Value::Branching(ref branching_clause) => {
-                            context.path.push("IF".to_string());
-                            let if_branch_type = self.get_type(
-                                TypeOrValue::Value(branching_clause.if_.clone()),
-                                context,
-                            )?;
-                            context.path.pop();
-                            if if_branch_type != Type::Bool {
-                                return Err(anyhow!(
-                                    "Expected condition at path {:?} to be of boolean type, but \
-                                     it is of type {if_branch_type:?}",
-                                    context.path
-                                ));
-                            }
-                            context.path.push("THEN".to_string());
-                            let then_branch_type = self.get_type(
-                                TypeOrValue::Value(branching_clause.then.clone()),
-                                context,
-                            )?;
-                            context.path.pop();
-                            context.path.push("ELSE".to_string());
-                            let else_branch_type = self.get_type(
-                                TypeOrValue::Value(branching_clause.else_.clone()),
-                                context,
-                            )?;
-                            context.path.pop();
-                            context
-                                .assert_equal(&then_branch_type, &else_branch_type)
-                                .with_context(|| {
-                                    anyhow!(
-                                        "Expected 'then' and 'else' branches at path {:?} to be \
-                                         of the same type, but 'then' branch is of type \
-                                         {then_branch_type:?} and 'else' branch is of type \
-                                         {else_branch_type:?}",
-                                        context.path
-                                    )
-                                })?;
-                            then_branch_type
+                    TypeCheckingStep::ProcessValueBranching1 { branching_clause } => {
+                        stack.pop();
+                        let if_branch_type = stack_element.recursive_call_result.unwrap();
+                        if if_branch_type != Type::Bool {
+                            return Err(context.error(&Type::Bool, &if_branch_type));
                         }
-                        Value::Object(ref object) => {
+                        *context.path.last_mut().unwrap() = "THEN".to_string();
+                        stack.push(TypeCheckingStackElement {
+                            recursive_call_result: None,
+                            step: TypeCheckingStep::ProcessValueBranching2 {
+                                branching_clause: branching_clause,
+                            },
+                        });
+                        stack.push(TypeCheckingStackElement {
+                            recursive_call_result: None,
+                            step: TypeCheckingStep::GetType(branching_clause.then.clone()),
+                        });
+                    }
+                    TypeCheckingStep::ProcessValueBranching2 { branching_clause } => {
+                        stack.pop();
+                        let then_branch_type = stack_element.recursive_call_result.unwrap();
+                        *context.path.last_mut().unwrap() = "ELSE".to_string();
+                        stack.push(TypeCheckingStackElement {
+                            recursive_call_result: None,
+                            step: TypeCheckingStep::ProcessValueBranching3 {
+                                branching_clause: branching_clause,
+                                then_branch_type,
+                            },
+                        });
+                        stack.push(TypeCheckingStackElement {
+                            recursive_call_result: None,
+                            step: TypeCheckingStep::GetType(branching_clause.else_.clone()),
+                        });
+                    }
+                    TypeCheckingStep::ProcessValueBranching3 {
+                        branching_clause,
+                        then_branch_type,
+                    } => {
+                        stack.pop();
+                        let else_branch_type = stack_element.recursive_call_result.unwrap();
+                        context.path.pop();
+                        context
+                            .assert_equal(&then_branch_type, &else_branch_type)
+                            .with_context(|| {
+                                anyhow!(
+                                    "Expected 'then' and 'else' branches at path {:?} to be of \
+                                     the same type, but 'then' branch is of type \
+                                     {then_branch_type:?} and 'else' branch is of type \
+                                     {else_branch_type:?}",
+                                    context.path
+                                )
+                            })?;
+                        let result = then_branch_type;
+                        if let Some(previous_stack_element) = stack.last_mut() {
+                            previous_stack_element.recursive_call_result = Some(result);
+                        } else {
+                            return Ok(result);
+                        }
+                    }
+                    TypeCheckingStep::ProcessValueObject1 {
+                        name,
+                        aliases_names,
+                    } => {
+                        stack.pop();
+                        context.path.pop();
+                        context.entered_aliases.remove(&name);
+                        for alias_name in aliases_names {
+                            context.remove_alias(alias_name.clone());
+                            context.recursed_aliases_types.remove(&alias_name);
+                        }
+                        let result = stack_element.recursive_call_result.unwrap();
+                        if let Some(previous_stack_element) = stack.last_mut() {
+                            previous_stack_element.recursive_call_result = Some(result);
+                        } else {
+                            return Ok(result);
+                        }
+                    }
+                    TypeCheckingStep::ProcessValueObject2 { function } => {
+                        stack.pop();
+                        let arguments_type = stack_element.recursive_call_result.unwrap();
+                        let generic_values =
+                            context.assert_equal(&function.argument_type, &arguments_type)?;
+                        context.path.pop();
+                        let mut result = function.return_type.clone();
+                        context
+                            .substitute_generic_arguments_values(&mut result, &generic_values)?;
+                        if let Some(previous_stack_element) = stack.last_mut() {
+                            previous_stack_element.recursive_call_result = Some(result);
+                        } else {
+                            return Ok(result);
+                        }
+                    }
+                    TypeCheckingStep::ProcessValueObject3 {
+                        object_keyvalues_iterator,
+                        result_map,
+                        last_key,
+                    } => {
+                        result_map.insert(last_key, stack_element.recursive_call_result.unwrap());
+                        if let Some((key, value)) = object_keyvalues_iterator.next() {
+                            *context.path.last_mut().unwrap() = key.clone();
+                            last_key = key.clone();
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(value.clone()),
+                            });
+                        } else {
+                            let result = Type::Object(result_map);
+                            if let Some(previous_stack_element) = stack.last_mut() {
+                                previous_stack_element.recursive_call_result = Some(result);
+                            } else {
+                                return Ok(result);
+                            }
+                        }
+                    }
+                    TypeCheckingStep::GetType(value) => match *value {
+                        Value::With(with_clause) => {
+                            stack.pop();
+                            for (alias_name, alias_value) in with_clause.with.definitions.iter() {
+                                context.add_alias(
+                                    alias_name.clone(),
+                                    TypeOrValue::Value(alias_value.clone()),
+                                );
+                            }
+                            context.path.push("WITH".to_string());
+                            let mut constants_iterator = with_clause.with.constants.iter();
+                            if let Some((first_constant_name, first_constant_value)) =
+                                constants_iterator.next()
+                            {
+                                context.path.push("CONSTANTS".to_string());
+                                context.path.push(first_constant_name.to_string());
+                                stack.push(TypeCheckingStackElement {
+                                    recursive_call_result: None,
+                                    step: TypeCheckingStep::ProcessValueWith1 {
+                                        last_constant_name: first_constant_name.clone(),
+                                        with_clause: Arc::new(with_clause),
+                                        constants_iterator,
+                                    },
+                                });
+                                stack.push(TypeCheckingStackElement {
+                                    recursive_call_result: None,
+                                    step: TypeCheckingStep::GetType(first_constant_value.clone()),
+                                });
+                            } else {
+                                context.path.push("COMPUTE".to_string());
+                                stack.push(TypeCheckingStackElement {
+                                    recursive_call_result: None,
+                                    step: TypeCheckingStep::GetType(with_clause.compute.clone()),
+                                });
+                                stack.push(TypeCheckingStackElement {
+                                    recursive_call_result: None,
+                                    step: TypeCheckingStep::GetType(with_clause.compute.clone()),
+                                });
+                            }
+                        }
+                        Value::Map(map_clause) => {
+                            stack.pop();
+                            context.path.push("MAP".to_string());
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::ProcessValueMap1 {
+                                    map_clause: Arc::new(map_clause),
+                                },
+                            });
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(map_clause.map.clone()),
+                            });
+                        }
+                        Value::Filter(filter_clause) => {
+                            stack.pop();
+                            context.path.push("FILTER".to_string());
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::ProcessValueFilter1 {
+                                    filter_clause: Arc::new(filter_clause),
+                                },
+                            });
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(filter_clause.filter.clone()),
+                            });
+                        }
+                        Value::Reduce(reduce_clause) => {
+                            stack.pop();
+                            context.path.push("REDUCE".to_string());
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::ProcessValueReduce1 {
+                                    reduce_clause: Arc::new(reduce_clause),
+                                },
+                            });
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(reduce_clause.reduce.clone()),
+                            });
+                        }
+                        Value::Branching(branching_clause) => {
+                            stack.pop();
+                            context.path.push("IF".to_string());
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::ProcessValueBranching1 {
+                                    branching_clause: Arc::new(branching_clause),
+                                },
+                            });
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(branching_clause.if_.clone()),
+                            });
+                        }
+                        Value::Object(object) => {
+                            stack.pop();
                             if object.len() == 1 {
                                 let (name, arguments) = object.iter().next().unwrap();
-                                if let Some(aliased_value) = context
-                                    .aliases
-                                    .get(name)
-                                    .and_then(|aliases_with_this_name| {
-                                        aliases_with_this_name.last()
-                                    })
-                                    .cloned()
-                                {
+                                if let Some(aliased_value) = context.get_alias(name) {
                                     if context.entered_aliases.contains(name) {
                                         if let Some(this_recursed_alias_type) =
                                             context.recursed_aliases_types.get(name)
@@ -829,28 +947,39 @@ impl Interpreter {
                                     }
                                     context.path.push(name.clone());
                                     context.entered_aliases.insert(name.clone());
-                                    let result = self.get_type(aliased_value, context)?;
-                                    context.path.pop();
-                                    context.entered_aliases.remove(name);
-                                    for alias_name in aliases_names {
-                                        context.remove_alias(alias_name.clone());
-                                        context.recursed_aliases_types.remove(&alias_name);
+                                    stack.push(TypeCheckingStackElement {
+                                        recursive_call_result: if let TypeOrValue::Type(
+                                            aliased_type,
+                                        ) = aliased_value
+                                        {
+                                            Some(aliased_type)
+                                        } else {
+                                            None
+                                        },
+                                        step: TypeCheckingStep::ProcessValueObject1 {
+                                            object: Arc::new(object),
+                                            name: name.clone(),
+                                            aliases_names: aliases_names,
+                                        },
+                                    });
+                                    if let TypeOrValue::Value(aliased_value) = aliased_value {
+                                        stack.push(TypeCheckingStackElement {
+                                            recursive_call_result: None,
+                                            step: TypeCheckingStep::GetType(aliased_value),
+                                        });
                                     }
-                                    return Ok(result);
-                                }
-                                if let Some(function) = self.supported_functions.get(name) {
+                                } else if let Some(function) = self.supported_functions.get(name) {
                                     context.path.push(name.clone());
-                                    let arguments_type = self
-                                        .get_type(TypeOrValue::Value(arguments.clone()), context)?;
-                                    let generic_values = context
-                                        .assert_equal(&function.argument_type, &arguments_type)?;
-                                    context.path.pop();
-                                    let mut result = function.return_type.clone();
-                                    context.substitute_generic_arguments_values(
-                                        &mut result,
-                                        &generic_values,
-                                    )?;
-                                    result
+                                    stack.push(TypeCheckingStackElement {
+                                        recursive_call_result: None,
+                                        step: TypeCheckingStep::ProcessValueObject2 {
+                                            function: Arc::new(*function),
+                                        },
+                                    });
+                                    stack.push(TypeCheckingStackElement {
+                                        recursive_call_result: None,
+                                        step: TypeCheckingStep::GetType(arguments.clone()),
+                                    });
                                 } else {
                                     return Err(anyhow!(
                                         "Expected supported function at path {:?}, but got \
@@ -865,72 +994,146 @@ impl Interpreter {
                                     ));
                                 }
                             } else {
-                                let mut result_map = BTreeMap::new();
-                                for (key, value) in object {
+                                let mut object_keyvalues_iterator = object.iter();
+                                if let Some((key, value)) = object_keyvalues_iterator.next() {
                                     context.path.push(key.clone());
-                                    result_map.insert(
-                                        key.clone(),
-                                        self.get_type(TypeOrValue::Value(value.clone()), context)?,
-                                    );
-                                    context.path.pop();
-                                }
-                                Type::Object(result_map)
-                            }
-                        }
-                        Value::Array(ref array) => {
-                            let mut non_recursed_elements_indexes_and_types =
-                                Vec::with_capacity(array.len());
-                            let mut recursed_elements_aliases_names = vec![];
-                            for (element_index, element) in array.iter().enumerate() {
-                                context.path.push(element_index.to_string());
-                                match self.get_type(TypeOrValue::Value(element.clone()), context)? {
-                                    Type::RecursedAlias(recursed_alias_name) => {
-                                        recursed_elements_aliases_names.push(recursed_alias_name);
-                                    }
-                                    non_recursed_type => {
-                                        non_recursed_elements_indexes_and_types
-                                            .push((element_index, non_recursed_type));
-                                    }
-                                }
-                                context.path.pop();
-                            }
-                            if let Some(first_non_recursed_element_type) =
-                                non_recursed_elements_indexes_and_types
-                                    .first()
-                                    .and_then(|(_, element_type)| Some(element_type))
-                            {
-                                if let Some((unexpected_type_element_index, unexpected_type)) =
-                                    non_recursed_elements_indexes_and_types.iter().find(
-                                        |(_, element_type)| {
-                                            element_type != first_non_recursed_element_type
+                                    stack.push(TypeCheckingStackElement {
+                                        recursive_call_result: None,
+                                        step: TypeCheckingStep::ProcessValueObject3 {
+                                            object_keyvalues_iterator,
+                                            result_map: BTreeMap::new(),
+                                            last_key: key.clone(),
                                         },
-                                    )
-                                {
-                                    context.path.push(unexpected_type_element_index.to_string());
-                                    let result_error = Err(anyhow!(
-                                        "Expected value at path {:?} to be of type \
-                                         {first_non_recursed_element_type:?}, but it is of type \
-                                         {unexpected_type:?}",
+                                    });
+                                    stack.push(TypeCheckingStackElement {
+                                        recursive_call_result: None,
+                                        step: TypeCheckingStep::GetType(value.clone()),
+                                    });
+                                } else {
+                                    return Err(anyhow!(
+                                        "Expected non-empty object at path {:?}",
                                         context.path
                                     ));
-                                    context.path.pop();
-                                    return result_error;
-                                } else {
-                                    Type::Array(Box::new(first_non_recursed_element_type.clone()))
                                 }
-                            } else if let Some(first_recursed_element_alias_name) =
-                                recursed_elements_aliases_names.first()
-                            {
-                                Type::Array(Box::new(Type::RecursedAlias(
-                                    first_recursed_element_alias_name.clone(),
-                                )))
-                            } else {
-                                return Err(anyhow!(
-                                    "Expected non-empty array at path {:?}",
-                                    context.path
-                                ));
                             }
                         }
+                        Value::Array(array) => {
+                            stack.pop();
+                            let mut array_iterator = array.iter().enumerate();
+                            if let Some((element_index, element)) = array_iterator.next() {
+                                context.path.push(element_index.to_string());
+                                stack.push(TypeCheckingStackElement {
+                                    recursive_call_result: None,
+                                    step: TypeCheckingStep::ProcessValueArray1 {
+                                        recursed_elements_aliases_names: vec![],
+                                        non_recursed_elements_indexes_and_types: Vec::with_capacity(
+                                            array.len(),
+                                        ),
+                                        array_iterator,
+                                        last_element_index: element_index,
+                                    },
+                                });
+                                stack.push(TypeCheckingStackElement {
+                                    recursive_call_result: None,
+                                    step: TypeCheckingStep::GetType(element.clone()),
+                                });
+                            } else {
+                                stack.push(TypeCheckingStackElement {
+                                    recursive_call_result: None,
+                                    step: TypeCheckingStep::ProcessValueArray2 {
+                                        recursed_elements_aliases_names: vec![],
+                                        non_recursed_elements_indexes_and_types: Vec::with_capacity(
+                                            array.len(),
+                                        ),
+                                        array_iterator,
+                                    },
+                                });
+                            }
+                        }
+                    },
+                    TypeCheckingStep::ProcessValueArray1 {
+                        recursed_elements_aliases_names,
+                        non_recursed_elements_indexes_and_types,
+                        array_iterator,
+                        last_element_index,
+                    } => {
+                        match stack_element.recursive_call_result.unwrap() {
+                            Type::RecursedAlias(recursed_alias_name) => {
+                                recursed_elements_aliases_names.push(recursed_alias_name);
+                            }
+                            non_recursed_type => {
+                                non_recursed_elements_indexes_and_types
+                                    .push((last_element_index, non_recursed_type));
+                            }
+                        }
+                        if let Some((element_index, element)) = array_iterator.next() {
+                            *context.path.last_mut().unwrap() = element_index.to_string();
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::GetType(element.clone()),
+                            });
+                        } else {
+                            stack.push(TypeCheckingStackElement {
+                                recursive_call_result: None,
+                                step: TypeCheckingStep::ProcessValueArray2 {
+                                    recursed_elements_aliases_names,
+                                    non_recursed_elements_indexes_and_types,
+                                    array_iterator,
+                                },
+                            });
+                        }
+                    }
+                    TypeCheckingStep::ProcessValueArray2 {
+                        recursed_elements_aliases_names,
+                        non_recursed_elements_indexes_and_types,
+                    } => {
+                        stack.pop();
+                        let result = if let Some(first_non_recursed_element_type) =
+                            non_recursed_elements_indexes_and_types
+                                .first()
+                                .and_then(|(_, element_type)| Some(element_type))
+                        {
+                            if let Some((unexpected_type_element_index, unexpected_type)) =
+                                non_recursed_elements_indexes_and_types.iter().find(
+                                    |(_, element_type)| {
+                                        element_type != first_non_recursed_element_type
+                                    },
+                                )
+                            {
+                                context.path.push(unexpected_type_element_index.to_string());
+                                let result_error = Err(anyhow!(
+                                    "Expected value at path {:?} to be of type \
+                                     {first_non_recursed_element_type:?}, but it is of type \
+                                     {unexpected_type:?}",
+                                    context.path
+                                ));
+                                context.path.pop();
+                                return result_error;
+                            } else {
+                                Type::Array(Box::new(first_non_recursed_element_type.clone()))
+                            }
+                        } else if let Some(first_recursed_element_alias_name) =
+                            recursed_elements_aliases_names.first()
+                        {
+                            Type::Array(Box::new(Type::RecursedAlias(
+                                first_recursed_element_alias_name.clone(),
+                            )))
+                        } else {
+                            return Err(anyhow!(
+                                "Expected non-empty array at path {:?}",
+                                context.path
+                            ));
+                        };
+                        if let Some(previous_stack_element) = stack.last_mut() {
+                            previous_stack_element.recursive_call_result = Some(result);
+                        } else {
+                            return Ok(result);
+                        }
+                    }
+                };
+                match program {
+                    TypeOrValue::Type(program_type) => program_type,
+                    TypeOrValue::Value(program) => match *program {
                         Value::String(ref string) => {
                             if context.entered_aliases.contains(string) {
                                 context
