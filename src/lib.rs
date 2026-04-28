@@ -212,12 +212,8 @@ impl TypeCheckingContext {
         self.aliases.entry(name).or_default().push(type_or_value);
     }
 
-    pub fn remove_alias(&mut self, name: String) {
-        self.aliases
-            .entry(name)
-            .and_modify(|aliases_with_this_name| {
-                aliases_with_this_name.pop();
-            });
+    pub fn remove_alias(&mut self, name: &String) {
+        self.aliases.get_mut(name).unwrap().pop();
     }
 
     pub fn error(&self, expected_type: &Type, got_type: &Type) -> Error {
@@ -626,10 +622,10 @@ impl Interpreter {
                     context.path.pop();
                     context.path.pop();
                     for alias_name in with_clause.with.definitions.keys() {
-                        context.remove_alias(alias_name.clone());
+                        context.remove_alias(alias_name);
                     }
                     for alias_name in with_clause.with.constants.keys() {
-                        context.remove_alias(alias_name.clone());
+                        context.remove_alias(alias_name);
                     }
                     result
                 }
@@ -647,7 +643,7 @@ impl Interpreter {
                         let result =
                             self.get_type(TypeOrValue::Value(map_clause.through.clone()), context)?;
                         context.path.pop();
-                        context.remove_alias(map_clause.as_alias.clone());
+                        context.remove_alias(&map_clause.as_alias);
                         Type::Array(Box::new(result))
                     } else {
                         return Err(anyhow!(
@@ -679,7 +675,7 @@ impl Interpreter {
                                     context.path
                                 )
                             })?;
-                        context.remove_alias(filter_clause.as_alias.clone());
+                        context.remove_alias(&filter_clause.as_alias);
                         Type::Array(array_element_type.clone())
                     } else {
                         return Err(anyhow!(
@@ -721,8 +717,8 @@ impl Interpreter {
                                     context.path
                                 )
                             })?;
-                        context.remove_alias(reduce_clause.as_alias.clone());
-                        context.remove_alias(reduce_clause.accumulating_in_alias.clone());
+                        context.remove_alias(&reduce_clause.as_alias);
+                        context.remove_alias(&reduce_clause.accumulating_in_alias);
                         Type::Array(Box::new(through_type))
                     } else {
                         return Err(anyhow!(
@@ -814,7 +810,7 @@ impl Interpreter {
                             context.path.pop();
                             context.entered_aliases.remove(name);
                             for alias_name in aliases_names {
-                                context.remove_alias(alias_name.clone());
+                                context.remove_alias(&alias_name);
                                 context.recursed_aliases_types.remove(&alias_name);
                             }
                             return Ok(result);
