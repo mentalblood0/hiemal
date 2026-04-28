@@ -373,12 +373,8 @@ impl ComputationContext {
         self.aliases.entry(name).or_default().push(value);
     }
 
-    pub fn remove_alias(&mut self, name: String) {
-        self.aliases
-            .entry(name)
-            .and_modify(|aliases_with_this_name| {
-                aliases_with_this_name.pop();
-            });
+    pub fn remove_alias(&mut self, name: &String) {
+        self.aliases.get_mut(name).unwrap().pop();
     }
 }
 
@@ -418,10 +414,10 @@ impl Interpreter {
                 context.path.pop();
                 context.path.pop();
                 for alias_name in with_clause.with.definitions.keys() {
-                    context.remove_alias(alias_name.clone());
+                    context.remove_alias(alias_name);
                 }
                 for alias_name in with_clause.with.constants.keys() {
-                    context.remove_alias(alias_name.clone());
+                    context.remove_alias(alias_name);
                 }
                 result
             }
@@ -440,7 +436,7 @@ impl Interpreter {
                     result.push(self.compute_with_context(map_clause.through.clone(), context)?);
                     context.path.pop();
                     context.path.pop();
-                    context.remove_alias(map_clause.as_alias.clone());
+                    context.remove_alias(&map_clause.as_alias);
                 }
                 context.path.pop();
                 Arc::new(Value::Array(result))
@@ -466,7 +462,7 @@ impl Interpreter {
                     }
                     context.path.pop();
                     context.path.pop();
-                    context.remove_alias(filter_clause.as_alias.clone());
+                    context.remove_alias(&filter_clause.as_alias);
                 }
                 context.path.pop();
                 Arc::new(Value::Array(result))
@@ -489,8 +485,8 @@ impl Interpreter {
                     result = self.compute_with_context(reduce_clause.through.clone(), context)?;
                     context.path.pop();
                     context.path.pop();
-                    context.remove_alias(reduce_clause.as_alias.clone());
-                    context.remove_alias(reduce_clause.accumulating_in_alias.clone());
+                    context.remove_alias(&reduce_clause.as_alias);
+                    context.remove_alias(&reduce_clause.accumulating_in_alias);
                 }
                 context.path.pop();
                 result
@@ -539,7 +535,7 @@ impl Interpreter {
                         let result = self.compute_with_context(aliased_value, context)?;
                         context.path.pop();
                         for alias_name in aliases_names {
-                            context.remove_alias(alias_name);
+                            context.remove_alias(&alias_name);
                         }
                         return Ok(result);
                     }
