@@ -732,19 +732,11 @@ impl Interpreter {
                     context.path.push("IF".to_string());
                     let if_branch_type =
                         self.get_type(TypeOrValue::Value(branching_clause.if_.clone()), context)?;
-                    context.path.pop();
-                    if if_branch_type != Type::Bool {
-                        return Err(anyhow!(
-                            "Expected condition at path {:?} to be of boolean type, but it is of \
-                             type {if_branch_type:?}",
-                            context.path
-                        ));
-                    }
-                    context.path.push("THEN".to_string());
+                    context.assert_equal(&Type::Bool, &if_branch_type)?;
+                    *context.path.last_mut().unwrap() = "THEN".to_string();
                     let then_branch_type =
                         self.get_type(TypeOrValue::Value(branching_clause.then.clone()), context)?;
-                    context.path.pop();
-                    context.path.push("ELSE".to_string());
+                    *context.path.last_mut().unwrap() = "ELSE".to_string();
                     let else_branch_type =
                         self.get_type(TypeOrValue::Value(branching_clause.else_.clone()), context)?;
                     context.path.pop();
