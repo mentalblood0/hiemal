@@ -8,24 +8,40 @@ use crate::{define_default_interpreter_supported_functions, Function, Interprete
 
 define_default_interpreter_supported_functions!(
     SUM Type::Array(Box::new(Type::Number)), Type::Number, argument {
-        let mut result = 0f64;
-        for element in argument.as_array().unwrap().iter() {
-            result += element.as_number().unwrap();
-        }
-        Ok(Arc::new(Value::Number(result)))
+        Ok(Arc::new(Value::Number(
+            argument
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|element| element.as_number().unwrap())
+                .sum()
+        )))
     }
-    MULTIPLY Type::Array(Box::new(Type::Number)), Type::Number, argument {
-        let mut result = 1f64;
-        for element in argument.as_array().unwrap().iter() {
-            result *= element.as_number().unwrap();
-        }
-        Ok(Arc::new(Value::Number(result)))
+    PRODUCT Type::Array(Box::new(Type::Number)), Type::Number, argument {
+        Ok(Arc::new(Value::Number(
+            argument
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|element| element.as_number().unwrap())
+                .product()
+        )))
     }
     LEN Type::String, Type::Number, argument {
-        Ok(Arc::new(Value::Number(argument.as_string().unwrap().len() as f64)))
+        Ok(Arc::new(Value::Number(
+            argument
+                .as_string()
+                .unwrap()
+                .len() as f64
+        )))
     }
     SIZE Type::Array(Box::new(Type::GenericArgument(0))), Type::Number, argument {
-        Ok(Arc::new(Value::Number(argument.as_array().unwrap().len() as f64)))
+        Ok(Arc::new(Value::Number(
+            argument
+                .as_array()
+                .unwrap()
+                .len() as f64
+        )))
     }
     GET_ELEMENT Type::Object(BTreeMap::from([
         ("from".to_string(), Type::Array(Box::new(Type::GenericArgument(0)))),
@@ -37,15 +53,14 @@ define_default_interpreter_supported_functions!(
         Ok(array.get(index).unwrap().clone())
     }
     IS_SORTED Type::Array(Box::new(Type::Number)), Type::Bool, argument {
-        let mut previous = f64::MIN;
-        for current_value in argument.as_array().unwrap() {
-            let current = current_value.as_number().unwrap();
-            if current < previous {
-                return Ok(Arc::new(Value::Bool(false)))
-            }
-            previous = current;
-        }
-        Ok(Arc::new(Value::Bool(true)))
+        Ok(Arc::new(Value::Bool(
+            argument
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|element| element.as_number().unwrap())
+                .is_sorted()
+        )))
     }
     ARE_EQUAL Type::Array(Box::new(Type::GenericArgument(0))), Type::Bool, argument {
         let array = argument.as_array().unwrap();
@@ -56,7 +71,16 @@ define_default_interpreter_supported_functions!(
         for element in argument.as_array().unwrap().iter() {
             result += element.as_string().unwrap();
         }
-        Ok(Arc::new(Value::String(result)))
+        Ok(Arc::new(Value::String(
+            argument
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|element| element.as_string().unwrap())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("")
+        )))
     }
     SEQUENCE Type::Object(BTreeMap::from([
         ("from".to_string(), Type::Number),

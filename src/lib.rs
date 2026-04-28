@@ -956,7 +956,7 @@ mod tests {
                 .compute(
                     serde_json::from_value(json!({
                         "SUM": [
-                            {"MULTIPLY": [2, 3]},
+                            {"PRODUCT": [2, 3]},
                             {"LEN": {"CONCAT": ["lala", "lolo"]}},
                             4
                         ]
@@ -977,7 +977,7 @@ mod tests {
                         "SUM": [
                             {
                                 "WITH": {"DEFINITIONS": {"x": 2, "y": 3}},
-                                "COMPUTE": {"MULTIPLY": ["x", "x", "y"]}
+                                "COMPUTE": {"PRODUCT": ["x", "x", "y"]}
                             },
                             {"LEN": {"CONCAT": ["lala", "lolo"]}},
                             4
@@ -1000,16 +1000,16 @@ mod tests {
                             {
                                 "WITH": {
                                     "DEFINITIONS": {
-                                        "SQUARE": {"MULTIPLY": ["_", "_"]},
+                                        "SQUARE": {"PRODUCT": ["_", "_"]},
                                         "y": 3
                                     }
                                 },
-                                "COMPUTE": {"MULTIPLY": [
+                                "COMPUTE": {"PRODUCT": [
                                     {"SQUARE": 2},
                                     {
                                         "SQUARE": {
                                             "SQUARE": {
-                                                "MULTIPLY": [
+                                                "PRODUCT": [
                                                     {"SQUARE": 1},
                                                     {"SUM": ["y", -1]}
                                                 ]
@@ -1114,7 +1114,7 @@ mod tests {
                         "THROUGH": {
                             "SUM": [
                                 "accumulator",
-                                {"MULTIPLY": ["current", "current"]}
+                                {"PRODUCT": ["current", "current"]}
                             ]
                         }
                     }))
@@ -1134,7 +1134,7 @@ mod tests {
                         "WITH": {
                             "DEFINITIONS": {
                                 "FACTORIAL": {
-                                    "MULTIPLY": {
+                                    "PRODUCT": {
                                         "SEQUENCE": {
                                             "from": 1,
                                             "to": "_",

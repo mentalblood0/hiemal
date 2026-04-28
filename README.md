@@ -38,7 +38,7 @@ cat examples/factorial.json | hiemal json
 
 ```yaml
 - SUM: [1, 2, 3]
-- MULTIPLY: [1, 2, 3]
+- PRODUCT: [1, 2, 3]
 - LEN: abc
 - SIZE: [1, 2, 3]
 - GET_ELEMENT:
@@ -65,7 +65,7 @@ Embedding new functions is quite easy, see [here](src/embedded_functions.rs)
 WITH:
   DEFINITIONS:
     FACTORIAL:
-      MULTIPLY:
+      PRODUCT:
         SEQUENCE:
           from: 1
           to: _
@@ -85,7 +85,7 @@ If function argument is object, it will be 'destructured':
 WITH:
   DEFINITIONS: # may be omitted
     FACTORIAL:
-      MULTIPLY:
+      PRODUCT:
         SEQUENCE:
           from: 1
           to: a
@@ -126,7 +126,7 @@ computes to `[2.0, 1.0]`
 MAP: [1, 2, 3]
 AS_ALIAS: x # may be omitted, defaulting to "_"
 THROUGH:
-  MULTIPLY: [x, 2]
+  PRODUCT: [x, 2]
 ```
 
 #### FILTER AS_ALIAS THROUGH
@@ -148,7 +148,7 @@ ACCUMULATING_IN_ALIAS: acc # may be omitted, defaulting to "accumulator"
 THROUGH:
   SUM:
     - acc
-    - MULTIPLY: [curr, curr]
+    - PRODUCT: [curr, curr]
 ```
 
 #### IF THEN ELSE

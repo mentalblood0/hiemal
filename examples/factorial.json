@@ -2,7 +2,7 @@
     "WITH": {
         "DEFINITIONS": {
             "FACTORIAL": {
-                "MULTIPLY": {
+                "PRODUCT": {
                     "SEQUENCE": {
                         "from": 1,
                         "to": "_",
