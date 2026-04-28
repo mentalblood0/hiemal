@@ -413,9 +413,9 @@ impl Interpreter {
                     context.path.pop();
                     context.add_alias(alias_name.clone(), precomputed_value);
                 }
-                context.path.pop();
-                context.path.push("COMPUTE".to_string());
+                *context.path.last_mut().unwrap() = "COMPUTE".to_string();
                 let result = self.compute_with_context(with_clause.compute.clone(), context)?;
+                context.path.pop();
                 context.path.pop();
                 for alias_name in with_clause.with.definitions.keys() {
                     context.remove_alias(alias_name.clone());
@@ -480,8 +480,7 @@ impl Interpreter {
                 context.path.push("STARTING_WITH".to_string());
                 let mut result =
                     self.compute_with_context(reduce_clause.starting_with.clone(), context)?;
-                context.path.pop();
-                context.path.push("REDUCE".to_string());
+                *context.path.last_mut().unwrap() = "REDUCE".to_string();
                 for (element_index, element) in array.iter().enumerate() {
                     context.add_alias(reduce_clause.as_alias.clone(), element.clone());
                     context.add_alias(reduce_clause.accumulating_in_alias.clone(), result.clone());
@@ -502,12 +501,11 @@ impl Interpreter {
                     .compute_with_context(branching_clause.if_.clone(), context)?
                     .as_bool()
                     .unwrap();
-                context.path.pop();
                 let result = if if_result {
-                    context.path.push("THEN".to_string());
+                    *context.path.last_mut().unwrap() = "THEN".to_string();
                     self.compute_with_context(branching_clause.then.clone(), context)?
                 } else {
-                    context.path.push("ELSE".to_string());
+                    *context.path.last_mut().unwrap() = "ELSE".to_string();
                     self.compute_with_context(branching_clause.else_.clone(), context)?
                 };
                 context.path.pop();
