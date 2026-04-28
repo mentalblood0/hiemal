@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Context, Result};
-use std::sync::Arc;
 
 use hiemal::Interpreter;
 
@@ -14,16 +13,17 @@ fn main() -> Result<()> {
     {
         "yaml" => serde_saphyr::to_io_writer(
             &mut std::io::stdout(),
-            &Interpreter::default().compute(Arc::new(
-                serde_saphyr::from_reader(std::io::stdin()).context("Can not parse the program")?,
-            ))?,
+            &Interpreter::default().compute(
+                &serde_saphyr::from_reader(std::io::stdin())
+                    .context("Can not parse the program")?,
+            )?,
         )
         .context("Can not output result of the program computation"),
         "json" => serde_json::to_writer(
             &mut std::io::stdout(),
-            &Interpreter::default().compute(Arc::new(
-                serde_json::from_reader(std::io::stdin()).context("Can not parse the program")?,
-            ))?,
+            &Interpreter::default().compute(
+                &serde_json::from_reader(std::io::stdin()).context("Can not parse the program")?,
+            )?,
         )
         .context("Can not output result of the program computation"),
         format => Err(anyhow!(

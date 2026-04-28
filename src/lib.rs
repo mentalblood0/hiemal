@@ -86,6 +86,13 @@ pub struct Branching {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Include {
+    IncludeUrl(url::Url),
+    IncludePath(std::path::PathBuf),
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum Value {
     Number(f64),
@@ -99,6 +106,13 @@ pub enum Value {
     Reduce(Reduce),
     Branching(Branching),
     Object(BTreeMap<String, Arc<Value>>),
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(untagged)]
+pub enum ValueWithIncludes {
+    Value(Value),
+    Include(Include),
 }
 
 impl Value {
@@ -375,7 +389,8 @@ impl ComputationContext {
 }
 
 impl Interpreter {
-    pub fn compute(&self, program: Arc<Value>) -> Result<Arc<Value>> {
+    pub fn compute(&self, program_with_includes: &ValueWithIncludes) -> Result<Arc<Value>> {
+        let program = Arc::new(self.process_includes(&program_with_includes)?);
         self.check_types(program.clone())?;
         self.compute_with_context(
             program,
@@ -384,6 +399,84 @@ impl Interpreter {
                 aliases: BTreeMap::new(),
             },
         )
+    }
+
+    pub fn process_includes(&self, program_with_includes: &ValueWithIncludes) -> Result<Value> {
+        match program_with_includes {
+            ValueWithIncludes::Include(include_clause) => {
+                self.process_includes(&match include_clause {
+                    Include::IncludePath(path) => match path.extension() {
+                        Some(ext) if ext == "yaml" || ext == "yml" => serde_saphyr::from_reader(
+                            std::io::BufReader::new(std::fs::File::open(path.clone())?),
+                        )
+                        .with_context(|| format!("Can not parse included file at path {path:?}"))?,
+                        Some(ext) if ext == "json" => serde_json::from_reader(
+                            std::io::BufReader::new(std::fs::File::open(path.clone())?),
+                        )
+                        .with_context(|| format!("Can not parse included file at path {path:?}"))?,
+                        extension => {
+                            return Err(anyhow!(
+                                "Unsupported include file extension {extension:?} in file path \
+                                 {path:?}"
+                            ));
+                        }
+                    },
+                    Include::IncludeUrl(url) => {
+                        match std::path::Path::new(url.path())
+                            .extension()
+                            .and_then(std::ffi::OsStr::to_str)
+                            .map(|extension| extension.to_lowercase())
+                        {
+                            Some(extension)
+                                if extension == "yaml"
+                                    || extension == "yml"
+                                    || extension == "json" =>
+                            {
+                                let program_text = &ureq::get(url.as_str())
+                                    .call()?
+                                    .into_body()
+                                    .read_to_string()
+                                    .with_context(|| {
+                                        format!(
+                                            "Can not download included program from url {url:?}"
+                                        )
+                                    })?;
+                                match extension.as_str() {
+                                    "yaml" | "yml" => serde_saphyr::from_str(program_text)
+                                        .with_context(|| {
+                                            format!(
+                                                "Can not parse included program downloaded from \
+                                                 url {url:?}"
+                                            )
+                                        })?,
+                                    "json" => {
+                                        serde_json::from_str(program_text).with_context(|| {
+                                            format!(
+                                                "Can not parse included program downloaded from \
+                                                 url {url:?}"
+                                            )
+                                        })?
+                                    }
+                                    _ => {
+                                        return Err(anyhow!(
+                                            "Unsupported extension {extension:?} for include file \
+                                             downloaded from url {url:?}"
+                                        ));
+                                    }
+                                }
+                            }
+                            extension => {
+                                return Err(anyhow!(
+                                    "Unsupported include file extension {extension:?} in url \
+                                     {url:?}"
+                                ));
+                            }
+                        }
+                    }
+                })
+            }
+            ValueWithIncludes::Value(value) => Ok(value.clone()),
+        }
     }
 
     fn compute_with_context(
@@ -946,7 +1039,7 @@ mod tests {
         assert_eq!(
             *default_interpreter()
                 .compute(
-                    serde_json::from_value(json!({
+                    &serde_json::from_value(json!({
                         "SUM": [
                             {"PRODUCT": [2, 3]},
                             {"LEN": {"CONCAT": ["lala", "lolo"]}},
@@ -964,8 +1057,8 @@ mod tests {
     fn test_with() {
         assert_eq!(
             *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
+                .compute(
+                    &serde_json::from_value(json!({
                         "SUM": [
                             {
                                 "WITH": {"DEFINITIONS": {"x": 2, "y": 3}},
@@ -976,7 +1069,7 @@ mod tests {
                         ]
                     }))
                     .unwrap(),
-                ))
+                )
                 .unwrap(),
             Value::Number(24.0)
         );
@@ -986,8 +1079,8 @@ mod tests {
     fn test_user_functions_definitions() {
         assert_eq!(
             *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
+                .compute(
+                    &serde_json::from_value(json!({
                         "SUM": [
                             {
                                 "WITH": {
@@ -1014,8 +1107,8 @@ mod tests {
                             4
                         ]
                     }))
-                    .unwrap()
-                ),)
+                    .unwrap(),
+                )
                 .unwrap(),
             Value::Number(76.0)
         );
@@ -1025,8 +1118,8 @@ mod tests {
     fn test_generics() {
         assert_eq!(
             *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
+                .compute(
+                    &serde_json::from_value(json!({
                         "SUM": [
                             {
                                 "GET_ELEMENT": {
@@ -1041,7 +1134,7 @@ mod tests {
                         ]
                     }))
                     .unwrap()
-                ))
+                )
                 .unwrap(),
             Value::Number(3.0)
         );
@@ -1051,8 +1144,8 @@ mod tests {
     fn test_map() {
         assert_eq!(
             *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
+                .compute(
+                    &serde_json::from_value(json!({
                         "SUM": {
                             "MAP": [
                                 {"SIZE": [1, 2, 3]},
@@ -1062,7 +1155,7 @@ mod tests {
                         }
                     }))
                     .unwrap()
-                ))
+                )
                 .unwrap(),
             Value::Number(6.0)
         );
@@ -1072,8 +1165,8 @@ mod tests {
     fn test_filter() {
         assert_eq!(
             *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
+                .compute(
+                    &serde_json::from_value(json!({
                         "SUM": {
                             "FILTER": [
                                 {"SIZE": [1, 2, 3]},
@@ -1085,7 +1178,7 @@ mod tests {
                         }
                     }))
                     .unwrap()
-                ))
+                )
                 .unwrap(),
             Value::Number(3.0)
         );
@@ -1095,8 +1188,8 @@ mod tests {
     fn test_reduce() {
         assert_eq!(
             *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
+                .compute(
+                    &serde_json::from_value(json!({
                         "REDUCE": [
                             {"SIZE": [1, 2, 3]},
                             2,
@@ -1111,7 +1204,7 @@ mod tests {
                         }
                     }))
                     .unwrap()
-                ))
+                )
                 .unwrap(),
             Value::Number(14.0)
         );
@@ -1121,8 +1214,8 @@ mod tests {
     fn test_factorial() {
         assert_eq!(
             *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
+                .compute(
+                    &serde_json::from_value(json!({
                         "WITH": {
                             "DEFINITIONS": {
                                 "FACTORIAL": {
@@ -1141,7 +1234,7 @@ mod tests {
                         }
                     }))
                     .unwrap()
-                ))
+                )
                 .unwrap(),
             Value::Number(120.0)
         );
@@ -1151,8 +1244,8 @@ mod tests {
     fn test_definitions_vs_constants() {
         assert_eq!(
             *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
+                .compute(
+                    &serde_json::from_value(json!({
                         "WITH": {"CONSTANTS": {"x": 1}},
                         "COMPUTE": {
                             "WITH": {
@@ -1163,7 +1256,7 @@ mod tests {
                         }
                     }))
                     .unwrap()
-                ))
+                )
                 .unwrap(),
             Value::Array(vec![
                 Arc::new(Value::Number(2.0)),
@@ -1176,14 +1269,14 @@ mod tests {
     fn test_branching() {
         assert_eq!(
             *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
+                .compute(
+                    &serde_json::from_value(json!({
                         "IF": true,
                         "THEN": 1,
                         "ELSE": 0
                     }))
                     .unwrap()
-                ))
+                )
                 .unwrap(),
             Value::Number(1.0)
         );
@@ -1193,8 +1286,8 @@ mod tests {
     fn test_recursive_normal() {
         assert_eq!(
             *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
+                .compute(
+                    &serde_json::from_value(json!({
                       "WITH": {
                         "DEFINITIONS": {
                           "FIBONACCI": {
@@ -1240,7 +1333,7 @@ mod tests {
                       }
                     }))
                     .unwrap()
-                ))
+                )
                 .unwrap(),
             Value::Number(55.0)
         );
@@ -1249,8 +1342,8 @@ mod tests {
     fn test_recursive_short() {
         assert_eq!(
             *default_interpreter()
-                .compute(Arc::new(
-                    serde_json::from_value(json!({
+                .compute(
+                    &serde_json::from_value(json!({
                       "WITH": {
                         "DEFINITIONS": {
                           "FIBONACCI": {
@@ -1284,7 +1377,7 @@ mod tests {
                       }
                     }))
                     .unwrap()
-                ))
+                )
                 .unwrap(),
             Value::Number(1.0)
         );
@@ -1292,8 +1385,8 @@ mod tests {
     #[test]
     fn test_recursive_error() {
         assert!(default_interpreter()
-            .compute(Arc::new(
-                serde_json::from_value(json!({
+            .compute(
+                &serde_json::from_value(json!({
                   "WITH": {
                     "DEFINITIONS": {
                       "FIBONACCI": {
@@ -1333,8 +1426,8 @@ mod tests {
                     "FIBONACCI": 10
                   }
                 }))
-                .unwrap(),
-            ))
+                .unwrap()
+            )
             .is_err());
     }
     #[test]
@@ -1344,8 +1437,8 @@ mod tests {
             .spawn(|| {
                 assert_eq!(
                     *default_interpreter()
-                        .compute(Arc::new(
-                            serde_json::from_value(json!({
+                        .compute(
+                            &serde_json::from_value(json!({
                               "WITH": {
                                 "DEFINITIONS": {
                                   "FIBONACCI_1": {
@@ -1499,7 +1592,7 @@ mod tests {
                               }
                             }))
                             .unwrap()
-                        ))
+                        )
                         .unwrap(),
                     Value::Number(55.0)
                 );

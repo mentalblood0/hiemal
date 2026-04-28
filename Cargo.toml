@@ -8,7 +8,9 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = { version = "1.0.149", features = ["preserve_order"] }
 serde-saphyr = { git = "https://github.com/bourumir-wyngs/serde-saphyr" }
 anyhow = { version = "1.0", features = ["std", "backtrace"] }
+ureq = { version = "3.3" }
 paste = "1.0.15"
+url = {version = "2.5.8", features = ["serde"]}
 
 [dev-dependencies]
 nanorand = "0.8"
