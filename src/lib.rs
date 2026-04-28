@@ -606,7 +606,8 @@ impl Interpreter {
     }
 
     fn get_type(&self, program: TypeOrValue, context: &mut TypeCheckingContext) -> Result<Type> {
-        println!("{:?} {:?}", context, program);
+        // println!("{:?} {:?}", context, program);
+        println!("{:?}", context.path);
         let result = match program {
             TypeOrValue::Type(program_type) => program_type,
             TypeOrValue::Value(program) => match *program {
@@ -1356,7 +1357,7 @@ mod tests {
     }
     #[test]
     fn test_recursive_long() {
-        let builder = std::thread::Builder::new().stack_size(8 * 1024 * 1024);
+        let builder = std::thread::Builder::new().stack_size(2 * 1024 * 1024);
         let handler = builder
             .spawn(|| {
                 assert_eq!(
