@@ -336,7 +336,7 @@ impl TypeCheckingContext {
         expected_type: &Type,
         actual_type: &Type,
     ) -> Result<[Option<Type>; 256]> {
-        println!("assert_equal {expected_type:?} {actual_type:?}");
+        // println!("assert_equal {expected_type:?} {actual_type:?}");
         let generic_values = self
             .get_generic_arguments_values(expected_type, actual_type)
             .with_context(|| {
@@ -607,7 +607,7 @@ impl Interpreter {
 
     fn get_type(&self, program: TypeOrValue, context: &mut TypeCheckingContext) -> Result<Type> {
         // println!("{:?} {:?}", context, program);
-        println!("{:?}", context.path);
+        // println!("{:?}", context.path);
         let result = match program {
             TypeOrValue::Type(program_type) => program_type,
             TypeOrValue::Value(program) => match *program {
