@@ -1,9 +1,12 @@
 pub mod embedded_functions;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{Read, Write};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Error, Result};
+use glob::glob;
+use url::Url;
 
 #[derive(PartialEq, Debug, Clone, PartialOrd, Ord, Eq)]
 pub enum Type {
@@ -88,7 +91,7 @@ pub struct Branching {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Include {
-    IncludeUrl(url::Url),
+    IncludeUrl(Url),
     IncludeFile(std::path::PathBuf),
 }
 
@@ -165,13 +168,91 @@ pub struct IncludesCache {
     pub directory: std::path::PathBuf,
 }
 
+impl Default for IncludesCache {
+    fn default() -> IncludesCache {
+        Self {
+            directory: dirs::cache_dir().unwrap().join("hiemal"),
+        }
+    }
+}
+
 impl IncludesCache {
-    pub fn get(&mut self, url: &url::Url) -> Result<String> {
-        Ok(ureq::get(url.as_str())
-            .call()?
-            .into_body()
-            .read_to_string()
-            .with_context(|| format!("Can not download included program from url {url:?}"))?)
+    fn url_hash(&self, url: &Url) -> String {
+        use base64::Engine;
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(xxhash_rust::xxh3::xxh3_128(url.to_string().as_bytes()).to_be_bytes())
+    }
+
+    fn get_from_disk(&self, url: &Url) -> Result<Option<String>> {
+        let mut result = String::new();
+        if let Some(Ok(path)) = glob(&format!(
+            "{}.*",
+            self.directory.join(self.url_hash(url)).to_str().unwrap()
+        ))?
+        .next()
+        {
+            if let Ok(mut file) = std::fs::File::open(path) {
+                file.read_to_string(&mut result)?;
+                Ok(Some(result))
+            } else {
+                Ok(None)
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn get(&mut self, url: &Url) -> Result<String> {
+        let url_hash = self.url_hash(url);
+        let extension = std::path::Path::new(url.path())
+            .extension()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let glob_pattern = format!("{}/{url_hash}.*.*", self.directory.to_str().unwrap());
+        let (response, etag) = if let Some(Ok(path_with_etag)) = glob(&glob_pattern)?.next() {
+            let file_name_splitted = path_with_etag
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .splitn(3, '.') // url hash, etag, extension
+                .collect::<Vec<_>>();
+            let etag = file_name_splitted[1].to_string();
+            let response = ureq::get(url.as_str())
+                .header("If-None-Match", format!("\"{etag}\", W/\"{etag}\""))
+                .call()?;
+            if response.status() == 304 {
+                return Ok(self.get_from_disk(url)?.unwrap());
+            }
+            (response, etag)
+        } else {
+            let response = ureq::get(url.as_str()).call()?;
+            let headers = response.headers();
+            let etag_splitted = headers["ETag"].to_str()?.split("\"").collect::<Vec<_>>(); // etag can be W/"<etag_value>" or "<etag_value>"
+            let etag = etag_splitted[etag_splitted.len().saturating_sub(2)].to_string();
+            (response, etag)
+        };
+        if response.status().is_success() {
+            let result = response
+                .into_body()
+                .read_to_string()
+                .with_context(|| "Can not read body of response from {url}")?;
+            let path = self
+                .directory
+                .join(&format!("{url_hash}.{etag}.{extension}"));
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .open(path)?
+                .write_all(result.as_bytes())?;
+            Ok(result)
+        } else {
+            Err(anyhow!("Can not download included file from {url}"))
+        }
     }
 }
 
@@ -362,7 +443,6 @@ impl TypeCheckingContext {
         expected_type: &Type,
         actual_type: &Type,
     ) -> Result<[Option<Type>; 256]> {
-        // println!("assert_equal {expected_type:?} {actual_type:?}");
         let generic_values = self
             .get_generic_arguments_values(expected_type, actual_type)
             .with_context(|| {
@@ -722,8 +802,6 @@ impl Interpreter {
     }
 
     fn get_type(&self, program: TypeOrValue, context: &mut TypeCheckingContext) -> Result<Type> {
-        // println!("{:?} {:?}", context, program);
-        // println!("{:?}", context.path);
         let result = match program {
             TypeOrValue::Type(program_type) => program_type,
             TypeOrValue::Value(program) => match *program {
@@ -1055,12 +1133,6 @@ mod tests {
         RESULT.get_or_init(|| Interpreter::default())
     }
 
-    fn default_includes_cache() -> IncludesCache {
-        IncludesCache {
-            directory: dirs::cache_dir().unwrap().join("hiemal"),
-        }
-    }
-
     #[test]
     fn test_simple_embedded_functions() {
         assert_eq!(
@@ -1074,7 +1146,7 @@ mod tests {
                         ]
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Number(18.0)
@@ -1097,7 +1169,7 @@ mod tests {
                         ]
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Number(24.0)
@@ -1137,7 +1209,7 @@ mod tests {
                         ]
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Number(76.0)
@@ -1164,7 +1236,7 @@ mod tests {
                         ]
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Number(3.0)
@@ -1186,7 +1258,7 @@ mod tests {
                         }
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Number(6.0)
@@ -1210,7 +1282,7 @@ mod tests {
                         }
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Number(3.0)
@@ -1237,7 +1309,7 @@ mod tests {
                         }
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Number(14.0)
@@ -1268,7 +1340,7 @@ mod tests {
                         }
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Number(120.0)
@@ -1291,7 +1363,7 @@ mod tests {
                         }
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Array(vec![
@@ -1312,7 +1384,7 @@ mod tests {
                         "ELSE": 0
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Number(1.0)
@@ -1370,7 +1442,7 @@ mod tests {
                       }
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Number(55.0)
@@ -1416,7 +1488,7 @@ mod tests {
                       }
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
             Value::Number(1.0)
@@ -1468,7 +1540,7 @@ mod tests {
                   }
                 }))
                 .unwrap(),
-                &mut default_includes_cache()
+                &mut IncludesCache::default()
             )
             .is_err());
     }
@@ -1634,7 +1706,7 @@ mod tests {
                               }
                             }))
                             .unwrap(),
-                            &mut default_includes_cache()
+                            &mut IncludesCache::default()
                         )
                         .unwrap(),
                     Value::Number(55.0)
@@ -1658,7 +1730,7 @@ mod tests {
                       }
                     }))
                     .unwrap(),
-                    &mut default_includes_cache()
+                    &mut IncludesCache::default()
                 )
                 .unwrap(),
                 serde_json::from_value(json!({

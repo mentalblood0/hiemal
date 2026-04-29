@@ -12,6 +12,9 @@ ureq = { version = "3.3" }
 paste = "1.0.15"
 url = {version = "2.5.8", features = ["serde"]}
 dirs = "6.0.0"
+xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+base64 = "0.22"
+glob = "0.3.3"
 
 [dev-dependencies]
 nanorand = "0.8"

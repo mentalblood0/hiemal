@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use hiemal::{Interpreter, ValueWithIncludes};
+use hiemal::{IncludesCache, Interpreter, ValueWithIncludes};
 use serde_json::json;
 
 fn fibonacci_benchmark(bencher_context: &mut Criterion) {
@@ -51,8 +51,10 @@ fn fibonacci_benchmark(bencher_context: &mut Criterion) {
     }))
     .unwrap();
 
+    let mut includes_cache = IncludesCache::default();
+
     bencher_context.bench_function("fibonacci_recursive_10", |b| {
-        b.iter(|| interpreter.compute(&program).unwrap())
+        b.iter(|| interpreter.compute(&program, &mut includes_cache).unwrap())
     });
 }
 
