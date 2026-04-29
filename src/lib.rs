@@ -161,6 +161,20 @@ pub struct Function {
     pub function: fn(Arc<Value>) -> Result<Arc<Value>>,
 }
 
+pub struct IncludesCache {
+    pub directory: std::path::PathBuf,
+}
+
+impl IncludesCache {
+    pub fn get(&mut self, url: &url::Url) -> Result<String> {
+        Ok(ureq::get(url.as_str())
+            .call()?
+            .into_body()
+            .read_to_string()
+            .with_context(|| format!("Can not download included program from url {url:?}"))?)
+    }
+}
+
 pub struct Interpreter {
     pub supported_functions: BTreeMap<String, Function>,
 }
@@ -192,7 +206,7 @@ macro_rules! define_default_interpreter_supported_functions {
                                     },
                                 ),
                             )*
-                        ]),
+                        ])
                     }
                 }
             }
@@ -391,9 +405,13 @@ impl ComputationContext {
 }
 
 impl Interpreter {
-    pub fn compute(&self, program_with_includes: &ValueWithIncludes) -> Result<Arc<Value>> {
+    pub fn compute(
+        &self,
+        program_with_includes: &ValueWithIncludes,
+        includes_cache: &mut IncludesCache,
+    ) -> Result<Arc<Value>> {
         let program: Arc<Value> = Arc::new(serde_json::from_value(
-            self.process_includes(&program_with_includes)?,
+            self.process_includes(&program_with_includes, includes_cache)?,
         )?);
         self.check_types(program.clone())?;
         self.compute_with_context(
@@ -408,10 +426,11 @@ impl Interpreter {
     pub fn process_includes(
         &self,
         program_with_includes: &ValueWithIncludes,
+        includes_cache: &mut IncludesCache,
     ) -> Result<serde_json::Value> {
         match program_with_includes {
-            ValueWithIncludes::Include(include_clause) => {
-                self.process_includes(&match include_clause {
+            ValueWithIncludes::Include(include_clause) => self.process_includes(
+                &match include_clause {
                     Include::IncludeFile(path) => match path.extension() {
                         Some(ext) if ext == "yaml" || ext == "yml" => serde_saphyr::from_reader(
                             std::io::BufReader::new(std::fs::File::open(path.clone())?),
@@ -439,15 +458,7 @@ impl Interpreter {
                                     || extension == "yml"
                                     || extension == "json" =>
                             {
-                                let program_text = &ureq::get(url.as_str())
-                                    .call()?
-                                    .into_body()
-                                    .read_to_string()
-                                    .with_context(|| {
-                                        format!(
-                                            "Can not download included program from url {url:?}"
-                                        )
-                                    })?;
+                                let program_text = &includes_cache.get(url)?;
                                 match extension.as_str() {
                                     "yaml" | "yml" => serde_saphyr::from_str(program_text)
                                         .with_context(|| {
@@ -480,19 +491,20 @@ impl Interpreter {
                             }
                         }
                     }
-                })
-            }
+                },
+                includes_cache,
+            ),
             ValueWithIncludes::Array(array) => {
                 let mut result = vec![];
                 for element in array {
-                    result.push(self.process_includes(element)?);
+                    result.push(self.process_includes(element, includes_cache)?);
                 }
                 Ok(serde_json::to_value(result)?)
             }
             ValueWithIncludes::Object(object) => {
                 let mut result = BTreeMap::new();
                 for (key, value) in object {
-                    result.insert(key, self.process_includes(value)?);
+                    result.insert(key, self.process_includes(value, includes_cache)?);
                 }
                 Ok(serde_json::to_value(result)?)
             }
@@ -1039,8 +1051,14 @@ mod tests {
     use serde_json::json;
 
     fn default_interpreter() -> &'static Interpreter {
-        static INTERPRETER: OnceLock<Interpreter> = OnceLock::new();
-        INTERPRETER.get_or_init(|| Interpreter::default())
+        static RESULT: OnceLock<Interpreter> = OnceLock::new();
+        RESULT.get_or_init(|| Interpreter::default())
+    }
+
+    fn default_includes_cache() -> IncludesCache {
+        IncludesCache {
+            directory: dirs::cache_dir().unwrap().join("hiemal"),
+        }
     }
 
     #[test]
@@ -1056,6 +1074,7 @@ mod tests {
                         ]
                     }))
                     .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Number(18.0)
@@ -1078,6 +1097,7 @@ mod tests {
                         ]
                     }))
                     .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Number(24.0)
@@ -1117,6 +1137,7 @@ mod tests {
                         ]
                     }))
                     .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Number(76.0)
@@ -1142,7 +1163,8 @@ mod tests {
                             1
                         ]
                     }))
-                    .unwrap()
+                    .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Number(3.0)
@@ -1163,7 +1185,8 @@ mod tests {
                             "THROUGH": {"SUM": ["_", 1]}
                         }
                     }))
-                    .unwrap()
+                    .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Number(6.0)
@@ -1186,7 +1209,8 @@ mod tests {
                             "THROUGH": {"IS_SORTED": ["x", 2]}
                         }
                     }))
-                    .unwrap()
+                    .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Number(3.0)
@@ -1212,7 +1236,8 @@ mod tests {
                             ]
                         }
                     }))
-                    .unwrap()
+                    .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Number(14.0)
@@ -1242,7 +1267,8 @@ mod tests {
                             "FACTORIAL": 5
                         }
                     }))
-                    .unwrap()
+                    .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Number(120.0)
@@ -1264,7 +1290,8 @@ mod tests {
                             "COMPUTE": ["definition", "constant"]
                         }
                     }))
-                    .unwrap()
+                    .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Array(vec![
@@ -1284,7 +1311,8 @@ mod tests {
                         "THEN": 1,
                         "ELSE": 0
                     }))
-                    .unwrap()
+                    .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Number(1.0)
@@ -1341,7 +1369,8 @@ mod tests {
                         "FIBONACCI": 10
                       }
                     }))
-                    .unwrap()
+                    .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Number(55.0)
@@ -1386,7 +1415,8 @@ mod tests {
                         "FIBONACCI": 10
                       }
                     }))
-                    .unwrap()
+                    .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
             Value::Number(1.0)
@@ -1437,7 +1467,8 @@ mod tests {
                     "FIBONACCI": 10
                   }
                 }))
-                .unwrap()
+                .unwrap(),
+                &mut default_includes_cache()
             )
             .is_err());
     }
@@ -1602,7 +1633,8 @@ mod tests {
                                 "FIBONACCI_1": 10
                               }
                             }))
-                            .unwrap()
+                            .unwrap(),
+                            &mut default_includes_cache()
                         )
                         .unwrap(),
                     Value::Number(55.0)
@@ -1625,7 +1657,8 @@ mod tests {
                         "INCLUDE_URL": "https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml"
                       }
                     }))
-                    .unwrap()
+                    .unwrap(),
+                    &mut default_includes_cache()
                 )
                 .unwrap(),
                 serde_json::from_value(json!({

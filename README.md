@@ -71,7 +71,7 @@ Embedding new functions is quite easy, see [here](src/embedded_functions.rs)
 INCLUDE_FILE: examples/factorial.yml
 ```
 
-Interpreter will insert contents of file instead of this clause
+Interpreter will insert contents of the file instead of this clause
 
 #### INCLUDE_URL
 
