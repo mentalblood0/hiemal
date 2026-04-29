@@ -219,13 +219,28 @@ impl IncludesCache {
                 .splitn(3, '.') // url hash, etag, extension
                 .collect::<Vec<_>>();
             let etag = file_name_splitted[1].to_string();
-            let response = ureq::get(url.as_str())
+            match ureq::get(url.as_str())
                 .header("If-None-Match", format!("\"{etag}\", W/\"{etag}\""))
-                .call()?;
-            if response.status() == 304 {
-                return Ok(self.get_from_disk(url)?.unwrap());
+                .call()
+            {
+                Ok(response) => {
+                    if response.status() == 304 {
+                        return Ok(self.get_from_disk(url)?.unwrap());
+                    }
+                    (response, etag)
+                }
+                Err(
+                    ureq::Error::ConnectionFailed
+                    | ureq::Error::Timeout(_)
+                    | ureq::Error::BodyStalled,
+                ) => {
+                    return Ok(self.get_from_disk(url)?.unwrap());
+                }
+                Err(error) => {
+                    return Err(error)
+                        .with_context(|| format!("Can not download include from {url}"));
+                }
             }
-            (response, etag)
         } else {
             let response = ureq::get(url.as_str()).call()?;
             let headers = response.headers();
