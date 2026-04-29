@@ -25,6 +25,12 @@ cat examples/factorial.yml | hiemal yaml
 cat examples/factorial.json | hiemal json
 ```
 
+### Stages
+
+- include clauses substitution
+- type checking
+- computation
+
 ### Basic types
 
 - strings
@@ -58,6 +64,22 @@ cat examples/factorial.json | hiemal json
 Embedding new functions is quite easy, see [here](src/embedded_functions.rs)
 
 ### Clauses
+
+#### INCLUDE_FILE
+
+```yaml
+INCLUDE_FILE: examples/factorial.yml
+```
+
+Interpreter will insert contents of file instead of this clause
+
+#### INCLUDE_URL
+
+```yaml
+INCLUDE_URL: https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml
+```
+
+Interpreter will insert contents of downloaded file instead of this clause
 
 #### WITH DEFINITIONS CONSTANTS COMPUTE
 

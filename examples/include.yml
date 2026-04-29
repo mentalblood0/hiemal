@@ -1,0 +1,4 @@
+from local file:
+  INCLUDE_FILE: examples/factorial.yml
+from net:
+  INCLUDE_URL: https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml

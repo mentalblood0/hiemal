@@ -89,7 +89,7 @@ pub struct Branching {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Include {
     IncludeUrl(url::Url),
-    IncludePath(std::path::PathBuf),
+    IncludeFile(std::path::PathBuf),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -111,8 +111,10 @@ pub enum Value {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum ValueWithIncludes {
-    Value(Value),
     Include(Include),
+    Array(Vec<ValueWithIncludes>),
+    Object(BTreeMap<String, ValueWithIncludes>),
+    Other(serde_json::Value),
 }
 
 impl Value {
@@ -390,7 +392,9 @@ impl ComputationContext {
 
 impl Interpreter {
     pub fn compute(&self, program_with_includes: &ValueWithIncludes) -> Result<Arc<Value>> {
-        let program = Arc::new(self.process_includes(&program_with_includes)?);
+        let program: Arc<Value> = Arc::new(serde_json::from_value(
+            self.process_includes(&program_with_includes)?,
+        )?);
         self.check_types(program.clone())?;
         self.compute_with_context(
             program,
@@ -401,11 +405,14 @@ impl Interpreter {
         )
     }
 
-    pub fn process_includes(&self, program_with_includes: &ValueWithIncludes) -> Result<Value> {
+    pub fn process_includes(
+        &self,
+        program_with_includes: &ValueWithIncludes,
+    ) -> Result<serde_json::Value> {
         match program_with_includes {
             ValueWithIncludes::Include(include_clause) => {
                 self.process_includes(&match include_clause {
-                    Include::IncludePath(path) => match path.extension() {
+                    Include::IncludeFile(path) => match path.extension() {
                         Some(ext) if ext == "yaml" || ext == "yml" => serde_saphyr::from_reader(
                             std::io::BufReader::new(std::fs::File::open(path.clone())?),
                         )
@@ -475,7 +482,21 @@ impl Interpreter {
                     }
                 })
             }
-            ValueWithIncludes::Value(value) => Ok(value.clone()),
+            ValueWithIncludes::Array(array) => {
+                let mut result = vec![];
+                for element in array {
+                    result.push(self.process_includes(element)?);
+                }
+                Ok(serde_json::to_value(result)?)
+            }
+            ValueWithIncludes::Object(object) => {
+                let mut result = BTreeMap::new();
+                for (key, value) in object {
+                    result.insert(key, self.process_includes(value)?);
+                }
+                Ok(serde_json::to_value(result)?)
+            }
+            ValueWithIncludes::Other(value) => Ok(value.clone()),
         }
     }
 
@@ -628,25 +649,25 @@ impl Interpreter {
                         }
                         return Ok(result);
                     }
-                    let function = self.supported_functions.get(name).unwrap();
-                    context.path.push(name.clone());
-                    let function_arguments =
-                        self.compute_with_context(arguments.clone(), context)?;
-                    let result = (function.function)(function_arguments)?;
-                    context.path.pop();
-                    result
-                } else {
-                    let mut result_map = BTreeMap::new();
-                    for (key, value) in object {
-                        context.path.push(key.clone());
-                        result_map.insert(
-                            key.clone(),
-                            self.compute_with_context(value.clone(), context)?,
-                        );
+                    if let Some(function) = self.supported_functions.get(name) {
+                        context.path.push(name.clone());
+                        let function_arguments =
+                            self.compute_with_context(arguments.clone(), context)?;
+                        let result = (function.function)(function_arguments)?;
                         context.path.pop();
+                        return Ok(result);
                     }
-                    Arc::new(Value::Object(result_map))
                 }
+                let mut result_map = BTreeMap::new();
+                for (key, value) in object {
+                    context.path.push(key.clone());
+                    result_map.insert(
+                        key.clone(),
+                        self.compute_with_context(value.clone(), context)?,
+                    );
+                    context.path.pop();
+                }
+                Arc::new(Value::Object(result_map))
             }
             Value::Array(ref array) => {
                 let mut result_array = vec![];
@@ -912,31 +933,19 @@ impl Interpreter {
                                 &mut result,
                                 &generic_values,
                             )?;
-                            result
-                        } else {
-                            return Err(anyhow!(
-                                "Expected supported function at path {:?}, but got unsupported \
-                                 function {name:?}. Supported functions are: {:?}",
-                                context.path,
-                                self.supported_functions
-                                    .keys()
-                                    .cloned()
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            ));
+                            return Ok(result);
                         }
-                    } else {
-                        let mut result_map = BTreeMap::new();
-                        for (key, value) in object {
-                            context.path.push(key.clone());
-                            result_map.insert(
-                                key.clone(),
-                                self.get_type(TypeOrValue::Value(value.clone()), context)?,
-                            );
-                            context.path.pop();
-                        }
-                        Type::Object(result_map)
                     }
+                    let mut result_map = BTreeMap::new();
+                    for (key, value) in object {
+                        context.path.push(key.clone());
+                        result_map.insert(
+                            key.clone(),
+                            self.get_type(TypeOrValue::Value(value.clone()), context)?,
+                        );
+                        context.path.pop();
+                    }
+                    Type::Object(result_map)
                 }
                 Value::Array(ref array) => {
                     let mut non_recursed_elements_indexes_and_types =
@@ -1338,6 +1347,7 @@ mod tests {
             Value::Number(55.0)
         );
     }
+
     #[test]
     fn test_recursive_short() {
         assert_eq!(
@@ -1382,6 +1392,7 @@ mod tests {
             Value::Number(1.0)
         );
     }
+
     #[test]
     fn test_recursive_error() {
         assert!(default_interpreter()
@@ -1599,5 +1610,28 @@ mod tests {
             })
             .unwrap();
         handler.join().unwrap();
+    }
+
+    #[test]
+    fn test_includes() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                      "from local file": {
+                        "INCLUDE_FILE": "examples/factorial.yml"
+                      },
+                      "from net": {
+                        "INCLUDE_URL": "https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml"
+                      }
+                    }))
+                    .unwrap()
+                )
+                .unwrap(),
+                serde_json::from_value(json!({
+                    "from local file": 120,
+                    "from net": 120
+                })).unwrap()
+        );
     }
 }
