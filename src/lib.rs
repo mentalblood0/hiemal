@@ -244,8 +244,12 @@ impl IncludesCache {
         } else {
             let response = ureq::get(url.as_str()).call()?;
             let headers = response.headers();
-            let etag_splitted = headers["ETag"].to_str()?.split("\"").collect::<Vec<_>>(); // etag can be W/"<etag_value>" or "<etag_value>"
-            let etag = etag_splitted[etag_splitted.len().saturating_sub(2)].to_string();
+            let etag = headers["ETag"]
+                .to_str()?
+                .split("\"")
+                .nth(1)
+                .unwrap()
+                .to_string(); // etag can be W/"<etag_value>" or "<etag_value>"
             (response, etag)
         };
         if response.status().is_success() {
