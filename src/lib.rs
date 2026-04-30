@@ -166,12 +166,14 @@ pub struct Function {
 
 pub struct IncludesCache {
     pub directory: std::path::PathBuf,
+    pub url_hash_to_text: BTreeMap<String, String>,
 }
 
 impl Default for IncludesCache {
     fn default() -> IncludesCache {
         Self {
             directory: dirs::cache_dir().unwrap().join("hiemal"),
+            url_hash_to_text: BTreeMap::new(),
         }
     }
 }
@@ -183,22 +185,49 @@ impl IncludesCache {
             .encode(xxhash_rust::xxh3::xxh3_128(url.to_string().as_bytes()).to_be_bytes())
     }
 
-    fn get_from_disk(&self, url: &Url) -> Result<Option<String>> {
-        let mut result = String::new();
-        if let Some(Ok(path)) = glob(&format!(
-            "{}.*",
-            self.directory.join(self.url_hash(url)).to_str().unwrap()
-        ))?
-        .next()
-        {
-            if let Ok(mut file) = std::fs::File::open(path) {
-                file.read_to_string(&mut result)?;
-                Ok(Some(result))
+    fn add_cached(
+        &mut self,
+        text: String,
+        url_hash: &str,
+        etag: &str,
+        extension: &str,
+    ) -> Result<()> {
+        self.url_hash_to_text
+            .insert(url_hash.to_string(), text.clone());
+        let path = self
+            .directory
+            .join(&format!("{url_hash}.{etag}.{extension}"));
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(path)?
+            .write_all(text.as_bytes())?;
+        Ok(())
+    }
+
+    fn get_cached(&self, url_hash: &String) -> Result<Option<String>> {
+        if let Some(result) = self.url_hash_to_text.get(url_hash) {
+            Ok(Some(result.clone()))
+        } else {
+            let mut result = String::new();
+            if let Some(Ok(path)) = glob(&format!(
+                "{}.*",
+                self.directory.join(url_hash).to_str().unwrap()
+            ))?
+            .next()
+            {
+                if let Ok(mut file) = std::fs::File::open(path) {
+                    file.read_to_string(&mut result)?;
+                    Ok(Some(result))
+                } else {
+                    Ok(None)
+                }
             } else {
                 Ok(None)
             }
-        } else {
-            Ok(None)
         }
     }
 
@@ -225,7 +254,7 @@ impl IncludesCache {
             {
                 Ok(response) => {
                     if response.status() == 304 {
-                        return Ok(self.get_from_disk(url)?.unwrap());
+                        return Ok(self.get_cached(&url_hash)?.unwrap());
                     }
                     (response, etag)
                 }
@@ -234,7 +263,7 @@ impl IncludesCache {
                     | ureq::Error::Timeout(_)
                     | ureq::Error::BodyStalled,
                 ) => {
-                    return Ok(self.get_from_disk(url)?.unwrap());
+                    return Ok(self.get_cached(&url_hash)?.unwrap());
                 }
                 Err(error) => {
                     return Err(error)
@@ -257,17 +286,7 @@ impl IncludesCache {
                 .into_body()
                 .read_to_string()
                 .with_context(|| "Can not read body of response from {url}")?;
-            let path = self
-                .directory
-                .join(&format!("{url_hash}.{etag}.{extension}"));
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .open(path)?
-                .write_all(result.as_bytes())?;
+            self.add_cached(result.clone(), &url_hash, &etag, extension)?;
             Ok(result)
         } else {
             Err(anyhow!("Can not download included file from {url}"))

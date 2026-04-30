@@ -3,9 +3,7 @@ use anyhow::{anyhow, Context, Result};
 use hiemal::{IncludesCache, Interpreter};
 
 fn main() -> Result<()> {
-    let mut includes_cache = IncludesCache {
-        directory: dirs::cache_dir().unwrap().join("hiemal"),
-    };
+    let mut includes_cache = IncludesCache::default();
     match std::env::args()
         .nth(1)
         .ok_or(anyhow!(
