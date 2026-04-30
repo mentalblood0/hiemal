@@ -22,7 +22,7 @@ cargo install --git https://github.com/mentalblood0/hiemal
 
 ```bash
 hiemal examples/factorial.json
-hiemal examples/fibonacci.yml
+hiemal https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/fibonacci.yml
 hiemal examples/include.yml
 ```
 
