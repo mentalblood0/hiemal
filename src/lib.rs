@@ -209,7 +209,6 @@ impl IncludesCache {
     }
 
     fn get_from_disk(&self, url_hash: &String) -> Result<Option<String>> {
-        let mut result = String::new();
         if let Some(Ok(path)) = glob(&format!(
             "{}.*",
             self.directory.join(url_hash).to_str().unwrap()
@@ -217,6 +216,7 @@ impl IncludesCache {
         .next()
         {
             if let Ok(mut file) = std::fs::File::open(path) {
+                let mut result = String::new();
                 file.read_to_string(&mut result)?;
                 Ok(Some(result))
             } else {

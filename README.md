@@ -21,8 +21,9 @@ cargo install --git https://github.com/mentalblood0/hiemal
 ## Usage
 
 ```bash
-cat examples/factorial.yml | hiemal yaml
-cat examples/factorial.json | hiemal json
+hiemal examples/factorial.json
+hiemal examples/fibonacci.yml
+hiemal examples/include.yml
 ```
 
 ### Stages
