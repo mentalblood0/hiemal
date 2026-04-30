@@ -208,88 +208,88 @@ impl IncludesCache {
         Ok(())
     }
 
-    fn get_cached(&self, url_hash: &String) -> Result<Option<String>> {
-        if let Some(result) = self.url_hash_to_text.get(url_hash) {
-            Ok(Some(result.clone()))
-        } else {
-            let mut result = String::new();
-            if let Some(Ok(path)) = glob(&format!(
-                "{}.*",
-                self.directory.join(url_hash).to_str().unwrap()
-            ))?
-            .next()
-            {
-                if let Ok(mut file) = std::fs::File::open(path) {
-                    file.read_to_string(&mut result)?;
-                    Ok(Some(result))
-                } else {
-                    Ok(None)
-                }
+    fn get_from_disk(&self, url_hash: &String) -> Result<Option<String>> {
+        let mut result = String::new();
+        if let Some(Ok(path)) = glob(&format!(
+            "{}.*",
+            self.directory.join(url_hash).to_str().unwrap()
+        ))?
+        .next()
+        {
+            if let Ok(mut file) = std::fs::File::open(path) {
+                file.read_to_string(&mut result)?;
+                Ok(Some(result))
             } else {
                 Ok(None)
             }
+        } else {
+            Ok(None)
         }
     }
 
     pub fn get(&mut self, url: &Url) -> Result<String> {
         let url_hash = self.url_hash(url);
-        let extension = std::path::Path::new(url.path())
-            .extension()
-            .unwrap()
-            .to_str()
-            .unwrap();
-        let glob_pattern = format!("{}/{url_hash}.*.*", self.directory.to_str().unwrap());
-        let (response, etag) = if let Some(Ok(path_with_etag)) = glob(&glob_pattern)?.next() {
-            let file_name_splitted = path_with_etag
-                .file_name()
+        if let Some(result) = self.url_hash_to_text.get(&url_hash) {
+            return Ok(result.clone());
+        } else {
+            let extension = std::path::Path::new(url.path())
+                .extension()
                 .unwrap()
                 .to_str()
-                .unwrap()
-                .splitn(3, '.') // url hash, etag, extension
-                .collect::<Vec<_>>();
-            let etag = file_name_splitted[1].to_string();
-            match ureq::get(url.as_str())
-                .header("If-None-Match", format!("\"{etag}\", W/\"{etag}\""))
-                .call()
-            {
-                Ok(response) => {
-                    if response.status() == 304 {
-                        return Ok(self.get_cached(&url_hash)?.unwrap());
+                .unwrap();
+            let glob_pattern = format!("{}/{url_hash}.*.*", self.directory.to_str().unwrap());
+            let (response, etag) = if let Some(Ok(path_with_etag)) = glob(&glob_pattern)?.next() {
+                let file_name_splitted = path_with_etag
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .splitn(3, '.') // url hash, etag, extension
+                    .collect::<Vec<_>>();
+                let etag = file_name_splitted[1].to_string();
+                match ureq::get(url.as_str())
+                    .header("If-None-Match", format!("\"{etag}\", W/\"{etag}\""))
+                    .call()
+                {
+                    Ok(response) => {
+                        if response.status() == 304 {
+                            return Ok(self.get_from_disk(&url_hash)?.unwrap());
+                        }
+                        (response, etag)
                     }
-                    (response, etag)
+                    Err(
+                        ureq::Error::ConnectionFailed
+                        | ureq::Error::Timeout(_)
+                        | ureq::Error::BodyStalled,
+                    ) => {
+                        return Ok(self.get_from_disk(&url_hash)?.unwrap());
+                    }
+                    Err(error) => {
+                        return Err(error)
+                            .with_context(|| format!("Can not download include from {url}"));
+                    }
                 }
-                Err(
-                    ureq::Error::ConnectionFailed
-                    | ureq::Error::Timeout(_)
-                    | ureq::Error::BodyStalled,
-                ) => {
-                    return Ok(self.get_cached(&url_hash)?.unwrap());
-                }
-                Err(error) => {
-                    return Err(error)
-                        .with_context(|| format!("Can not download include from {url}"));
-                }
+            } else {
+                let response = ureq::get(url.as_str()).call()?;
+                let headers = response.headers();
+                let etag = headers["ETag"]
+                    .to_str()?
+                    .split("\"")
+                    .nth(1)
+                    .unwrap()
+                    .to_string(); // etag can be W/"<etag_value>" or "<etag_value>"
+                (response, etag)
+            };
+            if response.status().is_success() {
+                let result = response
+                    .into_body()
+                    .read_to_string()
+                    .with_context(|| "Can not read body of response from {url}")?;
+                self.add_cached(result.clone(), &url_hash, &etag, extension)?;
+                Ok(result)
+            } else {
+                Err(anyhow!("Can not download included file from {url}"))
             }
-        } else {
-            let response = ureq::get(url.as_str()).call()?;
-            let headers = response.headers();
-            let etag = headers["ETag"]
-                .to_str()?
-                .split("\"")
-                .nth(1)
-                .unwrap()
-                .to_string(); // etag can be W/"<etag_value>" or "<etag_value>"
-            (response, etag)
-        };
-        if response.status().is_success() {
-            let result = response
-                .into_body()
-                .read_to_string()
-                .with_context(|| "Can not read body of response from {url}")?;
-            self.add_cached(result.clone(), &url_hash, &etag, extension)?;
-            Ok(result)
-        } else {
-            Err(anyhow!("Can not download included file from {url}"))
         }
     }
 }
