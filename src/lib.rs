@@ -185,6 +185,18 @@ impl IncludesCache {
             .encode(xxhash_rust::xxh3::xxh3_128(url.to_string().as_bytes()).to_be_bytes())
     }
 
+    fn remove_from_disk(&self, url_hash: &str) -> Result<()> {
+        if let Some(Ok(path)) = glob(&format!(
+            "{}.*",
+            self.directory.join(url_hash).to_str().unwrap()
+        ))?
+        .next()
+        {
+            std::fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
     fn add_cached(
         &mut self,
         text: String,
@@ -192,6 +204,7 @@ impl IncludesCache {
         etag: &str,
         extension: &str,
     ) -> Result<()> {
+        self.remove_from_disk(url_hash)?;
         self.url_hash_to_text
             .insert(url_hash.to_string(), text.clone());
         let path = self
@@ -208,7 +221,7 @@ impl IncludesCache {
         Ok(())
     }
 
-    fn get_from_disk(&self, url_hash: &String) -> Result<Option<String>> {
+    fn get_from_disk(&self, url_hash: &str) -> Result<Option<String>> {
         if let Some(Ok(path)) = glob(&format!(
             "{}.*",
             self.directory.join(url_hash).to_str().unwrap()
