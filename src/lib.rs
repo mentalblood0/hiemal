@@ -1,7 +1,7 @@
 pub mod embedded_functions;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Error, Result};
@@ -221,20 +221,17 @@ impl IncludesCache {
         Ok(())
     }
 
-    fn get_from_disk(&self, url_hash: &str) -> Result<Option<String>> {
+    fn get_from_disk(&mut self, url_hash: &str) -> Result<Option<String>> {
         if let Some(Ok(path)) = glob(&format!(
             "{}.*",
             self.directory.join(url_hash).to_str().unwrap()
         ))?
         .next()
         {
-            if let Ok(mut file) = std::fs::File::open(path) {
-                let mut result = String::new();
-                file.read_to_string(&mut result)?;
-                Ok(Some(result))
-            } else {
-                Ok(None)
-            }
+            let result = std::fs::read_to_string(path)?;
+            self.url_hash_to_text
+                .insert(url_hash.to_string(), result.clone());
+            Ok(Some(result))
         } else {
             Ok(None)
         }
