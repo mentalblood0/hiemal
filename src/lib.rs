@@ -81,18 +81,22 @@ pub struct Reduce {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Branching {
-    #[serde(rename = "IF")]
-    if_: Arc<Value>,
+    r#if: Arc<Value>,
     then: Arc<Value>,
-    #[serde(rename = "ELSE")]
-    else_: Arc<Value>,
+    r#else: Arc<Value>,
+}
+
+fn default_error_alias() -> String {
+    "error".to_string()
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum Include {
-    IncludeUrl(Url),
-    IncludeFile(std::path::PathBuf),
+pub struct TryOr {
+    r#try: Arc<Value>,
+    or: Arc<Value>,
+    #[serde(default = "default_error_alias")]
+    with_error_as_alias: String,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -108,7 +112,15 @@ pub enum Value {
     Filter(Filter),
     Reduce(Reduce),
     Branching(Branching),
+    TryOr(TryOr),
     Object(BTreeMap<String, Arc<Value>>),
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Include {
+    IncludeUrl(Url),
+    IncludeFile(std::path::PathBuf),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -360,6 +372,8 @@ pub enum PathSegment {
     If,
     Then,
     Else,
+    Try,
+    Or,
 }
 
 #[derive(Debug)]
@@ -757,7 +771,7 @@ impl Interpreter {
             Value::Branching(ref branching_clause) => {
                 context.path.0.push(PathSegment::If);
                 let if_result = self
-                    .compute_with_context(branching_clause.if_.clone(), context)?
+                    .compute_with_context(branching_clause.r#if.clone(), context)?
                     .as_bool()
                     .unwrap();
                 let result = if if_result {
@@ -765,7 +779,22 @@ impl Interpreter {
                     self.compute_with_context(branching_clause.then.clone(), context)?
                 } else {
                     *context.path.0.last_mut().unwrap() = PathSegment::Else;
-                    self.compute_with_context(branching_clause.else_.clone(), context)?
+                    self.compute_with_context(branching_clause.r#else.clone(), context)?
+                };
+                context.path.0.pop();
+                result
+            }
+            Value::TryOr(ref try_or_clause) => {
+                context.path.0.push(PathSegment::Try);
+                let result = match self.compute_with_context(try_or_clause.r#try.clone(), context) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        context.add_alias(
+                            try_or_clause.with_error_as_alias.clone(),
+                            Arc::new(Value::String(error.to_string())),
+                        );
+                        self.compute_with_context(try_or_clause.or.clone(), context)?
+                    }
                 };
                 context.path.0.pop();
                 result
@@ -999,14 +1028,14 @@ impl Interpreter {
                 Value::Branching(ref branching_clause) => {
                     context.path.0.push(PathSegment::If);
                     let if_branch_type =
-                        self.get_type(TypeOrValue::Value(branching_clause.if_.clone()), context)?;
+                        self.get_type(TypeOrValue::Value(branching_clause.r#if.clone()), context)?;
                     context.assert_equal(&Type::Bool, &if_branch_type)?;
                     *context.path.0.last_mut().unwrap() = PathSegment::Then;
                     let then_branch_type =
                         self.get_type(TypeOrValue::Value(branching_clause.then.clone()), context)?;
                     *context.path.0.last_mut().unwrap() = PathSegment::Else;
-                    let else_branch_type =
-                        self.get_type(TypeOrValue::Value(branching_clause.else_.clone()), context)?;
+                    let else_branch_type = self
+                        .get_type(TypeOrValue::Value(branching_clause.r#else.clone()), context)?;
                     context.path.0.pop();
                     context
                         .assert_equal(&then_branch_type, &else_branch_type)
@@ -1019,6 +1048,31 @@ impl Interpreter {
                             )
                         })?;
                     then_branch_type
+                }
+                Value::TryOr(ref try_or_clause) => {
+                    context.path.0.push(PathSegment::If);
+                    let try_branch_type =
+                        self.get_type(TypeOrValue::Value(try_or_clause.r#try.clone()), context)?;
+                    *context.path.0.last_mut().unwrap() = PathSegment::Or;
+                    context.add_alias(
+                        try_or_clause.with_error_as_alias.clone(),
+                        TypeOrValue::Type(Type::String),
+                    );
+                    let or_branch_type =
+                        self.get_type(TypeOrValue::Value(try_or_clause.or.clone()), context)?;
+                    context.path.0.pop();
+                    context.remove_alias(&try_or_clause.with_error_as_alias);
+                    context
+                        .assert_equal(&try_branch_type, &or_branch_type)
+                        .with_context(|| {
+                            anyhow!(
+                                "Expected 'try' and 'or' branches at path {:?} to be of the same \
+                                 type, but 'try' branch is of type {try_branch_type:?} and 'or' \
+                                 branch is of type {or_branch_type:?}",
+                                context.path
+                            )
+                        })?;
+                    try_branch_type
                 }
                 Value::Object(ref object) => {
                     if object.len() == 1 {
@@ -1458,6 +1512,23 @@ mod tests {
                 )
                 .unwrap(),
             Value::Number(1.0)
+        );
+    }
+
+    #[test]
+    fn test_try_or() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                        "TRY": {"GET_ELEMENT": {"from": ["a", "b"], "at": 2}},
+                        "OR": "error",
+                    }))
+                    .unwrap(),
+                    &mut IncludesCache::default()
+                )
+                .unwrap(),
+            Value::String("Can not get element at index 2 from array of length 2".to_string())
         );
     }
 
