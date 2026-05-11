@@ -96,7 +96,7 @@ pub struct TryOr {
     r#try: Arc<Value>,
     or: Arc<Value>,
     #[serde(default = "default_error_alias")]
-    with_error_as_alias: String,
+    with_error_alias: String,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -790,7 +790,7 @@ impl Interpreter {
                     Ok(result) => result,
                     Err(error) => {
                         context.add_alias(
-                            try_or_clause.with_error_as_alias.clone(),
+                            try_or_clause.with_error_alias.clone(),
                             Arc::new(Value::String(error.to_string())),
                         );
                         self.compute_with_context(try_or_clause.or.clone(), context)?
@@ -1055,13 +1055,13 @@ impl Interpreter {
                         self.get_type(TypeOrValue::Value(try_or_clause.r#try.clone()), context)?;
                     *context.path.0.last_mut().unwrap() = PathSegment::Or;
                     context.add_alias(
-                        try_or_clause.with_error_as_alias.clone(),
+                        try_or_clause.with_error_alias.clone(),
                         TypeOrValue::Type(Type::String),
                     );
                     let or_branch_type =
                         self.get_type(TypeOrValue::Value(try_or_clause.or.clone()), context)?;
                     context.path.0.pop();
-                    context.remove_alias(&try_or_clause.with_error_as_alias);
+                    context.remove_alias(&try_or_clause.with_error_alias);
                     context
                         .assert_equal(&try_branch_type, &or_branch_type)
                         .with_context(|| {

@@ -86,14 +86,14 @@ Interpreter will insert contents of downloaded file instead of this clause
 
 ```yaml
 WITH:
-  DEFINITIONS:
+  DEFINITIONS: # may be omitted
     FACTORIAL:
       PRODUCT:
         SEQUENCE:
           from: 1
           to: _
           step: 1
-  CONSTANTS:
+  CONSTANTS: # may be omitted
     x:
       SUM: [2, 3]
 COMPUTE:
@@ -182,6 +182,17 @@ IF:
     [1, 3, 2]
 THEN: 1
 ELSE: 2
+```
+
+#### TRY OR WITH_ERROR_ALIAS
+
+```yaml
+TRY:
+  GET_ELEMENT:
+    from: [a, b]
+    at: 2
+  OR: "err"
+  WITH_ERROR_ALIAS: "err" #may be omitted, defaulting to "error"
 ```
 
 ### Composability
