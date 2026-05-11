@@ -191,8 +191,8 @@ TRY:
   GET_ELEMENT:
     from: [a, b]
     at: 2
-  OR: err
-  WITH_ERROR_ALIAS: err #may be omitted, defaulting to "error"
+OR: err
+WITH_ERROR_ALIAS: err # may be omitted, defaulting to "error"
 ```
 
 ### Composability
