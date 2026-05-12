@@ -4,11 +4,13 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use paste::paste;
 
+use crate::ArcOrValue;
+
 use crate::{define_default_interpreter_supported_functions, Function, Interpreter, Type, Value};
 
 define_default_interpreter_supported_functions!(
     SUM Type::Array(Box::new(Type::Number)), Type::Number, argument {
-        Ok(Arc::new(Value::Number(
+        Ok(ArcOrValue::Value(Value::Number(
             argument
                 .as_array()
                 .unwrap()
@@ -18,7 +20,7 @@ define_default_interpreter_supported_functions!(
         )))
     }
     PRODUCT Type::Array(Box::new(Type::Number)), Type::Number, argument {
-        Ok(Arc::new(Value::Number(
+        Ok(ArcOrValue::Value(Value::Number(
             argument
                 .as_array()
                 .unwrap()
@@ -28,7 +30,7 @@ define_default_interpreter_supported_functions!(
         )))
     }
     LEN Type::String, Type::Number, argument {
-        Ok(Arc::new(Value::Number(
+        Ok(ArcOrValue::Value(Value::Number(
             argument
                 .as_string()
                 .unwrap()
@@ -36,7 +38,7 @@ define_default_interpreter_supported_functions!(
         )))
     }
     SIZE Type::Array(Box::new(Type::GenericArgument(0))), Type::Number, argument {
-        Ok(Arc::new(Value::Number(
+        Ok(ArcOrValue::Value(Value::Number(
             argument
                 .as_array()
                 .unwrap()
@@ -50,10 +52,10 @@ define_default_interpreter_supported_functions!(
         let arguments = argument.as_object().unwrap();
         let array = arguments.get("from").unwrap().as_array().unwrap();
         let index = arguments.get("at").unwrap().as_number().unwrap() as usize;
-        Ok(array.get(index).with_context(|| format!("Can not get element at index {index} from array of length {}", array.len()))?.clone())
+        Ok(ArcOrValue::Arc(array.get(index).with_context(|| format!("Can not get element at index {index} from array of length {}", array.len()))?.clone()))
     }
     IS_SORTED Type::Array(Box::new(Type::Number)), Type::Bool, argument {
-        Ok(Arc::new(Value::Bool(
+        Ok(ArcOrValue::Value(Value::Bool(
             argument
                 .as_array()
                 .unwrap()
@@ -64,14 +66,14 @@ define_default_interpreter_supported_functions!(
     }
     ARE_EQUAL Type::Array(Box::new(Type::GenericArgument(0))), Type::Bool, argument {
         let array = argument.as_array().unwrap();
-        Ok(Arc::new(Value::Bool(array.get(0).map_or(true, |first| array.iter().all(|x| x == first)))))
+        Ok(ArcOrValue::Value(Value::Bool(array.get(0).map_or(true, |first| array.iter().all(|x| x == first)))))
     }
     CONCAT Type::Array(Box::new(Type::String)), Type::String, argument {
         let mut result = String::new();
         for element in argument.as_array().unwrap().iter() {
             result += element.as_string().unwrap();
         }
-        Ok(Arc::new(Value::String(
+        Ok(ArcOrValue::Value(Value::String(
             argument
                 .as_array()
                 .unwrap()
@@ -93,7 +95,7 @@ define_default_interpreter_supported_functions!(
         let step = arguments.get("step").unwrap().as_number().unwrap();
         let estimated_capacity = (to - from) / step;
         if estimated_capacity <= 0.0 {
-            Ok(Arc::new(Value::Array(vec![])))
+            Ok(ArcOrValue::Value(Value::Array(vec![])))
         } else {
             let mut result = Vec::with_capacity(estimated_capacity as usize);
             let mut current = from;
@@ -101,7 +103,7 @@ define_default_interpreter_supported_functions!(
                 result.push(Arc::new(Value::Number(current)));
                 current += step;
             }
-            Ok(Arc::new(Value::Array(result)))
+            Ok(ArcOrValue::Value(Value::Array(result)))
         }
     }
 );
