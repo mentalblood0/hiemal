@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use paste::paste;
@@ -52,7 +51,7 @@ define_default_interpreter_supported_functions!(
         let arguments = argument.as_object().unwrap();
         let array = arguments.get("from").unwrap().as_array().unwrap();
         let index = arguments.get("at").unwrap().as_number().unwrap() as usize;
-        Ok(ArcOrValue::Arc(array.get(index).with_context(|| format!("Can not get element at index {index} from array of length {}", array.len()))?.clone()))
+        Ok(array.get(index).with_context(|| format!("Can not get element at index {index} from array of length {}", array.len()))?.clone())
     }
     IS_SORTED Type::Array(Box::new(Type::Number)), Type::Bool, argument {
         Ok(ArcOrValue::Value(Value::Bool(
@@ -100,7 +99,7 @@ define_default_interpreter_supported_functions!(
             let mut result = Vec::with_capacity(estimated_capacity as usize);
             let mut current = from;
             while current <= to {
-                result.push(Arc::new(Value::Number(current)));
+                result.push(ArcOrValue::Value(Value::Number(current)));
                 current += step;
             }
             Ok(ArcOrValue::Value(Value::Array(result)))
