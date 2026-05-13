@@ -1601,13 +1601,11 @@ mod tests {
                     &serde_json::from_value(json!({
                         "SUM": [
                             {
-                                "GET_ELEMENT": {
-                                    "from": [
+                                    "FROM": [
                                         {"SIZE": [1, 2, 3]},
                                         {"SIZE": ["a", "b"]},
                                     ],
-                                    "at": 1
-                                }
+                                    "AT": [1]
                             },
                             1
                         ]
@@ -1771,7 +1769,7 @@ mod tests {
             *default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
-                        "TRY": {"GET_ELEMENT": {"from": ["a", "b"], "at": 2}},
+                        "TRY": {"FROM": ["a", "b"], "AT": [2]},
                         "OR": "error",
                     }))
                     .unwrap(),
@@ -1779,7 +1777,8 @@ mod tests {
                 )
                 .unwrap(),
             serde_json::from_value(json!(
-                "Can not get element at index 2 from array of length 2"
+                "Can not get element at index 2 from array of length 2 at the point Path([Try, \
+                 At, AtIndex(0)])"
             ))
             .unwrap()
         );
