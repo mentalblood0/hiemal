@@ -1,8 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use hiemal::{IncludesCache, Interpreter, ValueWithIncludes};
+use hiemal::{IncludesCache, Interpreter, Value, ValueWithIncludes};
 use serde_json::json;
 
-fn fibonacci_benchmark(bencher_context: &mut Criterion) {
+fn fibonacci(bencher_context: &mut Criterion) {
     let interpreter = Interpreter::default();
     let mut includes_cache = IncludesCache::default();
     for number in [22, 23, 24] {
@@ -52,11 +52,47 @@ fn fibonacci_benchmark(bencher_context: &mut Criterion) {
             }
         }))
         .unwrap();
-        bencher_context.bench_function(&format!("fibonacci_recursive_{number}"), |b| {
+        bencher_context.bench_function(&format!("fibonacci_{number}"), |b| {
             b.iter(|| interpreter.compute(&program, &mut includes_cache).unwrap())
         });
     }
 }
 
-criterion_group!(benches, fibonacci_benchmark);
+fn factorial(bencher_context: &mut Criterion) {
+    let interpreter = Interpreter::default();
+    let mut includes_cache = IncludesCache::default();
+    let number = 20u64;
+    let correct_raw: u64 = (1..=number).product();
+    dbg!(correct_raw);
+    let correct = Value::Number(correct_raw as f64);
+    let program = serde_json::from_value::<ValueWithIncludes>(json!({
+        "WITH": {
+            "DEFINITIONS": {
+                "FACTORIAL": {
+                    "PRODUCT": {
+                        "SEQUENCE": {
+                            "from": 1,
+                            "to": "_",
+                            "step": 1
+                        }
+                    }
+                }
+            }
+        },
+        "COMPUTE": {
+            "FACTORIAL": number
+        }
+    }))
+    .unwrap();
+    bencher_context.bench_function(&format!("factorial_{number}"), |b| {
+        b.iter(|| {
+            assert_eq!(
+                *interpreter.compute(&program, &mut includes_cache).unwrap(),
+                correct
+            )
+        })
+    });
+}
+
+criterion_group!(benches, factorial);
 criterion_main!(benches);
