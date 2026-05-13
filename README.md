@@ -48,9 +48,6 @@ hiemal examples/include.yml
 - PRODUCT: [1, 2, 3]
 - LEN: abc
 - SIZE: [1, 2, 3]
-- GET_ELEMENT:
-    from: [1, 2, 3]
-    at: 2
 - IS_SORTED: [1, 2, 3]
 - ARE_EQUAL: [1, 2, 3]
 - ARE_EQUAL: [a, a, a]
@@ -184,13 +181,19 @@ THEN: 1
 ELSE: 2
 ```
 
+#### FROM AT
+
+```yaml
+FROM: {key: [a, b]}
+AT: [key, 1]
+```
+
 #### TRY OR WITH_ERROR_ALIAS
 
 ```yaml
 TRY:
-  GET_ELEMENT:
-    from: [a, b]
-    at: 2
+  FROM: [a, b]
+  AT: [2]
 OR: err
 WITH_ERROR_ALIAS: err # may be omitted, defaulting to "error"
 ```
