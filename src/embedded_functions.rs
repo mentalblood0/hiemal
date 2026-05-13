@@ -1,99 +1,154 @@
 use std::collections::BTreeMap;
 
-use anyhow::Result;
-use paste::paste;
+use crate::{ArcOrValue, Function, Interpreter, Type, Value};
 
-use crate::{
-    define_default_interpreter_supported_functions, ArcOrValue, Function, Interpreter, Type, Value,
-};
-
-define_default_interpreter_supported_functions!(
-    SUM Type::Array(Box::new(Type::Number)), Type::Number, argument {
-        Ok(ArcOrValue::Value(Value::Number(
-            argument
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|element| element.as_number().unwrap())
-                .sum()
-        )))
-    }
-    PRODUCT Type::Array(Box::new(Type::Number)), Type::Number, argument {
-        Ok(ArcOrValue::Value(Value::Number(
-            argument
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|element| element.as_number().unwrap())
-                .product()
-        )))
-    }
-    LEN Type::String, Type::Number, argument {
-        Ok(ArcOrValue::Value(Value::Number(
-            argument
-                .as_string()
-                .unwrap()
-                .len() as f64
-        )))
-    }
-    SIZE Type::Array(Box::new(Type::GenericArgument(0))), Type::Number, argument {
-        Ok(ArcOrValue::Value(Value::Number(
-            argument
-                .as_array()
-                .unwrap()
-                .len() as f64
-        )))
-    }
-    IS_SORTED Type::Array(Box::new(Type::Number)), Type::Bool, argument {
-        Ok(ArcOrValue::Value(Value::Bool(
-            argument
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|element| element.as_number().unwrap())
-                .is_sorted()
-        )))
-    }
-    ARE_EQUAL Type::Array(Box::new(Type::GenericArgument(0))), Type::Bool, argument {
-        let array = argument.as_array().unwrap();
-        Ok(ArcOrValue::Value(Value::Bool(array.get(0).map_or(true, |first| array.iter().all(|x| x == first)))))
-    }
-    CONCAT Type::Array(Box::new(Type::String)), Type::String, argument {
-        let mut result = String::new();
-        for element in argument.as_array().unwrap().iter() {
-            result += element.as_string().unwrap();
+impl Default for Interpreter {
+    fn default() -> Interpreter {
+        Interpreter {
+            supported_functions: BTreeMap::from([
+                (
+                    "SUM".to_string(),
+                    Function {
+                        argument_type: Type::Array(Box::new(Type::Number)),
+                        return_type: Type::Number,
+                        function: |argument: ArcOrValue| {
+                            Ok(ArcOrValue::Value(Value::Number(
+                                argument
+                                    .as_array()
+                                    .unwrap()
+                                    .iter()
+                                    .map(|element| element.as_number().unwrap())
+                                    .sum(),
+                            )))
+                        },
+                    },
+                ),
+                (
+                    "PRODUCT".to_string(),
+                    Function {
+                        argument_type: Type::Array(Box::new(Type::Number)),
+                        return_type: Type::Number,
+                        function: |argument: ArcOrValue| {
+                            Ok(ArcOrValue::Value(Value::Number(
+                                argument
+                                    .as_array()
+                                    .unwrap()
+                                    .iter()
+                                    .map(|element| element.as_number().unwrap())
+                                    .product(),
+                            )))
+                        },
+                    },
+                ),
+                (
+                    "LEN".to_string(),
+                    Function {
+                        argument_type: Type::String,
+                        return_type: Type::Number,
+                        function: |argument: ArcOrValue| {
+                            Ok(ArcOrValue::Value(Value::Number(
+                                argument.as_string().unwrap().len() as f64,
+                            )))
+                        },
+                    },
+                ),
+                (
+                    "SIZE".to_string(),
+                    Function {
+                        argument_type: Type::Array(Box::new(Type::GenericArgument(0))),
+                        return_type: Type::Number,
+                        function: |argument: ArcOrValue| {
+                            Ok(ArcOrValue::Value(Value::Number(
+                                argument.as_array().unwrap().len() as f64,
+                            )))
+                        },
+                    },
+                ),
+                (
+                    "IS_SORTED".to_string(),
+                    Function {
+                        argument_type: Type::Array(Box::new(Type::Number)),
+                        return_type: Type::Bool,
+                        function: |argument: ArcOrValue| {
+                            Ok(ArcOrValue::Value(Value::Bool(
+                                argument
+                                    .as_array()
+                                    .unwrap()
+                                    .iter()
+                                    .map(|element| element.as_number().unwrap())
+                                    .is_sorted(),
+                            )))
+                        },
+                    },
+                ),
+                (
+                    "ARE_EQUAL".to_string(),
+                    Function {
+                        argument_type: Type::Array(Box::new(Type::GenericArgument(0))),
+                        return_type: Type::Bool,
+                        function: |argument: ArcOrValue| {
+                            let array = argument.as_array().unwrap();
+                            Ok(ArcOrValue::Value(Value::Bool(
+                                array
+                                    .get(0)
+                                    .map_or(true, |first| array.iter().all(|x| x == first)),
+                            )))
+                        },
+                    },
+                ),
+                (
+                    "CONCAT".to_string(),
+                    Function {
+                        argument_type: Type::Array(Box::new(Type::String)),
+                        return_type: Type::String,
+                        function: |argument: ArcOrValue| {
+                            let mut result = String::new();
+                            for element in argument.as_array().unwrap().iter() {
+                                result += element.as_string().unwrap();
+                            }
+                            Ok(ArcOrValue::Value(Value::String(
+                                argument
+                                    .as_array()
+                                    .unwrap()
+                                    .iter()
+                                    .map(|element| element.as_string().unwrap())
+                                    .cloned()
+                                    .collect::<Vec<_>>()
+                                    .join(""),
+                            )))
+                        },
+                    },
+                ),
+                (
+                    "SEQUENCE".to_string(),
+                    Function {
+                        argument_type: Type::Object(BTreeMap::from([
+                            ("from".to_string(), Type::Number),
+                            ("to".to_string(), Type::Number),
+                            ("step".to_string(), Type::Number),
+                        ])),
+                        return_type: Type::Array(Box::new(Type::Number)),
+                        function: |argument: ArcOrValue| {
+                            let arguments = argument.as_object().unwrap();
+                            let from = arguments.get("from").unwrap().as_number().unwrap();
+                            let to = arguments.get("to").unwrap().as_number().unwrap();
+                            let step = arguments.get("step").unwrap().as_number().unwrap();
+                            let estimated_capacity = (to - from) / step;
+                            if estimated_capacity <= 0.0 {
+                                Ok(ArcOrValue::Value(Value::Array(vec![])))
+                            } else {
+                                let mut result = Vec::with_capacity(estimated_capacity as usize);
+                                let mut current = from;
+                                while current <= to {
+                                    result.push(ArcOrValue::Value(Value::Number(current)));
+                                    current += step;
+                                }
+                                Ok(ArcOrValue::Value(Value::Array(result)))
+                            }
+                        },
+                    },
+                ),
+            ]),
         }
-        Ok(ArcOrValue::Value(Value::String(
-            argument
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|element| element.as_string().unwrap())
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("")
-        )))
     }
-    SEQUENCE Type::Object(BTreeMap::from([
-        ("from".to_string(), Type::Number),
-        ("to".to_string(), Type::Number),
-        ("step".to_string(), Type::Number)
-    ])), Type::Array(Box::new(Type::Number)), argument {
-        let arguments = argument.as_object().unwrap();
-        let from = arguments.get("from").unwrap().as_number().unwrap();
-        let to = arguments.get("to").unwrap().as_number().unwrap();
-        let step = arguments.get("step").unwrap().as_number().unwrap();
-        let estimated_capacity = (to - from) / step;
-        if estimated_capacity <= 0.0 {
-            Ok(ArcOrValue::Value(Value::Array(vec![])))
-        } else {
-            let mut result = Vec::with_capacity(estimated_capacity as usize);
-            let mut current = from;
-            while current <= to {
-                result.push(ArcOrValue::Value(Value::Number(current)));
-                current += step;
-            }
-            Ok(ArcOrValue::Value(Value::Array(result)))
-        }
-    }
-);
+}

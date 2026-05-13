@@ -409,10 +409,6 @@ macro_rules! define_default_interpreter_supported_functions {
         )*
     ) => {
         paste! {
-            $(
-                pub fn [<$function_name:lower>]($function_argument: ArcOrValue) -> Result<ArcOrValue> $function_code
-            )*
-
             impl Default for Interpreter {
                 fn default() -> Interpreter {
                     Interpreter {
@@ -423,7 +419,7 @@ macro_rules! define_default_interpreter_supported_functions {
                                     Function {
                                         argument_type: $function_argument_type,
                                         return_type: $function_return_type,
-                                        function: [<$function_name:lower>],
+                                        function: |$function_argument: ArcOrValue| $function_code,
                                     },
                                 ),
                             )*
