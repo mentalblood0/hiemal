@@ -57,10 +57,10 @@ fn main() {
         };
         let program: ValueWithIncludes = match format {
             Format::Yaml => serde_saphyr::from_str(&program_text)
-                .context("Can not parse program")
+                .context("Can not parse YAML-formatted program")
                 .unwrap(),
             Format::Json => serde_json::from_str(&program_text)
-                .context("Can not parse program")
+                .context("Can not parse JSON-formatted program")
                 .unwrap(),
         };
         serde_saphyr::to_io_writer(

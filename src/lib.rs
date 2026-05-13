@@ -101,6 +101,20 @@ pub struct TryOr {
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
+pub enum AtSegment {
+    ObjectKey(String),
+    ArrayIndex(usize),
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub struct FromAt {
+    from: Box<ArcOrValue>,
+    at: Vec<AtSegment>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(untagged)]
 pub enum Value {
     Number(f64),
     String(String),
@@ -113,6 +127,7 @@ pub enum Value {
     Reduce(Box<Reduce>),
     Branching(Box<Branching>),
     TryOr(Box<TryOr>),
+    FromAt(FromAt),
     Object(BTreeMap<String, ArcOrValue>),
 }
 
@@ -439,6 +454,9 @@ pub enum PathSegment {
     Else,
     Try,
     Or,
+    From,
+    At,
+    AtIndex(usize),
 }
 
 #[derive(Debug)]
@@ -447,7 +465,7 @@ pub struct Path(pub Vec<PathSegment>);
 #[derive(Clone, Debug)]
 pub enum TypeOrArcOrValue {
     Type(Type),
-    Value(ArcOrValue),
+    ArcOrValue(ArcOrValue),
 }
 
 #[derive(Debug)]
@@ -469,8 +487,7 @@ impl TypeCheckingContext {
 
     pub fn error(&self, expected_type: &Type, got_type: &Type) -> Error {
         anyhow!(
-            "Expected value of type {expected_type:?} but got value of type {got_type:?} at path \
-             {:?}",
+            "Expected value {expected_type:?} but got value {got_type:?} at path {:?}",
             self.path,
         )
     }
@@ -897,6 +914,45 @@ impl Interpreter {
                 context.path.0.pop();
                 result
             }
+            Value::FromAt(from_at_clause) => {
+                context.path.0.push(PathSegment::From);
+                let mut result = self
+                    .compute_with_context(ArcOrValue::Arc(from_at_clause.from.arc()), context)?
+                    .arc();
+                *context.path.0.last_mut().unwrap() = PathSegment::At;
+                for (at_segment_index, at_segment) in from_at_clause.at.iter().enumerate() {
+                    context.path.0.push(PathSegment::AtIndex(at_segment_index));
+                    result = match at_segment {
+                        AtSegment::ObjectKey(object_key) => result
+                            .as_object()
+                            .unwrap()
+                            .get(&*object_key)
+                            .unwrap()
+                            .arc()
+                            .clone(),
+                        AtSegment::ArrayIndex(array_index) => {
+                            let array = result.as_array().unwrap();
+                            result
+                                .as_array()
+                                .unwrap()
+                                .get(*array_index)
+                                .with_context(|| {
+                                    format!(
+                                        "Can not get element at index {array_index} from array of \
+                                         length {} at the point {:?}",
+                                        array.len(),
+                                        context.path
+                                    )
+                                })?
+                                .arc()
+                                .clone()
+                        }
+                    };
+                    context.path.0.pop();
+                }
+                context.path.0.pop();
+                ArcOrValue::Arc(result)
+            }
             Value::Object(object) => {
                 if object.len() == 1 {
                     let (name, arguments) = object.iter().next().unwrap();
@@ -985,13 +1041,15 @@ impl Interpreter {
                     ArcOrValue::Value(Value::String(string.clone()))
                 }
             }
-            value => ArcOrValue::Value(value.clone()),
+            Value::Number(number) => ArcOrValue::Value(Value::Number(*number)),
+            Value::Bool(bool) => ArcOrValue::Value(Value::Bool(*bool)),
+            Value::Null => ArcOrValue::Value(Value::Null),
         })
     }
 
     pub fn check_types(&self, program: Arc<Value>) -> Result<Type> {
         self.get_type(
-            TypeOrArcOrValue::Value(ArcOrValue::Arc(program)),
+            TypeOrArcOrValue::ArcOrValue(ArcOrValue::Arc(program)),
             &mut TypeCheckingContext {
                 path: Path(vec![]),
                 aliases: BTreeMap::new(),
@@ -1008,20 +1066,20 @@ impl Interpreter {
     ) -> Result<Type> {
         let result = match program {
             TypeOrArcOrValue::Type(program_type) => program_type,
-            TypeOrArcOrValue::Value(program) => match *program.value() {
+            TypeOrArcOrValue::ArcOrValue(program) => match *program.value() {
                 Value::With(ref with_clause) => {
                     for (alias_name, alias_value) in with_clause.with.definitions.iter() {
                         context.add_alias(
                             alias_name.clone(),
-                            TypeOrArcOrValue::Value(ArcOrValue::Arc(alias_value.arc())),
+                            TypeOrArcOrValue::ArcOrValue(ArcOrValue::Arc(alias_value.arc())),
                         );
                     }
                     context.path.0.push(PathSegment::With);
                     context.path.0.push(PathSegment::Constants);
                     for (alias_name, alias_value) in with_clause.with.constants.iter() {
                         context.path.0.push(PathSegment::Alias(alias_name.clone()));
-                        let precomputed_type =
-                            self.get_type(TypeOrArcOrValue::Value(alias_value.clone()), context)?;
+                        let precomputed_type = self
+                            .get_type(TypeOrArcOrValue::ArcOrValue(alias_value.clone()), context)?;
                         context.path.0.pop();
                         context.add_alias(
                             alias_name.clone(),
@@ -1031,7 +1089,7 @@ impl Interpreter {
                     context.path.0.pop();
                     context.path.0.push(PathSegment::Compute);
                     let result = self.get_type(
-                        TypeOrArcOrValue::Value(with_clause.compute.clone()),
+                        TypeOrArcOrValue::ArcOrValue(with_clause.compute.clone()),
                         context,
                     )?;
                     context.path.0.pop();
@@ -1046,8 +1104,10 @@ impl Interpreter {
                 }
                 Value::Map(ref map_clause) => {
                     context.path.0.push(PathSegment::Map);
-                    let actual_array_type =
-                        self.get_type(TypeOrArcOrValue::Value(map_clause.map.clone()), context)?;
+                    let actual_array_type = self.get_type(
+                        TypeOrArcOrValue::ArcOrValue(map_clause.map.clone()),
+                        context,
+                    )?;
                     context.path.0.pop();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context.add_alias(
@@ -1056,7 +1116,7 @@ impl Interpreter {
                         );
                         context.path.0.push(PathSegment::Through);
                         let result = self.get_type(
-                            TypeOrArcOrValue::Value(map_clause.through.clone()),
+                            TypeOrArcOrValue::ArcOrValue(map_clause.through.clone()),
                             context,
                         )?;
                         context.path.0.pop();
@@ -1072,7 +1132,7 @@ impl Interpreter {
                 Value::Filter(ref filter_clause) => {
                     context.path.0.push(PathSegment::Filter);
                     let actual_array_type = self.get_type(
-                        TypeOrArcOrValue::Value(filter_clause.filter.clone()),
+                        TypeOrArcOrValue::ArcOrValue(filter_clause.filter.clone()),
                         context,
                     )?;
                     context.path.0.pop();
@@ -1083,7 +1143,7 @@ impl Interpreter {
                         );
                         context.path.0.push(PathSegment::Through);
                         let through_type = self.get_type(
-                            TypeOrArcOrValue::Value(filter_clause.through.clone()),
+                            TypeOrArcOrValue::ArcOrValue(filter_clause.through.clone()),
                             context,
                         )?;
                         context.path.0.pop();
@@ -1109,13 +1169,13 @@ impl Interpreter {
                 Value::Reduce(ref reduce_clause) => {
                     context.path.0.push(PathSegment::Reduce);
                     let actual_array_type = self.get_type(
-                        TypeOrArcOrValue::Value(reduce_clause.reduce.clone()),
+                        TypeOrArcOrValue::ArcOrValue(reduce_clause.reduce.clone()),
                         context,
                     )?;
                     context.path.0.pop();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         let starting_with_type = self.get_type(
-                            TypeOrArcOrValue::Value(reduce_clause.starting_with.clone()),
+                            TypeOrArcOrValue::ArcOrValue(reduce_clause.starting_with.clone()),
                             context,
                         )?;
                         context.add_alias(
@@ -1128,7 +1188,7 @@ impl Interpreter {
                         );
                         context.path.0.push(PathSegment::Through);
                         let through_type = self.get_type(
-                            TypeOrArcOrValue::Value(reduce_clause.through.clone()),
+                            TypeOrArcOrValue::ArcOrValue(reduce_clause.through.clone()),
                             context,
                         )?;
                         context.path.0.pop();
@@ -1137,8 +1197,8 @@ impl Interpreter {
                             .with_context(|| {
                                 anyhow!(
                                     "Expected reduce at path {:?} to use function which returns \
-                                     value of type {starting_with_type:?} (as is starting value), \
-                                     but it returns {through_type:?}",
+                                     value {starting_with_type:?} (as is starting value), but it \
+                                     returns {through_type:?}",
                                     context.path
                                 )
                             })?;
@@ -1156,18 +1216,18 @@ impl Interpreter {
                 Value::Branching(ref branching_clause) => {
                     context.path.0.push(PathSegment::If);
                     let if_branch_type = self.get_type(
-                        TypeOrArcOrValue::Value(branching_clause.r#if.clone()),
+                        TypeOrArcOrValue::ArcOrValue(branching_clause.r#if.clone()),
                         context,
                     )?;
                     context.assert_equal(&Type::Bool, &if_branch_type)?;
                     *context.path.0.last_mut().unwrap() = PathSegment::Then;
                     let then_branch_type = self.get_type(
-                        TypeOrArcOrValue::Value(branching_clause.then.clone()),
+                        TypeOrArcOrValue::ArcOrValue(branching_clause.then.clone()),
                         context,
                     )?;
                     *context.path.0.last_mut().unwrap() = PathSegment::Else;
                     let else_branch_type = self.get_type(
-                        TypeOrArcOrValue::Value(branching_clause.r#else.clone()),
+                        TypeOrArcOrValue::ArcOrValue(branching_clause.r#else.clone()),
                         context,
                     )?;
                     context.path.0.pop();
@@ -1176,8 +1236,8 @@ impl Interpreter {
                         .with_context(|| {
                             anyhow!(
                                 "Expected 'then' and 'else' branches at path {:?} to be of the \
-                                 same type, but 'then' branch is of type {then_branch_type:?} and \
-                                 'else' branch is of type {else_branch_type:?}",
+                                 same type, but 'then' branch is {then_branch_type:?} and 'else' \
+                                 branch is {else_branch_type:?}",
                                 context.path
                             )
                         })?;
@@ -1186,7 +1246,7 @@ impl Interpreter {
                 Value::TryOr(ref try_or_clause) => {
                     context.path.0.push(PathSegment::If);
                     let try_branch_type = self.get_type(
-                        TypeOrArcOrValue::Value(try_or_clause.r#try.clone()),
+                        TypeOrArcOrValue::ArcOrValue(try_or_clause.r#try.clone()),
                         context,
                     )?;
                     *context.path.0.last_mut().unwrap() = PathSegment::Or;
@@ -1194,8 +1254,10 @@ impl Interpreter {
                         try_or_clause.with_error_alias.clone(),
                         TypeOrArcOrValue::Type(Type::String),
                     );
-                    let or_branch_type =
-                        self.get_type(TypeOrArcOrValue::Value(try_or_clause.or.clone()), context)?;
+                    let or_branch_type = self.get_type(
+                        TypeOrArcOrValue::ArcOrValue(try_or_clause.or.clone()),
+                        context,
+                    )?;
                     context.path.0.pop();
                     context.remove_alias(&try_or_clause.with_error_alias);
                     context
@@ -1203,12 +1265,63 @@ impl Interpreter {
                         .with_context(|| {
                             anyhow!(
                                 "Expected 'try' and 'or' branches at path {:?} to be of the same \
-                                 type, but 'try' branch is of type {try_branch_type:?} and 'or' \
-                                 branch is of type {or_branch_type:?}",
+                                 type, but 'try' branch is {try_branch_type:?} and 'or' branch is \
+                                 {or_branch_type:?}",
                                 context.path
                             )
                         })?;
                     try_branch_type
+                }
+                Value::FromAt(ref from_at_clause) => {
+                    context.path.0.push(PathSegment::From);
+                    let mut result = self.get_type(
+                        TypeOrArcOrValue::ArcOrValue(ArcOrValue::Arc(from_at_clause.from.arc())),
+                        context,
+                    )?;
+                    *context.path.0.last_mut().unwrap() = PathSegment::At;
+                    if from_at_clause.at.is_empty() {
+                        return Err(anyhow!("Expected a non-empty list at {:?}", context.path));
+                    }
+                    for (at_segment_index, at_segment) in from_at_clause.at.iter().enumerate() {
+                        context.path.0.push(PathSegment::AtIndex(at_segment_index));
+                        match at_segment {
+                            AtSegment::ObjectKey(object_key) => match result {
+                                Type::Object(mut result_fields_types) => {
+                                    if let Some(result_field_type) =
+                                        result_fields_types.remove(object_key)
+                                    {
+                                        result = result_field_type;
+                                    } else {
+                                        return Err(anyhow!(
+                                            "Expected to reach from 'from' to be an object with \
+                                             key {object_key:?} at this point, but it has no such \
+                                             key"
+                                        ));
+                                    }
+                                }
+                                r#type => {
+                                    return Err(anyhow!(
+                                        "Expected to reach from 'from' to be an object at this \
+                                         point, but it is {type:?}"
+                                    ));
+                                }
+                            },
+                            AtSegment::ArrayIndex(_) => match result {
+                                Type::Array(element_type) => {
+                                    result = *element_type;
+                                }
+                                r#type => {
+                                    return Err(anyhow!(
+                                        "Expected to reach from 'from' to be an array at this \
+                                         point, but it is {type:?}"
+                                    ));
+                                }
+                            },
+                        }
+                        context.path.0.pop();
+                    }
+                    context.path.0.pop();
+                    result
                 }
                 Value::Object(ref object) => {
                     if object.len() == 1 {
@@ -1236,14 +1349,14 @@ impl Interpreter {
                                     aliases_names.push("_".to_string());
                                     context.add_alias(
                                         "_".to_string(),
-                                        TypeOrArcOrValue::Value(arguments.clone()),
+                                        TypeOrArcOrValue::ArcOrValue(arguments.clone()),
                                     );
                                 } else {
                                     for (alias_name, alias_value) in aliases.iter() {
                                         aliases_names.push(alias_name.clone());
                                         context.add_alias(
                                             alias_name.clone(),
-                                            TypeOrArcOrValue::Value(alias_value.clone()),
+                                            TypeOrArcOrValue::ArcOrValue(alias_value.clone()),
                                         );
                                     }
                                 }
@@ -1251,7 +1364,7 @@ impl Interpreter {
                                 aliases_names.push("_".to_string());
                                 context.add_alias(
                                     "_".to_string(),
-                                    TypeOrArcOrValue::Value(arguments.clone()),
+                                    TypeOrArcOrValue::ArcOrValue(arguments.clone()),
                                 );
                             }
                             context.path.0.push(PathSegment::Alias(name.clone()));
@@ -1270,8 +1383,10 @@ impl Interpreter {
                                 .path
                                 .0
                                 .push(PathSegment::EmbeddedFunction(name.clone()));
-                            let arguments_type =
-                                self.get_type(TypeOrArcOrValue::Value(arguments.clone()), context)?;
+                            let arguments_type = self.get_type(
+                                TypeOrArcOrValue::ArcOrValue(arguments.clone()),
+                                context,
+                            )?;
                             let generic_values =
                                 context.assert_equal(&function.argument_type, &arguments_type)?;
                             context.path.0.pop();
@@ -1288,7 +1403,7 @@ impl Interpreter {
                         context.path.0.push(PathSegment::ObjectKey(key.clone()));
                         result_map.insert(
                             key.clone(),
-                            self.get_type(TypeOrArcOrValue::Value(value.clone()), context)?,
+                            self.get_type(TypeOrArcOrValue::ArcOrValue(value.clone()), context)?,
                         );
                         context.path.0.pop();
                     }
@@ -1300,7 +1415,9 @@ impl Interpreter {
                     let mut recursed_elements_aliases_names = vec![];
                     for (element_index, element) in array.iter().enumerate() {
                         context.path.0.push(PathSegment::ArrayIndex(element_index));
-                        match self.get_type(TypeOrArcOrValue::Value(element.clone()), context)? {
+                        match self
+                            .get_type(TypeOrArcOrValue::ArcOrValue(element.clone()), context)?
+                        {
                             Type::RecursedAlias(recursed_alias_name) => {
                                 recursed_elements_aliases_names.push(recursed_alias_name);
                             }
@@ -1326,8 +1443,8 @@ impl Interpreter {
                                 .0
                                 .push(PathSegment::ArrayIndex(*unexpected_type_element_index));
                             let result_error = Err(anyhow!(
-                                "Expected value at path {:?} to be of type \
-                                 {first_non_recursed_element_type:?}, but it is of type \
+                                "Expected value at path {:?} to be \
+                                 {first_non_recursed_element_type:?}, but it is \
                                  {unexpected_type:?}",
                                 context.path
                             ));
@@ -1409,7 +1526,7 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::Number(18.0)
+            serde_json::from_value(json!(18)).unwrap()
         );
     }
 
@@ -1432,7 +1549,7 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::Number(24.0)
+            serde_json::from_value(json!(24)).unwrap()
         );
     }
 
@@ -1472,7 +1589,7 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::Number(76.0)
+            serde_json::from_value(json!(76)).unwrap()
         );
     }
 
@@ -1499,7 +1616,7 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::Number(3.0)
+            serde_json::from_value(json!(3)).unwrap()
         );
     }
 
@@ -1521,7 +1638,7 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::Number(6.0)
+            serde_json::from_value(json!(6)).unwrap()
         );
     }
 
@@ -1545,7 +1662,7 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::Number(3.0)
+            serde_json::from_value(json!(3)).unwrap()
         );
     }
 
@@ -1572,7 +1689,7 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::Number(14.0)
+            serde_json::from_value(json!(14)).unwrap()
         );
     }
 
@@ -1603,7 +1720,7 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::Number(120.0)
+            serde_json::from_value(json!(120)).unwrap()
         );
     }
 
@@ -1644,7 +1761,7 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::Number(1.0)
+            serde_json::from_value(json!(1)).unwrap()
         );
     }
 
@@ -1661,7 +1778,82 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::String("Can not get element at index 2 from array of length 2".to_string())
+            serde_json::from_value(json!(
+                "Can not get element at index 2 from array of length 2"
+            ))
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_from_at_list() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                        "FROM": ["a", "b"],
+                        "AT": [1]
+                    }))
+                    .unwrap(),
+                    &mut IncludesCache::default()
+                )
+                .unwrap(),
+            serde_json::from_value(json!("b")).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_from_at_object() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                        "FROM": {"a": "a value", "b": "b value"},
+                        "AT": ["b"]
+                    }))
+                    .unwrap(),
+                    &mut IncludesCache::default()
+                )
+                .unwrap(),
+            serde_json::from_value(json!("b value")).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_from_at_complex() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                        "FROM": {"a": "a value", "b": [1, 2]},
+                        "AT": ["b", 1]
+                    }))
+                    .unwrap(),
+                    &mut IncludesCache::default()
+                )
+                .unwrap(),
+            serde_json::from_value(json!(2)).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_from_at_error() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                        "TRY": {"FROM": ["a", "b"], "AT": [2]},
+                        "OR": "error",
+                    }))
+                    .unwrap(),
+                    &mut IncludesCache::default()
+                )
+                .unwrap(),
+            serde_json::from_value(json!(
+                "Can not get element at index 2 from array of length 2 at the point Path([Try, \
+                 At, AtIndex(0)])"
+            ))
+            .unwrap()
         );
     }
 
@@ -1719,7 +1911,7 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::Number(55.0)
+            serde_json::from_value(json!(55)).unwrap()
         );
     }
 
@@ -1765,7 +1957,7 @@ mod tests {
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            Value::Number(1.0)
+            serde_json::from_value(json!(1)).unwrap()
         );
     }
 
@@ -1983,7 +2175,7 @@ mod tests {
                             &mut IncludesCache::default()
                         )
                         .unwrap(),
-                    Value::Number(55.0)
+                    serde_json::from_value(json!(55)).unwrap()
                 );
             })
             .unwrap();
