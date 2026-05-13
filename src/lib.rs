@@ -24,7 +24,7 @@ pub enum Type {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct With {
     #[serde(default)]
-    definitions: BTreeMap<String, Box<RcOrValue>>,
+    definitions: BTreeMap<String, RcOrValue>,
     #[serde(default)]
     constants: BTreeMap<String, RcOrValue>,
 }
