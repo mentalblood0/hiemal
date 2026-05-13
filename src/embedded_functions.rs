@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{ArcOrValue, Function, Interpreter, Type, Value};
+use crate::{Function, Interpreter, RcOrValue, Type, Value};
 
 impl Default for Interpreter {
     fn default() -> Interpreter {
@@ -11,8 +11,8 @@ impl Default for Interpreter {
                     Function {
                         argument_type: Type::Array(Box::new(Type::Number)),
                         return_type: Type::Number,
-                        function: |argument: ArcOrValue| {
-                            Ok(ArcOrValue::Value(Value::Number(
+                        function: |argument: RcOrValue| {
+                            Ok(RcOrValue::Value(Value::Number(
                                 argument
                                     .as_array()
                                     .unwrap()
@@ -28,8 +28,8 @@ impl Default for Interpreter {
                     Function {
                         argument_type: Type::Array(Box::new(Type::Number)),
                         return_type: Type::Number,
-                        function: |argument: ArcOrValue| {
-                            Ok(ArcOrValue::Value(Value::Number(
+                        function: |argument: RcOrValue| {
+                            Ok(RcOrValue::Value(Value::Number(
                                 argument
                                     .as_array()
                                     .unwrap()
@@ -45,8 +45,8 @@ impl Default for Interpreter {
                     Function {
                         argument_type: Type::String,
                         return_type: Type::Number,
-                        function: |argument: ArcOrValue| {
-                            Ok(ArcOrValue::Value(Value::Number(
+                        function: |argument: RcOrValue| {
+                            Ok(RcOrValue::Value(Value::Number(
                                 argument.as_string().unwrap().len() as f64,
                             )))
                         },
@@ -57,8 +57,8 @@ impl Default for Interpreter {
                     Function {
                         argument_type: Type::Array(Box::new(Type::GenericArgument(0))),
                         return_type: Type::Number,
-                        function: |argument: ArcOrValue| {
-                            Ok(ArcOrValue::Value(Value::Number(
+                        function: |argument: RcOrValue| {
+                            Ok(RcOrValue::Value(Value::Number(
                                 argument.as_array().unwrap().len() as f64,
                             )))
                         },
@@ -69,8 +69,8 @@ impl Default for Interpreter {
                     Function {
                         argument_type: Type::Array(Box::new(Type::Number)),
                         return_type: Type::Bool,
-                        function: |argument: ArcOrValue| {
-                            Ok(ArcOrValue::Value(Value::Bool(
+                        function: |argument: RcOrValue| {
+                            Ok(RcOrValue::Value(Value::Bool(
                                 argument
                                     .as_array()
                                     .unwrap()
@@ -86,9 +86,9 @@ impl Default for Interpreter {
                     Function {
                         argument_type: Type::Array(Box::new(Type::GenericArgument(0))),
                         return_type: Type::Bool,
-                        function: |argument: ArcOrValue| {
+                        function: |argument: RcOrValue| {
                             let array = argument.as_array().unwrap();
-                            Ok(ArcOrValue::Value(Value::Bool(
+                            Ok(RcOrValue::Value(Value::Bool(
                                 array
                                     .get(0)
                                     .map_or(true, |first| array.iter().all(|x| x == first)),
@@ -101,12 +101,12 @@ impl Default for Interpreter {
                     Function {
                         argument_type: Type::Array(Box::new(Type::String)),
                         return_type: Type::String,
-                        function: |argument: ArcOrValue| {
+                        function: |argument: RcOrValue| {
                             let mut result = String::new();
                             for element in argument.as_array().unwrap().iter() {
                                 result += element.as_string().unwrap();
                             }
-                            Ok(ArcOrValue::Value(Value::String(
+                            Ok(RcOrValue::Value(Value::String(
                                 argument
                                     .as_array()
                                     .unwrap()
@@ -128,22 +128,22 @@ impl Default for Interpreter {
                             ("step".to_string(), Type::Number),
                         ])),
                         return_type: Type::Array(Box::new(Type::Number)),
-                        function: |argument: ArcOrValue| {
+                        function: |argument: RcOrValue| {
                             let arguments = argument.as_object().unwrap();
                             let from = arguments.get("from").unwrap().as_number().unwrap();
                             let to = arguments.get("to").unwrap().as_number().unwrap();
                             let step = arguments.get("step").unwrap().as_number().unwrap();
                             let estimated_capacity = (to - from) / step;
                             if estimated_capacity <= 0.0 {
-                                Ok(ArcOrValue::Value(Value::Array(vec![])))
+                                Ok(RcOrValue::Value(Value::Array(vec![])))
                             } else {
                                 let mut result = Vec::with_capacity(estimated_capacity as usize);
                                 let mut current = from;
                                 while current <= to {
-                                    result.push(ArcOrValue::Value(Value::Number(current)));
+                                    result.push(RcOrValue::Value(Value::Number(current)));
                                     current += step;
                                 }
-                                Ok(ArcOrValue::Value(Value::Array(result)))
+                                Ok(RcOrValue::Value(Value::Array(result)))
                             }
                         },
                     },

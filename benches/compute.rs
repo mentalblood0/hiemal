@@ -94,5 +94,5 @@ fn factorial(bencher_context: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, factorial);
+criterion_group!(benches, fibonacci, factorial);
 criterion_main!(benches);

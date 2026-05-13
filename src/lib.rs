@@ -2,7 +2,7 @@ pub mod embedded_functions;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use anyhow::{anyhow, Context, Error, Result};
 use glob::glob;
@@ -24,16 +24,16 @@ pub enum Type {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct With {
     #[serde(default)]
-    definitions: BTreeMap<String, Box<ArcOrValue>>,
+    definitions: BTreeMap<String, Box<RcOrValue>>,
     #[serde(default)]
-    constants: BTreeMap<String, ArcOrValue>,
+    constants: BTreeMap<String, RcOrValue>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct WithCompute {
     with: With,
-    compute: ArcOrValue,
+    compute: RcOrValue,
 }
 
 fn default_alias() -> String {
@@ -43,19 +43,19 @@ fn default_alias() -> String {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Map {
-    map: ArcOrValue,
+    map: RcOrValue,
     #[serde(default = "default_alias")]
     as_alias: String,
-    through: ArcOrValue,
+    through: RcOrValue,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Filter {
-    filter: ArcOrValue,
+    filter: RcOrValue,
     #[serde(default = "default_alias")]
     as_alias: String,
-    through: ArcOrValue,
+    through: RcOrValue,
 }
 
 fn default_current_value_alias() -> String {
@@ -69,21 +69,21 @@ fn default_accumulator_value_alias() -> String {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Reduce {
-    reduce: ArcOrValue,
+    reduce: RcOrValue,
     #[serde(default = "default_current_value_alias")]
     as_alias: String,
-    starting_with: ArcOrValue,
+    starting_with: RcOrValue,
     #[serde(default = "default_accumulator_value_alias")]
     accumulating_in_alias: String,
-    through: ArcOrValue,
+    through: RcOrValue,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Branching {
-    r#if: ArcOrValue,
-    then: ArcOrValue,
-    r#else: ArcOrValue,
+    r#if: RcOrValue,
+    then: RcOrValue,
+    r#else: RcOrValue,
 }
 
 fn default_error_alias() -> String {
@@ -93,8 +93,8 @@ fn default_error_alias() -> String {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct TryOr {
-    r#try: ArcOrValue,
-    or: ArcOrValue,
+    r#try: RcOrValue,
+    or: RcOrValue,
     #[serde(default = "default_error_alias")]
     with_error_alias: String,
 }
@@ -109,7 +109,7 @@ pub enum AtSegment {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct FromAt {
-    from: Box<ArcOrValue>,
+    from: RcOrValue,
     at: Vec<AtSegment>,
 }
 
@@ -120,15 +120,15 @@ pub enum Value {
     String(String),
     Bool(bool),
     Null,
-    Array(Vec<ArcOrValue>),
+    Array(Vec<RcOrValue>),
     With(Box<WithCompute>),
     Map(Box<Map>),
     Filter(Box<Filter>),
     Reduce(Box<Reduce>),
     Branching(Box<Branching>),
     TryOr(Box<TryOr>),
-    FromAt(FromAt),
-    Object(BTreeMap<String, ArcOrValue>),
+    FromAt(Box<FromAt>),
+    Object(BTreeMap<String, RcOrValue>),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -169,14 +169,14 @@ impl Value {
         }
     }
 
-    pub fn as_array(&self) -> Option<&Vec<ArcOrValue>> {
+    pub fn as_array(&self) -> Option<&Vec<RcOrValue>> {
         match self {
             Value::Array(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_object(&self) -> Option<&BTreeMap<String, ArcOrValue>> {
+    pub fn as_object(&self) -> Option<&BTreeMap<String, RcOrValue>> {
         match self {
             Value::Object(result) => Some(result),
             _ => None,
@@ -186,65 +186,65 @@ impl Value {
 
 #[derive(Clone, serde::Deserialize, serde::Serialize, Debug, PartialEq)]
 #[serde(untagged)]
-pub enum ArcOrValue {
-    Arc(Arc<Value>),
+pub enum RcOrValue {
+    Rc(Rc<Value>),
     Value(Value),
 }
 
-impl ArcOrValue {
+impl RcOrValue {
     pub fn clone_(&self) -> Self {
         match self {
-            ArcOrValue::Arc(arc) => ArcOrValue::Arc(arc.clone()),
-            ArcOrValue::Value(value) => ArcOrValue::Value(value.clone()),
+            RcOrValue::Rc(arc) => RcOrValue::Rc(arc.clone()),
+            RcOrValue::Value(value) => RcOrValue::Value(value.clone()),
         }
     }
 
     pub fn value(&self) -> &Value {
         match self {
-            ArcOrValue::Arc(arc) => arc,
-            ArcOrValue::Value(value) => value,
+            RcOrValue::Rc(arc) => arc,
+            RcOrValue::Value(value) => value,
         }
     }
 
-    pub fn arc(&self) -> Arc<Value> {
+    pub fn arc(&self) -> Rc<Value> {
         match self {
-            ArcOrValue::Arc(arc) => arc.clone(),
-            ArcOrValue::Value(value) => Arc::new(value.clone()),
+            RcOrValue::Rc(arc) => arc.clone(),
+            RcOrValue::Value(value) => Rc::new(value.clone()),
         }
     }
 
     pub fn as_number(&self) -> Option<f64> {
         match self {
-            ArcOrValue::Arc(arc) => arc.as_number(),
-            ArcOrValue::Value(value) => value.as_number(),
+            RcOrValue::Rc(arc) => arc.as_number(),
+            RcOrValue::Value(value) => value.as_number(),
         }
     }
 
     pub fn as_string(&self) -> Option<&String> {
         match self {
-            ArcOrValue::Arc(arc) => arc.as_string(),
-            ArcOrValue::Value(value) => value.as_string(),
+            RcOrValue::Rc(arc) => arc.as_string(),
+            RcOrValue::Value(value) => value.as_string(),
         }
     }
 
     pub fn as_bool(&self) -> Option<bool> {
         match self {
-            ArcOrValue::Arc(arc) => arc.as_bool(),
-            ArcOrValue::Value(value) => value.as_bool(),
+            RcOrValue::Rc(arc) => arc.as_bool(),
+            RcOrValue::Value(value) => value.as_bool(),
         }
     }
 
-    pub fn as_array(&self) -> Option<&Vec<ArcOrValue>> {
+    pub fn as_array(&self) -> Option<&Vec<RcOrValue>> {
         match self {
-            ArcOrValue::Arc(arc) => arc.as_array(),
-            ArcOrValue::Value(value) => value.as_array(),
+            RcOrValue::Rc(arc) => arc.as_array(),
+            RcOrValue::Value(value) => value.as_array(),
         }
     }
 
-    pub fn as_object(&self) -> Option<&BTreeMap<String, ArcOrValue>> {
+    pub fn as_object(&self) -> Option<&BTreeMap<String, RcOrValue>> {
         match self {
-            ArcOrValue::Arc(arc) => arc.as_object(),
-            ArcOrValue::Value(value) => value.as_object(),
+            RcOrValue::Rc(arc) => arc.as_object(),
+            RcOrValue::Value(value) => value.as_object(),
         }
     }
 }
@@ -253,7 +253,7 @@ impl ArcOrValue {
 pub struct Function {
     pub argument_type: Type,
     pub return_type: Type,
-    pub function: fn(ArcOrValue) -> Result<ArcOrValue>,
+    pub function: fn(RcOrValue) -> Result<RcOrValue>,
 }
 
 pub struct IncludesCache {
@@ -419,7 +419,7 @@ macro_rules! define_default_interpreter_supported_functions {
                                     Function {
                                         argument_type: $function_argument_type,
                                         return_type: $function_return_type,
-                                        function: |$function_argument: ArcOrValue| $function_code,
+                                        function: |$function_argument: RcOrValue| $function_code,
                                     },
                                 ),
                             )*
@@ -459,21 +459,21 @@ pub enum PathSegment {
 pub struct Path(pub Vec<PathSegment>);
 
 #[derive(Clone, Debug)]
-pub enum TypeOrArcOrValue {
+pub enum TypeOrRcOrValue {
     Type(Type),
-    ArcOrValue(ArcOrValue),
+    RcOrValue(RcOrValue),
 }
 
 #[derive(Debug)]
 pub struct TypeCheckingContext {
     pub path: Path,
-    pub aliases: BTreeMap<String, Vec<TypeOrArcOrValue>>,
+    pub aliases: BTreeMap<String, Vec<TypeOrRcOrValue>>,
     pub entered_aliases: BTreeSet<String>,
     pub recursed_aliases_types: BTreeMap<String, Type>,
 }
 
 impl TypeCheckingContext {
-    pub fn add_alias(&mut self, name: String, type_or_value: TypeOrArcOrValue) {
+    pub fn add_alias(&mut self, name: String, type_or_value: TypeOrRcOrValue) {
         self.aliases.entry(name).or_default().push(type_or_value);
     }
 
@@ -624,11 +624,11 @@ impl TypeCheckingContext {
 
 pub struct ComputationContext {
     pub path: Path,
-    pub aliases: BTreeMap<String, Vec<ArcOrValue>>,
+    pub aliases: BTreeMap<String, Vec<RcOrValue>>,
 }
 
 impl ComputationContext {
-    pub fn add_alias(&mut self, name: String, arc_or_value: ArcOrValue) {
+    pub fn add_alias(&mut self, name: String, arc_or_value: RcOrValue) {
         self.aliases.entry(name).or_default().push(arc_or_value);
     }
 
@@ -642,21 +642,21 @@ impl Interpreter {
         &self,
         program_with_includes: &ValueWithIncludes,
         includes_cache: &mut IncludesCache,
-    ) -> Result<Arc<Value>> {
-        let program: Arc<Value> = Arc::new(serde_json::from_value(
+    ) -> Result<Rc<Value>> {
+        let program: Rc<Value> = Rc::new(serde_json::from_value(
             self.process_includes(&program_with_includes, includes_cache)?,
         )?);
         self.check_types(program.clone())?;
         Ok(
             match self.compute_with_context(
-                ArcOrValue::Arc(program),
+                RcOrValue::Rc(program),
                 &mut ComputationContext {
                     path: Path(vec![]),
                     aliases: BTreeMap::new(),
                 },
             )? {
-                ArcOrValue::Arc(arc) => arc,
-                ArcOrValue::Value(value) => Arc::new(value),
+                RcOrValue::Rc(arc) => arc,
+                RcOrValue::Value(value) => Rc::new(value),
             },
         )
     }
@@ -752,28 +752,26 @@ impl Interpreter {
 
     fn compute_with_context(
         &self,
-        program: ArcOrValue,
+        program: RcOrValue,
         context: &mut ComputationContext,
-    ) -> Result<ArcOrValue> {
+    ) -> Result<RcOrValue> {
         Ok(match program.value() {
             Value::With(with_clause) => {
                 for (alias_name, alias_value) in with_clause.with.definitions.iter() {
-                    context.add_alias(alias_name.clone(), ArcOrValue::Arc(alias_value.arc()));
+                    context.add_alias(alias_name.clone(), RcOrValue::Rc(alias_value.arc()));
                 }
                 context.path.0.push(PathSegment::With);
                 context.path.0.push(PathSegment::Constants);
                 for (alias_name, alias_value) in with_clause.with.constants.iter() {
                     context.path.0.push(PathSegment::Alias(alias_name.clone()));
-                    let precomputed_value = self.compute_with_context(
-                        ArcOrValue::Arc(alias_value.arc().clone()),
-                        context,
-                    )?;
+                    let precomputed_value = self
+                        .compute_with_context(RcOrValue::Rc(alias_value.arc().clone()), context)?;
                     context.path.0.pop();
                     context.add_alias(alias_name.clone(), precomputed_value);
                 }
                 *context.path.0.last_mut().unwrap() = PathSegment::Compute;
                 let result =
-                    self.compute_with_context(ArcOrValue::Arc(with_clause.compute.arc()), context)?;
+                    self.compute_with_context(RcOrValue::Rc(with_clause.compute.arc()), context)?;
                 context.path.0.pop();
                 context.path.0.pop();
                 for alias_name in with_clause.with.definitions.keys() {
@@ -786,47 +784,43 @@ impl Interpreter {
             }
             Value::Map(map_clause) => {
                 let array = self
-                    .compute_with_context(ArcOrValue::Arc(map_clause.map.arc()), context)?
+                    .compute_with_context(RcOrValue::Rc(map_clause.map.arc()), context)?
                     .as_array()
                     .unwrap()
                     .clone();
                 let mut result = vec![];
                 context.path.0.push(PathSegment::Map);
                 for (element_index, element) in array.iter().enumerate() {
-                    context.add_alias(map_clause.as_alias.clone(), ArcOrValue::Arc(element.arc()));
+                    context.add_alias(map_clause.as_alias.clone(), RcOrValue::Rc(element.arc()));
                     context.path.0.push(PathSegment::ArrayIndex(element_index));
                     context.path.0.push(PathSegment::Through);
-                    result.push(self.compute_with_context(
-                        ArcOrValue::Arc(map_clause.through.arc()),
-                        context,
-                    )?);
+                    result.push(
+                        self.compute_with_context(
+                            RcOrValue::Rc(map_clause.through.arc()),
+                            context,
+                        )?,
+                    );
                     context.path.0.pop();
                     context.path.0.pop();
                     context.remove_alias(&map_clause.as_alias);
                 }
                 context.path.0.pop();
-                ArcOrValue::Value(Value::Array(result))
+                RcOrValue::Value(Value::Array(result))
             }
             Value::Filter(filter_clause) => {
                 let array = self
-                    .compute_with_context(ArcOrValue::Arc(filter_clause.filter.arc()), context)?
+                    .compute_with_context(RcOrValue::Rc(filter_clause.filter.arc()), context)?
                     .as_array()
                     .unwrap()
                     .clone();
                 let mut result = vec![];
                 context.path.0.push(PathSegment::Filter);
                 for (element_index, element) in array.iter().enumerate() {
-                    context.add_alias(
-                        filter_clause.as_alias.clone(),
-                        ArcOrValue::Arc(element.arc()),
-                    );
+                    context.add_alias(filter_clause.as_alias.clone(), RcOrValue::Rc(element.arc()));
                     context.path.0.push(PathSegment::ArrayIndex(element_index));
                     context.path.0.push(PathSegment::Through);
                     if self
-                        .compute_with_context(
-                            ArcOrValue::Arc(filter_clause.through.arc()),
-                            context,
-                        )?
+                        .compute_with_context(RcOrValue::Rc(filter_clause.through.arc()), context)?
                         .as_bool()
                         .unwrap()
                     {
@@ -837,30 +831,27 @@ impl Interpreter {
                     context.remove_alias(&filter_clause.as_alias);
                 }
                 context.path.0.pop();
-                ArcOrValue::Value(Value::Array(result))
+                RcOrValue::Value(Value::Array(result))
             }
             Value::Reduce(reduce_clause) => {
                 let array = self
-                    .compute_with_context(ArcOrValue::Arc(reduce_clause.reduce.arc()), context)?
+                    .compute_with_context(RcOrValue::Rc(reduce_clause.reduce.arc()), context)?
                     .as_array()
                     .unwrap()
                     .clone();
                 context.path.0.push(PathSegment::StartingWith);
                 let mut result = self.compute_with_context(
-                    ArcOrValue::Arc(reduce_clause.starting_with.arc()),
+                    RcOrValue::Rc(reduce_clause.starting_with.arc()),
                     context,
                 )?;
                 *context.path.0.last_mut().unwrap() = PathSegment::Reduce;
                 for (element_index, element) in array.iter().enumerate() {
-                    context.add_alias(
-                        reduce_clause.as_alias.clone(),
-                        ArcOrValue::Arc(element.arc()),
-                    );
+                    context.add_alias(reduce_clause.as_alias.clone(), RcOrValue::Rc(element.arc()));
                     context.add_alias(reduce_clause.accumulating_in_alias.clone(), result);
                     context.path.0.push(PathSegment::ArrayIndex(element_index));
                     context.path.0.push(PathSegment::Through);
                     result = self.compute_with_context(
-                        ArcOrValue::Arc(reduce_clause.through.arc()),
+                        RcOrValue::Rc(reduce_clause.through.arc()),
                         context,
                     )?;
                     context.path.0.pop();
@@ -874,19 +865,16 @@ impl Interpreter {
             Value::Branching(branching_clause) => {
                 context.path.0.push(PathSegment::If);
                 let if_result = self
-                    .compute_with_context(ArcOrValue::Arc(branching_clause.r#if.arc()), context)?
+                    .compute_with_context(RcOrValue::Rc(branching_clause.r#if.arc()), context)?
                     .as_bool()
                     .unwrap();
                 let result = if if_result {
                     *context.path.0.last_mut().unwrap() = PathSegment::Then;
-                    self.compute_with_context(
-                        ArcOrValue::Arc(branching_clause.then.arc()),
-                        context,
-                    )?
+                    self.compute_with_context(RcOrValue::Rc(branching_clause.then.arc()), context)?
                 } else {
                     *context.path.0.last_mut().unwrap() = PathSegment::Else;
                     self.compute_with_context(
-                        ArcOrValue::Arc(branching_clause.r#else.arc()),
+                        RcOrValue::Rc(branching_clause.r#else.arc()),
                         context,
                     )?
                 };
@@ -896,15 +884,15 @@ impl Interpreter {
             Value::TryOr(try_or_clause) => {
                 context.path.0.push(PathSegment::Try);
                 let result = match self
-                    .compute_with_context(ArcOrValue::Arc(try_or_clause.r#try.arc()), context)
+                    .compute_with_context(RcOrValue::Rc(try_or_clause.r#try.arc()), context)
                 {
                     Ok(result) => result,
                     Err(error) => {
                         context.add_alias(
                             try_or_clause.with_error_alias.clone(),
-                            ArcOrValue::Value(Value::String(error.to_string())),
+                            RcOrValue::Value(Value::String(error.to_string())),
                         );
-                        self.compute_with_context(ArcOrValue::Arc(try_or_clause.or.arc()), context)?
+                        self.compute_with_context(RcOrValue::Rc(try_or_clause.or.arc()), context)?
                     }
                 };
                 context.path.0.pop();
@@ -913,7 +901,7 @@ impl Interpreter {
             Value::FromAt(from_at_clause) => {
                 context.path.0.push(PathSegment::From);
                 let mut result = self
-                    .compute_with_context(ArcOrValue::Arc(from_at_clause.from.arc()), context)?
+                    .compute_with_context(RcOrValue::Rc(from_at_clause.from.arc()), context)?
                     .arc();
                 *context.path.0.last_mut().unwrap() = PathSegment::At;
                 for (at_segment_index, at_segment) in from_at_clause.at.iter().enumerate() {
@@ -947,7 +935,7 @@ impl Interpreter {
                     context.path.0.pop();
                 }
                 context.path.0.pop();
-                ArcOrValue::Arc(result)
+                RcOrValue::Rc(result)
             }
             Value::Object(object) => {
                 if object.len() == 1 {
@@ -962,20 +950,19 @@ impl Interpreter {
                         if let Value::Object(ref aliases) = *arguments.arc() {
                             if aliases.len() == 1 {
                                 aliases_names.push("_".to_string());
-                                context
-                                    .add_alias("_".to_string(), ArcOrValue::Arc(arguments.arc()));
+                                context.add_alias("_".to_string(), RcOrValue::Rc(arguments.arc()));
                             } else {
                                 for (alias_name, alias_value) in aliases.iter() {
                                     aliases_names.push(alias_name.clone());
                                     context.add_alias(
                                         alias_name.clone(),
-                                        ArcOrValue::Arc(alias_value.arc()),
+                                        RcOrValue::Rc(alias_value.arc()),
                                     );
                                 }
                             }
                         } else {
                             aliases_names.push("_".to_string());
-                            context.add_alias("_".to_string(), ArcOrValue::Arc(arguments.arc()));
+                            context.add_alias("_".to_string(), RcOrValue::Rc(arguments.arc()));
                         }
                         context.path.0.push(PathSegment::Alias(name.clone()));
                         let result = self.compute_with_context(aliased_value, context)?;
@@ -991,7 +978,7 @@ impl Interpreter {
                             .0
                             .push(PathSegment::EmbeddedFunction(name.clone()));
                         let function_arguments =
-                            self.compute_with_context(ArcOrValue::Arc(arguments.arc()), context)?;
+                            self.compute_with_context(RcOrValue::Rc(arguments.arc()), context)?;
                         let result = (function.function)(function_arguments)?;
                         context.path.0.pop();
                         return Ok(result);
@@ -1002,26 +989,26 @@ impl Interpreter {
                     context.path.0.push(PathSegment::ObjectKey(key.clone()));
                     result_map.insert(
                         key.clone(),
-                        ArcOrValue::Arc(
-                            self.compute_with_context(ArcOrValue::Arc(value.arc()), context)?
+                        RcOrValue::Rc(
+                            self.compute_with_context(RcOrValue::Rc(value.arc()), context)?
                                 .arc(),
                         ),
                     );
                     context.path.0.pop();
                 }
-                ArcOrValue::Value(Value::Object(result_map))
+                RcOrValue::Value(Value::Object(result_map))
             }
             Value::Array(array) => {
                 let mut result_array = vec![];
                 for (element_index, element) in array.iter().enumerate() {
                     context.path.0.push(PathSegment::ArrayIndex(element_index));
-                    result_array.push(ArcOrValue::Arc(
-                        self.compute_with_context(ArcOrValue::Arc(element.arc()), context)?
+                    result_array.push(RcOrValue::Rc(
+                        self.compute_with_context(RcOrValue::Rc(element.arc()), context)?
                             .arc(),
                     ));
                     context.path.0.pop();
                 }
-                ArcOrValue::Value(Value::Array(result_array))
+                RcOrValue::Value(Value::Array(result_array))
             }
             Value::String(string) => {
                 if let Some(aliased_value) = context
@@ -1034,18 +1021,18 @@ impl Interpreter {
                     context.path.0.pop();
                     result
                 } else {
-                    ArcOrValue::Value(Value::String(string.clone()))
+                    RcOrValue::Value(Value::String(string.clone()))
                 }
             }
-            Value::Number(number) => ArcOrValue::Value(Value::Number(*number)),
-            Value::Bool(bool) => ArcOrValue::Value(Value::Bool(*bool)),
-            Value::Null => ArcOrValue::Value(Value::Null),
+            Value::Number(number) => RcOrValue::Value(Value::Number(*number)),
+            Value::Bool(bool) => RcOrValue::Value(Value::Bool(*bool)),
+            Value::Null => RcOrValue::Value(Value::Null),
         })
     }
 
-    pub fn check_types(&self, program: Arc<Value>) -> Result<Type> {
+    pub fn check_types(&self, program: Rc<Value>) -> Result<Type> {
         self.get_type(
-            TypeOrArcOrValue::ArcOrValue(ArcOrValue::Arc(program)),
+            TypeOrRcOrValue::RcOrValue(RcOrValue::Rc(program)),
             &mut TypeCheckingContext {
                 path: Path(vec![]),
                 aliases: BTreeMap::new(),
@@ -1057,17 +1044,17 @@ impl Interpreter {
 
     fn get_type(
         &self,
-        program: TypeOrArcOrValue,
+        program: TypeOrRcOrValue,
         context: &mut TypeCheckingContext,
     ) -> Result<Type> {
         let result = match program {
-            TypeOrArcOrValue::Type(program_type) => program_type,
-            TypeOrArcOrValue::ArcOrValue(program) => match *program.value() {
+            TypeOrRcOrValue::Type(program_type) => program_type,
+            TypeOrRcOrValue::RcOrValue(program) => match *program.value() {
                 Value::With(ref with_clause) => {
                     for (alias_name, alias_value) in with_clause.with.definitions.iter() {
                         context.add_alias(
                             alias_name.clone(),
-                            TypeOrArcOrValue::ArcOrValue(ArcOrValue::Arc(alias_value.arc())),
+                            TypeOrRcOrValue::RcOrValue(RcOrValue::Rc(alias_value.arc())),
                         );
                     }
                     context.path.0.push(PathSegment::With);
@@ -1075,17 +1062,15 @@ impl Interpreter {
                     for (alias_name, alias_value) in with_clause.with.constants.iter() {
                         context.path.0.push(PathSegment::Alias(alias_name.clone()));
                         let precomputed_type = self
-                            .get_type(TypeOrArcOrValue::ArcOrValue(alias_value.clone()), context)?;
+                            .get_type(TypeOrRcOrValue::RcOrValue(alias_value.clone()), context)?;
                         context.path.0.pop();
-                        context.add_alias(
-                            alias_name.clone(),
-                            TypeOrArcOrValue::Type(precomputed_type),
-                        );
+                        context
+                            .add_alias(alias_name.clone(), TypeOrRcOrValue::Type(precomputed_type));
                     }
                     context.path.0.pop();
                     context.path.0.push(PathSegment::Compute);
                     let result = self.get_type(
-                        TypeOrArcOrValue::ArcOrValue(with_clause.compute.clone()),
+                        TypeOrRcOrValue::RcOrValue(with_clause.compute.clone()),
                         context,
                     )?;
                     context.path.0.pop();
@@ -1100,19 +1085,17 @@ impl Interpreter {
                 }
                 Value::Map(ref map_clause) => {
                     context.path.0.push(PathSegment::Map);
-                    let actual_array_type = self.get_type(
-                        TypeOrArcOrValue::ArcOrValue(map_clause.map.clone()),
-                        context,
-                    )?;
+                    let actual_array_type =
+                        self.get_type(TypeOrRcOrValue::RcOrValue(map_clause.map.clone()), context)?;
                     context.path.0.pop();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context.add_alias(
                             map_clause.as_alias.clone(),
-                            TypeOrArcOrValue::Type(*array_element_type.clone()),
+                            TypeOrRcOrValue::Type(*array_element_type.clone()),
                         );
                         context.path.0.push(PathSegment::Through);
                         let result = self.get_type(
-                            TypeOrArcOrValue::ArcOrValue(map_clause.through.clone()),
+                            TypeOrRcOrValue::RcOrValue(map_clause.through.clone()),
                             context,
                         )?;
                         context.path.0.pop();
@@ -1128,18 +1111,18 @@ impl Interpreter {
                 Value::Filter(ref filter_clause) => {
                     context.path.0.push(PathSegment::Filter);
                     let actual_array_type = self.get_type(
-                        TypeOrArcOrValue::ArcOrValue(filter_clause.filter.clone()),
+                        TypeOrRcOrValue::RcOrValue(filter_clause.filter.clone()),
                         context,
                     )?;
                     context.path.0.pop();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context.add_alias(
                             filter_clause.as_alias.clone(),
-                            TypeOrArcOrValue::Type(*array_element_type.clone()),
+                            TypeOrRcOrValue::Type(*array_element_type.clone()),
                         );
                         context.path.0.push(PathSegment::Through);
                         let through_type = self.get_type(
-                            TypeOrArcOrValue::ArcOrValue(filter_clause.through.clone()),
+                            TypeOrRcOrValue::RcOrValue(filter_clause.through.clone()),
                             context,
                         )?;
                         context.path.0.pop();
@@ -1165,26 +1148,26 @@ impl Interpreter {
                 Value::Reduce(ref reduce_clause) => {
                     context.path.0.push(PathSegment::Reduce);
                     let actual_array_type = self.get_type(
-                        TypeOrArcOrValue::ArcOrValue(reduce_clause.reduce.clone()),
+                        TypeOrRcOrValue::RcOrValue(reduce_clause.reduce.clone()),
                         context,
                     )?;
                     context.path.0.pop();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         let starting_with_type = self.get_type(
-                            TypeOrArcOrValue::ArcOrValue(reduce_clause.starting_with.clone()),
+                            TypeOrRcOrValue::RcOrValue(reduce_clause.starting_with.clone()),
                             context,
                         )?;
                         context.add_alias(
                             reduce_clause.as_alias.clone(),
-                            TypeOrArcOrValue::Type(*array_element_type.clone()),
+                            TypeOrRcOrValue::Type(*array_element_type.clone()),
                         );
                         context.add_alias(
                             reduce_clause.accumulating_in_alias.clone(),
-                            TypeOrArcOrValue::Type(starting_with_type.clone()),
+                            TypeOrRcOrValue::Type(starting_with_type.clone()),
                         );
                         context.path.0.push(PathSegment::Through);
                         let through_type = self.get_type(
-                            TypeOrArcOrValue::ArcOrValue(reduce_clause.through.clone()),
+                            TypeOrRcOrValue::RcOrValue(reduce_clause.through.clone()),
                             context,
                         )?;
                         context.path.0.pop();
@@ -1212,18 +1195,18 @@ impl Interpreter {
                 Value::Branching(ref branching_clause) => {
                     context.path.0.push(PathSegment::If);
                     let if_branch_type = self.get_type(
-                        TypeOrArcOrValue::ArcOrValue(branching_clause.r#if.clone()),
+                        TypeOrRcOrValue::RcOrValue(branching_clause.r#if.clone()),
                         context,
                     )?;
                     context.assert_equal(&Type::Bool, &if_branch_type)?;
                     *context.path.0.last_mut().unwrap() = PathSegment::Then;
                     let then_branch_type = self.get_type(
-                        TypeOrArcOrValue::ArcOrValue(branching_clause.then.clone()),
+                        TypeOrRcOrValue::RcOrValue(branching_clause.then.clone()),
                         context,
                     )?;
                     *context.path.0.last_mut().unwrap() = PathSegment::Else;
                     let else_branch_type = self.get_type(
-                        TypeOrArcOrValue::ArcOrValue(branching_clause.r#else.clone()),
+                        TypeOrRcOrValue::RcOrValue(branching_clause.r#else.clone()),
                         context,
                     )?;
                     context.path.0.pop();
@@ -1242,16 +1225,16 @@ impl Interpreter {
                 Value::TryOr(ref try_or_clause) => {
                     context.path.0.push(PathSegment::If);
                     let try_branch_type = self.get_type(
-                        TypeOrArcOrValue::ArcOrValue(try_or_clause.r#try.clone()),
+                        TypeOrRcOrValue::RcOrValue(try_or_clause.r#try.clone()),
                         context,
                     )?;
                     *context.path.0.last_mut().unwrap() = PathSegment::Or;
                     context.add_alias(
                         try_or_clause.with_error_alias.clone(),
-                        TypeOrArcOrValue::Type(Type::String),
+                        TypeOrRcOrValue::Type(Type::String),
                     );
                     let or_branch_type = self.get_type(
-                        TypeOrArcOrValue::ArcOrValue(try_or_clause.or.clone()),
+                        TypeOrRcOrValue::RcOrValue(try_or_clause.or.clone()),
                         context,
                     )?;
                     context.path.0.pop();
@@ -1271,7 +1254,7 @@ impl Interpreter {
                 Value::FromAt(ref from_at_clause) => {
                     context.path.0.push(PathSegment::From);
                     let mut result = self.get_type(
-                        TypeOrArcOrValue::ArcOrValue(ArcOrValue::Arc(from_at_clause.from.arc())),
+                        TypeOrRcOrValue::RcOrValue(RcOrValue::Rc(from_at_clause.from.arc())),
                         context,
                     )?;
                     *context.path.0.last_mut().unwrap() = PathSegment::At;
@@ -1345,14 +1328,14 @@ impl Interpreter {
                                     aliases_names.push("_".to_string());
                                     context.add_alias(
                                         "_".to_string(),
-                                        TypeOrArcOrValue::ArcOrValue(arguments.clone()),
+                                        TypeOrRcOrValue::RcOrValue(arguments.clone()),
                                     );
                                 } else {
                                     for (alias_name, alias_value) in aliases.iter() {
                                         aliases_names.push(alias_name.clone());
                                         context.add_alias(
                                             alias_name.clone(),
-                                            TypeOrArcOrValue::ArcOrValue(alias_value.clone()),
+                                            TypeOrRcOrValue::RcOrValue(alias_value.clone()),
                                         );
                                     }
                                 }
@@ -1360,7 +1343,7 @@ impl Interpreter {
                                 aliases_names.push("_".to_string());
                                 context.add_alias(
                                     "_".to_string(),
-                                    TypeOrArcOrValue::ArcOrValue(arguments.clone()),
+                                    TypeOrRcOrValue::RcOrValue(arguments.clone()),
                                 );
                             }
                             context.path.0.push(PathSegment::Alias(name.clone()));
@@ -1379,10 +1362,8 @@ impl Interpreter {
                                 .path
                                 .0
                                 .push(PathSegment::EmbeddedFunction(name.clone()));
-                            let arguments_type = self.get_type(
-                                TypeOrArcOrValue::ArcOrValue(arguments.clone()),
-                                context,
-                            )?;
+                            let arguments_type = self
+                                .get_type(TypeOrRcOrValue::RcOrValue(arguments.clone()), context)?;
                             let generic_values =
                                 context.assert_equal(&function.argument_type, &arguments_type)?;
                             context.path.0.pop();
@@ -1399,7 +1380,7 @@ impl Interpreter {
                         context.path.0.push(PathSegment::ObjectKey(key.clone()));
                         result_map.insert(
                             key.clone(),
-                            self.get_type(TypeOrArcOrValue::ArcOrValue(value.clone()), context)?,
+                            self.get_type(TypeOrRcOrValue::RcOrValue(value.clone()), context)?,
                         );
                         context.path.0.pop();
                     }
@@ -1411,9 +1392,7 @@ impl Interpreter {
                     let mut recursed_elements_aliases_names = vec![];
                     for (element_index, element) in array.iter().enumerate() {
                         context.path.0.push(PathSegment::ArrayIndex(element_index));
-                        match self
-                            .get_type(TypeOrArcOrValue::ArcOrValue(element.clone()), context)?
-                        {
+                        match self.get_type(TypeOrRcOrValue::RcOrValue(element.clone()), context)? {
                             Type::RecursedAlias(recursed_alias_name) => {
                                 recursed_elements_aliases_names.push(recursed_alias_name);
                             }
