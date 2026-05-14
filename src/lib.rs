@@ -257,11 +257,22 @@ impl Value {
     }
 }
 
-#[derive(Clone, serde::Deserialize, serde::Serialize, Debug, PartialEq)]
+#[derive(Clone, serde::Deserialize, serde::Serialize, Debug)]
 #[serde(untagged)]
 pub enum RcOrValue {
     Rc(Rc<Value>),
     Value(Value),
+}
+
+impl PartialEq for RcOrValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (RcOrValue::Rc(a), RcOrValue::Rc(b)) => *a == *b,
+            (RcOrValue::Value(a), RcOrValue::Value(b)) => a == b,
+            (RcOrValue::Rc(rc_val), RcOrValue::Value(val)) => **rc_val == *val,
+            (RcOrValue::Value(val), RcOrValue::Rc(rc_val)) => *val == **rc_val,
+        }
+    }
 }
 
 impl RcOrValue {
@@ -1084,22 +1095,28 @@ impl Interpreter {
                         .cloned()
                     {
                         let mut aliases_names = vec![];
-                        if let Value::Object(ref aliases) = *arguments.rc() {
+                        if let Value::Object(aliases) = arguments.value() {
                             if aliases.len() == 1 {
                                 aliases_names.push("_".to_string());
-                                context.add_alias("_".to_string(), RcOrValue::Rc(arguments.rc()));
+                                context.add_alias(
+                                    "_".to_string(),
+                                    arguments.clone_rc_if_complex_otherwise_value(),
+                                );
                             } else {
                                 for (alias_name, alias_value) in aliases.iter() {
                                     aliases_names.push(alias_name.clone());
                                     context.add_alias(
                                         alias_name.clone(),
-                                        RcOrValue::Rc(alias_value.rc()),
+                                        alias_value.clone_rc_if_complex_otherwise_value(),
                                     );
                                 }
                             }
                         } else {
                             aliases_names.push("_".to_string());
-                            context.add_alias("_".to_string(), RcOrValue::Rc(arguments.rc()));
+                            context.add_alias(
+                                "_".to_string(),
+                                arguments.clone_rc_if_complex_otherwise_value(),
+                            );
                         }
                         context.path.0.push(PathSegment::Alias(name.clone()));
                         let result = self.compute_with_context(aliased_value, context)?;
@@ -1114,8 +1131,10 @@ impl Interpreter {
                             .path
                             .0
                             .push(PathSegment::EmbeddedFunction(name.clone()));
-                        let function_arguments =
-                            self.compute_with_context(RcOrValue::Rc(arguments.rc()), context)?;
+                        let function_arguments = self.compute_with_context(
+                            arguments.clone_rc_if_complex_otherwise_value(),
+                            context,
+                        )?;
                         let result = (function.function)(function_arguments)?;
                         context.path.0.pop();
                         return Ok(result);
@@ -1126,10 +1145,10 @@ impl Interpreter {
                     context.path.0.push(PathSegment::ObjectKey(key.clone()));
                     result_map.insert(
                         key.clone(),
-                        RcOrValue::Rc(
-                            self.compute_with_context(RcOrValue::Rc(value.rc()), context)?
-                                .rc(),
-                        ),
+                        self.compute_with_context(
+                            value.clone_rc_if_complex_otherwise_value(),
+                            context,
+                        )?,
                     );
                     context.path.0.pop();
                 }
@@ -1191,7 +1210,9 @@ impl Interpreter {
                     for (alias_name, alias_value) in with_clause.with.definitions.iter() {
                         context.add_alias(
                             alias_name.clone(),
-                            TypeOrRcOrValue::RcOrValue(RcOrValue::Rc(alias_value.rc())),
+                            TypeOrRcOrValue::RcOrValue(
+                                alias_value.clone_rc_if_complex_otherwise_value(),
+                            ),
                         );
                     }
                     context.path.0.push(PathSegment::With);
@@ -1391,7 +1412,9 @@ impl Interpreter {
                 Value::FromAt(ref from_at_clause) => {
                     context.path.0.push(PathSegment::From);
                     let mut result = self.get_type(
-                        TypeOrRcOrValue::RcOrValue(RcOrValue::Rc(from_at_clause.from.rc())),
+                        TypeOrRcOrValue::RcOrValue(
+                            from_at_clause.from.clone_rc_if_complex_otherwise_value(),
+                        ),
                         context,
                     )?;
                     *context.path.0.last_mut().unwrap() = PathSegment::At;
@@ -1460,7 +1483,7 @@ impl Interpreter {
                                 }
                             }
                             let mut aliases_names = vec![];
-                            if let Value::Object(ref aliases) = *arguments.value() {
+                            if let Value::Object(aliases) = arguments.value() {
                                 if aliases.len() == 1 {
                                     aliases_names.push("_".to_string());
                                     context.add_alias(
