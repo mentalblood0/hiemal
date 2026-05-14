@@ -140,8 +140,8 @@ fn default_accumulator_value_alias() -> String {
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub struct Reduce {
-    reduce: RcOrValue,
+pub struct Fold {
+    fold: RcOrValue,
     #[serde(default = "default_current_value_alias")]
     as_alias: String,
     starting_with: RcOrValue,
@@ -197,7 +197,7 @@ pub enum Value {
     With(Box<WithCompute>),
     Map(Box<Map>),
     Filter(Box<Filter>),
-    Reduce(Box<Reduce>),
+    Fold(Box<Fold>),
     Branching(Box<Branching>),
     TryOr(Box<TryOr>),
     FromAt(Box<FromAt>),
@@ -543,7 +543,7 @@ pub enum PathSegment {
     Compute,
     Map,
     Filter,
-    Reduce,
+    Fold,
     Through,
     StartingWith,
     If,
@@ -962,10 +962,10 @@ impl Interpreter {
                 context.path.0.pop();
                 RcOrValue::Value(Value::Array(result))
             }
-            Value::Reduce(reduce_clause) => {
+            Value::Fold(fold_clause) => {
                 let array = self
                     .compute_with_context(
-                        reduce_clause.reduce.clone_rc_if_complex_otherwise_value(),
+                        fold_clause.fold.clone_rc_if_complex_otherwise_value(),
                         context,
                     )?
                     .as_array()
@@ -973,28 +973,28 @@ impl Interpreter {
                     .clone();
                 context.path.0.push(PathSegment::StartingWith);
                 let mut result = self.compute_with_context(
-                    reduce_clause
+                    fold_clause
                         .starting_with
                         .clone_rc_if_complex_otherwise_value(),
                     context,
                 )?;
-                *context.path.0.last_mut().unwrap() = PathSegment::Reduce;
+                *context.path.0.last_mut().unwrap() = PathSegment::Fold;
                 for (element_index, element) in array.iter().enumerate() {
                     context.add_alias(
-                        reduce_clause.as_alias.clone(),
+                        fold_clause.as_alias.clone(),
                         element.clone_rc_if_complex_otherwise_value(),
                     );
-                    context.add_alias(reduce_clause.accumulating_in_alias.clone(), result);
+                    context.add_alias(fold_clause.accumulating_in_alias.clone(), result);
                     context.path.0.push(PathSegment::ArrayIndex(element_index));
                     context.path.0.push(PathSegment::Through);
                     result = self.compute_with_context(
-                        reduce_clause.through.clone_rc_if_complex_otherwise_value(),
+                        fold_clause.through.clone_rc_if_complex_otherwise_value(),
                         context,
                     )?;
                     context.path.0.pop();
                     context.path.0.pop();
-                    context.remove_alias(&reduce_clause.as_alias);
-                    context.remove_alias(&reduce_clause.accumulating_in_alias);
+                    context.remove_alias(&fold_clause.as_alias);
+                    context.remove_alias(&fold_clause.accumulating_in_alias);
                 }
                 context.path.0.pop();
                 result
@@ -1303,29 +1303,29 @@ impl Interpreter {
                         ));
                     }
                 }
-                Value::Reduce(ref reduce_clause) => {
-                    context.path.0.push(PathSegment::Reduce);
+                Value::Fold(ref fold_clause) => {
+                    context.path.0.push(PathSegment::Fold);
                     let actual_array_type = self.get_type(
-                        TypeOrRcOrValue::RcOrValue(reduce_clause.reduce.clone()),
+                        TypeOrRcOrValue::RcOrValue(fold_clause.fold.clone()),
                         context,
                     )?;
                     context.path.0.pop();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         let starting_with_type = self.get_type(
-                            TypeOrRcOrValue::RcOrValue(reduce_clause.starting_with.clone()),
+                            TypeOrRcOrValue::RcOrValue(fold_clause.starting_with.clone()),
                             context,
                         )?;
                         context.add_alias(
-                            reduce_clause.as_alias.clone(),
+                            fold_clause.as_alias.clone(),
                             TypeOrRcOrValue::Type(*array_element_type.clone()),
                         );
                         context.add_alias(
-                            reduce_clause.accumulating_in_alias.clone(),
+                            fold_clause.accumulating_in_alias.clone(),
                             TypeOrRcOrValue::Type(starting_with_type.clone()),
                         );
                         context.path.0.push(PathSegment::Through);
                         let through_type = self.get_type(
-                            TypeOrRcOrValue::RcOrValue(reduce_clause.through.clone()),
+                            TypeOrRcOrValue::RcOrValue(fold_clause.through.clone()),
                             context,
                         )?;
                         context.path.0.pop();
@@ -1333,18 +1333,18 @@ impl Interpreter {
                             .assert_equal(&through_type, &starting_with_type)
                             .with_context(|| {
                                 anyhow!(
-                                    "Expected reduce at path {:?} to use function which returns \
+                                    "Expected fold at path {:?} to use function which returns \
                                      value {starting_with_type:?} (as is starting value), but it \
                                      returns {through_type:?}",
                                     context.path
                                 )
                             })?;
-                        context.remove_alias(&reduce_clause.as_alias);
-                        context.remove_alias(&reduce_clause.accumulating_in_alias);
+                        context.remove_alias(&fold_clause.as_alias);
+                        context.remove_alias(&fold_clause.accumulating_in_alias);
                         Type::Array(Box::new(through_type))
                     } else {
                         return Err(anyhow!(
-                            "Expected array for reduce clause at path {:?}, got \
+                            "Expected array for fold clause at path {:?}, got \
                              {actual_array_type:?}",
                             context.path
                         ));
@@ -1847,12 +1847,12 @@ mod tests {
     }
 
     #[test]
-    fn test_reduce() {
+    fn test_fold() {
         assert_eq!(
             *default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
-                        "REDUCE": [
+                        "FOLD": [
                             {"SIZE": [1, 2, 3]},
                             2,
                             1
