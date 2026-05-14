@@ -265,10 +265,27 @@ pub enum RcOrValue {
 }
 
 impl RcOrValue {
-    pub fn clone_(&self) -> Self {
+    pub fn clone_rc_if_complex_otherwise_value(&self) -> Self {
         match self {
             RcOrValue::Rc(rc) => RcOrValue::Rc(rc.clone()),
-            RcOrValue::Value(value) => RcOrValue::Value(value.clone()),
+            RcOrValue::Value(value) => match value {
+                Value::Number(_) | Value::String(_) | Value::Bool(_) | Value::Null => {
+                    RcOrValue::Value(value.clone())
+                }
+                complex_value => RcOrValue::Rc(Rc::new(complex_value.clone())),
+            },
+        }
+    }
+
+    pub fn borrow_rc_if_complex_otherwise_value(self) -> Self {
+        match self {
+            RcOrValue::Rc(rc) => RcOrValue::Rc(rc),
+            RcOrValue::Value(value) => match value {
+                Value::Number(_) | Value::String(_) | Value::Bool(_) | Value::Null => {
+                    RcOrValue::Value(value)
+                }
+                complex_value => RcOrValue::Rc(Rc::new(complex_value)),
+            },
         }
     }
 
@@ -839,20 +856,27 @@ impl Interpreter {
         Ok(match program.value() {
             Value::With(with_clause) => {
                 for (alias_name, alias_value) in with_clause.with.definitions.iter() {
-                    context.add_alias(alias_name.clone(), RcOrValue::Rc(alias_value.rc()));
+                    context.add_alias(
+                        alias_name.clone(),
+                        alias_value.clone_rc_if_complex_otherwise_value(),
+                    );
                 }
                 context.path.0.push(PathSegment::With);
                 context.path.0.push(PathSegment::Constants);
                 for (alias_name, alias_value) in with_clause.with.constants.iter() {
                     context.path.0.push(PathSegment::Alias(alias_name.clone()));
-                    let precomputed_value = self
-                        .compute_with_context(RcOrValue::Rc(alias_value.rc().clone()), context)?;
+                    let precomputed_value = self.compute_with_context(
+                        alias_value.clone_rc_if_complex_otherwise_value(),
+                        context,
+                    )?;
                     context.path.0.pop();
                     context.add_alias(alias_name.clone(), precomputed_value);
                 }
                 *context.path.0.last_mut().unwrap() = PathSegment::Compute;
-                let result =
-                    self.compute_with_context(RcOrValue::Rc(with_clause.compute.rc()), context)?;
+                let result = self.compute_with_context(
+                    with_clause.compute.clone_rc_if_complex_otherwise_value(),
+                    context,
+                )?;
                 context.path.0.pop();
                 context.path.0.pop();
                 for alias_name in with_clause.with.definitions.keys() {
@@ -865,19 +889,26 @@ impl Interpreter {
             }
             Value::Map(map_clause) => {
                 let array = self
-                    .compute_with_context(RcOrValue::Rc(map_clause.map.rc()), context)?
+                    .compute_with_context(
+                        map_clause.map.clone_rc_if_complex_otherwise_value(),
+                        context,
+                    )?
                     .as_array()
                     .unwrap()
                     .clone();
                 let mut result = vec![];
                 context.path.0.push(PathSegment::Map);
                 for (element_index, element) in array.iter().enumerate() {
-                    context.add_alias(map_clause.as_alias.clone(), RcOrValue::Rc(element.rc()));
+                    context.add_alias(
+                        map_clause.as_alias.clone(),
+                        element.clone_rc_if_complex_otherwise_value(),
+                    );
                     context.path.0.push(PathSegment::ArrayIndex(element_index));
                     context.path.0.push(PathSegment::Through);
-                    result.push(
-                        self.compute_with_context(RcOrValue::Rc(map_clause.through.rc()), context)?,
-                    );
+                    result.push(self.compute_with_context(
+                        map_clause.through.clone_rc_if_complex_otherwise_value(),
+                        context,
+                    )?);
                     context.path.0.pop();
                     context.path.0.pop();
                     context.remove_alias(&map_clause.as_alias);
@@ -887,18 +918,27 @@ impl Interpreter {
             }
             Value::Filter(filter_clause) => {
                 let array = self
-                    .compute_with_context(RcOrValue::Rc(filter_clause.filter.rc()), context)?
+                    .compute_with_context(
+                        filter_clause.filter.clone_rc_if_complex_otherwise_value(),
+                        context,
+                    )?
                     .as_array()
                     .unwrap()
                     .clone();
                 let mut result = vec![];
                 context.path.0.push(PathSegment::Filter);
                 for (element_index, element) in array.iter().enumerate() {
-                    context.add_alias(filter_clause.as_alias.clone(), RcOrValue::Rc(element.rc()));
+                    context.add_alias(
+                        filter_clause.as_alias.clone(),
+                        element.clone_rc_if_complex_otherwise_value(),
+                    );
                     context.path.0.push(PathSegment::ArrayIndex(element_index));
                     context.path.0.push(PathSegment::Through);
                     if self
-                        .compute_with_context(RcOrValue::Rc(filter_clause.through.rc()), context)?
+                        .compute_with_context(
+                            filter_clause.through.clone_rc_if_complex_otherwise_value(),
+                            context,
+                        )?
                         .as_bool()
                         .unwrap()
                     {
@@ -913,23 +953,33 @@ impl Interpreter {
             }
             Value::Reduce(reduce_clause) => {
                 let array = self
-                    .compute_with_context(RcOrValue::Rc(reduce_clause.reduce.rc()), context)?
+                    .compute_with_context(
+                        reduce_clause.reduce.clone_rc_if_complex_otherwise_value(),
+                        context,
+                    )?
                     .as_array()
                     .unwrap()
                     .clone();
                 context.path.0.push(PathSegment::StartingWith);
                 let mut result = self.compute_with_context(
-                    RcOrValue::Rc(reduce_clause.starting_with.rc()),
+                    reduce_clause
+                        .starting_with
+                        .clone_rc_if_complex_otherwise_value(),
                     context,
                 )?;
                 *context.path.0.last_mut().unwrap() = PathSegment::Reduce;
                 for (element_index, element) in array.iter().enumerate() {
-                    context.add_alias(reduce_clause.as_alias.clone(), RcOrValue::Rc(element.rc()));
+                    context.add_alias(
+                        reduce_clause.as_alias.clone(),
+                        element.clone_rc_if_complex_otherwise_value(),
+                    );
                     context.add_alias(reduce_clause.accumulating_in_alias.clone(), result);
                     context.path.0.push(PathSegment::ArrayIndex(element_index));
                     context.path.0.push(PathSegment::Through);
-                    result = self
-                        .compute_with_context(RcOrValue::Rc(reduce_clause.through.rc()), context)?;
+                    result = self.compute_with_context(
+                        reduce_clause.through.clone_rc_if_complex_otherwise_value(),
+                        context,
+                    )?;
                     context.path.0.pop();
                     context.path.0.pop();
                     context.remove_alias(&reduce_clause.as_alias);
@@ -941,31 +991,46 @@ impl Interpreter {
             Value::Branching(branching_clause) => {
                 context.path.0.push(PathSegment::If);
                 let if_result = self
-                    .compute_with_context(RcOrValue::Rc(branching_clause.r#if.rc()), context)?
+                    .compute_with_context(
+                        branching_clause.r#if.clone_rc_if_complex_otherwise_value(),
+                        context,
+                    )?
                     .as_bool()
                     .unwrap();
                 let result = if if_result {
                     *context.path.0.last_mut().unwrap() = PathSegment::Then;
-                    self.compute_with_context(RcOrValue::Rc(branching_clause.then.rc()), context)?
+                    self.compute_with_context(
+                        branching_clause.then.clone_rc_if_complex_otherwise_value(),
+                        context,
+                    )?
                 } else {
                     *context.path.0.last_mut().unwrap() = PathSegment::Else;
-                    self.compute_with_context(RcOrValue::Rc(branching_clause.r#else.rc()), context)?
+                    self.compute_with_context(
+                        branching_clause
+                            .r#else
+                            .clone_rc_if_complex_otherwise_value(),
+                        context,
+                    )?
                 };
                 context.path.0.pop();
                 result
             }
             Value::TryOr(try_or_clause) => {
                 context.path.0.push(PathSegment::Try);
-                let result = match self
-                    .compute_with_context(RcOrValue::Rc(try_or_clause.r#try.rc()), context)
-                {
+                let result = match self.compute_with_context(
+                    try_or_clause.r#try.clone_rc_if_complex_otherwise_value(),
+                    context,
+                ) {
                     Ok(result) => result,
                     Err(error) => {
                         context.add_alias(
                             try_or_clause.with_error_alias.clone(),
                             RcOrValue::Value(Value::String(error.to_string())),
                         );
-                        self.compute_with_context(RcOrValue::Rc(try_or_clause.or.rc()), context)?
+                        self.compute_with_context(
+                            try_or_clause.or.clone_rc_if_complex_otherwise_value(),
+                            context,
+                        )?
                     }
                 };
                 context.path.0.pop();
@@ -973,9 +1038,10 @@ impl Interpreter {
             }
             Value::FromAt(from_at_clause) => {
                 context.path.0.push(PathSegment::From);
-                let mut result = self
-                    .compute_with_context(RcOrValue::Rc(from_at_clause.from.rc()), context)?
-                    .rc();
+                let mut result = self.compute_with_context(
+                    from_at_clause.from.clone_rc_if_complex_otherwise_value(),
+                    context,
+                )?;
                 *context.path.0.last_mut().unwrap() = PathSegment::At;
                 for (at_segment_index, at_segment) in from_at_clause.at.iter().enumerate() {
                     context.path.0.push(PathSegment::AtIndex(at_segment_index));
@@ -985,8 +1051,7 @@ impl Interpreter {
                             .unwrap()
                             .get(&*object_key)
                             .unwrap()
-                            .rc()
-                            .clone(),
+                            .clone_rc_if_complex_otherwise_value(),
                         AtSegment::ArrayIndex(array_index) => {
                             let array = result.as_array().unwrap();
                             result
@@ -1001,14 +1066,13 @@ impl Interpreter {
                                         context.path
                                     )
                                 })?
-                                .rc()
-                                .clone()
+                                .clone_rc_if_complex_otherwise_value()
                         }
                     };
                     context.path.0.pop();
                 }
                 context.path.0.pop();
-                RcOrValue::Rc(result)
+                result
             }
             Value::Object(object) => {
                 if object.len() == 1 {
