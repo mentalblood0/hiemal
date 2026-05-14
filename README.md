@@ -35,7 +35,7 @@ hiemal examples/include.yml
 ### Basic types
 
 - strings
-- numbers, parsed as 64-bit floating point numbers
+- numbers, arbitrary size and full precision thanks to [dashu](https://github.com/cmpute/dashu), e.g. `1`, `2.3`, `"4"`, `"5.6"`, `"7/9"`
 - booleans
 - null
 - objects, keys are strings

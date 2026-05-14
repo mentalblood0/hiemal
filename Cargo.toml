@@ -15,6 +15,7 @@ xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 base64 = "0.22"
 glob = "0.3.3"
 small-map = "0.1.5"
+dashu = { version = "0.4.1", features = ["num-order", "std", "serde", "num-traits"] }
 
 [dev-dependencies]
 nanorand = "0.8"

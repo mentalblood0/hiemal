@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::{Function, Interpreter, RcOrValue, Type, Value};
 
+use dashu::Rational;
+
 impl Default for Interpreter {
     fn default() -> Interpreter {
         Interpreter {
@@ -18,7 +20,9 @@ impl Default for Interpreter {
                                     .unwrap()
                                     .iter()
                                     .map(|element| element.as_number().unwrap())
-                                    .sum(),
+                                    .fold(Rational::ZERO, |accumulator, current| {
+                                        accumulator + current
+                                    }),
                             )))
                         },
                     },
@@ -35,7 +39,9 @@ impl Default for Interpreter {
                                     .unwrap()
                                     .iter()
                                     .map(|element| element.as_number().unwrap())
-                                    .product(),
+                                    .fold(Rational::ONE, |accumulator, current| {
+                                        accumulator * current
+                                    }),
                             )))
                         },
                     },
@@ -46,9 +52,9 @@ impl Default for Interpreter {
                         argument_type: Type::String,
                         return_type: Type::Number,
                         function: |argument: RcOrValue| {
-                            Ok(RcOrValue::Value(Value::Number(
-                                argument.as_string().unwrap().len() as f64,
-                            )))
+                            Ok(RcOrValue::Value(Value::Number(Rational::from(
+                                argument.as_string().unwrap().len(),
+                            ))))
                         },
                     },
                 ),
@@ -58,9 +64,9 @@ impl Default for Interpreter {
                         argument_type: Type::Array(Box::new(Type::GenericArgument(0))),
                         return_type: Type::Number,
                         function: |argument: RcOrValue| {
-                            Ok(RcOrValue::Value(Value::Number(
-                                argument.as_array().unwrap().len() as f64,
-                            )))
+                            Ok(RcOrValue::Value(Value::Number(Rational::from(
+                                argument.as_array().unwrap().len(),
+                            ))))
                         },
                     },
                 ),
@@ -133,15 +139,16 @@ impl Default for Interpreter {
                             let from = arguments.get("from").unwrap().as_number().unwrap();
                             let to = arguments.get("to").unwrap().as_number().unwrap();
                             let step = arguments.get("step").unwrap().as_number().unwrap();
-                            let estimated_capacity = (to - from) / step;
-                            if estimated_capacity <= 0.0 {
+                            let estimated_capacity = (to.clone() - from.clone()) / step.clone();
+                            if estimated_capacity <= Rational::ZERO {
                                 Ok(RcOrValue::Value(Value::Array(vec![])))
                             } else {
-                                let mut result = Vec::with_capacity(estimated_capacity as usize);
+                                let mut result =
+                                    Vec::with_capacity(estimated_capacity.to_f64_fast() as usize);
                                 let mut current = from;
                                 while current <= to {
-                                    result.push(RcOrValue::Value(Value::Number(current)));
-                                    current += step;
+                                    result.push(RcOrValue::Value(Value::Number(current.clone())));
+                                    current += step.clone();
                                 }
                                 Ok(RcOrValue::Value(Value::Array(result)))
                             }
