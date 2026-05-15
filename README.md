@@ -158,10 +158,10 @@ THROUGH:
   IS_SORTED: [x, 2]
 ```
 
-#### REDUCE AS_ALIAS STARTING_WITH ACCUMULATING_IN_ALIAS THROUGH
+#### FOLD AS_ALIAS STARTING_WITH ACCUMULATING_IN_ALIAS THROUGH
 
 ```yaml
-REDUCE: [1, 2, 3]
+FOLD: [1, 2, 3]
 AS_ALIAS: cur # may be omitted, defaulting to "current"
 STARTING_WITH: 0
 ACCUMULATING_IN_ALIAS: acc # may be omitted, defaulting to "accumulator"
