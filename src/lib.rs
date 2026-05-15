@@ -919,11 +919,8 @@ impl Interpreter {
                     .clone();
                 let mut result = vec![];
                 context.path.0.push(PathSegment::Map);
-                for (element_index, element) in array.iter().enumerate() {
-                    context.add_alias(
-                        map_clause.as_alias.clone(),
-                        element.clone_rc_if_complex_otherwise_value(),
-                    );
+                for (element_index, element) in array.into_iter().enumerate() {
+                    context.add_alias(map_clause.as_alias.clone(), element);
                     context.path.0.push(PathSegment::ArrayIndex(element_index));
                     context.path.0.push(PathSegment::Through);
                     result.push(self.compute_with_context(&map_clause.through, context)?);
@@ -942,7 +939,7 @@ impl Interpreter {
                     .clone();
                 let mut result = vec![];
                 context.path.0.push(PathSegment::Filter);
-                for (element_index, element) in array.iter().enumerate() {
+                for (element_index, element) in array.into_iter().enumerate() {
                     context.add_alias(
                         filter_clause.as_alias.clone(),
                         element.clone_rc_if_complex_otherwise_value(),
@@ -954,7 +951,7 @@ impl Interpreter {
                         .as_bool()
                         .unwrap()
                     {
-                        result.push(element.clone());
+                        result.push(element);
                     }
                     context.path.0.pop();
                     context.path.0.pop();
@@ -972,11 +969,8 @@ impl Interpreter {
                 context.path.0.push(PathSegment::StartingWith);
                 let mut result = self.compute_with_context(&fold_clause.starting_with, context)?;
                 *context.path.0.last_mut().unwrap() = PathSegment::Fold;
-                for (element_index, element) in array.iter().enumerate() {
-                    context.add_alias(
-                        fold_clause.as_alias.clone(),
-                        element.clone_rc_if_complex_otherwise_value(),
-                    );
+                for (element_index, element) in array.into_iter().enumerate() {
+                    context.add_alias(fold_clause.as_alias.clone(), element);
                     context.add_alias(fold_clause.accumulating_in_alias.clone(), result);
                     context.path.0.push(PathSegment::ArrayIndex(element_index));
                     context.path.0.push(PathSegment::Through);
@@ -1062,7 +1056,9 @@ impl Interpreter {
                         .aliases
                         .get(name)
                         .and_then(|aliases_with_this_name| aliases_with_this_name.last())
-                        .cloned()
+                        .and_then(|rc_or_value| {
+                            Some(rc_or_value.clone_rc_if_complex_otherwise_value())
+                        })
                     {
                         let mut aliases_names = vec![];
                         if let Value::Object(aliases) = argument.value() {
@@ -1073,11 +1069,11 @@ impl Interpreter {
                                     argument.clone_rc_if_complex_otherwise_value(),
                                 );
                             } else {
-                                for (alias_name, alias_value) in aliases.iter() {
+                                for (alias_name, aliased_value) in aliases.iter() {
                                     aliases_names.push(alias_name.clone());
                                     context.add_alias(
                                         alias_name.clone(),
-                                        alias_value.clone_rc_if_complex_otherwise_value(),
+                                        aliased_value.clone_rc_if_complex_otherwise_value(),
                                     );
                                 }
                             }
