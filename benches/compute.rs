@@ -1,8 +1,9 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use dashu::Rational;
 use hiemal::{
+    includes_cache::IncludesCache,
+    interpreter::Interpreter,
     value::{Value, ValueWithIncludes},
-    IncludesCache, Interpreter,
 };
 use serde_json::json;
 
