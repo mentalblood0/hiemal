@@ -6,7 +6,7 @@ use serde_json::json;
 fn fibonacci(bencher_context: &mut Criterion) {
     let interpreter = Interpreter::default();
     let mut includes_cache = IncludesCache::default();
-    for number in [22] {
+    for number in [20, 21, 22] {
         let program = serde_json::from_value::<ValueWithIncludes>(json!({
             "WITH": {
                 "DEFINITIONS": {
@@ -87,5 +87,5 @@ fn factorial(bencher_context: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, fibonacci);
+criterion_group!(benches, fibonacci, factorial);
 criterion_main!(benches);
