@@ -6,7 +6,7 @@ use serde_json::json;
 fn fibonacci(bencher_context: &mut Criterion) {
     let interpreter = Interpreter::default();
     let mut includes_cache = IncludesCache::default();
-    for number in [22, 23, 24] {
+    for number in [22] {
         let program = serde_json::from_value::<ValueWithIncludes>(json!({
             "WITH": {
                 "DEFINITIONS": {
@@ -19,31 +19,24 @@ fn fibonacci(bencher_context: &mut Criterion) {
                         },
                         "THEN": "_",
                         "ELSE": {
-                            "WITH": {
-                                "CONSTANTS": {
-                                    "x": "_"
-                                }
-                            },
-                            "COMPUTE": {
-                                "SUM": [
-                                    {
-                                        "FIBONACCI": {
-                                            "SUM": [
-                                                "x",
-                                                -1
-                                            ]
-                                        }
-                                    },
-                                    {
-                                        "FIBONACCI": {
-                                            "SUM": [
-                                                "x",
-                                                -2
-                                            ]
-                                        }
+                            "SUM": [
+                                {
+                                    "FIBONACCI": {
+                                        "SUM": [
+                                            "_",
+                                            -1
+                                        ]
                                     }
-                                ]
-                            }
+                                },
+                                {
+                                    "FIBONACCI": {
+                                        "SUM": [
+                                            "_",
+                                            -2
+                                        ]
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -94,5 +87,5 @@ fn factorial(bencher_context: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, fibonacci, factorial);
+criterion_group!(benches, fibonacci);
 criterion_main!(benches);
