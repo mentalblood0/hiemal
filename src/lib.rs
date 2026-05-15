@@ -593,11 +593,12 @@ pub struct TypeCheckingContext {
 }
 
 impl TypeCheckingContext {
-    pub fn add_alias(&mut self, name: String, type_or_rc_or_value: TypeOrRcOrValue) {
-        if let Some(aliases_with_this_name) = self.aliases.get_mut(&name) {
+    pub fn add_alias(&mut self, name: &str, type_or_rc_or_value: TypeOrRcOrValue) {
+        if let Some(aliases_with_this_name) = self.aliases.get_mut(name) {
             aliases_with_this_name.push(type_or_rc_or_value);
         } else {
-            self.aliases.insert(name, vec![type_or_rc_or_value]);
+            self.aliases
+                .insert(name.to_string(), vec![type_or_rc_or_value]);
         }
     }
 
@@ -1166,7 +1167,7 @@ impl Interpreter {
                 Value::With(ref with_clause) => {
                     for (alias_name, alias_value) in with_clause.with.definitions.iter() {
                         context.add_alias(
-                            alias_name.clone(),
+                            &alias_name,
                             TypeOrRcOrValue::RcOrValue(
                                 alias_value.clone_rc_if_complex_otherwise_value(),
                             ),
@@ -1179,8 +1180,7 @@ impl Interpreter {
                         let precomputed_type = self
                             .get_type(TypeOrRcOrValue::RcOrValue(alias_value.clone()), context)?;
                         context.path.0.pop();
-                        context
-                            .add_alias(alias_name.clone(), TypeOrRcOrValue::Type(precomputed_type));
+                        context.add_alias(&alias_name, TypeOrRcOrValue::Type(precomputed_type));
                     }
                     context.path.0.pop();
                     context.path.0.push(PathSegment::Compute);
@@ -1205,7 +1205,7 @@ impl Interpreter {
                     context.path.0.pop();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context.add_alias(
-                            map_clause.as_alias.clone(),
+                            &map_clause.as_alias,
                             TypeOrRcOrValue::Type(*array_element_type.clone()),
                         );
                         context.path.0.push(PathSegment::Through);
@@ -1232,7 +1232,7 @@ impl Interpreter {
                     context.path.0.pop();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context.add_alias(
-                            filter_clause.as_alias.clone(),
+                            &filter_clause.as_alias,
                             TypeOrRcOrValue::Type(*array_element_type.clone()),
                         );
                         context.path.0.push(PathSegment::Through);
@@ -1273,11 +1273,11 @@ impl Interpreter {
                             context,
                         )?;
                         context.add_alias(
-                            fold_clause.as_alias.clone(),
+                            &fold_clause.as_alias,
                             TypeOrRcOrValue::Type(*array_element_type.clone()),
                         );
                         context.add_alias(
-                            fold_clause.accumulating_in_alias.clone(),
+                            &fold_clause.accumulating_in_alias,
                             TypeOrRcOrValue::Type(starting_with_type.clone()),
                         );
                         context.path.0.push(PathSegment::Through);
@@ -1345,7 +1345,7 @@ impl Interpreter {
                     )?;
                     *context.path.0.last_mut().unwrap() = PathSegment::Or;
                     context.add_alias(
-                        try_or_clause.with_error_alias.clone(),
+                        &try_or_clause.with_error_alias,
                         TypeOrRcOrValue::Type(Type::String),
                     );
                     let or_branch_type = self.get_type(
@@ -1444,14 +1444,14 @@ impl Interpreter {
                                 if aliases.len() == 1 {
                                     aliases_names.push("_".to_string());
                                     context.add_alias(
-                                        "_".to_string(),
+                                        DEFAULT_ALIAS,
                                         TypeOrRcOrValue::RcOrValue(argument.clone()),
                                     );
                                 } else {
                                     for (alias_name, alias_value) in aliases.iter() {
                                         aliases_names.push(alias_name.clone());
                                         context.add_alias(
-                                            alias_name.clone(),
+                                            &alias_name,
                                             TypeOrRcOrValue::RcOrValue(alias_value.clone()),
                                         );
                                     }
@@ -1459,7 +1459,7 @@ impl Interpreter {
                             } else {
                                 aliases_names.push("_".to_string());
                                 context.add_alias(
-                                    "_".to_string(),
+                                    DEFAULT_ALIAS,
                                     TypeOrRcOrValue::RcOrValue(argument.clone()),
                                 );
                             }
@@ -1581,7 +1581,7 @@ impl Interpreter {
                             context,
                         )?;
                         context.path.0.pop();
-                        context.add_alias(string.clone(), aliased_value);
+                        context.add_alias(&string, aliased_value);
                         result
                     } else {
                         Type::String
