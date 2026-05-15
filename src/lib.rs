@@ -1087,7 +1087,7 @@ impl Interpreter {
             }
             Value::Object(object) => {
                 if object.len() == 1 {
-                    let (name, arguments) = object.iter().next().unwrap();
+                    let (name, argument) = object.iter().next().unwrap();
                     if let Some(aliased_value) = context
                         .aliases
                         .get(name)
@@ -1095,12 +1095,12 @@ impl Interpreter {
                         .cloned()
                     {
                         let mut aliases_names = vec![];
-                        if let Value::Object(aliases) = arguments.value() {
+                        if let Value::Object(aliases) = argument.value() {
                             if aliases.len() == 1 {
                                 aliases_names.push("_".to_string());
                                 context.add_alias(
                                     "_".to_string(),
-                                    arguments.clone_rc_if_complex_otherwise_value(),
+                                    argument.clone_rc_if_complex_otherwise_value(),
                                 );
                             } else {
                                 for (alias_name, alias_value) in aliases.iter() {
@@ -1115,7 +1115,7 @@ impl Interpreter {
                             aliases_names.push("_".to_string());
                             context.add_alias(
                                 "_".to_string(),
-                                arguments.clone_rc_if_complex_otherwise_value(),
+                                argument.clone_rc_if_complex_otherwise_value(),
                             );
                         }
                         context.path.0.push(PathSegment::Alias(name.clone()));
@@ -1132,7 +1132,7 @@ impl Interpreter {
                             .0
                             .push(PathSegment::EmbeddedFunction(name.clone()));
                         let function_arguments = self.compute_with_context(
-                            arguments.clone_rc_if_complex_otherwise_value(),
+                            argument.clone_rc_if_complex_otherwise_value(),
                             context,
                         )?;
                         let result = (function.function)(function_arguments)?;
@@ -1169,12 +1169,13 @@ impl Interpreter {
             Value::String(string) => {
                 if let Some(aliased_value) = context
                     .aliases
-                    .get(string)
-                    .and_then(|values_for_this_name| values_for_this_name.last())
+                    .get_mut(string)
+                    .and_then(|values_for_this_name| values_for_this_name.pop())
                 {
                     context.path.0.push(PathSegment::Alias(string.clone()));
                     let result = self.compute_with_context(aliased_value.clone(), context)?;
                     context.path.0.pop();
+                    context.add_alias(string.clone(), aliased_value);
                     result
                 } else {
                     RcOrValue::Value(Value::String(string.clone()))
@@ -1464,7 +1465,7 @@ impl Interpreter {
                 }
                 Value::Object(ref object) => {
                     if object.len() == 1 {
-                        let (name, arguments) = object.iter().next().unwrap();
+                        let (name, argument) = object.iter().next().unwrap();
                         if let Some(aliased_value) = context
                             .aliases
                             .get(name)
@@ -1483,12 +1484,12 @@ impl Interpreter {
                                 }
                             }
                             let mut aliases_names = vec![];
-                            if let Value::Object(aliases) = arguments.value() {
+                            if let Value::Object(aliases) = argument.value() {
                                 if aliases.len() == 1 {
                                     aliases_names.push("_".to_string());
                                     context.add_alias(
                                         "_".to_string(),
-                                        TypeOrRcOrValue::RcOrValue(arguments.clone()),
+                                        TypeOrRcOrValue::RcOrValue(argument.clone()),
                                     );
                                 } else {
                                     for (alias_name, alias_value) in aliases.iter() {
@@ -1503,7 +1504,7 @@ impl Interpreter {
                                 aliases_names.push("_".to_string());
                                 context.add_alias(
                                     "_".to_string(),
-                                    TypeOrRcOrValue::RcOrValue(arguments.clone()),
+                                    TypeOrRcOrValue::RcOrValue(argument.clone()),
                                 );
                             }
                             context.path.0.push(PathSegment::Alias(name.clone()));
@@ -1523,7 +1524,7 @@ impl Interpreter {
                                 .0
                                 .push(PathSegment::EmbeddedFunction(name.clone()));
                             let arguments_type = self
-                                .get_type(TypeOrRcOrValue::RcOrValue(arguments.clone()), context)?;
+                                .get_type(TypeOrRcOrValue::RcOrValue(argument.clone()), context)?;
                             let generic_values =
                                 context.assert_equal(&function.argument_type, &arguments_type)?;
                             context.path.0.pop();
@@ -1615,13 +1616,13 @@ impl Interpreter {
                         }
                     } else if let Some(aliased_value) = context
                         .aliases
-                        .get(string)
-                        .and_then(|values_for_this_name| values_for_this_name.last())
-                        .cloned()
+                        .get_mut(string)
+                        .and_then(|values_for_this_name| values_for_this_name.pop())
                     {
                         context.path.0.push(PathSegment::Alias(string.clone()));
                         let result = self.get_type(aliased_value.clone(), context)?;
                         context.path.0.pop();
+                        context.add_alias(string.clone(), aliased_value);
                         result
                     } else {
                         Type::String
@@ -2039,6 +2040,44 @@ mod tests {
     }
 
     #[test]
+    fn test_arguments() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                        "WITH": {
+                            "DEFINITIONS": {
+                                "F1": {
+                                    "SUM": ["_", 1]
+                                },
+                                "F2": {
+                                    "SUM": ["_", 2]
+                                },
+                                "F3": {
+                                    "SUM": ["_", 3]
+                                },
+                                "F": {
+                                    "F1": {
+                                        "F2": {
+                                            "F3": "_"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "COMPUTE": {
+                            "F": 0
+                        }
+                    }))
+                    .unwrap(),
+                    &mut IncludesCache::default()
+                )
+                .unwrap(),
+            serde_json::from_value(json!(6)).unwrap()
+        );
+    }
+
+    #[test]
     fn test_recursive_normal() {
         assert_eq!(
             *default_interpreter()
@@ -2055,17 +2094,11 @@ mod tests {
                             },
                             "THEN": "_",
                             "ELSE": {
-                              "WITH": {
-                                "CONSTANTS": {
-                                  "x": "_"
-                                }
-                              },
-                              "COMPUTE": {
                                 "SUM": [
                                   {
                                     "FIBONACCI": {
                                       "SUM": [
-                                        "x",
+                                        "_",
                                         -1
                                       ]
                                     }
@@ -2073,13 +2106,12 @@ mod tests {
                                   {
                                     "FIBONACCI": {
                                       "SUM": [
-                                        "x",
+                                        "_",
                                         -2
                                       ]
                                     }
                                   }
                                 ]
-                              }
                             }
                           }
                         }

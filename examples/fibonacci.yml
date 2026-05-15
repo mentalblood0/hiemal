@@ -5,14 +5,10 @@ WITH:
         IS_SORTED: [_, 1]
       THEN: _
       ELSE:
-        WITH:
-          CONSTANTS:
-            x: _
-        COMPUTE:
-          SUM:
-            - FIBONACCI:
-                SUM: [x, -1]
-            - FIBONACCI:
-                SUM: [x, -2]
+        SUM:
+          - FIBONACCI:
+              SUM: [_, -1]
+          - FIBONACCI:
+              SUM: [_, -2]
 COMPUTE:
   FIBONACCI: 10
