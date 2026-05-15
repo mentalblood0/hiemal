@@ -1,6 +1,9 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use dashu::Rational;
-use hiemal::{IncludesCache, Interpreter, Value, ValueWithIncludes};
+use hiemal::{
+    value::{Value, ValueWithIncludes},
+    IncludesCache, Interpreter,
+};
 use serde_json::json;
 
 fn fibonacci(bencher_context: &mut Criterion) {

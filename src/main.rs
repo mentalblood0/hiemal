@@ -3,7 +3,7 @@ use std::process::exit;
 use anyhow::Context;
 use url::Url;
 
-use hiemal::{IncludesCache, Interpreter, ValueWithIncludes};
+use hiemal::{includes_cache::IncludesCache, interpreter::Interpreter, value::ValueWithIncludes};
 
 enum Source {
     Url,

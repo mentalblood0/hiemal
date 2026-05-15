@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use crate::{Function, Interpreter, RcOrValue, Type, Value};
+use crate::function::Function;
+use crate::interpreter::Interpreter;
+use crate::r#type::Type;
+use crate::value::{RcOrValue, Value};
 
 use dashu::Rational;
 
