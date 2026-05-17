@@ -85,11 +85,13 @@ Interpreter will insert contents of downloaded file instead of this clause
 WITH:
   DEFINITIONS: # may be omitted
     FACTORIAL:
-      PRODUCT:
-        SEQUENCE:
-          from: 1
-          to: _
-          step: 1
+      ACCESS: [_] # may be omitted together with COMPUTE key, leaving only COMPUTE value
+      COMPUTE:
+        PRODUCT:
+          SEQUENCE:
+            from: 1
+            to: _
+            step: 1
   CONSTANTS: # may be omitted
     x:
       SUM: [2, 3]
@@ -122,25 +124,52 @@ Definition is computed when and each time it is needed in `COMPUTE`
 
 Constant is computed once before `COMPUTE`
 
-Both definitions and constants become available only in `COMPUTE`, that's why
+Both definitions and constants become available only in `COMPUTE`
+
+`ACCESS` key in definition is used to specify what function have access to. By default function have access only to "_" and self, e.g. the following program won't pass type checking:
 
 ```yaml
 WITH:
-  CONSTANTS:
-    x: 1
-COMPUTE:
-  WITH:
-    DEFINITIONS:
-      d:
-        ACCESS: [x]
-        COMPUTE: x
-    CONSTANTS:
-      x: 2
-      c: x
-  COMPUTE: [d, c]
+  DEFINITIONS:
+    f:
+      SUM: [x, y, 3]
+  COMPUTE:
+    f:
+      x: 1
+      y: 2
 ```
 
-computes to `[2.0, 1.0]`
+but this one will:
+
+```yaml
+WITH:
+  DEFINITIONS:
+    f:
+      ACCESS: [x, y]
+      COMPUTE:
+        SUM: [x, y, 3]
+  COMPUTE:
+    f:
+      x: 1
+      y: 2
+```
+
+Function may access not only directly provided arguments, but also something from outer scope:
+
+```yaml
+WITH:
+  DEFINITIONS:
+    f:
+      ACCESS: [x, y, z]
+      COMPUTE:
+        SUM: [x, y, z, 4]
+  CONSTANTS:
+    z: 3
+  COMPUTE:
+    f:
+      x: 1
+      y: 2
+```
 
 #### MAP AS_ALIAS THROUGH
 

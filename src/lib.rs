@@ -474,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn test_access_ok() {
+    fn test_access_arguments_ok() {
         assert_eq!(
             *default_interpreter()
                 .compute(
@@ -496,6 +496,63 @@ mod tests {
                 )
                 .unwrap(),
             serde_json::from_value(json!(6)).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_access_nonlocal_error() {
+        assert!(
+            default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                        "WITH": {
+                            "DEFINITIONS": {
+                                "f": {
+                                    "ACCESS": ["x", "y"],
+                                    "COMPUTE": {"SUM": ["x", "y", "z", 4]}
+                                }
+                            },
+                            "CONSTANTS": {
+                                "z": 3
+                            }
+                        },
+                        "COMPUTE": {
+                            "f": {"x": 1, "y": 2}
+                        }
+                    }))
+                    .unwrap(),
+                    &mut IncludesCache::default()
+                )
+                .is_err(),
+        );
+    }
+
+    #[test]
+    fn test_access_nonlocal_ok() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                        "WITH": {
+                            "DEFINITIONS": {
+                                "f": {
+                                    "ACCESS": ["x", "y", "z"],
+                                    "COMPUTE": {"SUM": ["x", "y", "z", 4]}
+                                }
+                            },
+                            "CONSTANTS": {
+                                "z": 3
+                            }
+                        },
+                        "COMPUTE": {
+                            "f": {"x": 1, "y": 2}
+                        }
+                    }))
+                    .unwrap(),
+                    &mut IncludesCache::default()
+                )
+                .unwrap(),
+            serde_json::from_value(json!(10)).unwrap()
         );
     }
 

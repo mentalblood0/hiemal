@@ -575,19 +575,25 @@ impl Interpreter {
                         let mut aliases_names = vec![];
                         if let Value::Object(aliases) = argument.value() {
                             if aliases.len() == 1 {
+                                context.path.0.push(PathSegment::Alias(name.clone()));
+                                let precomputed_argument =
+                                    self.compute_with_context(argument, context)?;
+                                context.path.0.pop();
                                 aliases_names.push("_".to_string());
                                 context.add_alias(
                                     DEFAULT_ALIAS,
-                                    AliasedValue::Definition(Definition::Default(argument.clone())),
+                                    AliasedValue::Constant(precomputed_argument),
                                 );
                             } else {
                                 for (alias_name, aliased_value) in aliases.iter() {
+                                    context.path.0.push(PathSegment::Alias(name.clone()));
+                                    let precomputed_aliased_value =
+                                        self.compute_with_context(aliased_value, context)?;
+                                    context.path.0.pop();
                                     aliases_names.push(alias_name.clone());
                                     context.add_alias(
                                         &alias_name,
-                                        AliasedValue::Definition(Definition::Default(
-                                            aliased_value.clone(),
-                                        )),
+                                        AliasedValue::Constant(precomputed_aliased_value),
                                     );
                                 }
                             }
@@ -991,28 +997,31 @@ impl Interpreter {
                             let mut aliases_names = vec![];
                             if let Value::Object(aliases) = argument.value() {
                                 if aliases.len() == 1 {
+                                    let argument_type = self.get_type(
+                                        TypeOrAliasedValue::AliasedValue(AliasedValue::Definition(
+                                            Definition::Default(argument.clone()),
+                                        )),
+                                        context,
+                                    )?;
                                     aliases_names.push("_".to_string());
                                     context.add_alias(
                                         DEFAULT_ALIAS,
-                                        TypeOrAliasedValue::AliasedValue(AliasedValue::Constant(
-                                            argument.clone(),
-                                        )),
+                                        TypeOrAliasedValue::Type(argument_type),
                                     );
                                 } else {
                                     for (alias_name, aliased_value) in aliases.iter() {
-                                        if !context.access.last().unwrap().contains(alias_name) {
-                                            return Err(anyhow!(
-                                                "Alias {name:?} stated at {:#?} have no access to \
-                                                 alias {alias_name:?}",
-                                                context.path
-                                            ));
-                                        }
+                                        let aliased_value_type = self.get_type(
+                                            TypeOrAliasedValue::AliasedValue(
+                                                AliasedValue::Definition(Definition::Default(
+                                                    aliased_value.clone(),
+                                                )),
+                                            ),
+                                            context,
+                                        )?;
                                         aliases_names.push(alias_name.clone());
                                         context.add_alias(
                                             &alias_name,
-                                            TypeOrAliasedValue::AliasedValue(
-                                                AliasedValue::Constant(aliased_value.clone()),
-                                            ),
+                                            TypeOrAliasedValue::Type(aliased_value_type),
                                         );
                                     }
                                 }
