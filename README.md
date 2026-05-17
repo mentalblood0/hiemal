@@ -110,14 +110,14 @@ WITH:
       PRODUCT:
         SEQUENCE:
           from: 1
-          to: a
+          to: _
           step: 1
   CONSTANTS: # may be omitted
     x:
       SUM: [2, 3]
 COMPUTE:
   FACTORIAL:
-    a: x
+    _: x
 ```
 
 Definition is computed when and each time it is needed in `COMPUTE`
