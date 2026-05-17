@@ -93,7 +93,7 @@ mod tests {
                     &serde_json::from_value(json!({
                         "SUM": [
                             {
-                                "WITH": {"DEFINITIONS": {"x": 2, "y": 3}},
+                                "WITH": {"CONSTANTS": {"x": 2, "y": 3}},
                                 "COMPUTE": {"PRODUCT": ["x", "x", "y"]}
                             },
                             {"LEN": {"CONCAT": ["lala", "lolo"]}},
@@ -119,6 +119,8 @@ mod tests {
                                 "WITH": {
                                     "DEFINITIONS": {
                                         "SQUARE": {"PRODUCT": ["_", "_"]},
+                                    },
+                                    "CONSTANTS": {
                                         "y": 3
                                     }
                                 },
@@ -286,7 +288,7 @@ mod tests {
                         "WITH": {"CONSTANTS": {"x": 1}},
                         "COMPUTE": {
                             "WITH": {
-                                "DEFINITIONS": {"definition": "x"},
+                                "DEFINITIONS": {"definition": {"ACCESS": ["x"], "COMPUTE": "x"}},
                                 "CONSTANTS": {"x": 2, "constant": "x"}
                             },
                             "COMPUTE": ["definition", "constant"]
@@ -450,6 +452,54 @@ mod tests {
     }
 
     #[test]
+    fn test_access_error() {
+        assert!(
+            default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                        "WITH": {
+                            "DEFINITIONS": {
+                                "f": {"SUM": ["x", "y", 3]}
+                            }
+                        },
+                        "COMPUTE": {
+                            "f": {"x": 1, "y": 2}
+                        }
+                    }))
+                    .unwrap(),
+                    &mut IncludesCache::default()
+                )
+                .is_err(),
+        );
+    }
+
+    #[test]
+    fn test_access_ok() {
+        assert_eq!(
+            *default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                        "WITH": {
+                            "DEFINITIONS": {
+                                "f": {
+                                    "ACCESS": ["x", "y"],
+                                    "COMPUTE": {"SUM": ["x", "y", 3]}
+                                }
+                            }
+                        },
+                        "COMPUTE": {
+                            "f": {"x": 1, "y": 2}
+                        }
+                    }))
+                    .unwrap(),
+                    &mut IncludesCache::default()
+                )
+                .unwrap(),
+            serde_json::from_value(json!(6)).unwrap()
+        );
+    }
+
+    #[test]
     fn test_recursive_normal() {
         assert_eq!(
             *default_interpreter()
@@ -517,19 +567,12 @@ mod tests {
                             },
                             "THEN": "_",
                             "ELSE": {
-                              "WITH": {
-                                "CONSTANTS": {
-                                  "x": "_"
-                                }
-                              },
-                              "COMPUTE": {
                                 "FIBONACCI": {
                                   "SUM": [
-                                    "x",
+                                    "_",
                                     -1
                                   ]
                                 }
-                              }
                             }
                           }
                         }
@@ -548,52 +591,54 @@ mod tests {
 
     #[test]
     fn test_recursive_error() {
-        assert!(default_interpreter()
-            .compute(
-                &serde_json::from_value(json!({
-                  "WITH": {
-                    "DEFINITIONS": {
-                      "FIBONACCI": {
-                        "IF": {
-                          "IS_SORTED": [
-                            "_",
-                            1
-                          ]
-                        },
-                        "THEN": "_",
-                        "ELSE": {
-                          "WITH": {
-                            "CONSTANTS": {
-                              "x": "_"
-                            }
-                          },
-                          "COMPUTE": {
-                            "SUM": [
-                              {
-                                "FIBONACCI": "lalala"
-                              },
-                              {
-                                "FIBONACCI": {
-                                  "SUM": [
-                                    "x",
-                                    -2
-                                  ]
+        assert!(
+            default_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                      "WITH": {
+                        "DEFINITIONS": {
+                          "FIBONACCI": {
+                            "IF": {
+                              "IS_SORTED": [
+                                "_",
+                                1
+                              ]
+                            },
+                            "THEN": "_",
+                            "ELSE": {
+                              "WITH": {
+                                "CONSTANTS": {
+                                  "x": "_"
                                 }
+                              },
+                              "COMPUTE": {
+                                "SUM": [
+                                  {
+                                    "FIBONACCI": "lalala"
+                                  },
+                                  {
+                                    "FIBONACCI": {
+                                      "SUM": [
+                                        "x",
+                                        -2
+                                      ]
+                                    }
+                                  }
+                                ]
                               }
-                            ]
+                            }
                           }
                         }
+                      },
+                      "COMPUTE": {
+                        "FIBONACCI": 10
                       }
-                    }
-                  },
-                  "COMPUTE": {
-                    "FIBONACCI": 10
-                  }
-                }))
-                .unwrap(),
-                &mut IncludesCache::default()
-            )
-            .is_err());
+                    }))
+                    .unwrap(),
+                    &mut IncludesCache::default()
+                )
+                .is_err()
+        );
     }
     #[test]
     fn test_recursive_long() {
@@ -607,148 +652,68 @@ mod tests {
                               "WITH": {
                                 "DEFINITIONS": {
                                   "FIBONACCI_1": {
-                                    "IF": {
-                                      "IS_SORTED": [
-                                        "_",
-                                        1
-                                      ]
-                                    },
-                                    "THEN": "_",
-                                    "ELSE": {
-                                      "WITH": {
-                                        "CONSTANTS": {
-                                          "x": "_"
-                                        }
-                                      },
+                                      "ACCESS": ["_", "FIBONACCI_2"],
                                       "COMPUTE": {
-                                        "SUM": [
-                                          {
-                                            "FIBONACCI_2": {
-                                              "SUM": [
-                                                "x",
-                                                -1
-                                              ]
-                                            }
-                                          },
-                                          {
-                                            "FIBONACCI_2": {
-                                              "SUM": [
-                                                "x",
-                                                -2
-                                              ]
-                                            }
-                                          }
-                                        ]
-                                      }
+                                        "IF": {
+                                          "IS_SORTED": [
+                                            "_",
+                                            1
+                                          ]
+                                        },
+                                        "THEN": "_",
+                                        "ELSE": {
+                                            "SUM": [
+                                              {
+                                                "FIBONACCI_2": {
+                                                  "SUM": [
+                                                    "_",
+                                                    -1
+                                                  ]
+                                                }
+                                              },
+                                              {
+                                                "FIBONACCI_2": {
+                                                  "SUM": [
+                                                    "_",
+                                                    -2
+                                                  ]
+                                                }
+                                              }
+                                            ]
+                                        }
                                     }
                                   },
                                   "FIBONACCI_2": {
-                                    "IF": {
-                                      "IS_SORTED": [
-                                        "_",
-                                        1
-                                      ]
-                                    },
-                                    "THEN": "_",
-                                    "ELSE": {
-                                      "WITH": {
-                                        "CONSTANTS": {
-                                          "x": "_"
+                                      "ACCESS": ["_", "FIBONACCI_1"],
+                                      "COMPUTE": {
+                                        "IF": {
+                                          "IS_SORTED": [
+                                            "_",
+                                            1
+                                          ]
+                                        },
+                                        "THEN": "_",
+                                        "ELSE": {
+                                            "SUM": [
+                                              {
+                                                "FIBONACCI_1": {
+                                                  "SUM": [
+                                                    "_",
+                                                    -1
+                                                  ]
+                                                }
+                                              },
+                                              {
+                                                "FIBONACCI_1": {
+                                                  "SUM": [
+                                                    "_",
+                                                    -2
+                                                  ]
+                                                }
+                                              }
+                                            ]
                                         }
                                       },
-                                      "COMPUTE": {
-                                        "SUM": [
-                                          {
-                                            "FIBONACCI_3": {
-                                              "SUM": [
-                                                "x",
-                                                -1
-                                              ]
-                                            }
-                                          },
-                                          {
-                                            "FIBONACCI_3": {
-                                              "SUM": [
-                                                "x",
-                                                -2
-                                              ]
-                                            }
-                                          }
-                                        ]
-                                      }
-                                    }
-                                  },
-                                  "FIBONACCI_3": {
-                                    "IF": {
-                                      "IS_SORTED": [
-                                        "_",
-                                        1
-                                      ]
-                                    },
-                                    "THEN": "_",
-                                    "ELSE": {
-                                      "WITH": {
-                                        "CONSTANTS": {
-                                          "x": "_"
-                                        }
-                                      },
-                                      "COMPUTE": {
-                                        "SUM": [
-                                          {
-                                            "FIBONACCI_4": {
-                                              "SUM": [
-                                                "x",
-                                                -1
-                                              ]
-                                            }
-                                          },
-                                          {
-                                            "FIBONACCI_4": {
-                                              "SUM": [
-                                                "x",
-                                                -2
-                                              ]
-                                            }
-                                          }
-                                        ]
-                                      }
-                                    }
-                                  },
-                                  "FIBONACCI_4": {
-                                    "IF": {
-                                      "IS_SORTED": [
-                                        "_",
-                                        1
-                                      ]
-                                    },
-                                    "THEN": "_",
-                                    "ELSE": {
-                                      "WITH": {
-                                        "CONSTANTS": {
-                                          "x": "_"
-                                        }
-                                      },
-                                      "COMPUTE": {
-                                        "SUM": [
-                                          {
-                                            "FIBONACCI_1": {
-                                              "SUM": [
-                                                "x",
-                                                -1
-                                              ]
-                                            }
-                                          },
-                                          {
-                                            "FIBONACCI_1": {
-                                              "SUM": [
-                                                "x",
-                                                -2
-                                              ]
-                                            }
-                                          }
-                                        ]
-                                      }
-                                    }
                                   }
                                 }
                               },

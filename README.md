@@ -131,7 +131,9 @@ WITH:
 COMPUTE:
   WITH:
     DEFINITIONS:
-      d: x
+      d:
+        ACCESS: [x]
+        COMPUTE: x
     CONSTANTS:
       x: 2
       c: x

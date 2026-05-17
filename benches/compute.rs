@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use dashu::Rational;
 use hiemal::{
     includes_cache::IncludesCache,

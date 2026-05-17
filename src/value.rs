@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use dashu::{Decimal, Rational};
 use serde::{
-    de::{self, Unexpected, Visitor},
     Deserializer,
+    de::{self, Unexpected, Visitor},
 };
 use std::str::FromStr;
 use url::Url;
@@ -77,9 +77,33 @@ where
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub struct ExtendedDefinition {
+    pub access: Rc<BTreeSet<String>>,
+    pub compute: RcOrValue,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(untagged)]
+pub enum Definition {
+    Extended(ExtendedDefinition),
+    Default(RcOrValue),
+}
+
+impl Definition {
+    pub fn rc_or_value(&self) -> &RcOrValue {
+        match self {
+            Definition::Extended(extended_definition) => &extended_definition.compute,
+            Definition::Default(default_definition) => default_definition,
+        }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct With {
     #[serde(default)]
-    pub definitions: BTreeMap<String, RcOrValue>,
+    pub definitions: BTreeMap<String, Definition>,
     #[serde(default)]
     pub constants: BTreeMap<String, RcOrValue>,
 }
@@ -240,11 +264,25 @@ impl Value {
     }
 }
 
-#[derive(Clone, serde::Deserialize, serde::Serialize, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Debug)]
 #[serde(untagged)]
 pub enum RcOrValue {
     Rc(Rc<Value>),
     Value(Value),
+}
+
+impl Clone for RcOrValue {
+    fn clone(&self) -> Self {
+        match self {
+            RcOrValue::Rc(rc) => RcOrValue::Rc(rc.clone()),
+            RcOrValue::Value(value) => match value {
+                Value::Number(_) | Value::String(_) | Value::Bool(_) | Value::Null => {
+                    RcOrValue::Value(value.clone())
+                }
+                complex_value => RcOrValue::Rc(Rc::new(complex_value.clone())),
+            },
+        }
+    }
 }
 
 impl PartialEq for RcOrValue {
@@ -259,18 +297,6 @@ impl PartialEq for RcOrValue {
 }
 
 impl RcOrValue {
-    pub fn clone_rc_if_complex_otherwise_value(&self) -> Self {
-        match self {
-            RcOrValue::Rc(rc) => RcOrValue::Rc(rc.clone()),
-            RcOrValue::Value(value) => match value {
-                Value::Number(_) | Value::String(_) | Value::Bool(_) | Value::Null => {
-                    RcOrValue::Value(value.clone())
-                }
-                complex_value => RcOrValue::Rc(Rc::new(complex_value.clone())),
-            },
-        }
-    }
-
     pub fn borrow_rc_if_complex_otherwise_value(self) -> Self {
         match self {
             RcOrValue::Rc(rc) => RcOrValue::Rc(rc),
