@@ -193,7 +193,9 @@ pub enum Value {
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 pub enum Include {
+    #[serde(rename = "include url")]
     IncludeUrl(Url),
+    #[serde(rename = "include file")]
     IncludeFile(std::path::PathBuf),
 }
 
