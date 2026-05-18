@@ -12,29 +12,29 @@ fn fibonacci(bencher_context: &mut Criterion) {
     let mut includes_cache = IncludesCache::default();
     for number in [20, 21, 22] {
         let program = serde_json::from_value::<ValueWithIncludes>(json!({
-            "WITH": {
-                "FUNCTIONS": {
-                    "FIBONACCI": {
-                        "IF": {
-                            "IS_SORTED": [
+            "with": {
+                "functions": {
+                    "fibonacci": {
+                        "if": {
+                            "is sorted": [
                                 "_",
                                 1
                             ]
                         },
-                        "THEN": "_",
-                        "ELSE": {
-                            "SUM": [
+                        "then": "_",
+                        "else": {
+                            "sum": [
                                 {
-                                    "FIBONACCI": {
-                                        "SUM": [
+                                    "fibonacci": {
+                                        "sum": [
                                             "_",
                                             -1
                                         ]
                                     }
                                 },
                                 {
-                                    "FIBONACCI": {
-                                        "SUM": [
+                                    "fibonacci": {
+                                        "sum": [
                                             "_",
                                             -2
                                         ]
@@ -45,8 +45,8 @@ fn fibonacci(bencher_context: &mut Criterion) {
                     }
                 }
             },
-            "COMPUTE": {
-                "FIBONACCI": number
+            "compute": {
+                "fibonacci": number
             }
         }))
         .unwrap();
@@ -63,11 +63,11 @@ fn factorial(bencher_context: &mut Criterion) {
     let correct_raw: u64 = (1..=number).product();
     let correct = Value::Number(Rational::from(correct_raw));
     let program = serde_json::from_value::<ValueWithIncludes>(json!({
-        "WITH": {
-            "FUNCTIONS": {
-                "FACTORIAL": {
-                    "PRODUCT": {
-                        "SEQUENCE": {
+        "with": {
+            "functions": {
+                "factorial": {
+                    "product": {
+                        "sequence": {
                             "from": 1,
                             "to": "_",
                             "step": 1
@@ -76,8 +76,8 @@ fn factorial(bencher_context: &mut Criterion) {
                 }
             }
         },
-        "COMPUTE": {
-            "FACTORIAL": number
+        "compute": {
+            "factorial": number
         }
     }))
     .unwrap();
