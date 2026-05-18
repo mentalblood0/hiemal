@@ -25,7 +25,6 @@ dashu = { version = "0.4.1", features = [
 [dev-dependencies]
 pretty_assertions = "1.4"
 criterion = "0.5"
-flamegraph = "0.6.12"
 
 [[bench]]
 name = "compute"
