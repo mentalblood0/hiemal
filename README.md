@@ -133,7 +133,7 @@ with:
       y: 2
 ```
 
-Definition is computed when and each time it is needed in `COMPUTE`
+Function is computed when and each time it is needed in `COMPUTE`
 
 Constant is computed once before `COMPUTE`
 
