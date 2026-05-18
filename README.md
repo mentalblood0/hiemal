@@ -145,7 +145,9 @@ Both functions and constants become available only in `COMPUTE`
 map: [1, 2, 3]
 as: x # may be omitted, defaulting to "_"
 through:
-  product: [x, 2]
+  product:
+    - constant: x
+    - 2
 ```
 
 #### filter as through
