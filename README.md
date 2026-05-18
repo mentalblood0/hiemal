@@ -44,16 +44,16 @@ hiemal examples/include.yml
 ### Embedded functions
 
 ```yaml
-- SUM: [1, 2, 3]
-- PRODUCT: [1, 2, 3]
-- LEN: abc
-- SIZE: [1, 2, 3]
-- IS_SORTED: [1, 2, 3]
-- ARE_EQUAL: [1, 2, 3]
-- ARE_EQUAL: [a, a, a]
-- ARE_EQUAL: [[1, 2], [1, 2], [1, 2]]
-- CONCAT: [ab, cd, efg]
-- SEQUENCE:
+- sum: [1, 2, 3]
+- product: [1, 2, 3]
+- len: abc
+- size: [1, 2, 3]
+- is sorted: [1, 2, 3]
+- are equal: [1, 2, 3]
+- are equal: [a, a, a]
+- are equal: [[1, 2], [1, 2], [1, 2]]
+- concat: [ab, cd, efg]
+- sequence:
     from: 1
     to: 9
     step: 2
@@ -63,26 +63,26 @@ Embedding new functions is quite easy, see [here](src/embedded_functions.rs)
 
 ### Clauses
 
-#### INCLUDE_FILE
+#### include file
 
 ```yaml
-INCLUDE_FILE: examples/factorial.yml
+include file: examples/factorial.yml
 ```
 
 Interpreter will insert contents of the file instead of this clause
 
-#### INCLUDE_URL
+#### include url
 
 ```yaml
-INCLUDE_URL: https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml
+include url: https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml
 ```
 
 Interpreter will insert contents of downloaded file instead of this clause
 
-#### CONSTANT
+#### constant
 
 ```yaml
-CONSTANT: x
+constant: x
 ```
 
 Gets value of already defined constant with given name
@@ -93,23 +93,23 @@ There is also shortcut to get constant with name "_", which is default for one-a
 _
 ```
 
-#### WITH FUNCTIONS CONSTANTS COMPUTE
+#### with functions constants compute
 
 ```yaml
-WITH:
-  FUNCTIONS: # may be omitted
-    FACTORIAL:
-      PRODUCT:
-        SEQUENCE:
+with:
+  functions: # may be omitted
+    factorial:
+      product:
+        sequence:
           from: 1
           to: _
           step: 1
-  CONSTANTS: # may be omitted
+  constants: # may be omitted
     x:
-      SUM: [2, 3]
-COMPUTE:
-  FACTORIAL:
-    CONSTANT: x
+      sum: [2, 3]
+compute:
+  factorial:
+    constant: x
 ```
 
 `_` is where defined function argument will be located if it is not object
@@ -117,17 +117,17 @@ COMPUTE:
 If function argument is object, it will be 'destructured':
 
 ```yaml
-WITH:
-  FUNCTIONS:
+with:
+  functions:
     f:
-      SUM:
-        - CONSTANT: x
-        - CONSTANT: y
-        - CONSTANT: z
+      sum:
+        - constant: x
+        - constant: y
+        - constant: z
         - 4
-  CONSTANTS:
+  constants:
     z: 3
-  COMPUTE:
+  compute:
     f:
       x: 1
       y: 2
@@ -139,67 +139,67 @@ Constant is computed once before `COMPUTE`
 
 Both functions and constants become available only in `COMPUTE`
 
-#### MAP AS THROUGH
+#### map as through
 
 ```yaml
-MAP: [1, 2, 3]
-AS: x # may be omitted, defaulting to "_"
-THROUGH:
-  PRODUCT: [x, 2]
+map: [1, 2, 3]
+as: x # may be omitted, defaulting to "_"
+through:
+  product: [x, 2]
 ```
 
-#### FILTER AS THROUGH
+#### filter as through
 
 ```yaml
-FILTER: [1, 2, 3]
-AS: x # may be omitted, defaulting to "_"
-THROUGH:
-  IS_SORTED:
-    - CONSTANT: x
+filter: [1, 2, 3]
+as: x # may be omitted, defaulting to "_"
+through:
+  is_sorted:
+    - constant: x
     - 2
 ```
 
-#### FOLD AS STARTING_WITH ACCUMULATING_IN THROUGH
+#### fold as starting_with accumulating_in through
 
 ```yaml
-FOLD: [1, 2, 3]
-AS: cur # may be omitted, defaulting to "current"
-STARTING_WITH: 0
-ACCUMULATING_IN: acc # may be omitted, defaulting to "accumulator"
-THROUGH:
-  SUM:
-    - CONSTANT: acc
-    - PRODUCT:
-      - CONSTANT: curr
-      - CONSTANT: curr
+fold: [1, 2, 3]
+as: cur # may be omitted, defaulting to "current"
+starting_with: 0
+accumulating_in: acc # may be omitted, defaulting to "accumulator"
+through:
+  sum:
+    - constant: acc
+    - product:
+      - constant: curr
+      - constant: curr
 ```
 
-#### IF THEN ELSE
+#### if then else
 
 ```yaml
-IF:
-  IS_SORTED:
+if:
+  is_sorted:
     [1, 3, 2]
-THEN: 1
-ELSE: 2
+then: 1
+else: 2
 ```
 
-#### FROM AT
+#### from at
 
 ```yaml
-FROM: {key: [a, b]}
-AT: [key, 1]
+from: {key: [a, b]}
+at: [key, 1]
 ```
 
-#### TRY OR WITH_ERROR
+#### try or with_error
 
 ```yaml
-TRY:
-  FROM: [a, b]
-  AT: [2]
-OR:
-  CONSTANT: err
-WITH_ERROR: err # may be omitted, defaulting to "error"
+try:
+  from: [a, b]
+  at: [2]
+or:
+  constant: err
+with_error: err # may be omitted, defaulting to "error"
 ```
 
 ### Composability

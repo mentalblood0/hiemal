@@ -1,14 +1,14 @@
-WITH:
-  FUNCTIONS:
-    FIBONACCI:
-      IF:
-        IS_SORTED: [_, 1]
-      THEN: _
-      ELSE:
-        SUM:
-          - FIBONACCI:
-              SUM: [_, -1]
-          - FIBONACCI:
-              SUM: [_, -2]
-COMPUTE:
-  FIBONACCI: 10
+with:
+  functions:
+    fibonacci:
+      if:
+        is sorted: [_, 1]
+      then: _
+      else:
+        sum:
+          - fibonacci:
+              sum: [_, -1]
+          - fibonacci:
+              sum: [_, -2]
+compute:
+  fibonacci: 10

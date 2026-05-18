@@ -3,8 +3,8 @@ use std::rc::Rc;
 
 use dashu::{Decimal, Rational};
 use serde::{
-    de::{self, Unexpected, Visitor},
     Deserializer,
+    de::{self, Unexpected, Visitor},
 };
 use std::str::FromStr;
 use url::Url;
@@ -78,13 +78,11 @@ where
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Constant {
     pub constant: String,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct With {
     #[serde(default)]
     pub functions: BTreeMap<String, Rc<Value>>,
@@ -93,7 +91,6 @@ pub struct With {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct WithCompute {
     pub with: With,
     pub compute: RcOrValue,
@@ -104,7 +101,6 @@ fn default_alias() -> String {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Map {
     pub map: RcOrValue,
     #[serde(default = "default_alias")]
@@ -113,7 +109,6 @@ pub struct Map {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Filter {
     pub filter: RcOrValue,
     #[serde(default = "default_alias")]
@@ -130,19 +125,21 @@ fn default_accumulator_value_alias() -> String {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Fold {
     pub fold: RcOrValue,
     #[serde(default = "default_current_value_alias")]
     pub r#as: String,
+    #[serde(rename = "starting with")]
     pub starting_with: RcOrValue,
-    #[serde(default = "default_accumulator_value_alias")]
+    #[serde(
+        rename = "accumulating in",
+        default = "default_accumulator_value_alias"
+    )]
     pub accumulating_in: String,
     pub through: RcOrValue,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Branching {
     pub r#if: RcOrValue,
     pub then: RcOrValue,
@@ -154,11 +151,10 @@ fn default_error_alias() -> String {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct TryOr {
     pub r#try: RcOrValue,
     pub or: RcOrValue,
-    #[serde(default = "default_error_alias")]
+    #[serde(rename = "with error", default = "default_error_alias")]
     pub with_error: String,
 }
 
@@ -170,7 +166,6 @@ pub enum AtSegment {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct FromAt {
     pub from: RcOrValue,
     pub at: Vec<AtSegment>,
@@ -197,7 +192,6 @@ pub enum Value {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Include {
     IncludeUrl(Url),
     IncludeFile(std::path::PathBuf),

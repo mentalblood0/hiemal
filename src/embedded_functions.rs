@@ -12,7 +12,7 @@ impl Default for Interpreter {
         Interpreter {
             embedded_functions: BTreeMap::from([
                 (
-                    "SUM".to_string(),
+                    "sum".to_string(),
                     Function {
                         argument_type: Type::Array(Box::new(Type::Number)),
                         return_type: Type::Number,
@@ -31,7 +31,7 @@ impl Default for Interpreter {
                     },
                 ),
                 (
-                    "PRODUCT".to_string(),
+                    "product".to_string(),
                     Function {
                         argument_type: Type::Array(Box::new(Type::Number)),
                         return_type: Type::Number,
@@ -50,7 +50,7 @@ impl Default for Interpreter {
                     },
                 ),
                 (
-                    "LEN".to_string(),
+                    "len".to_string(),
                     Function {
                         argument_type: Type::String,
                         return_type: Type::Number,
@@ -62,7 +62,7 @@ impl Default for Interpreter {
                     },
                 ),
                 (
-                    "SIZE".to_string(),
+                    "size".to_string(),
                     Function {
                         argument_type: Type::Array(Box::new(Type::GenericArgument(0))),
                         return_type: Type::Number,
@@ -74,7 +74,7 @@ impl Default for Interpreter {
                     },
                 ),
                 (
-                    "IS_SORTED".to_string(),
+                    "is sorted".to_string(),
                     Function {
                         argument_type: Type::Array(Box::new(Type::Number)),
                         return_type: Type::Bool,
@@ -91,7 +91,7 @@ impl Default for Interpreter {
                     },
                 ),
                 (
-                    "ARE_EQUAL".to_string(),
+                    "are equal".to_string(),
                     Function {
                         argument_type: Type::Array(Box::new(Type::GenericArgument(0))),
                         return_type: Type::Bool,
@@ -106,7 +106,7 @@ impl Default for Interpreter {
                     },
                 ),
                 (
-                    "CONCAT".to_string(),
+                    "concat".to_string(),
                     Function {
                         argument_type: Type::Array(Box::new(Type::String)),
                         return_type: Type::String,
@@ -129,7 +129,7 @@ impl Default for Interpreter {
                     },
                 ),
                 (
-                    "SEQUENCE".to_string(),
+                    "sequence".to_string(),
                     Function {
                         argument_type: Type::Object(BTreeMap::from([
                             ("from".to_string(), Type::Number),
