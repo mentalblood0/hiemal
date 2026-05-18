@@ -118,30 +118,6 @@ If function argument is object, it will be 'destructured':
 
 ```yaml
 WITH:
-  FUNCTIONS: # may be omitted
-    FACTORIAL:
-      PRODUCT:
-        SEQUENCE:
-          from: 1
-          to: _
-          step: 1
-  CONSTANTS: # may be omitted
-    x:
-      SUM: [2, 3]
-COMPUTE:
-  FACTORIAL:
-    _:
-      CONSTANT: x
-```
-
-Definition is computed when and each time it is needed in `COMPUTE`
-
-Constant is computed once before `COMPUTE`
-
-Both functions and constants become available only in `COMPUTE`
-
-```yaml
-WITH:
   FUNCTIONS:
     f:
       SUM:
@@ -156,6 +132,12 @@ WITH:
       x: 1
       y: 2
 ```
+
+Definition is computed when and each time it is needed in `COMPUTE`
+
+Constant is computed once before `COMPUTE`
+
+Both functions and constants become available only in `COMPUTE`
 
 #### MAP AS THROUGH
 
