@@ -114,7 +114,7 @@ compute:
 
 `_` is where defined function argument will be located if it is not object
 
-If function argument is object, it will be 'destructured':
+If function argument is object with more then one key, it will be 'destructured' and it's key-value pairs will be treated as constants names and compute bodies:
 
 ```yaml
 with:
