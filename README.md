@@ -154,18 +154,18 @@ through:
 filter: [1, 2, 3]
 as: x # may be omitted, defaulting to "_"
 through:
-  is_sorted:
+  is sorted:
     - constant: x
     - 2
 ```
 
-#### fold as starting_with accumulating_in through
+#### fold as starting with accumulating in through
 
 ```yaml
 fold: [1, 2, 3]
 as: cur # may be omitted, defaulting to "current"
-starting_with: 0
-accumulating_in: acc # may be omitted, defaulting to "accumulator"
+starting with: 0
+accumulating in: acc # may be omitted, defaulting to "accumulator"
 through:
   sum:
     - constant: acc
@@ -178,7 +178,7 @@ through:
 
 ```yaml
 if:
-  is_sorted:
+  is sorted:
     [1, 3, 2]
 then: 1
 else: 2
@@ -191,7 +191,7 @@ from: {key: [a, b]}
 at: [key, 1]
 ```
 
-#### try or with_error
+#### try or with error
 
 ```yaml
 try:
@@ -199,7 +199,7 @@ try:
   at: [2]
 or:
   constant: err
-with_error: err # may be omitted, defaulting to "error"
+with error: err # may be omitted, defaulting to "error"
 ```
 
 ### Composability
