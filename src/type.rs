@@ -9,5 +9,5 @@ pub enum Type {
     Array(Box<Type>),
     Object(BTreeMap<String, Type>),
     GenericArgument(u8),
-    RecursedAlias(String),
+    RecursedFunction(String),
 }

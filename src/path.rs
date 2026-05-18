@@ -1,7 +1,9 @@
 #[derive(Debug)]
 pub enum PathSegment {
     ObjectKey(String),
-    Alias(String),
+    Constant(String),
+    Function(String),
+    Argument(String),
     EmbeddedFunction(String),
     ArrayIndex(usize),
     With,

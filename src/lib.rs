@@ -1,3 +1,4 @@
+pub mod default_argument_name;
 pub mod embedded_functions;
 pub mod function;
 pub mod includes_cache;
@@ -94,7 +95,7 @@ mod tests {
                         "SUM": [
                             {
                                 "WITH": {"CONSTANTS": {"x": 2, "y": 3}},
-                                "COMPUTE": {"PRODUCT": ["x", "x", "y"]}
+                                "COMPUTE": {"PRODUCT": [{"CONSTANT": "x"}, {"CONSTANT": "x"}, {"CONSTANT": "y"}]}
                             },
                             {"LEN": {"CONCAT": ["lala", "lolo"]}},
                             4
@@ -109,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn test_user_functions_definitions() {
+    fn test_user_functions() {
         assert_eq!(
             *default_interpreter()
                 .compute(
@@ -117,7 +118,7 @@ mod tests {
                         "SUM": [
                             {
                                 "WITH": {
-                                    "DEFINITIONS": {
+                                    "FUNCTIONS": {
                                         "SQUARE": {"PRODUCT": ["_", "_"]},
                                     },
                                     "CONSTANTS": {
@@ -131,7 +132,7 @@ mod tests {
                                             "SQUARE": {
                                                 "PRODUCT": [
                                                     {"SQUARE": 1},
-                                                    {"SUM": ["y", -1]}
+                                                    {"SUM": [{"CONSTANT": "y"}, -1]}
                                                 ]
                                             }
                                         }
@@ -209,8 +210,8 @@ mod tests {
                                 2,
                                 1
                             ],
-                            "AS_ALIAS": "x",
-                            "THROUGH": {"IS_SORTED": ["x", 2]}
+                            "AS": "x",
+                            "THROUGH": {"IS_SORTED": [{"CONSTANT": "x"}, 2]}
                         }
                     }))
                     .unwrap(),
@@ -235,8 +236,8 @@ mod tests {
                         "STARTING_WITH": 0,
                         "THROUGH": {
                             "SUM": [
-                                "accumulator",
-                                {"PRODUCT": ["current", "current"]}
+                                {"CONSTANT": "accumulator"},
+                                {"PRODUCT": [{"CONSTANT": "current"}, {"CONSTANT": "current"}]}
                             ]
                         }
                     }))
@@ -255,7 +256,7 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                         "WITH": {
-                            "DEFINITIONS": {
+                            "FUNCTIONS": {
                                 "FACTORIAL": {
                                     "PRODUCT": {
                                         "SEQUENCE": {
@@ -276,29 +277,6 @@ mod tests {
                 )
                 .unwrap(),
             serde_json::from_value(json!(120)).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_definitions_vs_constants() {
-        assert_eq!(
-            *default_interpreter()
-                .compute(
-                    &serde_json::from_value(json!({
-                        "WITH": {"CONSTANTS": {"x": 1}},
-                        "COMPUTE": {
-                            "WITH": {
-                                "DEFINITIONS": {"definition": {"ACCESS": ["x"], "COMPUTE": "x"}},
-                                "CONSTANTS": {"x": 2, "constant": "x"}
-                            },
-                            "COMPUTE": ["definition", "constant"]
-                        }
-                    }))
-                    .unwrap(),
-                    &mut IncludesCache::default()
-                )
-                .unwrap(),
-            serde_json::from_value(json!([2, 1])).unwrap()
         );
     }
 
@@ -327,7 +305,7 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                         "TRY": {"FROM": ["a", "b"], "AT": [2]},
-                        "OR": "error",
+                        "OR": {"CONSTANT": "error"},
                     }))
                     .unwrap(),
                     &mut IncludesCache::default()
@@ -399,7 +377,7 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                         "TRY": {"FROM": ["a", "b"], "AT": [2]},
-                        "OR": "error",
+                        "OR": {"CONSTANT": "error"},
                     }))
                     .unwrap(),
                     &mut IncludesCache::default()
@@ -414,33 +392,33 @@ mod tests {
     }
 
     #[test]
-    fn test_arguments() {
+    fn test_arguments_local() {
         assert_eq!(
             *default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "WITH": {
-                            "DEFINITIONS": {
-                                "F1": {
+                            "FUNCTIONS": {
+                                "f1": {
                                     "SUM": ["_", 1]
                                 },
-                                "F2": {
+                                "f2": {
                                     "SUM": ["_", 2]
                                 },
-                                "F3": {
+                                "f3": {
                                     "SUM": ["_", 3]
                                 },
-                                "F": {
-                                    "F1": {
-                                        "F2": {
-                                            "F3": "_"
+                                "f": {
+                                    "f1": {
+                                        "f2": {
+                                            "f3": "_"
                                         }
                                     }
                                 }
                             }
                         },
                         "COMPUTE": {
-                            "F": 0
+                            "f": 0
                         }
                     }))
                     .unwrap(),
@@ -452,43 +430,28 @@ mod tests {
     }
 
     #[test]
-    fn test_access_error() {
-        assert!(
-            default_interpreter()
-                .compute(
-                    &serde_json::from_value(json!({
-                        "WITH": {
-                            "DEFINITIONS": {
-                                "f": {"SUM": ["x", "y", 3]}
-                            }
-                        },
-                        "COMPUTE": {
-                            "f": {"x": 1, "y": 2}
-                        }
-                    }))
-                    .unwrap(),
-                    &mut IncludesCache::default()
-                )
-                .is_err(),
-        );
-    }
-
-    #[test]
-    fn test_access_arguments_ok() {
+    fn test_arguments_nonlocal() {
         assert_eq!(
             *default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "WITH": {
-                            "DEFINITIONS": {
+                            "FUNCTIONS": {
                                 "f": {
-                                    "ACCESS": ["x", "y"],
-                                    "COMPUTE": {"SUM": ["x", "y", 3]}
-                                }
+                                    "SUM": [{"CONSTANT": "x"}, "_", 3]
+                                },
+                            },
+                            "CONSTANTS": {
+                                "x": 1
                             }
                         },
                         "COMPUTE": {
-                            "f": {"x": 1, "y": 2}
+                            "f": {
+                                "f": {
+                                    "x": 0,
+                                    "_": -1
+                                }
+                            }
                         }
                     }))
                     .unwrap(),
@@ -496,63 +459,6 @@ mod tests {
                 )
                 .unwrap(),
             serde_json::from_value(json!(6)).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_access_nonlocal_error() {
-        assert!(
-            default_interpreter()
-                .compute(
-                    &serde_json::from_value(json!({
-                        "WITH": {
-                            "DEFINITIONS": {
-                                "f": {
-                                    "ACCESS": ["x", "y"],
-                                    "COMPUTE": {"SUM": ["x", "y", "z", 4]}
-                                }
-                            },
-                            "CONSTANTS": {
-                                "z": 3
-                            }
-                        },
-                        "COMPUTE": {
-                            "f": {"x": 1, "y": 2}
-                        }
-                    }))
-                    .unwrap(),
-                    &mut IncludesCache::default()
-                )
-                .is_err(),
-        );
-    }
-
-    #[test]
-    fn test_access_nonlocal_ok() {
-        assert_eq!(
-            *default_interpreter()
-                .compute(
-                    &serde_json::from_value(json!({
-                        "WITH": {
-                            "DEFINITIONS": {
-                                "f": {
-                                    "ACCESS": ["x", "y", "z"],
-                                    "COMPUTE": {"SUM": ["x", "y", "z", 4]}
-                                }
-                            },
-                            "CONSTANTS": {
-                                "z": 3
-                            }
-                        },
-                        "COMPUTE": {
-                            "f": {"x": 1, "y": 2}
-                        }
-                    }))
-                    .unwrap(),
-                    &mut IncludesCache::default()
-                )
-                .unwrap(),
-            serde_json::from_value(json!(10)).unwrap()
         );
     }
 
@@ -563,7 +469,7 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                       "WITH": {
-                        "DEFINITIONS": {
+                        "FUNCTIONS": {
                           "FIBONACCI": {
                             "IF": {
                               "IS_SORTED": [
@@ -614,7 +520,7 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                       "WITH": {
-                        "DEFINITIONS": {
+                        "FUNCTIONS": {
                           "FIBONACCI": {
                             "IF": {
                               "IS_SORTED": [
@@ -653,7 +559,7 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                       "WITH": {
-                        "DEFINITIONS": {
+                        "FUNCTIONS": {
                           "FIBONACCI": {
                             "IF": {
                               "IS_SORTED": [
@@ -707,70 +613,64 @@ mod tests {
                         .compute(
                             &serde_json::from_value(json!({
                               "WITH": {
-                                "DEFINITIONS": {
+                                "FUNCTIONS": {
                                   "FIBONACCI_1": {
-                                      "ACCESS": ["_", "FIBONACCI_2"],
-                                      "COMPUTE": {
-                                        "IF": {
-                                          "IS_SORTED": [
-                                            "_",
-                                            1
-                                          ]
-                                        },
-                                        "THEN": "_",
-                                        "ELSE": {
-                                            "SUM": [
-                                              {
-                                                "FIBONACCI_2": {
-                                                  "SUM": [
-                                                    "_",
-                                                    -1
-                                                  ]
-                                                }
-                                              },
-                                              {
-                                                "FIBONACCI_2": {
-                                                  "SUM": [
-                                                    "_",
-                                                    -2
-                                                  ]
-                                                }
-                                              }
-                                            ]
-                                        }
+                                    "IF": {
+                                      "IS_SORTED": [
+                                        "_",
+                                        1
+                                      ]
+                                    },
+                                    "THEN": "_",
+                                    "ELSE": {
+                                        "SUM": [
+                                          {
+                                            "FIBONACCI_2": {
+                                              "SUM": [
+                                                "_",
+                                                -1
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "FIBONACCI_2": {
+                                              "SUM": [
+                                                "_",
+                                                -2
+                                              ]
+                                            }
+                                          }
+                                        ]
                                     }
                                   },
                                   "FIBONACCI_2": {
-                                      "ACCESS": ["_", "FIBONACCI_1"],
-                                      "COMPUTE": {
-                                        "IF": {
-                                          "IS_SORTED": [
-                                            "_",
-                                            1
-                                          ]
-                                        },
-                                        "THEN": "_",
-                                        "ELSE": {
-                                            "SUM": [
-                                              {
-                                                "FIBONACCI_1": {
-                                                  "SUM": [
-                                                    "_",
-                                                    -1
-                                                  ]
-                                                }
-                                              },
-                                              {
-                                                "FIBONACCI_1": {
-                                                  "SUM": [
-                                                    "_",
-                                                    -2
-                                                  ]
-                                                }
-                                              }
-                                            ]
-                                        }
-                                      },
+                                    "IF": {
+                                      "IS_SORTED": [
+                                        "_",
+                                        1
+                                      ]
+                                    },
+                                    "THEN": "_",
+                                    "ELSE": {
+                                        "SUM": [
+                                          {
+                                            "FIBONACCI_1": {
+                                              "SUM": [
+                                                "_",
+                                                -1
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "FIBONACCI_1": {
+                                              "SUM": [
+                                                "_",
+                                                -2
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                    }
                                   }
                                 }
                               },

@@ -1,13 +1,15 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use dashu::{Decimal, Rational};
 use serde::{
-    Deserializer,
     de::{self, Unexpected, Visitor},
+    Deserializer,
 };
 use std::str::FromStr;
 use url::Url;
+
+use crate::default_argument_name::DEFAULT_ARGUMENT_NAME;
 
 pub type SmallMap<K, V> = small_map::FxSmallMap<32, K, V>;
 
@@ -77,33 +79,15 @@ where
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub struct ExtendedDefinition {
-    pub access: Rc<BTreeSet<String>>,
-    pub compute: RcOrValue,
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[serde(untagged)]
-pub enum Definition {
-    Extended(ExtendedDefinition),
-    Default(RcOrValue),
-}
-
-impl Definition {
-    pub fn rc_or_value(&self) -> &RcOrValue {
-        match self {
-            Definition::Extended(extended_definition) => &extended_definition.compute,
-            Definition::Default(default_definition) => default_definition,
-        }
-    }
+pub struct Constant {
+    pub constant: String,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct With {
     #[serde(default)]
-    pub definitions: BTreeMap<String, Definition>,
+    pub functions: BTreeMap<String, Rc<Value>>,
     #[serde(default)]
     pub constants: BTreeMap<String, RcOrValue>,
 }
@@ -116,7 +100,7 @@ pub struct WithCompute {
 }
 
 fn default_alias() -> String {
-    "_".to_string()
+    DEFAULT_ARGUMENT_NAME.to_string()
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -124,7 +108,7 @@ fn default_alias() -> String {
 pub struct Map {
     pub map: RcOrValue,
     #[serde(default = "default_alias")]
-    pub as_alias: String,
+    pub r#as: String,
     pub through: RcOrValue,
 }
 
@@ -133,7 +117,7 @@ pub struct Map {
 pub struct Filter {
     pub filter: RcOrValue,
     #[serde(default = "default_alias")]
-    pub as_alias: String,
+    pub r#as: String,
     pub through: RcOrValue,
 }
 
@@ -150,10 +134,10 @@ fn default_accumulator_value_alias() -> String {
 pub struct Fold {
     pub fold: RcOrValue,
     #[serde(default = "default_current_value_alias")]
-    pub as_alias: String,
+    pub r#as: String,
     pub starting_with: RcOrValue,
     #[serde(default = "default_accumulator_value_alias")]
-    pub accumulating_in_alias: String,
+    pub accumulating_in: String,
     pub through: RcOrValue,
 }
 
@@ -175,7 +159,7 @@ pub struct TryOr {
     pub r#try: RcOrValue,
     pub or: RcOrValue,
     #[serde(default = "default_error_alias")]
-    pub with_error_alias: String,
+    pub with_error: String,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -201,6 +185,7 @@ pub enum Value {
     Bool(bool),
     Null,
     Array(Vec<RcOrValue>),
+    Constant(Constant),
     With(Box<WithCompute>),
     Map(Box<Map>),
     Filter(Box<Filter>),

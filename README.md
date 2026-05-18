@@ -79,33 +79,25 @@ INCLUDE_URL: https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/ma
 
 Interpreter will insert contents of downloaded file instead of this clause
 
-#### WITH DEFINITIONS CONSTANTS COMPUTE
+#### CONSTANT
 
 ```yaml
-WITH:
-  DEFINITIONS: # may be omitted
-    FACTORIAL:
-      ACCESS: [_] # may be omitted together with COMPUTE key, leaving only COMPUTE value
-      COMPUTE:
-        PRODUCT:
-          SEQUENCE:
-            from: 1
-            to: _
-            step: 1
-  CONSTANTS: # may be omitted
-    x:
-      SUM: [2, 3]
-COMPUTE:
-  FACTORIAL: x
+CONSTANT: x
 ```
 
-`_` is where defined function argument will be located if it is not object
+Gets value of already defined constant with given name
 
-If function argument is object, it will be 'destructured':
+There is also shortcut to get constant with name "_", which is default for one-argument function calls:
+
+```yaml
+_
+```
+
+#### WITH FUNCTIONS CONSTANTS COMPUTE
 
 ```yaml
 WITH:
-  DEFINITIONS: # may be omitted
+  FUNCTIONS: # may be omitted
     FACTORIAL:
       PRODUCT:
         SEQUENCE:
@@ -117,52 +109,46 @@ WITH:
       SUM: [2, 3]
 COMPUTE:
   FACTORIAL:
-    _: x
+    CONSTANT: x
+```
+
+`_` is where defined function argument will be located if it is not object
+
+If function argument is object, it will be 'destructured':
+
+```yaml
+WITH:
+  FUNCTIONS: # may be omitted
+    FACTORIAL:
+      PRODUCT:
+        SEQUENCE:
+          from: 1
+          to: _
+          step: 1
+  CONSTANTS: # may be omitted
+    x:
+      SUM: [2, 3]
+COMPUTE:
+  FACTORIAL:
+    _:
+      CONSTANT: x
 ```
 
 Definition is computed when and each time it is needed in `COMPUTE`
 
 Constant is computed once before `COMPUTE`
 
-Both definitions and constants become available only in `COMPUTE`
-
-`ACCESS` key in definition is used to specify what function have access to. By default function have access only to "_" and self, e.g. the following program won't pass type checking:
+Both functions and constants become available only in `COMPUTE`
 
 ```yaml
 WITH:
-  DEFINITIONS:
+  FUNCTIONS:
     f:
-      SUM: [x, y, 3]
-  COMPUTE:
-    f:
-      x: 1
-      y: 2
-```
-
-but this one will:
-
-```yaml
-WITH:
-  DEFINITIONS:
-    f:
-      ACCESS: [x, y]
-      COMPUTE:
-        SUM: [x, y, 3]
-  COMPUTE:
-    f:
-      x: 1
-      y: 2
-```
-
-Function may access not only directly provided arguments, but also something from outer scope:
-
-```yaml
-WITH:
-  DEFINITIONS:
-    f:
-      ACCESS: [x, y, z]
-      COMPUTE:
-        SUM: [x, y, z, 4]
+      SUM:
+        - CONSTANT: x
+        - CONSTANT: y
+        - CONSTANT: z
+        - 4
   CONSTANTS:
     z: 3
   COMPUTE:
@@ -171,35 +157,39 @@ WITH:
       y: 2
 ```
 
-#### MAP AS_ALIAS THROUGH
+#### MAP AS THROUGH
 
 ```yaml
 MAP: [1, 2, 3]
-AS_ALIAS: x # may be omitted, defaulting to "_"
+AS: x # may be omitted, defaulting to "_"
 THROUGH:
   PRODUCT: [x, 2]
 ```
 
-#### FILTER AS_ALIAS THROUGH
+#### FILTER AS THROUGH
 
 ```yaml
 FILTER: [1, 2, 3]
-AS_ALIAS: x # may be omitted, defaulting to "_"
+AS: x # may be omitted, defaulting to "_"
 THROUGH:
-  IS_SORTED: [x, 2]
+  IS_SORTED:
+    - CONSTANT: x
+    - 2
 ```
 
-#### FOLD AS_ALIAS STARTING_WITH ACCUMULATING_IN_ALIAS THROUGH
+#### FOLD AS STARTING_WITH ACCUMULATING_IN THROUGH
 
 ```yaml
 FOLD: [1, 2, 3]
-AS_ALIAS: cur # may be omitted, defaulting to "current"
+AS: cur # may be omitted, defaulting to "current"
 STARTING_WITH: 0
-ACCUMULATING_IN_ALIAS: acc # may be omitted, defaulting to "accumulator"
+ACCUMULATING_IN: acc # may be omitted, defaulting to "accumulator"
 THROUGH:
   SUM:
-    - acc
-    - PRODUCT: [curr, curr]
+    - CONSTANT: acc
+    - PRODUCT:
+      - CONSTANT: curr
+      - CONSTANT: curr
 ```
 
 #### IF THEN ELSE
@@ -219,14 +209,15 @@ FROM: {key: [a, b]}
 AT: [key, 1]
 ```
 
-#### TRY OR WITH_ERROR_ALIAS
+#### TRY OR WITH_ERROR
 
 ```yaml
 TRY:
   FROM: [a, b]
   AT: [2]
-OR: err
-WITH_ERROR_ALIAS: err # may be omitted, defaulting to "error"
+OR:
+  CONSTANT: err
+WITH_ERROR: err # may be omitted, defaulting to "error"
 ```
 
 ### Composability

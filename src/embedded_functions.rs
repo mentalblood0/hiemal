@@ -10,7 +10,7 @@ use dashu::Rational;
 impl Default for Interpreter {
     fn default() -> Interpreter {
         Interpreter {
-            supported_functions: BTreeMap::from([
+            embedded_functions: BTreeMap::from([
                 (
                     "SUM".to_string(),
                     Function {
