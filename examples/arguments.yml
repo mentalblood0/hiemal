@@ -1,5 +1,5 @@
 WITH:
-  DEFINITIONS:
+  FUNCTIONS:
     F1:
       SUM: [_, 1]
     F2:

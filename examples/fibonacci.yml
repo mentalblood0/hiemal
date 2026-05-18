@@ -1,5 +1,5 @@
 WITH:
-  DEFINITIONS:
+  FUNCTIONS:
     FIBONACCI:
       IF:
         IS_SORTED: [_, 1]
