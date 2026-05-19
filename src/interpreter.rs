@@ -207,8 +207,8 @@ impl TypeCheckingContext {
 #[derive(Clone, Debug)]
 pub struct ComputationContext {
     pub path: rpds::Vector<PathSegment>,
-    pub functions: rpds::HashTrieMap<String, Rc<Value>>,
-    pub constants: rpds::HashTrieMap<String, RcOrValue>,
+    pub functions: rpds::RedBlackTreeMap<String, Rc<Value>>,
+    pub constants: rpds::RedBlackTreeMap<String, RcOrValue>,
 }
 
 impl ComputationContext {
@@ -257,8 +257,8 @@ impl Interpreter {
                 &RcOrValue::Rc(program),
                 &ComputationContext {
                     path: rpds::Vector::new(),
-                    functions: rpds::HashTrieMap::new(),
-                    constants: rpds::HashTrieMap::new(),
+                    functions: rpds::RedBlackTreeMap::new(),
+                    constants: rpds::RedBlackTreeMap::new(),
                 },
             )? {
                 RcOrValue::Rc(rc) => rc,
@@ -370,8 +370,17 @@ impl Interpreter {
             Value::With(with_clause) => {
                 let constants_bodies_context =
                     context.extended([PathSegment::With, PathSegment::Constants], [], []);
-                let mut precomputed_constants =
-                    Vec::with_capacity(with_clause.with.constants.len());
+                let mut compute_context = context.extended(
+                    [PathSegment::With, PathSegment::Compute],
+                    with_clause
+                        .with
+                        .functions
+                        .iter()
+                        .map(|(function_name, function_body)| {
+                            (function_name.clone(), function_body.clone())
+                        }),
+                    [],
+                );
                 for (constant_name, constant_compute_body) in with_clause.with.constants.iter() {
                     let precomputed_value = self.compute_with_context(
                         &constant_compute_body,
@@ -381,21 +390,11 @@ impl Interpreter {
                             [],
                         ),
                     )?;
-                    precomputed_constants.push((constant_name.clone(), precomputed_value));
+                    compute_context
+                        .constants
+                        .insert_mut(constant_name.clone(), precomputed_value);
                 }
-                let result =
-                    self.compute_with_context(
-                        &with_clause.compute,
-                        &context.extended(
-                            [PathSegment::Compute],
-                            with_clause.with.functions.iter().map(
-                                |(function_name, function_body)| {
-                                    (function_name.clone(), function_body.clone())
-                                },
-                            ),
-                            precomputed_constants,
-                        ),
-                    )?;
+                let result = self.compute_with_context(&with_clause.compute, &compute_context)?;
                 result
             }
             Value::Map(map_clause) => {
@@ -573,53 +572,37 @@ impl Interpreter {
             Value::Object(object) => {
                 if object.len() == 1 {
                     let (function_name, argument) = object.iter().next().unwrap();
+                    let arguments_bodies_context =
+                        context.extended([PathSegment::Function(function_name.clone())], [], []);
                     if let Some(function_body) = context.functions.get(function_name).cloned() {
-                        let mut function_context = context.extended(
-                            [PathSegment::Function(function_name.clone())],
-                            [].into_iter(),
-                            [].into_iter(),
-                        );
+                        let mut compute_context = arguments_bodies_context.clone();
                         if let Value::Object(arguments) = argument.value()
                             && arguments.len() > 1
                         {
-                            let mut precomputed_arguments = Vec::with_capacity(arguments.len());
                             for (argument_name, argument_compute_body) in arguments.iter() {
-                                precomputed_arguments.push((
+                                compute_context.constants.insert_mut(
                                     argument_name.clone(),
                                     self.compute_with_context(
                                         argument_compute_body,
-                                        &function_context.extended(
+                                        &arguments_bodies_context.extended(
                                             [PathSegment::Argument(argument_name.clone())],
-                                            [].into_iter(),
-                                            [].into_iter(),
+                                            [],
+                                            [],
                                         ),
                                     )?,
-                                ));
-                            }
-                            for precomputed_argument in precomputed_arguments {
-                                function_context
-                                    .constants
-                                    .insert_mut(precomputed_argument.0, precomputed_argument.1);
+                                );
                             }
                         } else {
-                            function_context.constants.insert_mut(
+                            compute_context.constants.insert_mut(
                                 DEFAULT_ARGUMENT_NAME.to_string(),
-                                self.compute_with_context(argument, &function_context)?,
+                                self.compute_with_context(argument, &arguments_bodies_context)?,
                             );
                         }
-                        return self.compute_with_context(
-                            &RcOrValue::Rc(function_body),
-                            &function_context,
-                        );
+                        return self
+                            .compute_with_context(&RcOrValue::Rc(function_body), &compute_context);
                     } else if let Some(function) = self.embedded_functions.get(function_name) {
-                        let function_arguments = self.compute_with_context(
-                            &argument,
-                            &context.extended(
-                                [PathSegment::EmbeddedFunction(function_name.clone())],
-                                [].into_iter(),
-                                [].into_iter(),
-                            ),
-                        )?;
+                        let function_arguments =
+                            self.compute_with_context(&argument, &arguments_bodies_context)?;
                         return (function.function)(function_arguments);
                     }
                 }
@@ -629,11 +612,7 @@ impl Interpreter {
                         key.clone(),
                         self.compute_with_context(
                             value_compute_body,
-                            &context.extended(
-                                [PathSegment::ObjectKey(key.clone())],
-                                [].into_iter(),
-                                [].into_iter(),
-                            ),
+                            &context.extended([PathSegment::ObjectKey(key.clone())], [], []),
                         )?,
                     ));
                 }
