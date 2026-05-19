@@ -255,7 +255,7 @@ impl Interpreter {
         Ok(
             match self.compute_with_context(
                 &RcOrValue::Rc(program),
-                &ComputationContext {
+                ComputationContext {
                     path: rpds::Vector::new(),
                     functions: rpds::RedBlackTreeMap::new(),
                     constants: rpds::RedBlackTreeMap::new(),
@@ -359,7 +359,7 @@ impl Interpreter {
     fn compute_with_context(
         &self,
         program: &RcOrValue,
-        context: &ComputationContext,
+        context: ComputationContext,
     ) -> Result<RcOrValue> {
         Ok(match program.value() {
             Value::Constant(constant_clause) => context
@@ -384,7 +384,7 @@ impl Interpreter {
                 for (constant_name, constant_compute_body) in with_clause.with.constants.iter() {
                     let precomputed_value = self.compute_with_context(
                         &constant_compute_body,
-                        &constants_bodies_context.extended(
+                        constants_bodies_context.extended(
                             [PathSegment::Constant(constant_name.clone())],
                             [],
                             [],
@@ -394,67 +394,58 @@ impl Interpreter {
                         .constants
                         .insert_mut(constant_name.clone(), precomputed_value);
                 }
-                let result = self.compute_with_context(&with_clause.compute, &compute_context)?;
+                let result = self.compute_with_context(&with_clause.compute, compute_context)?;
                 result
             }
             Value::Map(map_clause) => {
                 let array = self
-                    .compute_with_context(&map_clause.map, context)?
+                    .compute_with_context(&map_clause.map, context.clone())?
                     .as_array()
                     .unwrap()
                     .clone();
                 let mut result = Vec::with_capacity(array.len());
-                let elements_bodies_context = context.extended([PathSegment::Map], [], []);
                 for (element_index, element_compute_body) in array.into_iter().enumerate() {
-                    let element_body_context = elements_bodies_context.extended(
-                        [PathSegment::ArrayIndex(element_index)],
+                    let element_body_context = context.extended(
+                        [PathSegment::Map, PathSegment::ArrayIndex(element_index)],
                         [],
                         [],
                     );
                     let precomputed_element =
-                        self.compute_with_context(&element_compute_body, &element_body_context)?;
-                    result.push(
-                        self.compute_with_context(
-                            &map_clause.through,
-                            &ComputationContext {
-                                path: element_body_context.path.push_back(PathSegment::Through),
-                                functions: element_body_context.functions,
-                                constants: element_body_context
-                                    .constants
-                                    .insert(map_clause.r#as.clone(), precomputed_element),
-                            },
-                        )?,
-                    );
+                        self.compute_with_context(&element_compute_body, element_body_context)?;
+                    result.push(self.compute_with_context(
+                        &map_clause.through,
+                        context.extended(
+                            [PathSegment::Through],
+                            [],
+                            [(map_clause.r#as.clone(), precomputed_element)],
+                        ),
+                    )?);
                 }
                 RcOrValue::Value(Value::Array(result))
             }
             Value::Filter(filter_clause) => {
                 let array = self
-                    .compute_with_context(&filter_clause.filter, context)?
+                    .compute_with_context(&filter_clause.filter, context.clone())?
                     .as_array()
                     .unwrap()
                     .clone();
                 let mut result = Vec::with_capacity(array.len());
-                let elements_bodies_context = context.extended([PathSegment::Filter], [], []);
                 for (element_index, element_compute_body) in array.into_iter().enumerate() {
-                    let element_body_context = elements_bodies_context.extended(
-                        [PathSegment::ArrayIndex(element_index)],
+                    let element_body_context = context.extended(
+                        [PathSegment::Filter, PathSegment::ArrayIndex(element_index)],
                         [],
                         [],
                     );
                     let precomputed_element =
-                        self.compute_with_context(&element_compute_body, &element_body_context)?;
+                        self.compute_with_context(&element_compute_body, element_body_context)?;
                     if self
                         .compute_with_context(
                             &filter_clause.through,
-                            &ComputationContext {
-                                path: element_body_context.path.push_back(PathSegment::Through),
-                                functions: element_body_context.functions,
-                                constants: element_body_context.constants.insert(
-                                    filter_clause.r#as.clone(),
-                                    precomputed_element.clone(),
-                                ),
-                            },
+                            context.extended(
+                                [PathSegment::Through],
+                                [],
+                                [(filter_clause.r#as.clone(), precomputed_element.clone())],
+                            ),
                         )?
                         .as_bool()
                         .unwrap()
@@ -466,81 +457,88 @@ impl Interpreter {
             }
             Value::Fold(fold_clause) => {
                 let array = self
-                    .compute_with_context(&fold_clause.fold, context)?
+                    .compute_with_context(&fold_clause.fold, context.clone())?
                     .as_array()
                     .unwrap()
                     .clone();
-                let mut local_context = context.clone();
-                local_context.path.push_back_mut(PathSegment::StartingWith);
-                let mut result = self.compute_with_context(&fold_clause.starting_with, context)?;
-                local_context.path.drop_last_mut();
-                local_context.path.push_back_mut(PathSegment::Fold);
+                let mut result = self.compute_with_context(
+                    &fold_clause.starting_with,
+                    context.extended([PathSegment::StartingWith], [], []),
+                )?;
                 for (element_index, element_compute_body) in array.into_iter().enumerate() {
-                    local_context
-                        .path
-                        .push_back_mut(PathSegment::ArrayIndex(element_index));
-                    let precomputed_element =
-                        self.compute_with_context(&element_compute_body, &local_context)?;
-                    local_context
-                        .constants
-                        .insert_mut(fold_clause.r#as.clone(), precomputed_element);
-                    local_context
-                        .constants
-                        .insert_mut(fold_clause.accumulating_in.clone(), result);
-                    local_context.path.push_back_mut(PathSegment::Through);
-                    result = self.compute_with_context(&fold_clause.through, &local_context)?;
-                    local_context.constants.remove_mut(&fold_clause.r#as);
-                    local_context
-                        .constants
-                        .remove_mut(&fold_clause.accumulating_in);
-                    local_context.path.drop_last_mut();
-                    local_context.path.drop_last_mut();
+                    let precomputed_element = self.compute_with_context(
+                        &element_compute_body,
+                        context.extended(
+                            [PathSegment::Fold, PathSegment::ArrayIndex(element_index)],
+                            [],
+                            [],
+                        ),
+                    )?;
+                    result = self.compute_with_context(
+                        &fold_clause.through,
+                        context.extended(
+                            [
+                                PathSegment::Fold,
+                                PathSegment::ArrayIndex(element_index),
+                                PathSegment::Through,
+                            ],
+                            [],
+                            [
+                                (fold_clause.r#as.clone(), precomputed_element),
+                                (fold_clause.accumulating_in.clone(), result),
+                            ],
+                        ),
+                    )?;
                 }
                 result
             }
             Value::Branching(branching_clause) => {
-                let mut local_context = context.clone();
-                local_context.path.push_back_mut(PathSegment::If);
                 let if_result = self
-                    .compute_with_context(&branching_clause.r#if, &local_context)?
+                    .compute_with_context(
+                        &branching_clause.r#if,
+                        context.extended([PathSegment::If], [], []),
+                    )?
                     .as_bool()
                     .unwrap();
                 let result = if if_result {
-                    local_context.path.drop_last_mut();
-                    local_context.path.push_back_mut(PathSegment::Then);
-                    self.compute_with_context(&branching_clause.then, &local_context)?
+                    self.compute_with_context(
+                        &branching_clause.then,
+                        context.extended([PathSegment::Then], [], []),
+                    )?
                 } else {
-                    local_context.path.drop_last_mut();
-                    local_context.path.push_back_mut(PathSegment::Else);
-                    self.compute_with_context(&branching_clause.r#else, &local_context)?
+                    self.compute_with_context(
+                        &branching_clause.r#else,
+                        context.extended([PathSegment::Else], [], []),
+                    )?
                 };
                 result
             }
             Value::TryOr(try_or_clause) => {
-                let mut local_context = context.clone();
-                local_context.path.push_back_mut(PathSegment::Try);
-                let result = match self.compute_with_context(&try_or_clause.r#try, &local_context) {
+                let result = match self.compute_with_context(
+                    &try_or_clause.r#try,
+                    context.extended([PathSegment::Try], [], []),
+                ) {
                     Ok(result) => result,
-                    Err(error) => {
-                        local_context.constants.insert_mut(
-                            try_or_clause.with_error.clone(),
-                            RcOrValue::Value(Value::String(error.to_string())),
-                        );
-                        self.compute_with_context(&try_or_clause.or, &local_context)?
-                    }
+                    Err(error) => self.compute_with_context(
+                        &try_or_clause.or,
+                        context.extended(
+                            [PathSegment::Or],
+                            [],
+                            [(
+                                try_or_clause.with_error.clone(),
+                                RcOrValue::Value(Value::String(error.to_string())),
+                            )],
+                        ),
+                    )?,
                 };
                 result
             }
             Value::FromAt(from_at_clause) => {
-                let mut local_context = context.clone();
-                local_context.path.push_back_mut(PathSegment::From);
-                let mut result = self.compute_with_context(&from_at_clause.from, &local_context)?;
-                local_context.path.drop_last_mut();
-                local_context.path.push_back_mut(PathSegment::At);
-                for (at_segment_index, at_segment) in from_at_clause.at.iter().enumerate() {
-                    local_context
-                        .path
-                        .push_back_mut(PathSegment::AtIndex(at_segment_index));
+                let mut result = self.compute_with_context(
+                    &from_at_clause.from,
+                    context.extended([PathSegment::From], [], []),
+                )?;
+                for at_segment in from_at_clause.at.iter() {
                     result = match at_segment {
                         AtSegment::ObjectKey(object_key) => result
                             .as_object()
@@ -557,7 +555,7 @@ impl Interpreter {
                                 .with_context(|| {
                                     format!(
                                         "Can not get element at index {array_index} from array of \
-                                         length {} at the point {:?}",
+                                         length {} when computing from-at clause at {:?}",
                                         array.len(),
                                         context.path
                                     )
@@ -565,7 +563,6 @@ impl Interpreter {
                                 .clone()
                         }
                     };
-                    local_context.path.drop_last_mut();
                 }
                 result
             }
@@ -584,7 +581,7 @@ impl Interpreter {
                                     argument_name.clone(),
                                     self.compute_with_context(
                                         argument_compute_body,
-                                        &arguments_bodies_context.extended(
+                                        arguments_bodies_context.extended(
                                             [PathSegment::Argument(argument_name.clone())],
                                             [],
                                             [],
@@ -595,14 +592,14 @@ impl Interpreter {
                         } else {
                             compute_context.constants.insert_mut(
                                 DEFAULT_ARGUMENT_NAME.to_string(),
-                                self.compute_with_context(argument, &arguments_bodies_context)?,
+                                self.compute_with_context(argument, arguments_bodies_context)?,
                             );
                         }
                         return self
-                            .compute_with_context(&RcOrValue::Rc(function_body), &compute_context);
+                            .compute_with_context(&RcOrValue::Rc(function_body), compute_context);
                     } else if let Some(function) = self.embedded_functions.get(function_name) {
                         let function_arguments =
-                            self.compute_with_context(&argument, &arguments_bodies_context)?;
+                            self.compute_with_context(&argument, arguments_bodies_context)?;
                         return (function.function)(function_arguments);
                     }
                 }
@@ -612,7 +609,7 @@ impl Interpreter {
                         key.clone(),
                         self.compute_with_context(
                             value_compute_body,
-                            &context.extended([PathSegment::ObjectKey(key.clone())], [], []),
+                            context.extended([PathSegment::ObjectKey(key.clone())], [], []),
                         )?,
                     ));
                 }
@@ -627,7 +624,7 @@ impl Interpreter {
                 for (element_index, element_compute_body) in array.iter().enumerate() {
                     result_array_elements.push(self.compute_with_context(
                         element_compute_body,
-                        &context.extended([PathSegment::ArrayIndex(element_index)], [], []),
+                        context.extended([PathSegment::ArrayIndex(element_index)], [], []),
                     )?);
                 }
                 RcOrValue::Value(Value::Array(result_array_elements))
