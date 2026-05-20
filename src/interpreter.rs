@@ -54,7 +54,7 @@ impl<V> ListMap<V> {
     }
 }
 
-fn fallible_map_preserve_order<E, F>(
+fn map_parallel<E, F>(
     items: &rpds::VectorSync<Value>,
     through: F,
 ) -> Result<rpds::VectorSync<Value>, E>
@@ -63,23 +63,23 @@ where
     F: Fn((usize, &Value)) -> Result<Value, E> + Sync,
 {
     let results = Mutex::new(vec![None; items.len()]);
-    let result = items
+    items
         .iter()
         .enumerate()
         .par_bridge()
         .try_for_each(|(element_index, element)| {
-            let mapped = through((element_index, element))?;
-            let mut results_guard = results.lock().unwrap();
-            results_guard[element_index] = Some(mapped);
+            let result = through((element_index, element))?;
+            results.lock().unwrap()[element_index] = Some(result);
             Ok::<_, E>(())
-        });
-    match result {
-        Ok(_) => {
-            let results_guard = results.into_inner().unwrap();
-            Ok(results_guard.into_iter().map(Option::unwrap).collect())
-        }
-        Err(e) => Err(e),
-    }
+        })
+        .and_then(|_| {
+            Ok(results
+                .into_inner()
+                .unwrap()
+                .into_iter()
+                .map(Option::unwrap)
+                .collect())
+        })
 }
 
 #[derive(Debug)]
@@ -638,7 +638,7 @@ impl Interpreter {
                         .filter_map(|element| element),
                 ))
             }
-            Value::Array(array) => Value::Array(fallible_map_preserve_order(
+            Value::Array(array) => Value::Array(map_parallel(
                 array,
                 |(element_index, element_compute_body)| {
                     self.compute_with_context(
