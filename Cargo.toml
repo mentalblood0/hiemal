@@ -21,7 +21,7 @@ dashu = { version = "0.4.1", features = [
   "serde",
   "num-traits",
 ] }
-rpds = "1.2.1"
+rpds = { "version" = "1.2.1", "features" = ["std", "serde"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4"

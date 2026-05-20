@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::rc::Rc;
 
 use anyhow::{Context, Error, Result, anyhow};
 
@@ -9,7 +8,7 @@ use crate::{
     includes_cache::IncludesCache,
     path::{Path, PathSegment},
     r#type::Type,
-    value::{AtSegment, Include, RcOrValue, SmallMap, Value, ValueWithIncludes},
+    value::{AtSegment, Include, SmallMap, Value, ValueWithIncludes},
 };
 
 pub struct Interpreter {
@@ -17,9 +16,9 @@ pub struct Interpreter {
 }
 
 #[derive(Debug, Clone)]
-pub enum TypeOrRcOrValue {
+pub enum TypeOrValue {
     Type(Type),
-    RcOrValue(RcOrValue),
+    Value(Value),
 }
 
 #[derive(Debug)]
@@ -56,8 +55,8 @@ impl<V> ListMap<V> {
 #[derive(Debug)]
 pub struct TypeCheckingContext {
     pub path: Path,
-    pub functions: ListMap<Rc<Value>>,
-    pub constants: ListMap<TypeOrRcOrValue>,
+    pub functions: ListMap<Value>,
+    pub constants: ListMap<Type>,
     pub entered_functions: BTreeSet<String>,
     pub recursed_functions_types: SmallMap<String, Type>,
 }
@@ -207,16 +206,16 @@ impl TypeCheckingContext {
 #[derive(Clone, Debug)]
 pub struct ComputationContext {
     pub path: Path,
-    pub functions: rpds::RedBlackTreeMap<String, Rc<Value>>,
-    pub constants: rpds::RedBlackTreeMap<String, RcOrValue>,
+    pub functions: rpds::RedBlackTreeMap<String, Value>,
+    pub constants: rpds::RedBlackTreeMap<String, Value>,
 }
 
 impl ComputationContext {
     pub fn extended<P, F, C>(&self, path: P, functions: F, constants: C) -> Self
     where
         P: IntoIterator<Item = PathSegment>,
-        F: IntoIterator<Item = (String, Rc<Value>)>,
-        C: IntoIterator<Item = (String, RcOrValue)>,
+        F: IntoIterator<Item = (String, Value)>,
+        C: IntoIterator<Item = (String, Value)>,
     {
         Self {
             path: {
@@ -247,24 +246,18 @@ impl Interpreter {
         &self,
         program_with_includes: &ValueWithIncludes,
         includes_cache: &mut IncludesCache,
-    ) -> Result<Rc<Value>> {
-        let program: Rc<Value> = Rc::new(serde_json::from_value(
-            self.process_includes(&program_with_includes, includes_cache)?,
-        )?);
-        self.check_types(program.clone())?;
-        Ok(
-            match self.compute_with_context(
-                &RcOrValue::Rc(program),
-                ComputationContext {
-                    path: Path(rpds::Vector::new()),
-                    functions: rpds::RedBlackTreeMap::new(),
-                    constants: rpds::RedBlackTreeMap::new(),
-                },
-            )? {
-                RcOrValue::Rc(rc) => rc,
-                RcOrValue::Value(value) => Rc::new(value),
+    ) -> Result<Value> {
+        let program =
+            serde_json::from_value(self.process_includes(&program_with_includes, includes_cache)?)?;
+        self.check_types(&program)?;
+        Ok(self.compute_with_context(
+            &program,
+            ComputationContext {
+                path: Path(rpds::Vector::new()),
+                functions: rpds::RedBlackTreeMap::new(),
+                constants: rpds::RedBlackTreeMap::new(),
             },
-        )
+        )?)
     }
 
     pub fn process_includes(
@@ -356,12 +349,8 @@ impl Interpreter {
         }
     }
 
-    fn compute_with_context(
-        &self,
-        program: &RcOrValue,
-        context: ComputationContext,
-    ) -> Result<RcOrValue> {
-        Ok(match program.value() {
+    fn compute_with_context(&self, program: &Value, context: ComputationContext) -> Result<Value> {
+        Ok(match program {
             Value::Constant(constant_clause) => context
                 .constants
                 .get(&constant_clause.constant)
@@ -421,7 +410,7 @@ impl Interpreter {
                         ),
                     )?);
                 }
-                RcOrValue::Value(Value::Array(result))
+                Value::Array(result)
             }
             Value::Filter(filter_clause) => {
                 let array = self
@@ -453,7 +442,7 @@ impl Interpreter {
                         result.push(precomputed_element);
                     };
                 }
-                RcOrValue::Value(Value::Array(result))
+                Value::Array(result)
             }
             Value::Fold(fold_clause) => {
                 let array = self
@@ -526,7 +515,7 @@ impl Interpreter {
                             [],
                             [(
                                 try_or_clause.with_error.clone(),
-                                RcOrValue::Value(Value::String(error.to_string())),
+                                Value::String(error.to_string()),
                             )],
                         ),
                     )?,
@@ -568,14 +557,14 @@ impl Interpreter {
                 result
             }
             Value::Object(object) => {
-                if object.len() == 1 {
+                if object.size() == 1 {
                     let (function_name, argument) = object.iter().next().unwrap();
                     let arguments_bodies_context =
                         context.extended([PathSegment::Function(function_name.clone())], [], []);
                     if let Some(function_body) = context.functions.get(function_name).cloned() {
                         let mut compute_context = arguments_bodies_context.clone();
-                        if let Value::Object(arguments) = argument.value()
-                            && arguments.len() > 1
+                        if let Value::Object(arguments) = argument
+                            && arguments.size() > 1
                         {
                             for (argument_name, argument_compute_body) in arguments.iter() {
                                 compute_context.constants.insert_mut(
@@ -596,15 +585,14 @@ impl Interpreter {
                                 self.compute_with_context(argument, arguments_bodies_context)?,
                             );
                         }
-                        return self
-                            .compute_with_context(&RcOrValue::Rc(function_body), compute_context);
+                        return self.compute_with_context(&function_body, compute_context);
                     } else if let Some(function) = self.embedded_functions.get(function_name) {
                         let function_arguments =
                             self.compute_with_context(&argument, arguments_bodies_context)?;
                         return (function.function)(function_arguments);
                     }
                 }
-                let mut result_object_keyvalues = vec![None; object.len()];
+                let mut result_object_keyvalues = vec![None; object.size()];
                 for (keyvalue_index, (key, value_compute_body)) in object.iter().enumerate() {
                     result_object_keyvalues[keyvalue_index] = Some((
                         key.clone(),
@@ -614,11 +602,11 @@ impl Interpreter {
                         )?,
                     ));
                 }
-                RcOrValue::Value(Value::Object(BTreeMap::from_iter(
+                Value::Object(rpds::RedBlackTreeMap::from_iter(
                     result_object_keyvalues
                         .into_iter()
                         .filter_map(|element| element),
-                )))
+                ))
             }
             Value::Array(array) => {
                 let mut result_array_elements = Vec::with_capacity(array.len());
@@ -628,7 +616,7 @@ impl Interpreter {
                         context.extended([PathSegment::ArrayIndex(element_index)], [], []),
                     )?);
                 }
-                RcOrValue::Value(Value::Array(result_array_elements))
+                Value::Array(result_array_elements)
             }
             Value::String(string) => {
                 if string == DEFAULT_ARGUMENT_NAME {
@@ -638,18 +626,18 @@ impl Interpreter {
                         .unwrap()
                         .clone()
                 } else {
-                    RcOrValue::Value(Value::String(string.clone()))
+                    Value::String(string.clone())
                 }
             }
-            Value::Number(number) => RcOrValue::Value(Value::Number(number.clone())),
-            Value::Bool(bool) => RcOrValue::Value(Value::Bool(*bool)),
-            Value::Null => RcOrValue::Value(Value::Null),
+            Value::Number(number) => Value::Number(number.clone()),
+            Value::Bool(bool) => Value::Bool(*bool),
+            Value::Null => Value::Null,
         })
     }
 
-    pub fn check_types(&self, program: Rc<Value>) -> Result<Type> {
+    pub fn check_types(&self, program: &Value) -> Result<Type> {
         self.get_type(
-            TypeOrRcOrValue::RcOrValue(RcOrValue::Rc(program)),
+            program,
             &mut TypeCheckingContext {
                 path: Path(rpds::Vector::new()),
                 functions: ListMap::new(),
@@ -660,455 +648,377 @@ impl Interpreter {
         )
     }
 
-    fn get_type(
-        &self,
-        program: TypeOrRcOrValue,
-        context: &mut TypeCheckingContext,
-    ) -> Result<Type> {
-        let result = match program {
-            TypeOrRcOrValue::Type(program_type) => program_type,
-            TypeOrRcOrValue::RcOrValue(program) => match *program.value() {
-                Value::Constant(ref constant_clause) => {
-                    if let Some(constant_value) = context.constants.get(&constant_clause.constant) {
-                        context
-                            .path
-                            .0
-                            .push_back_mut(PathSegment::Constant(constant_clause.constant.clone()));
-                        let result = self.get_type(constant_value.clone(), context)?;
-                        context.path.0.drop_last_mut();
-                        result
-                    } else {
-                        return Err(anyhow!(
-                            "Unknown constant {:?} at {:#?}",
-                            constant_clause.constant,
-                            context.path
-                        ));
-                    }
+    fn get_type(&self, program: &Value, context: &mut TypeCheckingContext) -> Result<Type> {
+        match program {
+            Value::Constant(constant_clause) => context
+                .constants
+                .get(&constant_clause.constant)
+                .cloned()
+                .with_context(|| {
+                    format!(
+                        "Unknown constant {:?} at {:#?}",
+                        constant_clause.constant, context.path
+                    )
+                }),
+            Value::With(with_clause) => {
+                for (function_name, function_body) in with_clause.with.functions.iter() {
+                    context
+                        .functions
+                        .push(&function_name, function_body.clone());
                 }
-                Value::With(ref with_clause) => {
-                    for (function_name, function_body) in with_clause.with.functions.iter() {
-                        context
-                            .functions
-                            .push(&function_name, function_body.clone());
-                    }
-                    context.path.0.push_back_mut(PathSegment::With);
-                    context.path.0.push_back_mut(PathSegment::Constants);
-                    for (constant_name, constant_compute_body) in with_clause.with.constants.iter()
-                    {
-                        context
-                            .path
-                            .0
-                            .push_back_mut(PathSegment::Constant(constant_name.clone()));
-                        let precomputed_constant_type = self.get_type(
-                            TypeOrRcOrValue::RcOrValue(constant_compute_body.clone()),
-                            context,
-                        )?;
-                        context.path.0.drop_last_mut();
-                        context.constants.push(
-                            &constant_name,
-                            TypeOrRcOrValue::Type(precomputed_constant_type),
-                        );
-                    }
-                    context.path.0.drop_last_mut();
-                    context.path.0.push_back_mut(PathSegment::Compute);
-                    let result = self.get_type(
-                        TypeOrRcOrValue::RcOrValue(with_clause.compute.clone()),
-                        context,
-                    )?;
-                    context.path.0.drop_last_mut();
-                    context.path.0.drop_last_mut();
-                    for function_name in with_clause.with.functions.keys() {
-                        context.functions.remove(function_name);
-                    }
-                    for constant_name in with_clause.with.constants.keys() {
-                        context.constants.remove(constant_name);
-                    }
-                    result
-                }
-                Value::Map(ref map_clause) => {
-                    context.path.0.push_back_mut(PathSegment::Map);
-                    let actual_array_type =
-                        self.get_type(TypeOrRcOrValue::RcOrValue(map_clause.map.clone()), context)?;
-                    context.path.0.drop_last_mut();
-                    if let Type::Array(ref array_element_type) = actual_array_type {
-                        context.constants.push(
-                            &map_clause.r#as,
-                            TypeOrRcOrValue::Type(*array_element_type.clone()),
-                        );
-                        context.path.0.push_back_mut(PathSegment::Through);
-                        let result = self.get_type(
-                            TypeOrRcOrValue::RcOrValue(map_clause.through.clone()),
-                            context,
-                        )?;
-                        context.path.0.drop_last_mut();
-                        context.constants.remove(&map_clause.r#as);
-                        Type::Array(Box::new(result))
-                    } else {
-                        return Err(anyhow!(
-                            "Expected array for map clause at {:?}, got {actual_array_type:?}",
-                            context.path
-                        ));
-                    }
-                }
-                Value::Filter(ref filter_clause) => {
-                    context.path.0.push_back_mut(PathSegment::Filter);
-                    let actual_array_type = self.get_type(
-                        TypeOrRcOrValue::RcOrValue(filter_clause.filter.clone()),
-                        context,
-                    )?;
-                    context.path.0.drop_last_mut();
-                    if let Type::Array(ref array_element_type) = actual_array_type {
-                        context.constants.push(
-                            &filter_clause.r#as,
-                            TypeOrRcOrValue::Type(*array_element_type.clone()),
-                        );
-                        context.path.0.push_back_mut(PathSegment::Through);
-                        let through_type = self.get_type(
-                            TypeOrRcOrValue::RcOrValue(filter_clause.through.clone()),
-                            context,
-                        )?;
-                        context.path.0.drop_last_mut();
-                        context
-                            .assert_equal(&through_type, &Type::Bool)
-                            .with_context(|| {
-                                anyhow!(
-                                    "Expected filter at {:?} to use function which returns \
-                                     boolean value, but it returns {through_type:?}",
-                                    context.path
-                                )
-                            })?;
-                        context.constants.remove(&filter_clause.r#as);
-                        Type::Array(array_element_type.clone())
-                    } else {
-                        return Err(anyhow!(
-                            "Expected array for filter clause at {:?}, got {actual_array_type:?}",
-                            context.path
-                        ));
-                    }
-                }
-                Value::Fold(ref fold_clause) => {
-                    context.path.0.push_back_mut(PathSegment::Fold);
-                    let actual_array_type = self.get_type(
-                        TypeOrRcOrValue::RcOrValue(fold_clause.fold.clone()),
-                        context,
-                    )?;
-                    context.path.0.drop_last_mut();
-                    if let Type::Array(ref array_element_type) = actual_array_type {
-                        let starting_with_type = self.get_type(
-                            TypeOrRcOrValue::RcOrValue(fold_clause.starting_with.clone()),
-                            context,
-                        )?;
-                        context.constants.push(
-                            &fold_clause.r#as,
-                            TypeOrRcOrValue::Type(*array_element_type.clone()),
-                        );
-                        context.constants.push(
-                            &fold_clause.accumulating_in,
-                            TypeOrRcOrValue::Type(starting_with_type.clone()),
-                        );
-                        context.path.0.push_back_mut(PathSegment::Through);
-                        let through_type = self.get_type(
-                            TypeOrRcOrValue::RcOrValue(fold_clause.through.clone()),
-                            context,
-                        )?;
-                        context.path.0.drop_last_mut();
-                        context
-                            .assert_equal(&through_type, &starting_with_type)
-                            .with_context(|| {
-                                anyhow!(
-                                    "Expected fold at {:?} to use function which returns value \
-                                     {starting_with_type:?} (as is starting value), but it \
-                                     returns {through_type:?}",
-                                    context.path
-                                )
-                            })?;
-                        context.constants.remove(&fold_clause.r#as);
-                        context.constants.remove(&fold_clause.accumulating_in);
-                        Type::Array(Box::new(through_type))
-                    } else {
-                        return Err(anyhow!(
-                            "Expected array for fold clause at {:?}, got {actual_array_type:?}",
-                            context.path
-                        ));
-                    }
-                }
-                Value::Branching(ref branching_clause) => {
-                    context.path.0.push_back_mut(PathSegment::If);
-                    let if_branch_type = self.get_type(
-                        TypeOrRcOrValue::RcOrValue(branching_clause.r#if.clone()),
-                        context,
-                    )?;
-                    context.assert_equal(&Type::Bool, &if_branch_type)?;
-                    context.path.0.drop_last_mut();
-                    context.path.0.push_back_mut(PathSegment::Then);
-                    let then_branch_type = self.get_type(
-                        TypeOrRcOrValue::RcOrValue(branching_clause.then.clone()),
-                        context,
-                    )?;
-                    context.path.0.drop_last_mut();
-                    context.path.0.push_back_mut(PathSegment::Else);
-                    let else_branch_type = self.get_type(
-                        TypeOrRcOrValue::RcOrValue(branching_clause.r#else.clone()),
-                        context,
-                    )?;
+                context.path.0.push_back_mut(PathSegment::With);
+                context.path.0.push_back_mut(PathSegment::Constants);
+                for (constant_name, constant_compute_body) in with_clause.with.constants.iter() {
+                    context
+                        .path
+                        .0
+                        .push_back_mut(PathSegment::Constant(constant_name.clone()));
+                    let precomputed_constant_type =
+                        self.get_type(&constant_compute_body.clone(), context)?;
                     context.path.0.drop_last_mut();
                     context
-                        .assert_equal(&then_branch_type, &else_branch_type)
+                        .constants
+                        .push(&constant_name, precomputed_constant_type);
+                }
+                context.path.0.drop_last_mut();
+                context.path.0.push_back_mut(PathSegment::Compute);
+                let result = self.get_type(&with_clause.compute.clone(), context)?;
+                context.path.0.drop_last_mut();
+                context.path.0.drop_last_mut();
+                for function_name in with_clause.with.functions.keys() {
+                    context.functions.remove(function_name);
+                }
+                for constant_name in with_clause.with.constants.keys() {
+                    context.constants.remove(constant_name);
+                }
+                Ok(result)
+            }
+            Value::Map(map_clause) => {
+                context.path.0.push_back_mut(PathSegment::Map);
+                let actual_array_type = self.get_type(&map_clause.map.clone(), context)?;
+                context.path.0.drop_last_mut();
+                if let Type::Array(ref array_element_type) = actual_array_type {
+                    context
+                        .constants
+                        .push(&map_clause.r#as, *array_element_type.clone());
+                    context.path.0.push_back_mut(PathSegment::Through);
+                    let result = self.get_type(&map_clause.through, context)?;
+                    context.path.0.drop_last_mut();
+                    context.constants.remove(&map_clause.r#as);
+                    Ok(Type::Array(Box::new(result)))
+                } else {
+                    Err(anyhow!(
+                        "Expected array for map clause at {:?}, got {actual_array_type:?}",
+                        context.path
+                    ))
+                }
+            }
+            Value::Filter(filter_clause) => {
+                context.path.0.push_back_mut(PathSegment::Filter);
+                let actual_array_type = self.get_type(&filter_clause.filter, context)?;
+                context.path.0.drop_last_mut();
+                if let Type::Array(ref array_element_type) = actual_array_type {
+                    context
+                        .constants
+                        .push(&filter_clause.r#as, *array_element_type.clone());
+                    context.path.0.push_back_mut(PathSegment::Through);
+                    let through_type = self.get_type(&filter_clause.through, context)?;
+                    context.path.0.drop_last_mut();
+                    context
+                        .assert_equal(&through_type, &Type::Bool)
                         .with_context(|| {
                             anyhow!(
-                                "Expected 'then' and 'else' branches at {:?} to be of the same \
-                                 type, but 'then' branch is {then_branch_type:?} and 'else' \
-                                 branch is {else_branch_type:?}",
+                                "Expected filter at {:?} to use function which returns boolean \
+                                 value, but it returns {through_type:?}",
                                 context.path
                             )
                         })?;
-                    then_branch_type
+                    context.constants.remove(&filter_clause.r#as);
+                    Ok(Type::Array(array_element_type.clone()))
+                } else {
+                    Err(anyhow!(
+                        "Expected array for filter clause at {:?}, got {actual_array_type:?}",
+                        context.path
+                    ))
                 }
-                Value::TryOr(ref try_or_clause) => {
-                    context.path.0.push_back_mut(PathSegment::If);
-                    let try_branch_type = self.get_type(
-                        TypeOrRcOrValue::RcOrValue(try_or_clause.r#try.clone()),
-                        context,
-                    )?;
-                    context.path.0.drop_last_mut();
-                    context.path.0.push_back_mut(PathSegment::Or);
-                    context.constants.push(
-                        &try_or_clause.with_error,
-                        TypeOrRcOrValue::Type(Type::String),
-                    );
-                    let or_branch_type = self.get_type(
-                        TypeOrRcOrValue::RcOrValue(try_or_clause.or.clone()),
-                        context,
-                    )?;
-                    context.path.0.drop_last_mut();
-                    context.constants.remove(&try_or_clause.with_error);
+            }
+            Value::Fold(fold_clause) => {
+                context.path.0.push_back_mut(PathSegment::Fold);
+                let actual_array_type = self.get_type(&fold_clause.fold, context)?;
+                context.path.0.drop_last_mut();
+                if let Type::Array(ref array_element_type) = actual_array_type {
+                    let starting_with_type = self.get_type(&fold_clause.starting_with, context)?;
                     context
-                        .assert_equal(&try_branch_type, &or_branch_type)
+                        .constants
+                        .push(&fold_clause.r#as, *array_element_type.clone());
+                    context
+                        .constants
+                        .push(&fold_clause.accumulating_in, starting_with_type.clone());
+                    context.path.0.push_back_mut(PathSegment::Through);
+                    let through_type = self.get_type(&fold_clause.through, context)?;
+                    context.path.0.drop_last_mut();
+                    context
+                        .assert_equal(&through_type, &starting_with_type)
                         .with_context(|| {
                             anyhow!(
-                                "Expected 'try' and 'or' branches at {:?} to be of the same type, \
-                                 but 'try' branch is {try_branch_type:?} and 'or' branch is \
-                                 {or_branch_type:?}",
+                                "Expected fold at {:?} to use function which returns value \
+                                 {starting_with_type:?} (as is starting value), but it returns \
+                                 {through_type:?}",
                                 context.path
                             )
                         })?;
-                    try_branch_type
+                    context.constants.remove(&fold_clause.r#as);
+                    context.constants.remove(&fold_clause.accumulating_in);
+                    Ok(through_type)
+                } else {
+                    Err(anyhow!(
+                        "Expected array for fold clause at {:?}, got {actual_array_type:?}",
+                        context.path
+                    ))
                 }
-                Value::FromAt(ref from_at_clause) => {
-                    context.path.0.push_back_mut(PathSegment::From);
-                    let mut result = self.get_type(
-                        TypeOrRcOrValue::RcOrValue(from_at_clause.from.clone()),
-                        context,
-                    )?;
-                    context.path.0.drop_last_mut();
-                    context.path.0.push_back_mut(PathSegment::At);
-                    if from_at_clause.at.is_empty() {
-                        return Err(anyhow!("Expected a non-empty list at {:?}", context.path));
-                    }
-                    for (at_segment_index, at_segment) in from_at_clause.at.iter().enumerate() {
-                        context
-                            .path
-                            .0
-                            .push_back_mut(PathSegment::AtIndex(at_segment_index));
-                        match at_segment {
-                            AtSegment::ObjectKey(object_key) => match result {
-                                Type::Object(mut result_fields_types) => {
-                                    if let Some(result_field_type) =
-                                        result_fields_types.remove(object_key)
-                                    {
-                                        result = result_field_type;
-                                    } else {
-                                        return Err(anyhow!(
-                                            "Expected to reach from 'from' to be an object with \
-                                             key {object_key:?} at the point {:?}, but it has no \
-                                             such key",
-                                            context.path
-                                        ));
-                                    }
-                                }
-                                r#type => {
-                                    return Err(anyhow!(
-                                        "Expected to reach from 'from' to be an object at the \
-                                         point {:?}, but it is {type:?}",
-                                        context.path
-                                    ));
-                                }
-                            },
-                            AtSegment::ArrayIndex(_) => match result {
-                                Type::Array(element_type) => {
-                                    result = *element_type;
-                                }
-                                r#type => {
-                                    return Err(anyhow!(
-                                        "Expected to reach from 'from' to be an array at the \
-                                         point {:?}, but it is {type:?}",
-                                        context.path
-                                    ));
-                                }
-                            },
-                        }
-                        context.path.0.drop_last_mut();
-                    }
-                    context.path.0.drop_last_mut();
-                    result
+            }
+            Value::Branching(branching_clause) => {
+                context.path.0.push_back_mut(PathSegment::If);
+                let if_branch_type = self.get_type(&branching_clause.r#if, context)?;
+                context.assert_equal(&Type::Bool, &if_branch_type)?;
+                context.path.0.drop_last_mut();
+                context.path.0.push_back_mut(PathSegment::Then);
+                let then_branch_type = self.get_type(&branching_clause.then, context)?;
+                context.path.0.drop_last_mut();
+                context.path.0.push_back_mut(PathSegment::Else);
+                let else_branch_type = self.get_type(&branching_clause.r#else, context)?;
+                context.path.0.drop_last_mut();
+                context
+                    .assert_equal(&then_branch_type, &else_branch_type)
+                    .with_context(|| {
+                        anyhow!(
+                            "Expected 'then' and 'else' branches at {:?} to be of the same type, \
+                             but 'then' branch is {then_branch_type:?} and 'else' branch is \
+                             {else_branch_type:?}",
+                            context.path
+                        )
+                    })?;
+                Ok(then_branch_type)
+            }
+            Value::TryOr(try_or_clause) => {
+                context.path.0.push_back_mut(PathSegment::If);
+                let try_branch_type = self.get_type(&try_or_clause.r#try, context)?;
+                context.path.0.drop_last_mut();
+                context.path.0.push_back_mut(PathSegment::Or);
+                context
+                    .constants
+                    .push(&try_or_clause.with_error, Type::String);
+                let or_branch_type = self.get_type(&try_or_clause.or, context)?;
+                context.path.0.drop_last_mut();
+                context.constants.remove(&try_or_clause.with_error);
+                context
+                    .assert_equal(&try_branch_type, &or_branch_type)
+                    .with_context(|| {
+                        anyhow!(
+                            "Expected 'try' and 'or' branches at {:?} to be of the same type, but \
+                             'try' branch is {try_branch_type:?} and 'or' branch is \
+                             {or_branch_type:?}",
+                            context.path
+                        )
+                    })?;
+                Ok(try_branch_type)
+            }
+            Value::FromAt(from_at_clause) => {
+                context.path.0.push_back_mut(PathSegment::From);
+                let mut result = self.get_type(&from_at_clause.from, context)?;
+                context.path.0.drop_last_mut();
+                context.path.0.push_back_mut(PathSegment::At);
+                if from_at_clause.at.is_empty() {
+                    return Err(anyhow!("Expected a non-empty list at {:?}", context.path));
                 }
-                Value::Object(ref object) => {
-                    if object.len() == 1 {
-                        let (function_name, argument) = object.iter().next().unwrap();
-                        if let Some(function_body) = context.functions.get(function_name).cloned() {
-                            context
-                                .path
-                                .0
-                                .push_back_mut(PathSegment::Function(function_name.clone()));
-                            if context.entered_functions.contains(function_name) {
-                                if let Some(this_recursed_function_type) =
-                                    context.recursed_functions_types.get(function_name)
+                for (at_segment_index, at_segment) in from_at_clause.at.iter().enumerate() {
+                    context
+                        .path
+                        .0
+                        .push_back_mut(PathSegment::AtIndex(at_segment_index));
+                    match at_segment {
+                        AtSegment::ObjectKey(object_key) => match result {
+                            Type::Object(mut result_fields_types) => {
+                                if let Some(result_field_type) =
+                                    result_fields_types.remove(object_key)
                                 {
-                                    return Ok(this_recursed_function_type.clone());
+                                    result = result_field_type;
                                 } else {
-                                    context.recursed_functions_types.insert(
-                                        function_name.clone(),
-                                        Type::RecursedFunction(function_name.clone()),
-                                    );
+                                    return Err(anyhow!(
+                                        "Expected to reach from 'from' to be an object with key \
+                                         {object_key:?} at the point {:?}, but it has no such key",
+                                        context.path
+                                    ));
                                 }
                             }
-                            let mut arguments_names = vec![];
-                            if let Value::Object(arguments) = argument.value()
-                                && arguments.len() > 1
+                            r#type => {
+                                return Err(anyhow!(
+                                    "Expected to reach from 'from' to be an object at the point \
+                                     {:?}, but it is {type:?}",
+                                    context.path
+                                ));
+                            }
+                        },
+                        AtSegment::ArrayIndex(_) => match result {
+                            Type::Array(element_type) => {
+                                result = *element_type;
+                            }
+                            r#type => {
+                                return Err(anyhow!(
+                                    "Expected to reach from 'from' to be an array at the point \
+                                     {:?}, but it is {type:?}",
+                                    context.path
+                                ));
+                            }
+                        },
+                    }
+                    context.path.0.drop_last_mut();
+                }
+                context.path.0.drop_last_mut();
+                Ok(result)
+            }
+            Value::Object(object) => {
+                if object.size() == 1 {
+                    let (function_name, argument) = object.iter().next().unwrap();
+                    if let Some(function_body) = context.functions.get(function_name).cloned() {
+                        context
+                            .path
+                            .0
+                            .push_back_mut(PathSegment::Function(function_name.clone()));
+                        if context.entered_functions.contains(function_name) {
+                            if let Some(this_recursed_function_type) =
+                                context.recursed_functions_types.get(function_name)
                             {
-                                for (argument_name, argument_compute_body) in arguments.iter() {
-                                    context.path.0.push_back_mut(PathSegment::Argument(
-                                        argument_name.clone(),
-                                    ));
-                                    let argument_type = self.get_type(
-                                        TypeOrRcOrValue::RcOrValue(argument_compute_body.clone()),
-                                        context,
-                                    )?;
-                                    context.path.0.drop_last_mut();
-                                    arguments_names.push(argument_name.clone());
-                                    context
-                                        .constants
-                                        .push(&argument_name, TypeOrRcOrValue::Type(argument_type));
-                                }
+                                return Ok(this_recursed_function_type.clone());
                             } else {
-                                let argument_type = self.get_type(
-                                    TypeOrRcOrValue::RcOrValue(argument.clone()),
-                                    context,
-                                )?;
-                                arguments_names.push(DEFAULT_ARGUMENT_NAME.to_string());
-                                context.constants.push(
-                                    DEFAULT_ARGUMENT_NAME,
-                                    TypeOrRcOrValue::Type(argument_type),
+                                context.recursed_functions_types.insert(
+                                    function_name.clone(),
+                                    Type::RecursedFunction(function_name.clone()),
                                 );
                             }
-                            context.entered_functions.insert(function_name.clone());
-                            let result = self.get_type(
-                                TypeOrRcOrValue::RcOrValue(RcOrValue::Rc(function_body.clone())),
-                                context,
-                            )?;
-                            context.path.0.drop_last_mut();
-                            context.entered_functions.remove(function_name);
-                            for argument_name in arguments_names {
-                                context.constants.remove(&argument_name);
-                                context.recursed_functions_types.remove(&argument_name);
-                            }
-                            return Ok(result);
                         }
-                        if let Some(function) = self.embedded_functions.get(function_name) {
-                            context.path.0.push_back_mut(PathSegment::EmbeddedFunction(
-                                function_name.clone(),
-                            ));
-                            let arguments_type = self
-                                .get_type(TypeOrRcOrValue::RcOrValue(argument.clone()), context)?;
-                            let generic_values =
-                                context.assert_equal(&function.argument_type, &arguments_type)?;
-                            context.path.0.drop_last_mut();
-                            let mut result = function.return_type.clone();
-                            context.substitute_generic_arguments_values(
-                                &mut result,
-                                &generic_values,
-                            )?;
-                            return Ok(result);
-                        }
-                    }
-                    let mut result_map = BTreeMap::new();
-                    for (key, value) in object {
-                        context
-                            .path
-                            .0
-                            .push_back_mut(PathSegment::ObjectKey(key.clone()));
-                        result_map.insert(
-                            key.clone(),
-                            self.get_type(TypeOrRcOrValue::RcOrValue(value.clone()), context)?,
-                        );
-                        context.path.0.drop_last_mut();
-                    }
-                    Type::Object(result_map)
-                }
-                Value::Array(ref array) => {
-                    let mut non_recursed_elements_indexes_and_types =
-                        Vec::with_capacity(array.len());
-                    let mut recursed_elements_functions_names = vec![];
-                    for (element_index, element) in array.iter().enumerate() {
-                        context
-                            .path
-                            .0
-                            .push_back_mut(PathSegment::ArrayIndex(element_index));
-                        match self.get_type(TypeOrRcOrValue::RcOrValue(element.clone()), context)? {
-                            Type::RecursedFunction(recursed_function_name) => {
-                                recursed_elements_functions_names.push(recursed_function_name);
-                            }
-                            non_recursed_type => {
-                                non_recursed_elements_indexes_and_types
-                                    .push((element_index, non_recursed_type));
-                            }
-                        }
-                        context.path.0.drop_last_mut();
-                    }
-                    if let Some(first_non_recursed_element_type) =
-                        non_recursed_elements_indexes_and_types
-                            .first()
-                            .and_then(|(_, element_type)| Some(element_type))
-                    {
-                        if let Some((unexpected_type_element_index, unexpected_type)) =
-                            non_recursed_elements_indexes_and_types.iter().find(
-                                |(_, element_type)| element_type != first_non_recursed_element_type,
-                            )
+                        let mut arguments_names = vec![];
+                        if let Value::Object(arguments) = argument
+                            && arguments.size() > 1
                         {
-                            context.path.0.push_back_mut(PathSegment::ArrayIndex(
-                                *unexpected_type_element_index,
-                            ));
-                            let result_error =
-                                context.error(first_non_recursed_element_type, unexpected_type);
-                            context.path.0.drop_last_mut();
-                            return Err(result_error);
+                            for (argument_name, argument_compute_body) in arguments.iter() {
+                                context
+                                    .path
+                                    .0
+                                    .push_back_mut(PathSegment::Argument(argument_name.clone()));
+                                let argument_type =
+                                    self.get_type(&argument_compute_body, context)?;
+                                context.path.0.drop_last_mut();
+                                arguments_names.push(argument_name.clone());
+                                context.constants.push(&argument_name, argument_type);
+                            }
                         } else {
-                            Type::Array(Box::new(first_non_recursed_element_type.clone()))
+                            let argument_type = self.get_type(argument, context)?;
+                            arguments_names.push(DEFAULT_ARGUMENT_NAME.to_string());
+                            context.constants.push(DEFAULT_ARGUMENT_NAME, argument_type);
                         }
-                    } else if let Some(first_recursed_element_function_name) =
-                        recursed_elements_functions_names.first()
+                        context.entered_functions.insert(function_name.clone());
+                        let result = self.get_type(&function_body, context)?;
+                        context.path.0.drop_last_mut();
+                        context.entered_functions.remove(function_name);
+                        for argument_name in arguments_names {
+                            context.constants.remove(&argument_name);
+                            context.recursed_functions_types.remove(&argument_name);
+                        }
+                        return Ok(result);
+                    }
+                    if let Some(function) = self.embedded_functions.get(function_name) {
+                        context
+                            .path
+                            .0
+                            .push_back_mut(PathSegment::EmbeddedFunction(function_name.clone()));
+                        let arguments_type = self.get_type(argument, context)?;
+                        let generic_values =
+                            context.assert_equal(&function.argument_type, &arguments_type)?;
+                        context.path.0.drop_last_mut();
+                        let mut result = function.return_type.clone();
+                        context
+                            .substitute_generic_arguments_values(&mut result, &generic_values)?;
+                        return Ok(result);
+                    }
+                }
+                let mut result_map = BTreeMap::new();
+                for (key, value) in object {
+                    context
+                        .path
+                        .0
+                        .push_back_mut(PathSegment::ObjectKey(key.clone()));
+                    result_map.insert(key.clone(), self.get_type(value, context)?);
+                    context.path.0.drop_last_mut();
+                }
+                Ok(Type::Object(result_map))
+            }
+            Value::Array(array) => {
+                let mut non_recursed_elements_indexes_and_types = Vec::with_capacity(array.len());
+                let mut recursed_elements_functions_names = vec![];
+                for (element_index, element) in array.iter().enumerate() {
+                    context
+                        .path
+                        .0
+                        .push_back_mut(PathSegment::ArrayIndex(element_index));
+                    match self.get_type(element, context)? {
+                        Type::RecursedFunction(recursed_function_name) => {
+                            recursed_elements_functions_names.push(recursed_function_name);
+                        }
+                        non_recursed_type => {
+                            non_recursed_elements_indexes_and_types
+                                .push((element_index, non_recursed_type));
+                        }
+                    }
+                    context.path.0.drop_last_mut();
+                }
+                if let Some(first_non_recursed_element_type) =
+                    non_recursed_elements_indexes_and_types
+                        .first()
+                        .and_then(|(_, element_type)| Some(element_type))
+                {
+                    if let Some((unexpected_type_element_index, unexpected_type)) =
+                        non_recursed_elements_indexes_and_types
+                            .iter()
+                            .find(|(_, element_type)| {
+                                element_type != first_non_recursed_element_type
+                            })
                     {
-                        Type::Array(Box::new(Type::RecursedFunction(
-                            first_recursed_element_function_name.clone(),
+                        context
+                            .path
+                            .0
+                            .push_back_mut(PathSegment::ArrayIndex(*unexpected_type_element_index));
+                        let result_error =
+                            context.error(first_non_recursed_element_type, unexpected_type);
+                        context.path.0.drop_last_mut();
+                        return Err(result_error);
+                    } else {
+                        Ok(Type::Array(Box::new(
+                            first_non_recursed_element_type.clone(),
                         )))
-                    } else {
-                        return Err(anyhow!("Expected non-empty array at {:?}", context.path));
                     }
+                } else if let Some(first_recursed_element_function_name) =
+                    recursed_elements_functions_names.first()
+                {
+                    Ok(Type::Array(Box::new(Type::RecursedFunction(
+                        first_recursed_element_function_name.clone(),
+                    ))))
+                } else {
+                    Err(anyhow!("Expected non-empty array at {:?}", context.path))
                 }
-                Value::String(ref string) => {
-                    if string == DEFAULT_ARGUMENT_NAME
-                        && let Some(constant) = context.constants.get(DEFAULT_ARGUMENT_NAME)
-                    {
-                        self.get_type(constant.clone(), context)?
-                    } else {
-                        Type::String
-                    }
+            }
+            Value::String(string) => {
+                if string == DEFAULT_ARGUMENT_NAME
+                    && let Some(constant_type) = context.constants.get(DEFAULT_ARGUMENT_NAME)
+                {
+                    Ok(constant_type.clone())
+                } else {
+                    Ok(Type::String)
                 }
-                Value::Number(_) => Type::Number,
-                Value::Bool(_) => Type::Bool,
-                Value::Null => Type::Null,
-            },
-        };
-        Ok(result)
+            }
+            Value::Number(_) => Ok(Type::Number),
+            Value::Bool(_) => Ok(Type::Bool),
+            Value::Null => Ok(Type::Null),
+        }
     }
 }

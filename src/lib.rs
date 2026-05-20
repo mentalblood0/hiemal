@@ -27,7 +27,7 @@ mod tests {
     #[test]
     fn test_numbers() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!([
                         1234,
@@ -69,7 +69,7 @@ mod tests {
     #[test]
     fn test_simple_embedded_functions() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "sum": [
@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn test_with() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "sum": [
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn test_user_functions() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "sum": [
@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn test_generics() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "sum": [
@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn test_map() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "sum": {
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn test_filter() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "sum": {
@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn test_fold() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "fold": [
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn test_factorial() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "with": {
@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn test_branching() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "if": true,
@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn test_try_or() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "try": {"from": ["a", "b"], "at": [2]},
@@ -322,7 +322,7 @@ mod tests {
     #[test]
     fn test_from_at_list() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "from": ["a", "b"],
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn test_from_at_object() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "from": {"a": "a value", "b": "b value"},
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn test_from_at_complex() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "from": {"a": "a value", "b": [1, 2]},
@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn test_from_at_error() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "try": {"from": ["a", "b"], "at": [2]},
@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn test_arguments_local() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "with": {
@@ -432,7 +432,7 @@ mod tests {
     #[test]
     fn test_arguments_nonlocal() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                         "with": {
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn test_recursive_normal() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                       "with": {
@@ -516,7 +516,7 @@ mod tests {
     #[test]
     fn test_recursive_short() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                       "with": {
@@ -609,7 +609,7 @@ mod tests {
         let handler = builder
             .spawn(|| {
                 assert_eq!(
-                    *default_interpreter()
+                    default_interpreter()
                         .compute(
                             &serde_json::from_value(json!({
                               "with": {
@@ -692,7 +692,7 @@ mod tests {
     #[test]
     fn test_includes() {
         assert_eq!(
-            *default_interpreter()
+            default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
                       "from local file": {

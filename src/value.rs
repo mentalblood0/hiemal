@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
 use dashu::{Decimal, Rational};
 use serde::{
@@ -85,15 +84,15 @@ pub struct Constant {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 pub struct With {
     #[serde(default)]
-    pub functions: BTreeMap<String, Rc<Value>>,
+    pub functions: rpds::RedBlackTreeMap<String, Value>,
     #[serde(default)]
-    pub constants: BTreeMap<String, RcOrValue>,
+    pub constants: rpds::RedBlackTreeMap<String, Value>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 pub struct WithCompute {
     pub with: With,
-    pub compute: RcOrValue,
+    pub compute: Value,
 }
 
 fn default_alias() -> String {
@@ -102,18 +101,18 @@ fn default_alias() -> String {
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 pub struct Map {
-    pub map: RcOrValue,
+    pub map: Value,
     #[serde(default = "default_alias")]
     pub r#as: String,
-    pub through: RcOrValue,
+    pub through: Value,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 pub struct Filter {
-    pub filter: RcOrValue,
+    pub filter: Value,
     #[serde(default = "default_alias")]
     pub r#as: String,
-    pub through: RcOrValue,
+    pub through: Value,
 }
 
 fn default_current_value_alias() -> String {
@@ -126,24 +125,24 @@ fn default_accumulator_value_alias() -> String {
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 pub struct Fold {
-    pub fold: RcOrValue,
+    pub fold: Value,
     #[serde(default = "default_current_value_alias")]
     pub r#as: String,
     #[serde(rename = "starting with")]
-    pub starting_with: RcOrValue,
+    pub starting_with: Value,
     #[serde(
         rename = "accumulating in",
         default = "default_accumulator_value_alias"
     )]
     pub accumulating_in: String,
-    pub through: RcOrValue,
+    pub through: Value,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 pub struct Branching {
-    pub r#if: RcOrValue,
-    pub then: RcOrValue,
-    pub r#else: RcOrValue,
+    pub r#if: Value,
+    pub then: Value,
+    pub r#else: Value,
 }
 
 fn default_error_alias() -> String {
@@ -152,8 +151,8 @@ fn default_error_alias() -> String {
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 pub struct TryOr {
-    pub r#try: RcOrValue,
-    pub or: RcOrValue,
+    pub r#try: Value,
+    pub or: Value,
     #[serde(rename = "with error", default = "default_error_alias")]
     pub with_error: String,
 }
@@ -167,8 +166,8 @@ pub enum AtSegment {
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 pub struct FromAt {
-    pub from: RcOrValue,
-    pub at: Vec<AtSegment>,
+    pub from: Value,
+    pub at: rpds::List<AtSegment>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -179,7 +178,7 @@ pub enum Value {
     String(String),
     Bool(bool),
     Null,
-    Array(Vec<RcOrValue>),
+    Array(Vec<Value>),
     Constant(Constant),
     With(Box<WithCompute>),
     Map(Box<Map>),
@@ -188,7 +187,7 @@ pub enum Value {
     Branching(Box<Branching>),
     TryOr(Box<TryOr>),
     FromAt(Box<FromAt>),
-    Object(BTreeMap<String, RcOrValue>),
+    Object(rpds::RedBlackTreeMap<String, Value>),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -230,112 +229,17 @@ impl Value {
         }
     }
 
-    pub fn as_array(&self) -> Option<&Vec<RcOrValue>> {
+    pub fn as_array(&self) -> Option<&Vec<Value>> {
         match self {
             Value::Array(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_object(&self) -> Option<&BTreeMap<String, RcOrValue>> {
+    pub fn as_object(&self) -> Option<&rpds::RedBlackTreeMap<String, Value>> {
         match self {
             Value::Object(result) => Some(result),
             _ => None,
-        }
-    }
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug)]
-#[serde(untagged)]
-pub enum RcOrValue {
-    Rc(Rc<Value>),
-    Value(Value),
-}
-
-impl Clone for RcOrValue {
-    fn clone(&self) -> Self {
-        match self {
-            RcOrValue::Rc(rc) => RcOrValue::Rc(rc.clone()),
-            RcOrValue::Value(value) => match value {
-                Value::Number(_) | Value::String(_) | Value::Bool(_) | Value::Null => {
-                    RcOrValue::Value(value.clone())
-                }
-                complex_value => RcOrValue::Rc(Rc::new(complex_value.clone())),
-            },
-        }
-    }
-}
-
-impl PartialEq for RcOrValue {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (RcOrValue::Rc(a), RcOrValue::Rc(b)) => *a == *b,
-            (RcOrValue::Value(a), RcOrValue::Value(b)) => a == b,
-            (RcOrValue::Rc(rc_val), RcOrValue::Value(val)) => **rc_val == *val,
-            (RcOrValue::Value(val), RcOrValue::Rc(rc_val)) => *val == **rc_val,
-        }
-    }
-}
-
-impl RcOrValue {
-    pub fn borrow_rc_if_complex_otherwise_value(self) -> Self {
-        match self {
-            RcOrValue::Rc(rc) => RcOrValue::Rc(rc),
-            RcOrValue::Value(value) => match value {
-                Value::Number(_) | Value::String(_) | Value::Bool(_) | Value::Null => {
-                    RcOrValue::Value(value)
-                }
-                complex_value => RcOrValue::Rc(Rc::new(complex_value)),
-            },
-        }
-    }
-
-    pub fn value(&self) -> &Value {
-        match self {
-            RcOrValue::Rc(rc) => rc,
-            RcOrValue::Value(value) => value,
-        }
-    }
-
-    pub fn rc(&self) -> Rc<Value> {
-        match self {
-            RcOrValue::Rc(rc) => rc.clone(),
-            RcOrValue::Value(value) => Rc::new(value.clone()),
-        }
-    }
-
-    pub fn as_number(&self) -> Option<Rational> {
-        match self {
-            RcOrValue::Rc(rc) => rc.as_number(),
-            RcOrValue::Value(value) => value.as_number(),
-        }
-    }
-
-    pub fn as_string(&self) -> Option<&String> {
-        match self {
-            RcOrValue::Rc(rc) => rc.as_string(),
-            RcOrValue::Value(value) => value.as_string(),
-        }
-    }
-
-    pub fn as_bool(&self) -> Option<bool> {
-        match self {
-            RcOrValue::Rc(rc) => rc.as_bool(),
-            RcOrValue::Value(value) => value.as_bool(),
-        }
-    }
-
-    pub fn as_array(&self) -> Option<&Vec<RcOrValue>> {
-        match self {
-            RcOrValue::Rc(rc) => rc.as_array(),
-            RcOrValue::Value(value) => value.as_array(),
-        }
-    }
-
-    pub fn as_object(&self) -> Option<&BTreeMap<String, RcOrValue>> {
-        match self {
-            RcOrValue::Rc(rc) => rc.as_object(),
-            RcOrValue::Value(value) => value.as_object(),
         }
     }
 }

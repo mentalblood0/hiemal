@@ -84,7 +84,7 @@ fn factorial(bencher_context: &mut Criterion) {
     bencher_context.bench_function(&format!("factorial_{number}"), |b| {
         b.iter(|| {
             assert_eq!(
-                *interpreter.compute(&program, &mut includes_cache).unwrap(),
+                interpreter.compute(&program, &mut includes_cache).unwrap(),
                 correct
             )
         })
