@@ -84,9 +84,9 @@ pub struct Constant {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 pub struct With {
     #[serde(default)]
-    pub functions: rpds::RedBlackTreeMap<String, Value>,
+    pub functions: rpds::RedBlackTreeMapSync<String, Value>,
     #[serde(default)]
-    pub constants: rpds::RedBlackTreeMap<String, Value>,
+    pub constants: rpds::RedBlackTreeMapSync<String, Value>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -167,7 +167,7 @@ pub enum AtSegment {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 pub struct FromAt {
     pub from: Value,
-    pub at: rpds::List<AtSegment>,
+    pub at: rpds::ListSync<AtSegment>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -178,7 +178,7 @@ pub enum Value {
     String(String),
     Bool(bool),
     Null,
-    Array(Vec<Value>),
+    Array(rpds::VectorSync<Value>),
     Constant(Constant),
     With(Box<WithCompute>),
     Map(Box<Map>),
@@ -187,7 +187,7 @@ pub enum Value {
     Branching(Box<Branching>),
     TryOr(Box<TryOr>),
     FromAt(Box<FromAt>),
-    Object(rpds::RedBlackTreeMap<String, Value>),
+    Object(rpds::RedBlackTreeMapSync<String, Value>),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -229,14 +229,14 @@ impl Value {
         }
     }
 
-    pub fn as_array(&self) -> Option<&Vec<Value>> {
+    pub fn as_array(&self) -> Option<&rpds::VectorSync<Value>> {
         match self {
             Value::Array(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_object(&self) -> Option<&rpds::RedBlackTreeMap<String, Value>> {
+    pub fn as_object(&self) -> Option<&rpds::RedBlackTreeMapSync<String, Value>> {
         match self {
             Value::Object(result) => Some(result),
             _ => None,

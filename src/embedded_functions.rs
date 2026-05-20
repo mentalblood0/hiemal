@@ -144,13 +144,12 @@ impl Default for Interpreter {
                             let step = arguments.get("step").unwrap().as_number().unwrap();
                             let estimated_capacity = (to.clone() - from.clone()) / step.clone();
                             if estimated_capacity <= Rational::ZERO {
-                                Ok(Value::Array(vec![]))
+                                Ok(Value::Array(rpds::VectorSync::new_sync()))
                             } else {
-                                let mut result =
-                                    Vec::with_capacity(estimated_capacity.to_f64_fast() as usize);
+                                let mut result = rpds::VectorSync::new_sync();
                                 let mut current = from;
                                 while current <= to {
-                                    result.push(Value::Number(current.clone()));
+                                    result.push_back_mut(Value::Number(current.clone()));
                                     current += step.clone();
                                 }
                                 Ok(Value::Array(result))

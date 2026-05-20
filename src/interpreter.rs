@@ -1,4 +1,6 @@
+use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
 
 use anyhow::{Context, Error, Result, anyhow};
 
@@ -49,6 +51,34 @@ impl<V> ListMap<V> {
 
     pub fn remove(&mut self, key: &str) {
         self.map.get_mut(key).unwrap().pop();
+    }
+}
+
+fn fallible_map_preserve_order<E, F>(
+    items: &rpds::VectorSync<Value>,
+    through: F,
+) -> Result<rpds::VectorSync<Value>, E>
+where
+    E: Send,
+    F: Fn((usize, &Value)) -> Result<Value, E> + Sync,
+{
+    let results = Mutex::new(vec![None; items.len()]);
+    let result = items
+        .iter()
+        .enumerate()
+        .par_bridge()
+        .try_for_each(|(element_index, element)| {
+            let mapped = through((element_index, element))?;
+            let mut results_guard = results.lock().unwrap();
+            results_guard[element_index] = Some(mapped);
+            Ok::<_, E>(())
+        });
+    match result {
+        Ok(_) => {
+            let results_guard = results.into_inner().unwrap();
+            Ok(results_guard.into_iter().map(Option::unwrap).collect())
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -206,8 +236,8 @@ impl TypeCheckingContext {
 #[derive(Clone, Debug)]
 pub struct ComputationContext {
     pub path: Path,
-    pub functions: rpds::RedBlackTreeMap<String, Value>,
-    pub constants: rpds::RedBlackTreeMap<String, Value>,
+    pub functions: rpds::RedBlackTreeMapSync<String, Value>,
+    pub constants: rpds::RedBlackTreeMapSync<String, Value>,
 }
 
 impl ComputationContext {
@@ -253,9 +283,9 @@ impl Interpreter {
         Ok(self.compute_with_context(
             &program,
             ComputationContext {
-                path: Path(rpds::Vector::new()),
-                functions: rpds::RedBlackTreeMap::new(),
-                constants: rpds::RedBlackTreeMap::new(),
+                path: Path(rpds::VectorSync::new_sync()),
+                functions: rpds::RedBlackTreeMapSync::new_sync(),
+                constants: rpds::RedBlackTreeMapSync::new_sync(),
             },
         )?)
     }
@@ -392,7 +422,7 @@ impl Interpreter {
                     .as_array()
                     .unwrap()
                     .clone();
-                let mut result = Vec::with_capacity(array.len());
+                let mut result = rpds::VectorSync::new_sync();
                 for (element_index, element_compute_body) in array.into_iter().enumerate() {
                     let element_body_context = context.extended(
                         [PathSegment::Map, PathSegment::ArrayIndex(element_index)],
@@ -401,7 +431,7 @@ impl Interpreter {
                     );
                     let precomputed_element =
                         self.compute_with_context(&element_compute_body, element_body_context)?;
-                    result.push(self.compute_with_context(
+                    result.push_back_mut(self.compute_with_context(
                         &map_clause.through,
                         context.extended(
                             [PathSegment::Through],
@@ -418,7 +448,7 @@ impl Interpreter {
                     .as_array()
                     .unwrap()
                     .clone();
-                let mut result = Vec::with_capacity(array.len());
+                let mut result = rpds::VectorSync::new_sync();
                 for (element_index, element_compute_body) in array.into_iter().enumerate() {
                     let element_body_context = context.extended(
                         [PathSegment::Filter, PathSegment::ArrayIndex(element_index)],
@@ -439,7 +469,7 @@ impl Interpreter {
                         .as_bool()
                         .unwrap()
                     {
-                        result.push(precomputed_element);
+                        result.push_back_mut(precomputed_element);
                     };
                 }
                 Value::Array(result)
@@ -608,16 +638,15 @@ impl Interpreter {
                         .filter_map(|element| element),
                 ))
             }
-            Value::Array(array) => {
-                let mut result_array_elements = Vec::with_capacity(array.len());
-                for (element_index, element_compute_body) in array.iter().enumerate() {
-                    result_array_elements.push(self.compute_with_context(
+            Value::Array(array) => Value::Array(fallible_map_preserve_order(
+                array,
+                |(element_index, element_compute_body)| {
+                    self.compute_with_context(
                         element_compute_body,
                         context.extended([PathSegment::ArrayIndex(element_index)], [], []),
-                    )?);
-                }
-                Value::Array(result_array_elements)
-            }
+                    )
+                },
+            )?),
             Value::String(string) => {
                 if string == DEFAULT_ARGUMENT_NAME {
                     context
@@ -639,7 +668,7 @@ impl Interpreter {
         self.get_type(
             program,
             &mut TypeCheckingContext {
-                path: Path(rpds::Vector::new()),
+                path: Path(rpds::VectorSync::new_sync()),
                 functions: ListMap::new(),
                 constants: ListMap::new(),
                 entered_functions: BTreeSet::new(),

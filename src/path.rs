@@ -25,7 +25,7 @@ pub enum PathSegment {
 }
 
 #[derive(Clone)]
-pub struct Path(pub rpds::Vector<PathSegment>);
+pub struct Path(pub rpds::VectorSync<PathSegment>);
 
 impl std::fmt::Debug for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
