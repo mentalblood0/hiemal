@@ -54,13 +54,9 @@ impl<V> ListMap<V> {
     }
 }
 
-fn map_parallel<E, F>(
-    items: &rpds::VectorSync<Value>,
-    through: F,
-) -> Result<rpds::VectorSync<Value>, E>
+fn map_parallel<F>(items: &rpds::VectorSync<Value>, through: F) -> Result<rpds::VectorSync<Value>>
 where
-    E: Send,
-    F: Fn((usize, &Value)) -> Result<Value, E> + Sync,
+    F: Fn((usize, &Value)) -> Result<Value> + Sync,
 {
     let results = Mutex::new(rpds::VectorSync::from_iter(
         std::iter::repeat(Value::Null).take(items.len()),
