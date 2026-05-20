@@ -206,7 +206,7 @@ impl TypeCheckingContext {
 
 #[derive(Clone, Debug)]
 pub struct ComputationContext {
-    pub path: rpds::Vector<PathSegment>,
+    pub path: Path,
     pub functions: rpds::RedBlackTreeMap<String, Rc<Value>>,
     pub constants: rpds::RedBlackTreeMap<String, RcOrValue>,
 }
@@ -221,7 +221,7 @@ impl ComputationContext {
         Self {
             path: {
                 let mut result = self.path.clone();
-                result.extend(path);
+                result.0.extend(path);
                 result
             },
             functions: {
@@ -256,7 +256,7 @@ impl Interpreter {
             match self.compute_with_context(
                 &RcOrValue::Rc(program),
                 ComputationContext {
-                    path: rpds::Vector::new(),
+                    path: Path(rpds::Vector::new()),
                     functions: rpds::RedBlackTreeMap::new(),
                     constants: rpds::RedBlackTreeMap::new(),
                 },
@@ -555,8 +555,9 @@ impl Interpreter {
                                 .with_context(|| {
                                     format!(
                                         "Can not get element at index {array_index} from array of \
-                                         length {} when computing from-at clause at {:?}",
+                                         length {} at path segment {:?} of from-at clause at {:?}",
                                         array.len(),
+                                        array_index,
                                         context.path
                                     )
                                 })?
@@ -650,7 +651,7 @@ impl Interpreter {
         self.get_type(
             TypeOrRcOrValue::RcOrValue(RcOrValue::Rc(program)),
             &mut TypeCheckingContext {
-                path: Path(vec![]),
+                path: Path(rpds::Vector::new()),
                 functions: ListMap::new(),
                 constants: ListMap::new(),
                 entered_functions: BTreeSet::new(),
@@ -672,9 +673,9 @@ impl Interpreter {
                         context
                             .path
                             .0
-                            .push(PathSegment::Constant(constant_clause.constant.clone()));
+                            .push_back_mut(PathSegment::Constant(constant_clause.constant.clone()));
                         let result = self.get_type(constant_value.clone(), context)?;
-                        context.path.0.pop();
+                        context.path.0.drop_last_mut();
                         result
                     } else {
                         return Err(anyhow!(
@@ -690,32 +691,32 @@ impl Interpreter {
                             .functions
                             .push(&function_name, function_body.clone());
                     }
-                    context.path.0.push(PathSegment::With);
-                    context.path.0.push(PathSegment::Constants);
+                    context.path.0.push_back_mut(PathSegment::With);
+                    context.path.0.push_back_mut(PathSegment::Constants);
                     for (constant_name, constant_compute_body) in with_clause.with.constants.iter()
                     {
                         context
                             .path
                             .0
-                            .push(PathSegment::Constant(constant_name.clone()));
+                            .push_back_mut(PathSegment::Constant(constant_name.clone()));
                         let precomputed_constant_type = self.get_type(
                             TypeOrRcOrValue::RcOrValue(constant_compute_body.clone()),
                             context,
                         )?;
-                        context.path.0.pop();
+                        context.path.0.drop_last_mut();
                         context.constants.push(
                             &constant_name,
                             TypeOrRcOrValue::Type(precomputed_constant_type),
                         );
                     }
-                    context.path.0.pop();
-                    context.path.0.push(PathSegment::Compute);
+                    context.path.0.drop_last_mut();
+                    context.path.0.push_back_mut(PathSegment::Compute);
                     let result = self.get_type(
                         TypeOrRcOrValue::RcOrValue(with_clause.compute.clone()),
                         context,
                     )?;
-                    context.path.0.pop();
-                    context.path.0.pop();
+                    context.path.0.drop_last_mut();
+                    context.path.0.drop_last_mut();
                     for function_name in with_clause.with.functions.keys() {
                         context.functions.remove(function_name);
                     }
@@ -725,21 +726,21 @@ impl Interpreter {
                     result
                 }
                 Value::Map(ref map_clause) => {
-                    context.path.0.push(PathSegment::Map);
+                    context.path.0.push_back_mut(PathSegment::Map);
                     let actual_array_type =
                         self.get_type(TypeOrRcOrValue::RcOrValue(map_clause.map.clone()), context)?;
-                    context.path.0.pop();
+                    context.path.0.drop_last_mut();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context.constants.push(
                             &map_clause.r#as,
                             TypeOrRcOrValue::Type(*array_element_type.clone()),
                         );
-                        context.path.0.push(PathSegment::Through);
+                        context.path.0.push_back_mut(PathSegment::Through);
                         let result = self.get_type(
                             TypeOrRcOrValue::RcOrValue(map_clause.through.clone()),
                             context,
                         )?;
-                        context.path.0.pop();
+                        context.path.0.drop_last_mut();
                         context.constants.remove(&map_clause.r#as);
                         Type::Array(Box::new(result))
                     } else {
@@ -750,23 +751,23 @@ impl Interpreter {
                     }
                 }
                 Value::Filter(ref filter_clause) => {
-                    context.path.0.push(PathSegment::Filter);
+                    context.path.0.push_back_mut(PathSegment::Filter);
                     let actual_array_type = self.get_type(
                         TypeOrRcOrValue::RcOrValue(filter_clause.filter.clone()),
                         context,
                     )?;
-                    context.path.0.pop();
+                    context.path.0.drop_last_mut();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context.constants.push(
                             &filter_clause.r#as,
                             TypeOrRcOrValue::Type(*array_element_type.clone()),
                         );
-                        context.path.0.push(PathSegment::Through);
+                        context.path.0.push_back_mut(PathSegment::Through);
                         let through_type = self.get_type(
                             TypeOrRcOrValue::RcOrValue(filter_clause.through.clone()),
                             context,
                         )?;
-                        context.path.0.pop();
+                        context.path.0.drop_last_mut();
                         context
                             .assert_equal(&through_type, &Type::Bool)
                             .with_context(|| {
@@ -786,12 +787,12 @@ impl Interpreter {
                     }
                 }
                 Value::Fold(ref fold_clause) => {
-                    context.path.0.push(PathSegment::Fold);
+                    context.path.0.push_back_mut(PathSegment::Fold);
                     let actual_array_type = self.get_type(
                         TypeOrRcOrValue::RcOrValue(fold_clause.fold.clone()),
                         context,
                     )?;
-                    context.path.0.pop();
+                    context.path.0.drop_last_mut();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         let starting_with_type = self.get_type(
                             TypeOrRcOrValue::RcOrValue(fold_clause.starting_with.clone()),
@@ -805,12 +806,12 @@ impl Interpreter {
                             &fold_clause.accumulating_in,
                             TypeOrRcOrValue::Type(starting_with_type.clone()),
                         );
-                        context.path.0.push(PathSegment::Through);
+                        context.path.0.push_back_mut(PathSegment::Through);
                         let through_type = self.get_type(
                             TypeOrRcOrValue::RcOrValue(fold_clause.through.clone()),
                             context,
                         )?;
-                        context.path.0.pop();
+                        context.path.0.drop_last_mut();
                         context
                             .assert_equal(&through_type, &starting_with_type)
                             .with_context(|| {
@@ -832,23 +833,25 @@ impl Interpreter {
                     }
                 }
                 Value::Branching(ref branching_clause) => {
-                    context.path.0.push(PathSegment::If);
+                    context.path.0.push_back_mut(PathSegment::If);
                     let if_branch_type = self.get_type(
                         TypeOrRcOrValue::RcOrValue(branching_clause.r#if.clone()),
                         context,
                     )?;
                     context.assert_equal(&Type::Bool, &if_branch_type)?;
-                    *context.path.0.last_mut().unwrap() = PathSegment::Then;
+                    context.path.0.drop_last_mut();
+                    context.path.0.push_back_mut(PathSegment::Then);
                     let then_branch_type = self.get_type(
                         TypeOrRcOrValue::RcOrValue(branching_clause.then.clone()),
                         context,
                     )?;
-                    *context.path.0.last_mut().unwrap() = PathSegment::Else;
+                    context.path.0.drop_last_mut();
+                    context.path.0.push_back_mut(PathSegment::Else);
                     let else_branch_type = self.get_type(
                         TypeOrRcOrValue::RcOrValue(branching_clause.r#else.clone()),
                         context,
                     )?;
-                    context.path.0.pop();
+                    context.path.0.drop_last_mut();
                     context
                         .assert_equal(&then_branch_type, &else_branch_type)
                         .with_context(|| {
@@ -862,12 +865,13 @@ impl Interpreter {
                     then_branch_type
                 }
                 Value::TryOr(ref try_or_clause) => {
-                    context.path.0.push(PathSegment::If);
+                    context.path.0.push_back_mut(PathSegment::If);
                     let try_branch_type = self.get_type(
                         TypeOrRcOrValue::RcOrValue(try_or_clause.r#try.clone()),
                         context,
                     )?;
-                    *context.path.0.last_mut().unwrap() = PathSegment::Or;
+                    context.path.0.drop_last_mut();
+                    context.path.0.push_back_mut(PathSegment::Or);
                     context.constants.push(
                         &try_or_clause.with_error,
                         TypeOrRcOrValue::Type(Type::String),
@@ -876,7 +880,7 @@ impl Interpreter {
                         TypeOrRcOrValue::RcOrValue(try_or_clause.or.clone()),
                         context,
                     )?;
-                    context.path.0.pop();
+                    context.path.0.drop_last_mut();
                     context.constants.remove(&try_or_clause.with_error);
                     context
                         .assert_equal(&try_branch_type, &or_branch_type)
@@ -891,17 +895,21 @@ impl Interpreter {
                     try_branch_type
                 }
                 Value::FromAt(ref from_at_clause) => {
-                    context.path.0.push(PathSegment::From);
+                    context.path.0.push_back_mut(PathSegment::From);
                     let mut result = self.get_type(
                         TypeOrRcOrValue::RcOrValue(from_at_clause.from.clone()),
                         context,
                     )?;
-                    *context.path.0.last_mut().unwrap() = PathSegment::At;
+                    context.path.0.drop_last_mut();
+                    context.path.0.push_back_mut(PathSegment::At);
                     if from_at_clause.at.is_empty() {
                         return Err(anyhow!("Expected a non-empty list at {:?}", context.path));
                     }
                     for (at_segment_index, at_segment) in from_at_clause.at.iter().enumerate() {
-                        context.path.0.push(PathSegment::AtIndex(at_segment_index));
+                        context
+                            .path
+                            .0
+                            .push_back_mut(PathSegment::AtIndex(at_segment_index));
                         match at_segment {
                             AtSegment::ObjectKey(object_key) => match result {
                                 Type::Object(mut result_fields_types) => {
@@ -939,9 +947,9 @@ impl Interpreter {
                                 }
                             },
                         }
-                        context.path.0.pop();
+                        context.path.0.drop_last_mut();
                     }
-                    context.path.0.pop();
+                    context.path.0.drop_last_mut();
                     result
                 }
                 Value::Object(ref object) => {
@@ -951,7 +959,7 @@ impl Interpreter {
                             context
                                 .path
                                 .0
-                                .push(PathSegment::Function(function_name.clone()));
+                                .push_back_mut(PathSegment::Function(function_name.clone()));
                             if context.entered_functions.contains(function_name) {
                                 if let Some(this_recursed_function_type) =
                                     context.recursed_functions_types.get(function_name)
@@ -969,15 +977,14 @@ impl Interpreter {
                                 && arguments.len() > 1
                             {
                                 for (argument_name, argument_compute_body) in arguments.iter() {
-                                    context
-                                        .path
-                                        .0
-                                        .push(PathSegment::Argument(argument_name.clone()));
+                                    context.path.0.push_back_mut(PathSegment::Argument(
+                                        argument_name.clone(),
+                                    ));
                                     let argument_type = self.get_type(
                                         TypeOrRcOrValue::RcOrValue(argument_compute_body.clone()),
                                         context,
                                     )?;
-                                    context.path.0.pop();
+                                    context.path.0.drop_last_mut();
                                     arguments_names.push(argument_name.clone());
                                     context
                                         .constants
@@ -999,7 +1006,7 @@ impl Interpreter {
                                 TypeOrRcOrValue::RcOrValue(RcOrValue::Rc(function_body.clone())),
                                 context,
                             )?;
-                            context.path.0.pop();
+                            context.path.0.drop_last_mut();
                             context.entered_functions.remove(function_name);
                             for argument_name in arguments_names {
                                 context.constants.remove(&argument_name);
@@ -1008,15 +1015,14 @@ impl Interpreter {
                             return Ok(result);
                         }
                         if let Some(function) = self.embedded_functions.get(function_name) {
-                            context
-                                .path
-                                .0
-                                .push(PathSegment::EmbeddedFunction(function_name.clone()));
+                            context.path.0.push_back_mut(PathSegment::EmbeddedFunction(
+                                function_name.clone(),
+                            ));
                             let arguments_type = self
                                 .get_type(TypeOrRcOrValue::RcOrValue(argument.clone()), context)?;
                             let generic_values =
                                 context.assert_equal(&function.argument_type, &arguments_type)?;
-                            context.path.0.pop();
+                            context.path.0.drop_last_mut();
                             let mut result = function.return_type.clone();
                             context.substitute_generic_arguments_values(
                                 &mut result,
@@ -1027,12 +1033,15 @@ impl Interpreter {
                     }
                     let mut result_map = BTreeMap::new();
                     for (key, value) in object {
-                        context.path.0.push(PathSegment::ObjectKey(key.clone()));
+                        context
+                            .path
+                            .0
+                            .push_back_mut(PathSegment::ObjectKey(key.clone()));
                         result_map.insert(
                             key.clone(),
                             self.get_type(TypeOrRcOrValue::RcOrValue(value.clone()), context)?,
                         );
-                        context.path.0.pop();
+                        context.path.0.drop_last_mut();
                     }
                     Type::Object(result_map)
                 }
@@ -1041,7 +1050,10 @@ impl Interpreter {
                         Vec::with_capacity(array.len());
                     let mut recursed_elements_functions_names = vec![];
                     for (element_index, element) in array.iter().enumerate() {
-                        context.path.0.push(PathSegment::ArrayIndex(element_index));
+                        context
+                            .path
+                            .0
+                            .push_back_mut(PathSegment::ArrayIndex(element_index));
                         match self.get_type(TypeOrRcOrValue::RcOrValue(element.clone()), context)? {
                             Type::RecursedFunction(recursed_function_name) => {
                                 recursed_elements_functions_names.push(recursed_function_name);
@@ -1051,7 +1063,7 @@ impl Interpreter {
                                     .push((element_index, non_recursed_type));
                             }
                         }
-                        context.path.0.pop();
+                        context.path.0.drop_last_mut();
                     }
                     if let Some(first_non_recursed_element_type) =
                         non_recursed_elements_indexes_and_types
@@ -1063,13 +1075,12 @@ impl Interpreter {
                                 |(_, element_type)| element_type != first_non_recursed_element_type,
                             )
                         {
-                            context
-                                .path
-                                .0
-                                .push(PathSegment::ArrayIndex(*unexpected_type_element_index));
+                            context.path.0.push_back_mut(PathSegment::ArrayIndex(
+                                *unexpected_type_element_index,
+                            ));
                             let result_error =
                                 context.error(first_non_recursed_element_type, unexpected_type);
-                            context.path.0.pop();
+                            context.path.0.drop_last_mut();
                             return Err(result_error);
                         } else {
                             Type::Array(Box::new(first_non_recursed_element_type.clone()))

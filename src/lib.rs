@@ -312,8 +312,8 @@ mod tests {
                 )
                 .unwrap(),
             serde_json::from_value(json!(
-                "Can not get element at index 2 from array of length 2 at the point Path([Try, \
-                 At, AtIndex(0)])"
+                "Can not get element at index 2 from array of length 2 at path segment 2 of \
+                 from-at clause at Path([Try])"
             ))
             .unwrap()
         );
@@ -384,8 +384,8 @@ mod tests {
                 )
                 .unwrap(),
             serde_json::from_value(json!(
-                "Can not get element at index 2 from array of length 2 at the point Path([Try, \
-                 At, AtIndex(0)])"
+                "Can not get element at index 2 from array of length 2 at path segment 2 of \
+                 from-at clause at Path([Try])"
             ))
             .unwrap()
         );
