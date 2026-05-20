@@ -62,24 +62,20 @@ where
     E: Send,
     F: Fn((usize, &Value)) -> Result<Value, E> + Sync,
 {
-    let results = Mutex::new(vec![None; items.len()]);
+    let results = Mutex::new(rpds::VectorSync::from_iter(
+        std::iter::repeat(Value::Null).take(items.len()),
+    ));
     items
         .iter()
         .enumerate()
         .par_bridge()
         .try_for_each(|(element_index, element)| {
-            let result = through((element_index, element))?;
-            results.lock().unwrap()[element_index] = Some(result);
-            Ok::<_, E>(())
+            through((element_index, element)).and_then(|result| {
+                results.lock().unwrap()[element_index] = result;
+                Ok(())
+            })
         })
-        .and_then(|_| {
-            Ok(results
-                .into_inner()
-                .unwrap()
-                .into_iter()
-                .map(Option::unwrap)
-                .collect())
-        })
+        .and_then(|_| Ok(results.into_inner().unwrap()))
 }
 
 #[derive(Debug)]
