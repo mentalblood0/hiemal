@@ -361,46 +361,77 @@ impl Interpreter {
             Value::With(with_clause) => {
                 let constants_bodies_context =
                     context.extended([PathSegment::With, PathSegment::Constants], [], []);
-                let compute_context =
-                    Mutex::new(
-                        context.extended(
-                            [PathSegment::With, PathSegment::Compute],
-                            with_clause.with.functions.iter().map(
-                                |(function_name, function_body)| {
-                                    (function_name.clone(), function_body.clone())
-                                },
-                            ),
-                            [],
-                        ),
-                    );
-                if !with_clause.with.constants.is_empty() {
+                let mut compute_context = context.extended(
+                    [PathSegment::With, PathSegment::Compute],
                     with_clause
                         .with
-                        .constants
+                        .functions
                         .iter()
-                        .par_bridge()
-                        .try_for_each(|(constant_name, constant_compute_body)| {
-                            self.compute_with_context(
-                                &constant_compute_body,
-                                constants_bodies_context.extended(
-                                    [PathSegment::Constant(constant_name.to_string())],
-                                    [],
-                                    [],
-                                ),
-                            )
-                            .and_then(|result| {
-                                compute_context
-                                    .lock()
-                                    .unwrap()
-                                    .constants
-                                    .insert_mut(constant_name.clone(), result);
-                                Ok(())
-                            })
-                        })?;
-                }
+                        .map(|(function_name, function_body)| {
+                            (function_name.clone(), function_body.clone())
+                        }),
+                    [],
+                );
+                let complex_constants = with_clause
+                    .with
+                    .constants
+                    .iter()
+                    .filter(|(key, value)| match value {
+                        Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
+                        Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => {
+                            compute_context
+                                .constants
+                                .insert_mut(key.to_string(), (*value).clone());
+                            false
+                        }
+                        _ => true,
+                    })
+                    .collect::<Vec<_>>();
                 self.compute_with_context(
                     &with_clause.compute,
-                    compute_context.into_inner().unwrap(),
+                    match complex_constants.len() {
+                        0 => compute_context,
+                        1 => {
+                            let (key, value_compute_body) =
+                                complex_constants.into_iter().next().unwrap();
+                            compute_context.constants.insert_mut(
+                                key.to_string(),
+                                self.compute_with_context(
+                                    value_compute_body,
+                                    constants_bodies_context.extended(
+                                        [PathSegment::Constant(key.to_string())],
+                                        [],
+                                        [],
+                                    ),
+                                )?,
+                            );
+                            compute_context
+                        }
+                        2.. => {
+                            let compute_context_mutex = Mutex::new(compute_context.clone());
+                            complex_constants
+                                .par_iter()
+                                .try_for_each(|(key, value_compute_body)| {
+                                    self.compute_with_context(
+                                        value_compute_body,
+                                        constants_bodies_context.extended(
+                                            [PathSegment::Constant(key.to_string())],
+                                            [],
+                                            [],
+                                        ),
+                                    )
+                                    .and_then(|result| {
+                                        compute_context_mutex
+                                            .lock()
+                                            .unwrap()
+                                            .constants
+                                            .insert_mut(key.to_string(), result);
+                                        Ok(())
+                                    })
+                                })
+                                .and_then(|_| Ok(compute_context_mutex.into_inner().unwrap()))?
+                        }
+                    },
                 )?
             }
             Value::Map(map_clause) => {

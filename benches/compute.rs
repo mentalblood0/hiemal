@@ -110,6 +110,61 @@ fn benchmarks(bencher_context: &mut Criterion) {
         });
     }
     {
+        let program = serde_json::from_value::<ValueWithIncludes>(json!({
+            "with": {
+                "functions": {
+                    "fibonacci": {
+                        "if": {
+                            "is sorted": [
+                                "_",
+                                1
+                            ]
+                        },
+                        "then": "_",
+                        "else": {
+                            "sum": [
+                                {
+                                    "fibonacci": {
+                                        "sum": [
+                                            "_",
+                                            -1
+                                        ]
+                                    }
+                                },
+                                {
+                                    "fibonacci": {
+                                        "sum": [
+                                            "_",
+                                            -2
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "compute": {
+                "with": {
+                    "constants": {
+                        "x": {"fibonacci": 20},
+                        "y": {"fibonacci": 21},
+                        "z": {"fibonacci": 22}
+                    }
+                },
+                "compute": [
+                    {"constant": "x"},
+                    {"constant": "y"},
+                    {"constant": "z"}
+                ]
+            }
+        }))
+        .unwrap();
+        bencher_context.bench_function(&format!("fibonacci_constants"), |b| {
+            b.iter(|| interpreter.compute(&program, &mut includes_cache).unwrap())
+        });
+    }
+    {
         let number = 20u64;
         let correct_raw: u64 = (1..=number).product();
         let correct = Value::Number(Rational::from(correct_raw));
