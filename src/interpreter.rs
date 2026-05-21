@@ -54,20 +54,40 @@ impl<V> ListMap<V> {
     }
 }
 
-fn map_parallel<F>(items: &rpds::VectorSync<Value>, through: F) -> Result<rpds::VectorSync<Value>>
+fn map_parallel_into_immutable<'a, F>(
+    items: impl ParallelIterator<Item = (usize, &'a Value)>,
+    take: usize,
+    through: F,
+) -> Result<rpds::VectorSync<Value>>
 where
     F: Fn((usize, &Value)) -> Result<Value> + Sync,
 {
     let results = Mutex::new(rpds::VectorSync::from_iter(
-        std::iter::repeat(Value::Null).take(items.len()),
+        std::iter::repeat(Value::Null).take(take),
     ));
     items
-        .iter()
-        .enumerate()
-        .par_bridge()
         .try_for_each(|(element_index, element)| {
             through((element_index, element)).and_then(|result| {
-                results.lock().unwrap()[element_index] = result;
+                results.lock().unwrap().set_mut(element_index, result);
+                Ok(())
+            })
+        })
+        .and_then(|_| Ok(results.into_inner().unwrap()))
+}
+
+fn map_parallel_unordered_into_vec<'a, F>(
+    items: impl ParallelIterator<Item = (&'a String, &'a Value)>,
+    take: usize,
+    through: F,
+) -> Result<Vec<(&'a String, Value)>>
+where
+    F: Fn((&str, &Value)) -> Result<Value> + Sync,
+{
+    let results = Mutex::new(Vec::with_capacity(take));
+    items
+        .try_for_each(|(key, value)| {
+            through((key, value)).and_then(|result| {
+                results.lock().unwrap().push((key, result));
                 Ok(())
             })
         })
@@ -392,21 +412,27 @@ impl Interpreter {
                         }),
                     [],
                 );
-                for (constant_name, constant_compute_body) in with_clause.with.constants.iter() {
-                    let precomputed_value = self.compute_with_context(
-                        &constant_compute_body,
-                        constants_bodies_context.extended(
-                            [PathSegment::Constant(constant_name.clone())],
-                            [],
-                            [],
-                        ),
-                    )?;
-                    compute_context
-                        .constants
-                        .insert_mut(constant_name.clone(), precomputed_value);
+                if !with_clause.with.constants.is_empty() {
+                    for (constant_name, precomputed_constant) in map_parallel_unordered_into_vec(
+                        with_clause.with.constants.iter().par_bridge(),
+                        with_clause.with.constants.size(),
+                        |(constant_name, constant_compute_body)| {
+                            self.compute_with_context(
+                                &constant_compute_body,
+                                constants_bodies_context.extended(
+                                    [PathSegment::Constant(constant_name.to_string())],
+                                    [],
+                                    [],
+                                ),
+                            )
+                        },
+                    )? {
+                        compute_context
+                            .constants
+                            .insert_mut(constant_name.clone(), precomputed_constant);
+                    }
                 }
-                let result = self.compute_with_context(&with_clause.compute, compute_context)?;
-                result
+                self.compute_with_context(&with_clause.compute, compute_context)?
             }
             Value::Map(map_clause) => {
                 let array = self
@@ -630,8 +656,9 @@ impl Interpreter {
                         .filter_map(|element| element),
                 ))
             }
-            Value::Array(array) => Value::Array(map_parallel(
-                array,
+            Value::Array(array) => Value::Array(map_parallel_into_immutable(
+                array.iter().enumerate().par_bridge(),
+                array.len(),
                 |(element_index, element_compute_body)| {
                     self.compute_with_context(
                         element_compute_body,
