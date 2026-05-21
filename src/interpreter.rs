@@ -54,46 +54,6 @@ impl<V> ListMap<V> {
     }
 }
 
-fn map_parallel_into_immutable<'a, F>(
-    items: impl ParallelIterator<Item = (usize, &'a Value)>,
-    take: usize,
-    through: F,
-) -> Result<rpds::VectorSync<Value>>
-where
-    F: Fn((usize, &Value)) -> Result<Value> + Sync,
-{
-    let results = Mutex::new(rpds::VectorSync::from_iter(
-        std::iter::repeat(Value::Null).take(take),
-    ));
-    items
-        .try_for_each(|(element_index, element)| {
-            through((element_index, element)).and_then(|result| {
-                results.lock().unwrap().set_mut(element_index, result);
-                Ok(())
-            })
-        })
-        .and_then(|_| Ok(results.into_inner().unwrap()))
-}
-
-fn map_parallel_unordered_into_vec<'a, F>(
-    items: impl ParallelIterator<Item = (&'a String, &'a Value)>,
-    take: usize,
-    through: F,
-) -> Result<Vec<(&'a String, Value)>>
-where
-    F: Fn((&str, &Value)) -> Result<Value> + Sync,
-{
-    let results = Mutex::new(Vec::with_capacity(take));
-    items
-        .try_for_each(|(key, value)| {
-            through((key, value)).and_then(|result| {
-                results.lock().unwrap().push((key, result));
-                Ok(())
-            })
-        })
-        .and_then(|_| Ok(results.into_inner().unwrap()))
-}
-
 #[derive(Debug)]
 pub struct TypeCheckingContext {
     pub path: Path,
@@ -401,22 +361,25 @@ impl Interpreter {
             Value::With(with_clause) => {
                 let constants_bodies_context =
                     context.extended([PathSegment::With, PathSegment::Constants], [], []);
-                let mut compute_context = context.extended(
-                    [PathSegment::With, PathSegment::Compute],
+                let compute_context =
+                    Mutex::new(
+                        context.extended(
+                            [PathSegment::With, PathSegment::Compute],
+                            with_clause.with.functions.iter().map(
+                                |(function_name, function_body)| {
+                                    (function_name.clone(), function_body.clone())
+                                },
+                            ),
+                            [],
+                        ),
+                    );
+                if !with_clause.with.constants.is_empty() {
                     with_clause
                         .with
-                        .functions
+                        .constants
                         .iter()
-                        .map(|(function_name, function_body)| {
-                            (function_name.clone(), function_body.clone())
-                        }),
-                    [],
-                );
-                if !with_clause.with.constants.is_empty() {
-                    for (constant_name, precomputed_constant) in map_parallel_unordered_into_vec(
-                        with_clause.with.constants.iter().par_bridge(),
-                        with_clause.with.constants.size(),
-                        |(constant_name, constant_compute_body)| {
+                        .par_bridge()
+                        .try_for_each(|(constant_name, constant_compute_body)| {
                             self.compute_with_context(
                                 &constant_compute_body,
                                 constants_bodies_context.extended(
@@ -425,14 +388,20 @@ impl Interpreter {
                                     [],
                                 ),
                             )
-                        },
-                    )? {
-                        compute_context
-                            .constants
-                            .insert_mut(constant_name.clone(), precomputed_constant);
-                    }
+                            .and_then(|result| {
+                                compute_context
+                                    .lock()
+                                    .unwrap()
+                                    .constants
+                                    .insert_mut(constant_name.clone(), result);
+                                Ok(())
+                            })
+                        })?;
                 }
-                self.compute_with_context(&with_clause.compute, compute_context)?
+                self.compute_with_context(
+                    &with_clause.compute,
+                    compute_context.into_inner().unwrap(),
+                )?
             }
             Value::Map(map_clause) => {
                 let array = self
@@ -607,9 +576,12 @@ impl Interpreter {
             Value::Object(object) => {
                 if object.size() == 1 {
                     let (function_name, argument) = object.iter().next().unwrap();
-                    let arguments_bodies_context =
-                        context.extended([PathSegment::Function(function_name.clone())], [], []);
                     if let Some(function_body) = context.functions.get(function_name).cloned() {
+                        let arguments_bodies_context = context.extended(
+                            [PathSegment::Function(function_name.clone())],
+                            [],
+                            [],
+                        );
                         let mut compute_context = arguments_bodies_context.clone();
                         if let Value::Object(arguments) = argument
                             && arguments.size() > 1
@@ -635,37 +607,55 @@ impl Interpreter {
                         }
                         return self.compute_with_context(&function_body, compute_context);
                     } else if let Some(function) = self.embedded_functions.get(function_name) {
-                        let function_arguments =
-                            self.compute_with_context(&argument, arguments_bodies_context)?;
+                        let function_arguments = self.compute_with_context(
+                            &argument,
+                            context.extended(
+                                [PathSegment::Function(function_name.clone())],
+                                [],
+                                [],
+                            ),
+                        )?;
                         return (function.function)(function_arguments);
                     }
                 }
-                let mut result_object_keyvalues = vec![None; object.size()];
-                for (keyvalue_index, (key, value_compute_body)) in object.iter().enumerate() {
-                    result_object_keyvalues[keyvalue_index] = Some((
-                        key.clone(),
+                let results = Mutex::new(rpds::RedBlackTreeMapSync::new_sync());
+                object
+                    .iter()
+                    .par_bridge()
+                    .try_for_each(|(key, value_compute_body)| {
                         self.compute_with_context(
                             value_compute_body,
-                            context.extended([PathSegment::ObjectKey(key.clone())], [], []),
-                        )?,
-                    ));
-                }
-                Value::Object(rpds::RedBlackTreeMap::from_iter(
-                    result_object_keyvalues
-                        .into_iter()
-                        .filter_map(|element| element),
-                ))
+                            context.extended([PathSegment::ObjectKey(key.to_string())], [], []),
+                        )
+                        .and_then(|result| {
+                            results.lock().unwrap().insert_mut(key.clone(), result);
+                            Ok(())
+                        })
+                    })
+                    .and_then(|_| Ok(Value::Object(results.into_inner().unwrap())))?
             }
-            Value::Array(array) => Value::Array(map_parallel_into_immutable(
-                array.iter().enumerate().par_bridge(),
-                array.len(),
-                |(element_index, element_compute_body)| {
-                    self.compute_with_context(
-                        element_compute_body,
-                        context.extended([PathSegment::ArrayIndex(element_index)], [], []),
-                    )
-                },
-            )?),
+            Value::Array(array) => {
+                let results = Mutex::new(rpds::VectorSync::from_iter(
+                    std::iter::repeat(Value::Null).take(array.len()),
+                ));
+                Value::Array(
+                    array
+                        .iter()
+                        .enumerate()
+                        .par_bridge()
+                        .try_for_each(|(element_index, element_compute_body)| {
+                            self.compute_with_context(
+                                element_compute_body,
+                                context.extended([PathSegment::ArrayIndex(element_index)], [], []),
+                            )
+                            .and_then(|result| {
+                                results.lock().unwrap().set_mut(element_index, result);
+                                Ok(())
+                            })
+                        })
+                        .and_then(|_| Ok(results.into_inner().unwrap()))?,
+                )
+            }
             Value::String(string) => {
                 if string == DEFAULT_ARGUMENT_NAME {
                     context
