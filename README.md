@@ -67,12 +67,12 @@ Embedding new functions is quite easy, see [here](src/embedded_functions.rs)
 
 ```yaml
 include: examples/factorial.yml
-at: [with]
+at: [with] # may be omitted, resulting in []
 ```
 
 ```yaml
 include: https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml
-at: [compute, factorial]
+at: [compute, factorial] # may be omitted, resulting in []
 ```
 
 #### constant
