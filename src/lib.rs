@@ -696,10 +696,10 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                       "from local file": {
-                        "include file": "examples/factorial.yml"
+                        "include": "examples/factorial.yml"
                       },
                       "from net": {
-                        "include url": "https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml"
+                        "include": "https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml"
                       }
                     }))
                     .unwrap(),

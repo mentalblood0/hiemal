@@ -63,21 +63,19 @@ Embedding new functions is quite easy, see [here](src/embedded_functions.rs)
 
 ### Clauses
 
-#### include file
+#### include
 
 ```yaml
-include file: examples/factorial.yml
+include: examples/factorial.yml
 ```
 
 Interpreter will insert contents of the file instead of this clause
 
-#### include url
-
 ```yaml
-include url: https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml
+include: https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml
 ```
 
-Interpreter will insert contents of downloaded file instead of this clause
+Interpreter will insert contents of the downloaded file instead of this clause
 
 #### constant
 

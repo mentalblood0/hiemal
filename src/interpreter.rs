@@ -10,7 +10,7 @@ use crate::{
     includes_cache::IncludesCache,
     path::{Path, PathSegment},
     r#type::Type,
-    value::{AtSegment, Include, SmallMap, Value, ValueWithIncludes},
+    value::{AtSegment, IncludeItem, SmallMap, Value, ValueWithIncludes},
 };
 
 pub struct Interpreter {
@@ -268,9 +268,11 @@ impl Interpreter {
         includes_cache: &mut IncludesCache,
     ) -> Result<serde_json::Value> {
         match program_with_includes {
-            ValueWithIncludes::Include(include_clause) => self.process_includes(
-                &match include_clause {
-                    Include::IncludeFile(path) => match path.extension() {
+            ValueWithIncludes::Include {
+                include: include_item,
+            } => self.process_includes(
+                &match include_item {
+                    IncludeItem::IncludeFile(path) => match path.extension() {
                         Some(ext) if ext == "yaml" || ext == "yml" => serde_saphyr::from_reader(
                             std::io::BufReader::new(std::fs::File::open(path.clone())?),
                         )
@@ -286,7 +288,7 @@ impl Interpreter {
                             ));
                         }
                     },
-                    Include::IncludeUrl(url) => {
+                    IncludeItem::IncludeUrl(url) => {
                         match std::path::Path::new(url.path())
                             .extension()
                             .and_then(std::ffi::OsStr::to_str)

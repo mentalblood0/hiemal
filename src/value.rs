@@ -191,17 +191,16 @@ pub enum Value {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-pub enum Include {
-    #[serde(rename = "include url")]
+#[serde(untagged)]
+pub enum IncludeItem {
     IncludeUrl(Url),
-    #[serde(rename = "include file")]
     IncludeFile(std::path::PathBuf),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum ValueWithIncludes {
-    Include(Include),
+    Include { include: IncludeItem },
     Array(Vec<ValueWithIncludes>),
     Object(BTreeMap<String, ValueWithIncludes>),
     Other(serde_json::Value),
