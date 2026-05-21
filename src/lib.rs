@@ -9,6 +9,8 @@ pub mod value;
 
 #[cfg(test)]
 mod tests {
+    use crate::value::ValueWithIncludes;
+
     use super::*;
 
     use std::sync::OnceLock;
@@ -22,6 +24,16 @@ mod tests {
     fn default_interpreter() -> &'static Interpreter {
         static RESULT: OnceLock<Interpreter> = OnceLock::new();
         RESULT.get_or_init(|| Interpreter::default())
+    }
+
+    #[test]
+    fn test_serde() {
+        assert_eq!(
+            serde_json::from_value::<ValueWithIncludes>(json!(["b"])).unwrap(),
+            ValueWithIncludes::Array(vec![ValueWithIncludes::Other(serde_json::Value::String(
+                "b".to_string()
+            ))])
+        );
     }
 
     #[test]
@@ -695,21 +707,28 @@ mod tests {
             default_interpreter()
                 .compute(
                     &serde_json::from_value(json!({
-                      "from local file": {
-                        "include": "examples/factorial.yml"
-                      },
-                      "from net": {
-                        "include": "https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml"
-                      }
+                        "from local file": {
+                            "with": {
+                                "include": "examples/factorial.yml",
+                                "at": ["with"]
+                            },
+                            "compute": {
+                                "factorial": 5
+                            }
+                        },
+                        "from net": {
+                            "include": "https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml"
+                        }
                     }))
                     .unwrap(),
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-                serde_json::from_value(json!({
-                    "from local file": 120,
-                    "from net": 120
-                })).unwrap()
+            serde_json::from_value(json!({
+                "from local file": 120,
+                "from net": 120
+            }))
+            .unwrap()
         );
     }
 }

@@ -268,73 +268,117 @@ impl Interpreter {
         includes_cache: &mut IncludesCache,
     ) -> Result<serde_json::Value> {
         match program_with_includes {
-            ValueWithIncludes::Include {
-                include: include_item,
-            } => self.process_includes(
-                &match include_item {
-                    IncludeItem::IncludeFile(path) => match path.extension() {
-                        Some(ext) if ext == "yaml" || ext == "yml" => serde_saphyr::from_reader(
-                            std::io::BufReader::new(std::fs::File::open(path.clone())?),
-                        )
-                        .with_context(|| format!("Can not parse included file at {path:?}"))?,
-                        Some(ext) if ext == "json" => serde_json::from_reader(
-                            std::io::BufReader::new(std::fs::File::open(path.clone())?),
-                        )
-                        .with_context(|| format!("Can not parse included file at {path:?}"))?,
-                        extension => {
-                            return Err(anyhow!(
-                                "Unsupported include file extension {extension:?} in file path \
-                                 {path:?}"
-                            ));
-                        }
-                    },
-                    IncludeItem::IncludeUrl(url) => {
-                        match std::path::Path::new(url.path())
-                            .extension()
-                            .and_then(std::ffi::OsStr::to_str)
-                            .map(|extension| extension.to_lowercase())
-                        {
-                            Some(extension)
-                                if extension == "yaml"
-                                    || extension == "yml"
-                                    || extension == "json" =>
-                            {
-                                let program_text = &includes_cache.get(url)?;
-                                match extension.as_str() {
-                                    "yaml" | "yml" => serde_saphyr::from_str(program_text)
-                                        .with_context(|| {
-                                            format!(
-                                                "Can not parse included program downloaded from \
-                                                 url {url:?}"
-                                            )
-                                        })?,
-                                    "json" => {
-                                        serde_json::from_str(program_text).with_context(|| {
-                                            format!(
-                                                "Can not parse included program downloaded from \
-                                                 url {url:?}"
-                                            )
-                                        })?
-                                    }
-                                    _ => {
-                                        return Err(anyhow!(
-                                            "Unsupported extension {extension:?} for include file \
-                                             downloaded from url {url:?}"
-                                        ));
-                                    }
-                                }
+            ValueWithIncludes::Include(include_clause) => {
+                let mut result = self.process_includes(
+                    &match &include_clause.include {
+                        IncludeItem::IncludeFile(path) => match path.extension() {
+                            Some(ext) if ext == "yaml" || ext == "yml" => {
+                                serde_saphyr::from_reader(std::io::BufReader::new(
+                                    std::fs::File::open(path.clone())?,
+                                ))
+                                .with_context(|| {
+                                    format!("Can not parse included file at {path:?}")
+                                })?
                             }
+                            Some(ext) if ext == "json" => serde_json::from_reader(
+                                std::io::BufReader::new(std::fs::File::open(path.clone())?),
+                            )
+                            .with_context(|| format!("Can not parse included file at {path:?}"))?,
                             extension => {
                                 return Err(anyhow!(
-                                    "Unsupported include file extension {extension:?} in url \
-                                     {url:?}"
+                                    "Unsupported include file extension {extension:?} in file \
+                                     path {path:?}"
+                                ));
+                            }
+                        },
+                        IncludeItem::IncludeUrl(url) => {
+                            match std::path::Path::new(url.path())
+                                .extension()
+                                .and_then(std::ffi::OsStr::to_str)
+                                .map(|extension| extension.to_lowercase())
+                            {
+                                Some(extension)
+                                    if extension == "yaml"
+                                        || extension == "yml"
+                                        || extension == "json" =>
+                                {
+                                    let program_text = &includes_cache.get(url)?;
+                                    match extension.as_str() {
+                                        "yaml" | "yml" => serde_saphyr::from_str(program_text)
+                                            .with_context(|| {
+                                                format!(
+                                                    "Can not parse included program downloaded \
+                                                     from url {url:?}"
+                                                )
+                                            })?,
+                                        "json" => serde_json::from_str(program_text).with_context(
+                                            || {
+                                                format!(
+                                                    "Can not parse included program downloaded \
+                                                     from url {url:?}"
+                                                )
+                                            },
+                                        )?,
+                                        _ => {
+                                            return Err(anyhow!(
+                                                "Unsupported extension {extension:?} for include \
+                                                 file downloaded from url {url:?}"
+                                            ));
+                                        }
+                                    }
+                                }
+                                extension => {
+                                    return Err(anyhow!(
+                                        "Unsupported include file extension {extension:?} in url \
+                                         {url:?}"
+                                    ));
+                                }
+                            }
+                        }
+                    },
+                    includes_cache,
+                )?;
+                for path_segment in include_clause.at.0.iter() {
+                    match path_segment {
+                        crate::value::IncludePathSegment::ObjectKey(object_key) => {
+                            if let Some(value) = result
+                                .as_object_mut()
+                                .with_context(|| {
+                                    format!(
+                                        "Can not get value by key {object_key:?} while processing \
+                                         includes as it is not object"
+                                    )
+                                })?
+                                .remove(object_key)
+                            {
+                                result = value;
+                            } else {
+                                return Err(anyhow!(
+                                    "Can not get value by key {object_key:?} from {result:?} \
+                                     while processing includes as it have no such key"
+                                ));
+                            }
+                        }
+                        crate::value::IncludePathSegment::ArrayIndex(array_index) => {
+                            let vec = result.as_array_mut().with_context(|| {
+                                format!(
+                                    "Can not get element by index {array_index:?} while \
+                                     processing includes as it is not object"
+                                )
+                            })?;
+                            if vec.len() > *array_index {
+                                result = vec.remove(*array_index);
+                            } else {
+                                return Err(anyhow!(
+                                    "Can not get element by index {array_index:?} from {result:?} \
+                                     while processing includes as it have no such index"
                                 ));
                             }
                         }
                     }
-                },
-                includes_cache,
-            ),
+                }
+                Ok(result)
+            }
             ValueWithIncludes::Array(array) => {
                 let mut result = vec![];
                 for element in array {

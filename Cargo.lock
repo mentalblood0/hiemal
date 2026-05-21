@@ -372,9 +372,9 @@ dependencies = [
 
 [[package]]
 name = "either"
-version = "1.15.0"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
+checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
 
 [[package]]
 name = "encoding_rs"
@@ -1054,8 +1054,8 @@ dependencies = [
 
 [[package]]
 name = "serde-saphyr"
-version = "0.0.26"
-source = "git+https://github.com/bourumir-wyngs/serde-saphyr#8108feff8d5b0bf854c0fbf6dfa3cdf4a448098f"
+version = "0.0.27"
+source = "git+https://github.com/bourumir-wyngs/serde-saphyr#e7ede1e00f682682a163ede56b804f1b8755ebbc"
 dependencies = [
  "ahash",
  "annotate-snippets",

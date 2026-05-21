@@ -192,16 +192,37 @@ pub enum Value {
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
+pub enum IncludePathSegment {
+    ObjectKey(String),
+    ArrayIndex(usize),
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+pub struct IncludePath(pub Vec<IncludePathSegment>);
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(untagged)]
 pub enum IncludeItem {
     IncludeUrl(Url),
     IncludeFile(std::path::PathBuf),
 }
 
+fn default_include_path() -> IncludePath {
+    IncludePath(vec![])
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+pub struct Include {
+    pub include: IncludeItem,
+    #[serde(default = "default_include_path")]
+    pub at: IncludePath,
+}
+
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum ValueWithIncludes {
-    Include { include: IncludeItem },
     Array(Vec<ValueWithIncludes>),
+    Include(Include),
     Object(BTreeMap<String, ValueWithIncludes>),
     Other(serde_json::Value),
 }
