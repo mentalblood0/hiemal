@@ -435,30 +435,36 @@ impl Interpreter {
                 )?
             }
             Value::Map(map_clause) => {
-                let array = self
-                    .compute_with_context(&map_clause.map, context.clone())?
+                let precomputed_array = self
+                    .compute_with_context(
+                        &map_clause.map,
+                        context.extended([PathSegment::Map], [], []),
+                    )?
                     .as_array()
                     .unwrap()
                     .clone();
-                let mut result = rpds::VectorSync::new_sync();
-                for (element_index, element_compute_body) in array.into_iter().enumerate() {
-                    let element_body_context = context.extended(
-                        [PathSegment::Map, PathSegment::ArrayIndex(element_index)],
-                        [],
-                        [],
-                    );
-                    let precomputed_element =
-                        self.compute_with_context(&element_compute_body, element_body_context)?;
-                    result.push_back_mut(self.compute_with_context(
-                        &map_clause.through,
-                        context.extended(
-                            [PathSegment::Through],
-                            [],
-                            [(map_clause.r#as.clone(), precomputed_element)],
-                        ),
-                    )?);
-                }
-                Value::Array(result)
+                let map_context =
+                    context.extended([PathSegment::Map, PathSegment::Through], [], []);
+                let result_mutex = Mutex::new(precomputed_array.clone());
+                precomputed_array
+                    .into_iter()
+                    .enumerate()
+                    .par_bridge()
+                    .try_for_each(|(element_index, precomputed_element)| {
+                        self.compute_with_context(
+                            &map_clause.through,
+                            map_context.extended(
+                                [PathSegment::ArrayIndex(element_index)],
+                                [],
+                                [(map_clause.r#as.clone(), precomputed_element.clone())],
+                            ),
+                        )
+                        .and_then(|result| {
+                            result_mutex.lock().unwrap().set_mut(element_index, result);
+                            Ok(())
+                        })
+                    })
+                    .and_then(|_| Ok(Value::Array(result_mutex.into_inner().unwrap())))?
             }
             Value::Filter(filter_clause) => {
                 let array = self

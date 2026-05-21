@@ -47,7 +47,7 @@ where
         }
 
         fn visit_str<E: de::Error>(self, s: &str) -> Result<Rational, E> {
-            if s == "_" {
+            if s == DEFAULT_ARGUMENT_NAME {
                 Err(de::Error::invalid_value(Unexpected::Str(s), &self))
             } else {
                 if let Ok(result) = Rational::from_str(s) {
