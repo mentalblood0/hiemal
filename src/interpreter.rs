@@ -627,10 +627,10 @@ impl Interpreter {
                     })
                     .collect::<Vec<_>>();
                 match complex_values.len() {
-                    0 => Value::Object(object.clone()),
+                    0 => program.clone(),
                     1 => {
                         let mut result = object.clone();
-                        let (key, value_compute_body) = complex_values.iter().next().unwrap();
+                        let (key, value_compute_body) = complex_values.into_iter().next().unwrap();
                         result.insert_mut(
                             key.to_string(),
                             self.compute_with_context(
@@ -666,26 +666,51 @@ impl Interpreter {
                 }
             }
             Value::Array(array) => {
-                let results = Mutex::new(rpds::VectorSync::from_iter(
-                    std::iter::repeat(Value::Null).take(array.len()),
-                ));
-                Value::Array(
-                    array
-                        .iter()
-                        .enumerate()
-                        .par_bridge()
-                        .try_for_each(|(element_index, element_compute_body)| {
+                let complex_elements = array
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, element)| match element {
+                        Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
+                        Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => false,
+                        _ => true,
+                    })
+                    .collect::<Vec<_>>();
+                match complex_elements.len() {
+                    0 => program.clone(),
+                    1 => {
+                        let mut result = array.clone();
+                        let (element_index, element_compute_body) =
+                            complex_elements.into_iter().next().unwrap();
+                        result.set_mut(
+                            element_index,
                             self.compute_with_context(
                                 element_compute_body,
                                 context.extended([PathSegment::ArrayIndex(element_index)], [], []),
-                            )
-                            .and_then(|result| {
-                                results.lock().unwrap().set_mut(element_index, result);
-                                Ok(())
+                            )?,
+                        );
+                        Value::Array(result)
+                    }
+                    2.. => {
+                        let result_mutex = Mutex::new(array.clone());
+                        complex_elements
+                            .into_par_iter()
+                            .try_for_each(|(element_index, element_compute_body)| {
+                                self.compute_with_context(
+                                    element_compute_body,
+                                    context.extended(
+                                        [PathSegment::ArrayIndex(element_index)],
+                                        [],
+                                        [],
+                                    ),
+                                )
+                                .and_then(|result| {
+                                    result_mutex.lock().unwrap().set_mut(element_index, result);
+                                    Ok(())
+                                })
                             })
-                        })
-                        .and_then(|_| Ok(results.into_inner().unwrap()))?,
-                )
+                            .and_then(|_| Ok(Value::Array(result_mutex.into_inner().unwrap())))?
+                    }
+                }
             }
             Value::String(string) => {
                 if string == DEFAULT_ARGUMENT_NAME {
