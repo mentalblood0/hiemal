@@ -445,7 +445,9 @@ impl Interpreter {
                     .clone();
                 let map_context =
                     context.extended([PathSegment::Map, PathSegment::Through], [], []);
-                let result_mutex = Mutex::new(precomputed_array.clone());
+                let result_mutex = Mutex::new(rpds::VectorSync::from_iter(
+                    std::iter::repeat(Value::Null).take(precomputed_array.len()),
+                ));
                 precomputed_array
                     .into_iter()
                     .enumerate()
@@ -467,36 +469,47 @@ impl Interpreter {
                     .and_then(|_| Ok(Value::Array(result_mutex.into_inner().unwrap())))?
             }
             Value::Filter(filter_clause) => {
-                let array = self
-                    .compute_with_context(&filter_clause.filter, context.clone())?
+                let precomputed_array = self
+                    .compute_with_context(
+                        &filter_clause.filter,
+                        context.extended([PathSegment::Filter], [], []),
+                    )?
                     .as_array()
                     .unwrap()
                     .clone();
-                let mut result = rpds::VectorSync::new_sync();
-                for (element_index, element_compute_body) in array.into_iter().enumerate() {
-                    let element_body_context = context.extended(
-                        [PathSegment::Filter, PathSegment::ArrayIndex(element_index)],
-                        [],
-                        [],
-                    );
-                    let precomputed_element =
-                        self.compute_with_context(&element_compute_body, element_body_context)?;
-                    if self
-                        .compute_with_context(
+                let filter_context =
+                    context.extended([PathSegment::Filter, PathSegment::Through], [], []);
+                let result_mutex = Mutex::new(vec![None; precomputed_array.len()]);
+                precomputed_array
+                    .into_iter()
+                    .enumerate()
+                    .par_bridge()
+                    .try_for_each(|(element_index, precomputed_element)| {
+                        self.compute_with_context(
                             &filter_clause.through,
-                            context.extended(
-                                [PathSegment::Through],
+                            filter_context.extended(
+                                [PathSegment::ArrayIndex(element_index)],
                                 [],
                                 [(filter_clause.r#as.clone(), precomputed_element.clone())],
                             ),
-                        )?
-                        .as_bool()
-                        .unwrap()
-                    {
-                        result.push_back_mut(precomputed_element);
-                    };
-                }
-                Value::Array(result)
+                        )
+                        .and_then(|result| {
+                            if result.as_bool().unwrap() {
+                                result_mutex.lock().unwrap()[element_index] =
+                                    Some(precomputed_element.clone());
+                            }
+                            Ok(())
+                        })
+                    })
+                    .and_then(|_| {
+                        Ok(Value::Array(rpds::VectorSync::from_iter(
+                            result_mutex
+                                .into_inner()
+                                .unwrap()
+                                .into_iter()
+                                .filter_map(|element| element),
+                        )))
+                    })?
             }
             Value::Fold(fold_clause) => {
                 let array = self

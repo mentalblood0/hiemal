@@ -205,7 +205,54 @@ fn benchmarks(bencher_context: &mut Criterion) {
             }
         }))
         .unwrap();
-        bencher_context.bench_function(&format!("fibonacci_constants"), |b| {
+        bencher_context.bench_function(&format!("fibonacci_map"), |b| {
+            b.iter(|| interpreter.compute(&program, &mut includes_cache).unwrap())
+        });
+    }
+    {
+        let program = serde_json::from_value::<ValueWithIncludes>(json!({
+            "with": {
+                "functions": {
+                    "fibonacci": {
+                        "if": {
+                            "is sorted": [
+                                "_",
+                                1
+                            ]
+                        },
+                        "then": "_",
+                        "else": {
+                            "sum": [
+                                {
+                                    "fibonacci": {
+                                        "sum": [
+                                            "_",
+                                            -1
+                                        ]
+                                    }
+                                },
+                                {
+                                    "fibonacci": {
+                                        "sum": [
+                                            "_",
+                                            -2
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "compute": {
+                "filter": [20, 21, 22],
+                "through": {
+                    "is sorted": [0, {"fibonacci": "_"}]
+                }
+            }
+        }))
+        .unwrap();
+        bencher_context.bench_function(&format!("fibonacci_filter"), |b| {
             b.iter(|| interpreter.compute(&program, &mut includes_cache).unwrap())
         });
     }
