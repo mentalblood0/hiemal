@@ -618,21 +618,52 @@ impl Interpreter {
                         return (function.function)(function_arguments);
                     }
                 }
-                let results = Mutex::new(rpds::RedBlackTreeMapSync::new_sync());
-                object
+                let complex_values = object
                     .iter()
-                    .par_bridge()
-                    .try_for_each(|(key, value_compute_body)| {
-                        self.compute_with_context(
-                            value_compute_body,
-                            context.extended([PathSegment::ObjectKey(key.to_string())], [], []),
-                        )
-                        .and_then(|result| {
-                            results.lock().unwrap().insert_mut(key.clone(), result);
-                            Ok(())
-                        })
+                    .filter(|(_, value)| match value {
+                        Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
+                        Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => false,
+                        _ => true,
                     })
-                    .and_then(|_| Ok(Value::Object(results.into_inner().unwrap())))?
+                    .collect::<Vec<_>>();
+                match complex_values.len() {
+                    0 => Value::Object(object.clone()),
+                    1 => {
+                        let mut result = object.clone();
+                        let (key, value_compute_body) = complex_values.iter().next().unwrap();
+                        result.insert_mut(
+                            key.to_string(),
+                            self.compute_with_context(
+                                value_compute_body,
+                                context.extended([PathSegment::ObjectKey(key.to_string())], [], []),
+                            )?,
+                        );
+                        Value::Object(result)
+                    }
+                    2.. => {
+                        let result_mutex = Mutex::new(object.clone());
+                        complex_values
+                            .par_iter()
+                            .try_for_each(|(key, value_compute_body)| {
+                                self.compute_with_context(
+                                    value_compute_body,
+                                    context.extended(
+                                        [PathSegment::ObjectKey(key.to_string())],
+                                        [],
+                                        [],
+                                    ),
+                                )
+                                .and_then(|result| {
+                                    result_mutex
+                                        .lock()
+                                        .unwrap()
+                                        .insert_mut(key.to_string(), result);
+                                    Ok(())
+                                })
+                            })
+                            .and_then(|_| Ok(Value::Object(result_mutex.into_inner().unwrap())))?
+                    }
+                }
             }
             Value::Array(array) => {
                 let results = Mutex::new(rpds::VectorSync::from_iter(
