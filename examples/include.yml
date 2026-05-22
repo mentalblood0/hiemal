@@ -1,4 +1,4 @@
 from local file:
-  include file: examples/factorial.yml
+  include: [examples/factorial.yml, with, constants]
 from net:
-  include url: https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml
+  include: [https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml]

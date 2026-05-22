@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use dashu::{Decimal, Rational};
 use serde::{
-    Deserializer,
+    Deserialize, Deserializer,
     de::{self, Unexpected, Visitor},
 };
 use std::str::FromStr;
@@ -190,35 +190,48 @@ pub enum Value {
     Object(rpds::RedBlackTreeMapSync<String, Value>),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[derive(serde::Deserialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
-pub enum IncludePathSegment {
-    ObjectKey(String),
-    ArrayIndex(usize),
+pub enum IncludeFrom {
+    Url(Url),
+    File(std::path::PathBuf),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-pub struct IncludePath(pub Vec<IncludePathSegment>);
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(untagged)]
-pub enum IncludeItem {
-    IncludeUrl(Url),
-    IncludeFile(std::path::PathBuf),
+#[derive(PartialEq, Debug, Clone)]
+pub struct IncludeFromAt {
+    pub from: IncludeFrom,
+    pub at: Vec<AtSegment>,
 }
 
-fn default_include_path() -> IncludePath {
-    IncludePath(vec![])
+impl<'de> Deserialize<'de> for IncludeFromAt {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut values = VecDeque::deserialize(deserializer)?;
+        let from = if let Some(first_value) = values.pop_front() {
+            serde_json::from_value(first_value).map_err(serde::de::Error::custom)?
+        } else {
+            return Err(serde::de::Error::invalid_length(
+                0,
+                &"at least one element (url or file path)",
+            ));
+        };
+        let at: Vec<AtSegment> = values
+            .into_iter()
+            .map(|value| serde_json::from_value(value).map_err(serde::de::Error::custom))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(IncludeFromAt { from, at })
+    }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[derive(serde::Deserialize, PartialEq, Debug, Clone)]
 pub struct Include {
-    pub include: IncludeItem,
-    #[serde(default = "default_include_path")]
-    pub at: IncludePath,
+    #[serde(deserialize_with = "IncludeFromAt::deserialize")]
+    pub include: IncludeFromAt,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[derive(serde::Deserialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum ValueWithIncludes {
     Array(Vec<ValueWithIncludes>),

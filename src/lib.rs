@@ -706,28 +706,24 @@ mod tests {
         assert_eq!(
             default_interpreter()
                 .compute(
-                    &serde_json::from_value(json!({
-                        "from local file": {
-                            "with": {
-                                "include": "examples/factorial.yml",
-                                "at": ["with"]
-                            },
-                            "compute": {
-                                "factorial": 5
-                            }
+                    &serde_json::from_value(json!([{
+                        "with": {
+                            "include": ["examples/factorial.yml", "with"],
                         },
-                        "from net": {
-                            "include": "https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml"
+                        "compute": {
+                            "factorial": 5
                         }
-                    }))
+                    }, {
+                        "include": ["https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml", "compute", "factorial"]
+                    }]))
                     .unwrap(),
                     &mut IncludesCache::default()
                 )
                 .unwrap(),
-            serde_json::from_value(json!({
-                "from local file": 120,
-                "from net": 120
-            }))
+            serde_json::from_value(json!([
+                120,
+                5
+            ]))
             .unwrap()
         );
     }

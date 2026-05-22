@@ -10,7 +10,7 @@ use crate::{
     includes_cache::IncludesCache,
     path::{Path, PathSegment},
     r#type::Type,
-    value::{AtSegment, IncludeItem, SmallMap, Value, ValueWithIncludes},
+    value::{AtSegment, IncludeFrom, SmallMap, Value, ValueWithIncludes},
 };
 
 pub struct Interpreter {
@@ -270,8 +270,8 @@ impl Interpreter {
         match program_with_includes {
             ValueWithIncludes::Include(include_clause) => {
                 let mut result = self.process_includes(
-                    &match &include_clause.include {
-                        IncludeItem::IncludeFile(path) => match path.extension() {
+                    &match &include_clause.include.from {
+                        IncludeFrom::File(path) => match path.extension() {
                             Some(ext) if ext == "yaml" || ext == "yml" => {
                                 serde_saphyr::from_reader(std::io::BufReader::new(
                                     std::fs::File::open(path.clone())?,
@@ -291,7 +291,7 @@ impl Interpreter {
                                 ));
                             }
                         },
-                        IncludeItem::IncludeUrl(url) => {
+                        IncludeFrom::Url(url) => {
                             match std::path::Path::new(url.path())
                                 .extension()
                                 .and_then(std::ffi::OsStr::to_str)
@@ -338,9 +338,9 @@ impl Interpreter {
                     },
                     includes_cache,
                 )?;
-                for path_segment in include_clause.at.0.iter() {
+                for path_segment in include_clause.include.at.iter() {
                     match path_segment {
-                        crate::value::IncludePathSegment::ObjectKey(object_key) => {
+                        crate::value::AtSegment::ObjectKey(object_key) => {
                             if let Some(value) = result
                                 .as_object_mut()
                                 .with_context(|| {
@@ -359,7 +359,7 @@ impl Interpreter {
                                 ));
                             }
                         }
-                        crate::value::IncludePathSegment::ArrayIndex(array_index) => {
+                        crate::value::AtSegment::ArrayIndex(array_index) => {
                             let vec = result.as_array_mut().with_context(|| {
                                 format!(
                                     "Can not get element by index {array_index:?} while \
