@@ -66,13 +66,11 @@ Embedding new functions is quite easy, see [here](src/embedded_functions.rs)
 #### include
 
 ```yaml
-include: examples/factorial.yml
-at: [with] # may be omitted, resulting in []
-```
-
-```yaml
-include: https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml
-at: [compute, factorial] # may be omitted, resulting in []
+- with:
+    include: [examples/factorial.yml, with]
+  compute:
+    factorial: 5
+- include: [https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml]
 ```
 
 #### constant
