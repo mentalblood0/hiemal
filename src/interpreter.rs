@@ -5,12 +5,15 @@ use std::sync::Mutex;
 use anyhow::{Context, Error, Result, anyhow};
 
 use crate::{
+    clause::{AtSegment, Clause},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     function::Function,
     includes_cache::IncludesCache,
     path::{Path, PathSegment},
+    program::Program,
+    program_with_includes::{IncludeFrom, ProgramWithIncludes},
     r#type::Type,
-    value::{AtSegment, IncludeFrom, SmallMap, Value, ValueWithIncludes},
+    value::{SmallMap, Value},
 };
 
 pub struct Interpreter {
@@ -57,7 +60,7 @@ impl<V> ListMap<V> {
 #[derive(Debug)]
 pub struct TypeCheckingContext {
     pub path: Path,
-    pub functions: ListMap<Value>,
+    pub functions: ListMap<Program>,
     pub constants: ListMap<Type>,
     pub entered_functions: BTreeSet<String>,
     pub recursed_functions_types: SmallMap<String, Type>,
@@ -208,7 +211,7 @@ impl TypeCheckingContext {
 #[derive(Clone, Debug)]
 pub struct ComputationContext {
     pub path: Path,
-    pub functions: rpds::RedBlackTreeMapSync<String, Value>,
+    pub functions: rpds::RedBlackTreeMapSync<String, Program>,
     pub constants: rpds::RedBlackTreeMapSync<String, Value>,
 }
 
@@ -216,7 +219,7 @@ impl ComputationContext {
     pub fn extended<P, F, C>(&self, path: P, functions: F, constants: C) -> Self
     where
         P: IntoIterator<Item = PathSegment>,
-        F: IntoIterator<Item = (String, Value)>,
+        F: IntoIterator<Item = (String, Program)>,
         C: IntoIterator<Item = (String, Value)>,
     {
         Self {
@@ -246,11 +249,12 @@ impl ComputationContext {
 impl Interpreter {
     pub fn compute(
         &self,
-        program_with_includes: &ValueWithIncludes,
+        program_with_includes: &ProgramWithIncludes,
         includes_cache: &mut IncludesCache,
     ) -> Result<Value> {
         let program =
             serde_json::from_value(self.process_includes(&program_with_includes, includes_cache)?)?;
+        dbg!(&program);
         self.check_types(&program)?;
         Ok(self.compute_with_context(
             &program,
@@ -264,11 +268,11 @@ impl Interpreter {
 
     pub fn process_includes(
         &self,
-        program_with_includes: &ValueWithIncludes,
+        program_with_includes: &ProgramWithIncludes,
         includes_cache: &mut IncludesCache,
     ) -> Result<serde_json::Value> {
         match program_with_includes {
-            ValueWithIncludes::Include(include_clause) => {
+            ProgramWithIncludes::Include(include_clause) => {
                 let mut result = self.process_includes(
                     &match &include_clause.include.from {
                         IncludeFrom::File(path) => match path.extension() {
@@ -340,7 +344,7 @@ impl Interpreter {
                 )?;
                 for path_segment in include_clause.include.at.iter() {
                     match path_segment {
-                        crate::value::AtSegment::ObjectKey(object_key) => {
+                        AtSegment::ObjectKey(object_key) => {
                             if let Some(value) = result
                                 .as_object_mut()
                                 .with_context(|| {
@@ -359,7 +363,7 @@ impl Interpreter {
                                 ));
                             }
                         }
-                        crate::value::AtSegment::ArrayIndex(array_index) => {
+                        AtSegment::ArrayIndex(array_index) => {
                             let vec = result.as_array_mut().with_context(|| {
                                 format!(
                                     "Can not get element by index {array_index:?} while \
@@ -379,297 +383,310 @@ impl Interpreter {
                 }
                 Ok(result)
             }
-            ValueWithIncludes::Array(array) => {
+            ProgramWithIncludes::Array(array) => {
                 let mut result = vec![];
                 for element in array {
                     result.push(self.process_includes(element, includes_cache)?);
                 }
                 Ok(serde_json::to_value(result)?)
             }
-            ValueWithIncludes::Object(object) => {
+            ProgramWithIncludes::Object(object) => {
                 let mut result = BTreeMap::new();
                 for (key, value) in object {
                     result.insert(key, self.process_includes(value, includes_cache)?);
                 }
                 Ok(serde_json::to_value(result)?)
             }
-            ValueWithIncludes::Other(value) => Ok(value.clone()),
+            ProgramWithIncludes::Other(value) => Ok(value.clone()),
         }
     }
 
-    fn compute_with_context(&self, program: &Value, context: ComputationContext) -> Result<Value> {
+    fn compute_with_context(
+        &self,
+        program: &Program,
+        context: ComputationContext,
+    ) -> Result<Value> {
         Ok(match program {
-            Value::Constant(constant_clause) => context
-                .constants
-                .get(&constant_clause.constant)
-                .unwrap()
-                .clone(),
-            Value::With(with_clause) => {
-                let constants_bodies_context =
-                    context.extended([PathSegment::With, PathSegment::Constants], [], []);
-                let mut compute_context = context.extended(
-                    [PathSegment::With, PathSegment::Compute],
-                    with_clause
-                        .with
-                        .functions
-                        .iter()
-                        .map(|(function_name, function_body)| {
-                            (function_name.clone(), function_body.clone())
-                        }),
-                    [],
-                );
-                let complex_constants = with_clause
-                    .with
+            Program::Clause(clause) => match clause {
+                Clause::Constant(constant_clause) => context
                     .constants
-                    .iter()
-                    .filter(|(key, value)| match value {
-                        Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
-                        Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => {
-                            compute_context
-                                .constants
-                                .insert_mut(key.to_string(), (*value).clone());
-                            false
-                        }
-                        _ => true,
-                    })
-                    .collect::<Vec<_>>();
-                self.compute_with_context(
-                    &with_clause.compute,
-                    match complex_constants.len() {
-                        0 => compute_context,
-                        1 => {
-                            let (key, value_compute_body) =
-                                complex_constants.into_iter().next().unwrap();
-                            compute_context.constants.insert_mut(
-                                key.to_string(),
-                                self.compute_with_context(
-                                    value_compute_body,
-                                    constants_bodies_context.extended(
-                                        [PathSegment::Constant(key.to_string())],
-                                        [],
-                                        [],
-                                    ),
-                                )?,
-                            );
-                            compute_context
-                        }
-                        2.. => {
-                            let compute_context_mutex = Mutex::new(compute_context.clone());
-                            complex_constants
-                                .par_iter()
-                                .try_for_each(|(key, value_compute_body)| {
+                    .get(&constant_clause.constant)
+                    .unwrap()
+                    .clone(),
+                Clause::With(with_clause) => {
+                    let constants_bodies_context =
+                        context.extended([PathSegment::With, PathSegment::Constants], [], []);
+                    let mut compute_context = context.extended(
+                        [PathSegment::With, PathSegment::Compute],
+                        with_clause
+                            .with
+                            .functions
+                            .iter()
+                            .map(|function_name_and_body| {
+                                (
+                                    function_name_and_body.0.clone(),
+                                    function_name_and_body.1.clone(),
+                                )
+                            }),
+                        [],
+                    );
+                    let complex_constants = with_clause
+                        .with
+                        .constants
+                        .iter()
+                        .filter(|keyvalue| match &keyvalue.1 {
+                            Program::Value(value) => match value {
+                                Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
+                                _ => {
+                                    compute_context
+                                        .constants
+                                        .insert_mut(keyvalue.0.to_string(), value.clone());
+                                    false
+                                }
+                            },
+                            _ => true,
+                        })
+                        .collect::<Vec<_>>();
+                    self.compute_with_context(
+                        &with_clause.compute,
+                        match complex_constants.len() {
+                            0 => compute_context,
+                            1 => {
+                                let key_and_value_compute_body =
+                                    complex_constants.into_iter().next().unwrap();
+                                compute_context.constants.insert_mut(
+                                    key_and_value_compute_body.0.to_string(),
                                     self.compute_with_context(
-                                        value_compute_body,
+                                        &key_and_value_compute_body.1,
                                         constants_bodies_context.extended(
-                                            [PathSegment::Constant(key.to_string())],
+                                            [PathSegment::Constant(
+                                                key_and_value_compute_body.0.to_string(),
+                                            )],
                                             [],
                                             [],
                                         ),
-                                    )
-                                    .and_then(|result| {
-                                        compute_context_mutex
-                                            .lock()
-                                            .unwrap()
-                                            .constants
-                                            .insert_mut(key.to_string(), result);
-                                        Ok(())
-                                    })
-                                })
-                                .and_then(|_| Ok(compute_context_mutex.into_inner().unwrap()))?
-                        }
-                    },
-                )?
-            }
-            Value::Map(map_clause) => {
-                let precomputed_array = self
-                    .compute_with_context(
-                        &map_clause.map,
-                        context.extended([PathSegment::Map], [], []),
-                    )?
-                    .as_array()
-                    .unwrap()
-                    .clone();
-                let map_context =
-                    context.extended([PathSegment::Map, PathSegment::Through], [], []);
-                let result_mutex = Mutex::new(rpds::VectorSync::from_iter(
-                    std::iter::repeat(Value::Null).take(precomputed_array.len()),
-                ));
-                precomputed_array
-                    .into_iter()
-                    .enumerate()
-                    .par_bridge()
-                    .try_for_each(|(element_index, precomputed_element)| {
-                        self.compute_with_context(
-                            &map_clause.through,
-                            map_context.extended(
-                                [PathSegment::ArrayIndex(element_index)],
-                                [],
-                                [(map_clause.r#as.clone(), precomputed_element.clone())],
-                            ),
-                        )
-                        .and_then(|result| {
-                            result_mutex.lock().unwrap().set_mut(element_index, result);
-                            Ok(())
-                        })
-                    })
-                    .and_then(|_| Ok(Value::Array(result_mutex.into_inner().unwrap())))?
-            }
-            Value::Filter(filter_clause) => {
-                let precomputed_array = self
-                    .compute_with_context(
-                        &filter_clause.filter,
-                        context.extended([PathSegment::Filter], [], []),
-                    )?
-                    .as_array()
-                    .unwrap()
-                    .clone();
-                let filter_context =
-                    context.extended([PathSegment::Filter, PathSegment::Through], [], []);
-                let result_mutex = Mutex::new(vec![None; precomputed_array.len()]);
-                precomputed_array
-                    .into_iter()
-                    .enumerate()
-                    .par_bridge()
-                    .try_for_each(|(element_index, precomputed_element)| {
-                        self.compute_with_context(
-                            &filter_clause.through,
-                            filter_context.extended(
-                                [PathSegment::ArrayIndex(element_index)],
-                                [],
-                                [(filter_clause.r#as.clone(), precomputed_element.clone())],
-                            ),
-                        )
-                        .and_then(|result| {
-                            if result.as_bool().unwrap() {
-                                result_mutex.lock().unwrap()[element_index] =
-                                    Some(precomputed_element.clone());
+                                    )?,
+                                );
+                                compute_context
                             }
-                            Ok(())
+                            2.. => {
+                                let compute_context_mutex = Mutex::new(compute_context.clone());
+                                complex_constants
+                                    .par_iter()
+                                    .try_for_each(|key_and_value_compute_body| {
+                                        self.compute_with_context(
+                                            &key_and_value_compute_body.1,
+                                            constants_bodies_context.extended(
+                                                [PathSegment::Constant(
+                                                    key_and_value_compute_body.0.to_string(),
+                                                )],
+                                                [],
+                                                [],
+                                            ),
+                                        )
+                                        .and_then(
+                                            |result| {
+                                                compute_context_mutex
+                                                    .lock()
+                                                    .unwrap()
+                                                    .constants
+                                                    .insert_mut(
+                                                        key_and_value_compute_body.0.to_string(),
+                                                        result,
+                                                    );
+                                                Ok(())
+                                            },
+                                        )
+                                    })
+                                    .and_then(|_| Ok(compute_context_mutex.into_inner().unwrap()))?
+                            }
+                        },
+                    )?
+                }
+                Clause::Map(map_clause) => {
+                    let precomputed_array = self
+                        .compute_with_context(
+                            &map_clause.map,
+                            context.extended([PathSegment::Map], [], []),
+                        )?
+                        .as_array()
+                        .unwrap()
+                        .clone();
+                    let map_context =
+                        context.extended([PathSegment::Map, PathSegment::Through], [], []);
+                    let result_mutex = Mutex::new(rpds::VectorSync::from_iter(
+                        std::iter::repeat(Value::Null).take(precomputed_array.len()),
+                    ));
+                    precomputed_array
+                        .into_iter()
+                        .enumerate()
+                        .par_bridge()
+                        .try_for_each(|(element_index, precomputed_element)| {
+                            self.compute_with_context(
+                                &map_clause.through,
+                                map_context.extended(
+                                    [PathSegment::ArrayIndex(element_index)],
+                                    [],
+                                    [(map_clause.r#as.clone(), precomputed_element.clone())],
+                                ),
+                            )
+                            .and_then(|result| {
+                                result_mutex.lock().unwrap().set_mut(element_index, result);
+                                Ok(())
+                            })
                         })
-                    })
-                    .and_then(|_| {
-                        Ok(Value::Array(rpds::VectorSync::from_iter(
-                            result_mutex
-                                .into_inner()
-                                .unwrap()
-                                .into_iter()
-                                .filter_map(|element| element),
-                        )))
-                    })?
-            }
-            Value::Fold(fold_clause) => {
-                let array = self
-                    .compute_with_context(&fold_clause.fold, context.clone())?
-                    .as_array()
-                    .unwrap()
-                    .clone();
-                let mut result = self.compute_with_context(
-                    &fold_clause.starting_with,
-                    context.extended([PathSegment::StartingWith], [], []),
-                )?;
-                for (element_index, element_compute_body) in array.into_iter().enumerate() {
-                    let precomputed_element = self.compute_with_context(
-                        &element_compute_body,
-                        context.extended(
-                            [PathSegment::Fold, PathSegment::ArrayIndex(element_index)],
-                            [],
-                            [],
-                        ),
-                    )?;
-                    result = self.compute_with_context(
-                        &fold_clause.through,
-                        context.extended(
-                            [
-                                PathSegment::Fold,
-                                PathSegment::ArrayIndex(element_index),
-                                PathSegment::Through,
-                            ],
-                            [],
-                            [
-                                (fold_clause.r#as.clone(), precomputed_element),
-                                (fold_clause.accumulating_in.clone(), result),
-                            ],
-                        ),
-                    )?;
+                        .and_then(|_| Ok(Value::Array(result_mutex.into_inner().unwrap())))?
                 }
-                result
-            }
-            Value::Branching(branching_clause) => {
-                let if_result = self
-                    .compute_with_context(
-                        &branching_clause.r#if,
-                        context.extended([PathSegment::If], [], []),
-                    )?
-                    .as_bool()
-                    .unwrap();
-                let result = if if_result {
-                    self.compute_with_context(
-                        &branching_clause.then,
-                        context.extended([PathSegment::Then], [], []),
-                    )?
-                } else {
-                    self.compute_with_context(
-                        &branching_clause.r#else,
-                        context.extended([PathSegment::Else], [], []),
-                    )?
-                };
-                result
-            }
-            Value::TryOr(try_or_clause) => {
-                let result = match self.compute_with_context(
-                    &try_or_clause.r#try,
-                    context.extended([PathSegment::Try], [], []),
-                ) {
-                    Ok(result) => result,
-                    Err(error) => self.compute_with_context(
-                        &try_or_clause.or,
-                        context.extended(
-                            [PathSegment::Or],
-                            [],
-                            [(
-                                try_or_clause.with_error.clone(),
-                                Value::String(error.to_string()),
-                            )],
-                        ),
-                    )?,
-                };
-                result
-            }
-            Value::FromAt(from_at_clause) => {
-                let mut result = self.compute_with_context(
-                    &from_at_clause.from,
-                    context.extended([PathSegment::From], [], []),
-                )?;
-                for at_segment in from_at_clause.at.iter() {
-                    result = match at_segment {
-                        AtSegment::ObjectKey(object_key) => result
-                            .as_object()
-                            .unwrap()
-                            .get(&*object_key)
-                            .unwrap()
-                            .clone(),
-                        AtSegment::ArrayIndex(array_index) => {
-                            let array = result.as_array().unwrap();
-                            result
-                                .as_array()
-                                .unwrap()
-                                .get(*array_index)
-                                .with_context(|| {
-                                    format!(
-                                        "Can not get element at index {array_index} from array of \
-                                         length {} at path segment {:?} of from-at clause at {:?}",
-                                        array.len(),
-                                        array_index,
-                                        context.path
-                                    )
-                                })?
-                                .clone()
-                        }
+                Clause::Filter(filter_clause) => {
+                    let precomputed_array = self
+                        .compute_with_context(
+                            &filter_clause.filter,
+                            context.extended([PathSegment::Filter], [], []),
+                        )?
+                        .as_array()
+                        .unwrap()
+                        .clone();
+                    let filter_context =
+                        context.extended([PathSegment::Filter, PathSegment::Through], [], []);
+                    let result_mutex = Mutex::new(vec![None; precomputed_array.len()]);
+                    precomputed_array
+                        .into_iter()
+                        .enumerate()
+                        .par_bridge()
+                        .try_for_each(|(element_index, precomputed_element)| {
+                            self.compute_with_context(
+                                &filter_clause.through,
+                                filter_context.extended(
+                                    [PathSegment::ArrayIndex(element_index)],
+                                    [],
+                                    [(filter_clause.r#as.clone(), precomputed_element.clone())],
+                                ),
+                            )
+                            .and_then(|result| {
+                                if result.as_bool().unwrap() {
+                                    result_mutex.lock().unwrap()[element_index] =
+                                        Some(precomputed_element.clone());
+                                }
+                                Ok(())
+                            })
+                        })
+                        .and_then(|_| {
+                            Ok(Value::Array(rpds::VectorSync::from_iter(
+                                result_mutex
+                                    .into_inner()
+                                    .unwrap()
+                                    .into_iter()
+                                    .filter_map(|element| element),
+                            )))
+                        })?
+                }
+                Clause::Fold(fold_clause) => {
+                    let array = self
+                        .compute_with_context(&fold_clause.fold, context.clone())?
+                        .as_array()
+                        .unwrap()
+                        .clone();
+                    let mut result = self.compute_with_context(
+                        &fold_clause.starting_with,
+                        context.extended([PathSegment::StartingWith], [], []),
+                    )?;
+                    for (element_index, precomputed_element) in array.into_iter().enumerate() {
+                        result = self.compute_with_context(
+                            &fold_clause.through,
+                            context.extended(
+                                [
+                                    PathSegment::Fold,
+                                    PathSegment::ArrayIndex(element_index),
+                                    PathSegment::Through,
+                                ],
+                                [],
+                                [
+                                    (fold_clause.r#as.clone(), precomputed_element.clone()),
+                                    (fold_clause.accumulating_in.clone(), result),
+                                ],
+                            ),
+                        )?;
+                    }
+                    result
+                }
+                Clause::Branching(branching_clause) => {
+                    let if_result = self
+                        .compute_with_context(
+                            &branching_clause.r#if,
+                            context.extended([PathSegment::If], [], []),
+                        )?
+                        .as_bool()
+                        .unwrap();
+                    let result = if if_result {
+                        self.compute_with_context(
+                            &branching_clause.then,
+                            context.extended([PathSegment::Then], [], []),
+                        )?
+                    } else {
+                        self.compute_with_context(
+                            &branching_clause.r#else,
+                            context.extended([PathSegment::Else], [], []),
+                        )?
                     };
+                    result
                 }
-                result
-            }
-            Value::Object(object) => {
+                Clause::TryOr(try_or_clause) => {
+                    let result = match self.compute_with_context(
+                        &try_or_clause.r#try,
+                        context.extended([PathSegment::Try], [], []),
+                    ) {
+                        Ok(result) => result,
+                        Err(error) => self.compute_with_context(
+                            &try_or_clause.or,
+                            context.extended(
+                                [PathSegment::Or],
+                                [],
+                                [(
+                                    try_or_clause.with_error.clone(),
+                                    Value::String(error.to_string()),
+                                )],
+                            ),
+                        )?,
+                    };
+                    result
+                }
+                Clause::FromAt(from_at_clause) => {
+                    let mut result = self.compute_with_context(
+                        &from_at_clause.from,
+                        context.extended([PathSegment::From], [], []),
+                    )?;
+                    for at_segment in from_at_clause.at.iter() {
+                        result = match at_segment {
+                            AtSegment::ObjectKey(object_key) => result
+                                .as_object()
+                                .unwrap()
+                                .get(&*object_key)
+                                .unwrap()
+                                .clone(),
+                            AtSegment::ArrayIndex(array_index) => {
+                                let array = result.as_array().unwrap();
+                                result
+                                    .as_array()
+                                    .unwrap()
+                                    .get(*array_index)
+                                    .with_context(|| {
+                                        format!(
+                                            "Can not get element at index {array_index} from \
+                                             array of length {} at path segment {:?} of from-at \
+                                             clause at {:?}",
+                                            array.len(),
+                                            array_index,
+                                            context.path
+                                        )
+                                    })?
+                                    .clone()
+                            }
+                        };
+                    }
+                    result
+                }
+            },
+            Program::Object(object) => {
                 if object.size() == 1 {
                     let (function_name, argument) = object.iter().next().unwrap();
                     if let Some(function_body) = context.functions.get(function_name).cloned() {
@@ -679,27 +696,39 @@ impl Interpreter {
                             [],
                         );
                         let mut compute_context = arguments_bodies_context.clone();
-                        if let Value::Object(arguments) = argument
-                            && arguments.size() > 1
-                        {
-                            for (argument_name, argument_compute_body) in arguments.iter() {
-                                compute_context.constants.insert_mut(
-                                    argument_name.clone(),
-                                    self.compute_with_context(
-                                        argument_compute_body,
-                                        arguments_bodies_context.extended(
-                                            [PathSegment::Argument(argument_name.clone())],
-                                            [],
-                                            [],
-                                        ),
-                                    )?,
-                                );
+                        match argument {
+                            Program::Object(arguments) if arguments.size() > 1 => {
+                                for (argument_name, argument_compute_body) in arguments.iter() {
+                                    compute_context.constants.insert_mut(
+                                        argument_name.clone(),
+                                        self.compute_with_context(
+                                            argument_compute_body,
+                                            arguments_bodies_context.extended(
+                                                [PathSegment::Argument(argument_name.clone())],
+                                                [],
+                                                [],
+                                            ),
+                                        )?,
+                                    );
+                                }
                             }
-                        } else {
-                            compute_context.constants.insert_mut(
+                            Program::Value(value) => match value {
+                                Value::Object(arguments) if arguments.size() > 1 => {
+                                    for (argument_name, argument_value) in arguments.iter() {
+                                        compute_context.constants.insert_mut(
+                                            argument_name.clone(),
+                                            argument_value.clone(),
+                                        );
+                                    }
+                                }
+                                _ => compute_context
+                                    .constants
+                                    .insert_mut(DEFAULT_ARGUMENT_NAME.to_string(), value.clone()),
+                            },
+                            _ => compute_context.constants.insert_mut(
                                 DEFAULT_ARGUMENT_NAME.to_string(),
                                 self.compute_with_context(argument, arguments_bodies_context)?,
-                            );
+                            ),
                         }
                         return self.compute_with_context(&function_body, compute_context);
                     } else if let Some(function) = self.embedded_functions.get(function_name) {
@@ -714,18 +743,23 @@ impl Interpreter {
                         return (function.function)(function_arguments);
                     }
                 }
+                let mut result = rpds::RedBlackTreeMapSync::new_sync();
                 let complex_values = object
                     .iter()
-                    .filter(|(_, value)| match value {
-                        Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
-                        Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => false,
+                    .filter(|keyvalue| match &keyvalue.1 {
+                        Program::Value(value) => match value {
+                            Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
+                            _ => {
+                                result.insert_mut(keyvalue.0.to_string(), value.clone());
+                                false
+                            }
+                        },
                         _ => true,
                     })
                     .collect::<Vec<_>>();
                 match complex_values.len() {
-                    0 => program.clone(),
+                    0 => Value::Object(result),
                     1 => {
-                        let mut result = object.clone();
                         let (key, value_compute_body) = complex_values.into_iter().next().unwrap();
                         result.insert_mut(
                             key.to_string(),
@@ -737,7 +771,7 @@ impl Interpreter {
                         Value::Object(result)
                     }
                     2.. => {
-                        let result_mutex = Mutex::new(object.clone());
+                        let result_mutex = Mutex::new(result);
                         complex_values
                             .par_iter()
                             .try_for_each(|(key, value_compute_body)| {
@@ -761,20 +795,25 @@ impl Interpreter {
                     }
                 }
             }
-            Value::Array(array) => {
+            Program::Array(array) => {
+                let mut result = rpds::VectorSync::new_sync();
                 let complex_elements = array
                     .iter()
                     .enumerate()
-                    .filter(|(_, element)| match element {
-                        Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
-                        Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => false,
+                    .filter(|(_, element)| match &element {
+                        Program::Value(value) => match value {
+                            Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
+                            _ => {
+                                result.push_back_mut(value.clone());
+                                false
+                            }
+                        },
                         _ => true,
                     })
                     .collect::<Vec<_>>();
                 match complex_elements.len() {
-                    0 => program.clone(),
+                    0 => Value::Array(result),
                     1 => {
-                        let mut result = array.clone();
                         let (element_index, element_compute_body) =
                             complex_elements.into_iter().next().unwrap();
                         result.set_mut(
@@ -787,7 +826,7 @@ impl Interpreter {
                         Value::Array(result)
                     }
                     2.. => {
-                        let result_mutex = Mutex::new(array.clone());
+                        let result_mutex = Mutex::new(result);
                         complex_elements
                             .into_par_iter()
                             .try_for_each(|(element_index, element_compute_body)| {
@@ -808,25 +847,25 @@ impl Interpreter {
                     }
                 }
             }
-            Value::String(string) => {
-                if string == DEFAULT_ARGUMENT_NAME {
-                    context
-                        .constants
-                        .get(DEFAULT_ARGUMENT_NAME)
-                        .unwrap()
-                        .clone()
-                } else {
-                    Value::String(string.clone())
+            Program::Value(value) => match value {
+                Value::String(string) => {
+                    if string == DEFAULT_ARGUMENT_NAME {
+                        context
+                            .constants
+                            .get(DEFAULT_ARGUMENT_NAME)
+                            .unwrap()
+                            .clone()
+                    } else {
+                        Value::String(string.clone())
+                    }
                 }
-            }
-            Value::Number(number) => Value::Number(number.clone()),
-            Value::Bool(bool) => Value::Bool(*bool),
-            Value::Null => Value::Null,
+                _ => value.clone(),
+            },
         })
     }
 
-    pub fn check_types(&self, program: &Value) -> Result<Type> {
-        self.get_type(
+    pub fn check_types(&self, program: &Program) -> Result<Type> {
+        self.get_program_type(
             program,
             &mut TypeCheckingContext {
                 path: Path(rpds::VectorSync::new_sync()),
@@ -838,236 +877,298 @@ impl Interpreter {
         )
     }
 
-    fn get_type(&self, program: &Value, context: &mut TypeCheckingContext) -> Result<Type> {
+    fn get_value_type(&self, value: &Value, context: &mut TypeCheckingContext) -> Result<Type> {
+        match value {
+            Value::String(string) => {
+                if string == DEFAULT_ARGUMENT_NAME
+                    && let Some(constant_type) = context.constants.get(DEFAULT_ARGUMENT_NAME)
+                {
+                    Ok(constant_type.clone())
+                } else {
+                    Ok(Type::String)
+                }
+            }
+            Value::Array(array) => {
+                if let Some(first_element) = array.first() {
+                    context.path.0.push_back_mut(PathSegment::ArrayIndex(0));
+                    let result = self.get_value_type(first_element, context)?;
+                    context.path.0.drop_last_mut();
+                    for (element_index, element) in array.iter().skip(1).enumerate() {
+                        context
+                            .path
+                            .0
+                            .push_back_mut(PathSegment::ArrayIndex(element_index));
+                        let element_type = self.get_value_type(element, context)?;
+                        if element_type != result {
+                            return Err(context.error(&result, &element_type));
+                        }
+                        context.path.0.drop_last_mut();
+                    }
+                    Ok(result)
+                } else {
+                    Err(anyhow!("Expected non-empty array"))
+                }
+            }
+            Value::Object(object) => {
+                let mut result_map = BTreeMap::new();
+                for (key, value) in object {
+                    context
+                        .path
+                        .0
+                        .push_back_mut(PathSegment::ObjectKey(key.clone()));
+                    result_map.insert(key.clone(), self.get_value_type(value, context)?);
+                    context.path.0.drop_last_mut();
+                }
+                Ok(Type::Object(result_map))
+            }
+            Value::Number(_) => Ok(Type::Number),
+            Value::Bool(_) => Ok(Type::Bool),
+            Value::Null => Ok(Type::Null),
+        }
+    }
+
+    fn get_program_type(
+        &self,
+        program: &Program,
+        context: &mut TypeCheckingContext,
+    ) -> Result<Type> {
         match program {
-            Value::Constant(constant_clause) => context
-                .constants
-                .get(&constant_clause.constant)
-                .cloned()
-                .with_context(|| {
-                    format!(
-                        "Unknown constant {:?} at {:#?}",
-                        constant_clause.constant, context.path
-                    )
-                }),
-            Value::With(with_clause) => {
-                for (function_name, function_body) in with_clause.with.functions.iter() {
-                    context
-                        .functions
-                        .push(&function_name, function_body.clone());
-                }
-                context.path.0.push_back_mut(PathSegment::With);
-                context.path.0.push_back_mut(PathSegment::Constants);
-                for (constant_name, constant_compute_body) in with_clause.with.constants.iter() {
-                    context
-                        .path
-                        .0
-                        .push_back_mut(PathSegment::Constant(constant_name.clone()));
-                    let precomputed_constant_type =
-                        self.get_type(&constant_compute_body.clone(), context)?;
-                    context.path.0.drop_last_mut();
-                    context
-                        .constants
-                        .push(&constant_name, precomputed_constant_type);
-                }
-                context.path.0.drop_last_mut();
-                context.path.0.push_back_mut(PathSegment::Compute);
-                let result = self.get_type(&with_clause.compute.clone(), context)?;
-                context.path.0.drop_last_mut();
-                context.path.0.drop_last_mut();
-                for function_name in with_clause.with.functions.keys() {
-                    context.functions.remove(function_name);
-                }
-                for constant_name in with_clause.with.constants.keys() {
-                    context.constants.remove(constant_name);
-                }
-                Ok(result)
-            }
-            Value::Map(map_clause) => {
-                context.path.0.push_back_mut(PathSegment::Map);
-                let actual_array_type = self.get_type(&map_clause.map.clone(), context)?;
-                context.path.0.drop_last_mut();
-                if let Type::Array(ref array_element_type) = actual_array_type {
-                    context
-                        .constants
-                        .push(&map_clause.r#as, *array_element_type.clone());
-                    context.path.0.push_back_mut(PathSegment::Through);
-                    let result = self.get_type(&map_clause.through, context)?;
-                    context.path.0.drop_last_mut();
-                    context.constants.remove(&map_clause.r#as);
-                    Ok(Type::Array(Box::new(result)))
-                } else {
-                    Err(anyhow!(
-                        "Expected array for map clause at {:?}, got {actual_array_type:?}",
-                        context.path
-                    ))
-                }
-            }
-            Value::Filter(filter_clause) => {
-                context.path.0.push_back_mut(PathSegment::Filter);
-                let actual_array_type = self.get_type(&filter_clause.filter, context)?;
-                context.path.0.drop_last_mut();
-                if let Type::Array(ref array_element_type) = actual_array_type {
-                    context
-                        .constants
-                        .push(&filter_clause.r#as, *array_element_type.clone());
-                    context.path.0.push_back_mut(PathSegment::Through);
-                    let through_type = self.get_type(&filter_clause.through, context)?;
-                    context.path.0.drop_last_mut();
-                    context
-                        .assert_equal(&through_type, &Type::Bool)
-                        .with_context(|| {
-                            anyhow!(
-                                "Expected filter at {:?} to use function which returns boolean \
-                                 value, but it returns {through_type:?}",
-                                context.path
-                            )
-                        })?;
-                    context.constants.remove(&filter_clause.r#as);
-                    Ok(Type::Array(array_element_type.clone()))
-                } else {
-                    Err(anyhow!(
-                        "Expected array for filter clause at {:?}, got {actual_array_type:?}",
-                        context.path
-                    ))
-                }
-            }
-            Value::Fold(fold_clause) => {
-                context.path.0.push_back_mut(PathSegment::Fold);
-                let actual_array_type = self.get_type(&fold_clause.fold, context)?;
-                context.path.0.drop_last_mut();
-                if let Type::Array(ref array_element_type) = actual_array_type {
-                    let starting_with_type = self.get_type(&fold_clause.starting_with, context)?;
-                    context
-                        .constants
-                        .push(&fold_clause.r#as, *array_element_type.clone());
-                    context
-                        .constants
-                        .push(&fold_clause.accumulating_in, starting_with_type.clone());
-                    context.path.0.push_back_mut(PathSegment::Through);
-                    let through_type = self.get_type(&fold_clause.through, context)?;
-                    context.path.0.drop_last_mut();
-                    context
-                        .assert_equal(&through_type, &starting_with_type)
-                        .with_context(|| {
-                            anyhow!(
-                                "Expected fold at {:?} to use function which returns value \
-                                 {starting_with_type:?} (as is starting value), but it returns \
-                                 {through_type:?}",
-                                context.path
-                            )
-                        })?;
-                    context.constants.remove(&fold_clause.r#as);
-                    context.constants.remove(&fold_clause.accumulating_in);
-                    Ok(through_type)
-                } else {
-                    Err(anyhow!(
-                        "Expected array for fold clause at {:?}, got {actual_array_type:?}",
-                        context.path
-                    ))
-                }
-            }
-            Value::Branching(branching_clause) => {
-                context.path.0.push_back_mut(PathSegment::If);
-                let if_branch_type = self.get_type(&branching_clause.r#if, context)?;
-                context.assert_equal(&Type::Bool, &if_branch_type)?;
-                context.path.0.drop_last_mut();
-                context.path.0.push_back_mut(PathSegment::Then);
-                let then_branch_type = self.get_type(&branching_clause.then, context)?;
-                context.path.0.drop_last_mut();
-                context.path.0.push_back_mut(PathSegment::Else);
-                let else_branch_type = self.get_type(&branching_clause.r#else, context)?;
-                context.path.0.drop_last_mut();
-                context
-                    .assert_equal(&then_branch_type, &else_branch_type)
-                    .with_context(|| {
-                        anyhow!(
-                            "Expected 'then' and 'else' branches at {:?} to be of the same type, \
-                             but 'then' branch is {then_branch_type:?} and 'else' branch is \
-                             {else_branch_type:?}",
-                            context.path
-                        )
-                    })?;
-                Ok(then_branch_type)
-            }
-            Value::TryOr(try_or_clause) => {
-                context.path.0.push_back_mut(PathSegment::If);
-                let try_branch_type = self.get_type(&try_or_clause.r#try, context)?;
-                context.path.0.drop_last_mut();
-                context.path.0.push_back_mut(PathSegment::Or);
-                context
+            Program::Clause(clause) => match clause {
+                Clause::Constant(constant_clause) => context
                     .constants
-                    .push(&try_or_clause.with_error, Type::String);
-                let or_branch_type = self.get_type(&try_or_clause.or, context)?;
-                context.path.0.drop_last_mut();
-                context.constants.remove(&try_or_clause.with_error);
-                context
-                    .assert_equal(&try_branch_type, &or_branch_type)
+                    .get(&constant_clause.constant)
+                    .cloned()
                     .with_context(|| {
-                        anyhow!(
-                            "Expected 'try' and 'or' branches at {:?} to be of the same type, but \
-                             'try' branch is {try_branch_type:?} and 'or' branch is \
-                             {or_branch_type:?}",
-                            context.path
+                        format!(
+                            "Unknown constant {:?} at {:#?}",
+                            constant_clause.constant, context.path
                         )
-                    })?;
-                Ok(try_branch_type)
-            }
-            Value::FromAt(from_at_clause) => {
-                context.path.0.push_back_mut(PathSegment::From);
-                let mut result = self.get_type(&from_at_clause.from, context)?;
-                context.path.0.drop_last_mut();
-                context.path.0.push_back_mut(PathSegment::At);
-                if from_at_clause.at.is_empty() {
-                    return Err(anyhow!("Expected a non-empty list at {:?}", context.path));
+                    }),
+                Clause::With(with_clause) => {
+                    for function_name_and_body in with_clause.with.functions.iter() {
+                        context
+                            .functions
+                            .push(&function_name_and_body.0, function_name_and_body.1.clone());
+                    }
+                    context.path.0.push_back_mut(PathSegment::With);
+                    context.path.0.push_back_mut(PathSegment::Constants);
+                    for constant_name_and_compute_body in with_clause.with.constants.iter() {
+                        context.path.0.push_back_mut(PathSegment::Constant(
+                            constant_name_and_compute_body.0.clone(),
+                        ));
+                        let precomputed_constant_type = self
+                            .get_program_type(&constant_name_and_compute_body.1.clone(), context)?;
+                        context.path.0.drop_last_mut();
+                        context
+                            .constants
+                            .push(&constant_name_and_compute_body.0, precomputed_constant_type);
+                    }
+                    context.path.0.drop_last_mut();
+                    context.path.0.push_back_mut(PathSegment::Compute);
+                    let result = self.get_program_type(&with_clause.compute.clone(), context)?;
+                    context.path.0.drop_last_mut();
+                    context.path.0.drop_last_mut();
+                    for function_name_and_compute_body in with_clause.with.functions.iter() {
+                        context.functions.remove(&function_name_and_compute_body.0);
+                    }
+                    for function_name_and_compute_body in with_clause.with.constants.iter() {
+                        context.constants.remove(&function_name_and_compute_body.0);
+                    }
+                    Ok(result)
                 }
-                for (at_segment_index, at_segment) in from_at_clause.at.iter().enumerate() {
+                Clause::Map(map_clause) => {
+                    context.path.0.push_back_mut(PathSegment::Map);
+                    let actual_array_type =
+                        self.get_program_type(&map_clause.map.clone(), context)?;
+                    context.path.0.drop_last_mut();
+                    if let Type::Array(ref array_element_type) = actual_array_type {
+                        context
+                            .constants
+                            .push(&map_clause.r#as, *array_element_type.clone());
+                        context.path.0.push_back_mut(PathSegment::Through);
+                        let result = self.get_program_type(&map_clause.through, context)?;
+                        context.path.0.drop_last_mut();
+                        context.constants.remove(&map_clause.r#as);
+                        Ok(Type::Array(Box::new(result)))
+                    } else {
+                        Err(anyhow!(
+                            "Expected array for map clause at {:?}, got {actual_array_type:?}",
+                            context.path
+                        ))
+                    }
+                }
+                Clause::Filter(filter_clause) => {
+                    context.path.0.push_back_mut(PathSegment::Filter);
+                    let actual_array_type =
+                        self.get_program_type(&filter_clause.filter, context)?;
+                    context.path.0.drop_last_mut();
+                    if let Type::Array(ref array_element_type) = actual_array_type {
+                        context
+                            .constants
+                            .push(&filter_clause.r#as, *array_element_type.clone());
+                        context.path.0.push_back_mut(PathSegment::Through);
+                        let through_type =
+                            self.get_program_type(&filter_clause.through, context)?;
+                        context.path.0.drop_last_mut();
+                        context
+                            .assert_equal(&through_type, &Type::Bool)
+                            .with_context(|| {
+                                anyhow!(
+                                    "Expected filter at {:?} to use function which returns \
+                                     boolean value, but it returns {through_type:?}",
+                                    context.path
+                                )
+                            })?;
+                        context.constants.remove(&filter_clause.r#as);
+                        Ok(Type::Array(array_element_type.clone()))
+                    } else {
+                        Err(anyhow!(
+                            "Expected array for filter clause at {:?}, got {actual_array_type:?}",
+                            context.path
+                        ))
+                    }
+                }
+                Clause::Fold(fold_clause) => {
+                    context.path.0.push_back_mut(PathSegment::Fold);
+                    let actual_array_type = self.get_program_type(&fold_clause.fold, context)?;
+                    context.path.0.drop_last_mut();
+                    if let Type::Array(ref array_element_type) = actual_array_type {
+                        let starting_with_type =
+                            self.get_program_type(&fold_clause.starting_with, context)?;
+                        context
+                            .constants
+                            .push(&fold_clause.r#as, *array_element_type.clone());
+                        context
+                            .constants
+                            .push(&fold_clause.accumulating_in, starting_with_type.clone());
+                        context.path.0.push_back_mut(PathSegment::Through);
+                        let through_type = self.get_program_type(&fold_clause.through, context)?;
+                        context.path.0.drop_last_mut();
+                        context
+                            .assert_equal(&through_type, &starting_with_type)
+                            .with_context(|| {
+                                anyhow!(
+                                    "Expected fold at {:?} to use function which returns value \
+                                     {starting_with_type:?} (as is starting value), but it \
+                                     returns {through_type:?}",
+                                    context.path
+                                )
+                            })?;
+                        context.constants.remove(&fold_clause.r#as);
+                        context.constants.remove(&fold_clause.accumulating_in);
+                        Ok(through_type)
+                    } else {
+                        Err(anyhow!(
+                            "Expected array for fold clause at {:?}, got {actual_array_type:?}",
+                            context.path
+                        ))
+                    }
+                }
+                Clause::Branching(branching_clause) => {
+                    context.path.0.push_back_mut(PathSegment::If);
+                    let if_branch_type = self.get_program_type(&branching_clause.r#if, context)?;
+                    context.assert_equal(&Type::Bool, &if_branch_type)?;
+                    context.path.0.drop_last_mut();
+                    context.path.0.push_back_mut(PathSegment::Then);
+                    let then_branch_type =
+                        self.get_program_type(&branching_clause.then, context)?;
+                    context.path.0.drop_last_mut();
+                    context.path.0.push_back_mut(PathSegment::Else);
+                    let else_branch_type =
+                        self.get_program_type(&branching_clause.r#else, context)?;
+                    context.path.0.drop_last_mut();
                     context
-                        .path
-                        .0
-                        .push_back_mut(PathSegment::AtIndex(at_segment_index));
-                    match at_segment {
-                        AtSegment::ObjectKey(object_key) => match result {
-                            Type::Object(mut result_fields_types) => {
-                                if let Some(result_field_type) =
-                                    result_fields_types.remove(object_key)
-                                {
-                                    result = result_field_type;
-                                } else {
+                        .assert_equal(&then_branch_type, &else_branch_type)
+                        .with_context(|| {
+                            anyhow!(
+                                "Expected 'then' and 'else' branches at {:?} to be of the same \
+                                 type, but 'then' branch is {then_branch_type:?} and 'else' \
+                                 branch is {else_branch_type:?}",
+                                context.path
+                            )
+                        })?;
+                    Ok(then_branch_type)
+                }
+                Clause::TryOr(try_or_clause) => {
+                    context.path.0.push_back_mut(PathSegment::Try);
+                    let try_branch_type = self.get_program_type(&try_or_clause.r#try, context)?;
+                    context.path.0.drop_last_mut();
+                    context.path.0.push_back_mut(PathSegment::Or);
+                    context
+                        .constants
+                        .push(&try_or_clause.with_error, Type::String);
+                    let or_branch_type = self.get_program_type(&try_or_clause.or, context)?;
+                    context.path.0.drop_last_mut();
+                    context.constants.remove(&try_or_clause.with_error);
+                    context
+                        .assert_equal(&try_branch_type, &or_branch_type)
+                        .with_context(|| {
+                            anyhow!(
+                                "Expected 'try' and 'or' branches at {:?} to be of the same type, \
+                                 but 'try' branch is {try_branch_type:?} and 'or' branch is \
+                                 {or_branch_type:?}",
+                                context.path
+                            )
+                        })?;
+                    Ok(try_branch_type)
+                }
+                Clause::FromAt(from_at_clause) => {
+                    context.path.0.push_back_mut(PathSegment::From);
+                    let mut result = self.get_program_type(&from_at_clause.from, context)?;
+                    context.path.0.drop_last_mut();
+                    context.path.0.push_back_mut(PathSegment::At);
+                    if from_at_clause.at.is_empty() {
+                        return Err(anyhow!("Expected a non-empty list at {:?}", context.path));
+                    }
+                    for (at_segment_index, at_segment) in from_at_clause.at.iter().enumerate() {
+                        context
+                            .path
+                            .0
+                            .push_back_mut(PathSegment::AtIndex(at_segment_index));
+                        match at_segment {
+                            AtSegment::ObjectKey(object_key) => match result {
+                                Type::Object(mut result_fields_types) => {
+                                    if let Some(result_field_type) =
+                                        result_fields_types.remove(object_key)
+                                    {
+                                        result = result_field_type;
+                                    } else {
+                                        return Err(anyhow!(
+                                            "Expected to reach from 'from' to be an object with \
+                                             key {object_key:?} at the point {:?}, but it has no \
+                                             such key",
+                                            context.path
+                                        ));
+                                    }
+                                }
+                                r#type => {
                                     return Err(anyhow!(
-                                        "Expected to reach from 'from' to be an object with key \
-                                         {object_key:?} at the point {:?}, but it has no such key",
+                                        "Expected to reach from 'from' to be an object at the \
+                                         point {:?}, but it is {type:?}",
                                         context.path
                                     ));
                                 }
-                            }
-                            r#type => {
-                                return Err(anyhow!(
-                                    "Expected to reach from 'from' to be an object at the point \
-                                     {:?}, but it is {type:?}",
-                                    context.path
-                                ));
-                            }
-                        },
-                        AtSegment::ArrayIndex(_) => match result {
-                            Type::Array(element_type) => {
-                                result = *element_type;
-                            }
-                            r#type => {
-                                return Err(anyhow!(
-                                    "Expected to reach from 'from' to be an array at the point \
-                                     {:?}, but it is {type:?}",
-                                    context.path
-                                ));
-                            }
-                        },
+                            },
+                            AtSegment::ArrayIndex(_) => match result {
+                                Type::Array(element_type) => {
+                                    result = *element_type;
+                                }
+                                r#type => {
+                                    return Err(anyhow!(
+                                        "Expected to reach from 'from' to be an array at the \
+                                         point {:?}, but it is {type:?}",
+                                        context.path
+                                    ));
+                                }
+                            },
+                        }
+                        context.path.0.drop_last_mut();
                     }
                     context.path.0.drop_last_mut();
+                    Ok(result)
                 }
-                context.path.0.drop_last_mut();
-                Ok(result)
-            }
-            Value::Object(object) => {
+            },
+            Program::Object(object) => {
                 if object.size() == 1 {
                     let (function_name, argument) = object.iter().next().unwrap();
                     if let Some(function_body) = context.functions.get(function_name).cloned() {
@@ -1088,27 +1189,46 @@ impl Interpreter {
                             }
                         }
                         let mut arguments_names = vec![];
-                        if let Value::Object(arguments) = argument
-                            && arguments.size() > 1
-                        {
-                            for (argument_name, argument_compute_body) in arguments.iter() {
-                                context
-                                    .path
-                                    .0
-                                    .push_back_mut(PathSegment::Argument(argument_name.clone()));
-                                let argument_type =
-                                    self.get_type(&argument_compute_body, context)?;
-                                context.path.0.drop_last_mut();
-                                arguments_names.push(argument_name.clone());
-                                context.constants.push(&argument_name, argument_type);
+                        match argument {
+                            Program::Object(arguments) if arguments.size() > 1 => {
+                                for (argument_name, argument_compute_body) in arguments.iter() {
+                                    context.path.0.push_back_mut(PathSegment::Argument(
+                                        argument_name.clone(),
+                                    ));
+                                    let argument_type =
+                                        self.get_program_type(&argument_compute_body, context)?;
+                                    context.path.0.drop_last_mut();
+                                    arguments_names.push(argument_name.clone());
+                                    context.constants.push(&argument_name, argument_type);
+                                }
                             }
-                        } else {
-                            let argument_type = self.get_type(argument, context)?;
-                            arguments_names.push(DEFAULT_ARGUMENT_NAME.to_string());
-                            context.constants.push(DEFAULT_ARGUMENT_NAME, argument_type);
-                        }
+                            Program::Value(value) => match value {
+                                Value::Object(arguments) if arguments.size() > 1 => {
+                                    for (argument_name, argument_value) in arguments.iter() {
+                                        context.path.0.push_back_mut(PathSegment::Argument(
+                                            argument_name.clone(),
+                                        ));
+                                        let argument_type =
+                                            self.get_value_type(argument_value, context)?;
+                                        context.path.0.drop_last_mut();
+                                        arguments_names.push(argument_name.clone());
+                                        context.constants.push(&argument_name, argument_type);
+                                    }
+                                }
+                                _ => {
+                                    let value_type = self.get_value_type(value, context)?;
+                                    context.constants.push(DEFAULT_ARGUMENT_NAME, value_type);
+                                }
+                            },
+                            argument_compute_body => {
+                                let argument_type =
+                                    self.get_program_type(argument_compute_body, context)?;
+                                arguments_names.push(DEFAULT_ARGUMENT_NAME.to_string());
+                                context.constants.push(DEFAULT_ARGUMENT_NAME, argument_type);
+                            }
+                        };
                         context.entered_functions.insert(function_name.clone());
-                        let result = self.get_type(&function_body, context)?;
+                        let result = self.get_program_type(&function_body, context)?;
                         context.path.0.drop_last_mut();
                         context.entered_functions.remove(function_name);
                         for argument_name in arguments_names {
@@ -1118,11 +1238,13 @@ impl Interpreter {
                         return Ok(result);
                     }
                     if let Some(function) = self.embedded_functions.get(function_name) {
+                        dbg!(function);
                         context
                             .path
                             .0
                             .push_back_mut(PathSegment::EmbeddedFunction(function_name.clone()));
-                        let arguments_type = self.get_type(argument, context)?;
+                        dbg!(&argument);
+                        let arguments_type = self.get_program_type(argument, context)?;
                         let generic_values =
                             context.assert_equal(&function.argument_type, &arguments_type)?;
                         context.path.0.drop_last_mut();
@@ -1138,12 +1260,12 @@ impl Interpreter {
                         .path
                         .0
                         .push_back_mut(PathSegment::ObjectKey(key.clone()));
-                    result_map.insert(key.clone(), self.get_type(value, context)?);
+                    result_map.insert(key.clone(), self.get_program_type(value, context)?);
                     context.path.0.drop_last_mut();
                 }
                 Ok(Type::Object(result_map))
             }
-            Value::Array(array) => {
+            Program::Array(array) => {
                 let mut non_recursed_elements_indexes_and_types = Vec::with_capacity(array.len());
                 let mut recursed_elements_functions_names = vec![];
                 for (element_index, element) in array.iter().enumerate() {
@@ -1151,7 +1273,7 @@ impl Interpreter {
                         .path
                         .0
                         .push_back_mut(PathSegment::ArrayIndex(element_index));
-                    match self.get_type(element, context)? {
+                    match self.get_program_type(element, context)? {
                         Type::RecursedFunction(recursed_function_name) => {
                             recursed_elements_functions_names.push(recursed_function_name);
                         }
@@ -1197,18 +1319,7 @@ impl Interpreter {
                     Err(anyhow!("Expected non-empty array at {:?}", context.path))
                 }
             }
-            Value::String(string) => {
-                if string == DEFAULT_ARGUMENT_NAME
-                    && let Some(constant_type) = context.constants.get(DEFAULT_ARGUMENT_NAME)
-                {
-                    Ok(constant_type.clone())
-                } else {
-                    Ok(Type::String)
-                }
-            }
-            Value::Number(_) => Ok(Type::Number),
-            Value::Bool(_) => Ok(Type::Bool),
-            Value::Null => Ok(Type::Null),
+            Program::Value(value) => self.get_value_type(value, context),
         }
     }
 }

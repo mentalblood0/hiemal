@@ -1,15 +1,18 @@
+pub mod clause;
 pub mod default_argument_name;
 pub mod embedded_functions;
 pub mod function;
 pub mod includes_cache;
 pub mod interpreter;
 pub mod path;
+pub mod program;
+pub mod program_with_includes;
 pub mod r#type;
 pub mod value;
 
 #[cfg(test)]
 mod tests {
-    use crate::value::ValueWithIncludes;
+    use crate::program_with_includes::ProgramWithIncludes;
 
     use super::*;
 
@@ -29,10 +32,10 @@ mod tests {
     #[test]
     fn test_serde() {
         assert_eq!(
-            serde_json::from_value::<ValueWithIncludes>(json!(["b"])).unwrap(),
-            ValueWithIncludes::Array(vec![ValueWithIncludes::Other(serde_json::Value::String(
-                "b".to_string()
-            ))])
+            serde_json::from_value::<ProgramWithIncludes>(json!(["b"])).unwrap(),
+            ProgramWithIncludes::Array(vec![ProgramWithIncludes::Other(
+                serde_json::Value::String("b".to_string())
+            )])
         );
     }
 
@@ -106,7 +109,7 @@ mod tests {
                     &serde_json::from_value(json!({
                         "sum": [
                             {
-                                "with": {"constants": {"x": 2, "y": 3}},
+                                "with": {"constants": [{"x": 2}, {"y": 3}]},
                                 "compute": {"product": [{"constant": "x"}, {"constant": "x"}, {"constant": "y"}]}
                             },
                             {"len": {"concat": ["lala", "lolo"]}},
@@ -130,12 +133,12 @@ mod tests {
                         "sum": [
                             {
                                 "with": {
-                                    "functions": {
-                                        "square": {"product": ["_", "_"]},
-                                    },
-                                    "constants": {
-                                        "y": 3
-                                    }
+                                    "functions": [
+                                        ["square", {"product": ["_", "_"]}],
+                                    ],
+                                    "constants": [
+                                        ["y", 3]
+                                    ]
                                 },
                                 "compute": {"product": [
                                     {"square": 2},
@@ -268,8 +271,8 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                         "with": {
-                            "functions": {
-                                "factorial": {
+                            "functions": [
+                                ["factorial", {
                                     "product": {
                                         "sequence": {
                                             "from": 1,
@@ -277,8 +280,8 @@ mod tests {
                                             "step": 1
                                         }
                                     }
-                                }
-                            }
+                                }]
+                            ]
                         },
                         "compute": {
                             "factorial": 5
@@ -410,24 +413,24 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                         "with": {
-                            "functions": {
-                                "f1": {
+                            "functions": [
+                                ["f1", {
                                     "sum": ["_", 1]
-                                },
-                                "f2": {
+                                }],
+                                ["f2", {
                                     "sum": ["_", 2]
-                                },
-                                "f3": {
+                                }],
+                                ["f3", {
                                     "sum": ["_", 3]
-                                },
-                                "f": {
+                                }],
+                                ["f", {
                                     "f1": {
                                         "f2": {
                                             "f3": "_"
                                         }
                                     }
-                                }
-                            }
+                                }]
+                            ]
                         },
                         "compute": {
                             "f": 0
@@ -448,14 +451,14 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                         "with": {
-                            "functions": {
-                                "f": {
+                            "functions": [
+                                ["f", {
                                     "sum": [{"constant": "x"}, "_", 3]
-                                },
-                            },
-                            "constants": {
-                                "x": 1
-                            }
+                                }],
+                            ],
+                            "constants": [
+                                ["x", 1]
+                            ]
                         },
                         "compute": {
                             "f": {
@@ -481,8 +484,8 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                       "with": {
-                        "functions": {
-                          "fibonacci": {
+                        "functions": [
+                          ["fibonacci", {
                             "if": {
                               "is sorted": [
                                 "_",
@@ -510,8 +513,8 @@ mod tests {
                                   }
                                 ]
                             }
-                          }
-                        }
+                          }]
+                        ]
                       },
                       "compute": {
                         "fibonacci": 10
@@ -532,8 +535,8 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                       "with": {
-                        "functions": {
-                          "fibonacci": {
+                        "functions": [
+                          ["fibonacci", {
                             "if": {
                               "is sorted": [
                                 "_",
@@ -549,8 +552,8 @@ mod tests {
                                   ]
                                 }
                             }
-                          }
-                        }
+                          }]
+                        ]
                       },
                       "compute": {
                         "fibonacci": 10
@@ -571,8 +574,8 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!({
                       "with": {
-                        "functions": {
-                          "fibonacci": {
+                        "functions": [
+                          ["fibonacci", {
                             "if": {
                               "is sorted": [
                                 "_",
@@ -602,8 +605,8 @@ mod tests {
                                 ]
                               }
                             }
-                          }
-                        }
+                          }]
+                        ]
                       },
                       "compute": {
                         "fibonacci": 10
@@ -625,8 +628,8 @@ mod tests {
                         .compute(
                             &serde_json::from_value(json!({
                               "with": {
-                                "functions": {
-                                  "fibonacci_1": {
+                                "functions": [
+                                  ["fibonacci_1", {
                                     "if": {
                                       "is sorted": [
                                         "_",
@@ -654,8 +657,8 @@ mod tests {
                                           }
                                         ]
                                     }
-                                  },
-                                  "fibonacci_2": {
+                                  }],
+                                  ["fibonacci_2", {
                                     "if": {
                                       "is sorted": [
                                         "_",
@@ -683,8 +686,8 @@ mod tests {
                                           }
                                         ]
                                     }
-                                  }
-                                }
+                                  }]
+                                ]
                               },
                               "compute": {
                                 "fibonacci_1": 10

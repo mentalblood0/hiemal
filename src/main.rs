@@ -3,7 +3,10 @@ use std::process::exit;
 use anyhow::Context;
 use url::Url;
 
-use hiemal::{includes_cache::IncludesCache, interpreter::Interpreter, value::ValueWithIncludes};
+use hiemal::{
+    includes_cache::IncludesCache, interpreter::Interpreter,
+    program_with_includes::ProgramWithIncludes,
+};
 
 enum Source {
     Url,
@@ -55,7 +58,7 @@ fn main() {
                 .unwrap(),
             Source::Url => includes_cache.get(&optional_url.unwrap()).unwrap(),
         };
-        let program: ValueWithIncludes = match format {
+        let program: ProgramWithIncludes = match format {
             Format::Yaml => serde_saphyr::from_str(&program_text)
                 .context("Can not parse YAML-formatted program")
                 .unwrap(),

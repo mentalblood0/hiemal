@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-#[derive(PartialEq, Debug, Clone, PartialOrd, Ord, Eq)]
+#[derive(PartialEq, Debug, Clone, Eq)]
 pub enum Type {
     Number,
     String,

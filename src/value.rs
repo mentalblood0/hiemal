@@ -1,16 +1,24 @@
-use std::collections::{BTreeMap, VecDeque};
-
+use anyhow::Result;
 use dashu::{Decimal, Rational};
 use serde::{
-    Deserialize, Deserializer,
+    Deserialize, Deserializer, Serialize,
     de::{self, Unexpected, Visitor},
 };
 use std::str::FromStr;
-use url::Url;
 
 use crate::default_argument_name::DEFAULT_ARGUMENT_NAME;
 
 pub type SmallMap<K, V> = small_map::FxSmallMap<32, K, V>;
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+#[serde(untagged)]
+pub enum Value {
+    #[serde(deserialize_with = "deserialize_rational")]
+    Number(Rational),
+    String(String),
+    Bool(bool),
+    Null,
+}
 
 pub fn deserialize_rational<'de, D>(deserializer: D) -> Result<Rational, D::Error>
 where
@@ -76,170 +84,6 @@ where
     deserializer.deserialize_any(RationalVisitor)
 }
 
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-pub struct Constant {
-    pub constant: String,
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-pub struct With {
-    #[serde(default)]
-    pub functions: rpds::RedBlackTreeMapSync<String, Value>,
-    #[serde(default)]
-    pub constants: rpds::RedBlackTreeMapSync<String, Value>,
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-pub struct WithCompute {
-    pub with: With,
-    pub compute: Value,
-}
-
-fn default_alias() -> String {
-    DEFAULT_ARGUMENT_NAME.to_string()
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-pub struct Map {
-    pub map: Value,
-    #[serde(default = "default_alias")]
-    pub r#as: String,
-    pub through: Value,
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-pub struct Filter {
-    pub filter: Value,
-    #[serde(default = "default_alias")]
-    pub r#as: String,
-    pub through: Value,
-}
-
-fn default_current_value_alias() -> String {
-    "current".to_string()
-}
-
-fn default_accumulator_value_alias() -> String {
-    "accumulator".to_string()
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-pub struct Fold {
-    pub fold: Value,
-    #[serde(default = "default_current_value_alias")]
-    pub r#as: String,
-    #[serde(rename = "starting with")]
-    pub starting_with: Value,
-    #[serde(
-        rename = "accumulating in",
-        default = "default_accumulator_value_alias"
-    )]
-    pub accumulating_in: String,
-    pub through: Value,
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-pub struct Branching {
-    pub r#if: Value,
-    pub then: Value,
-    pub r#else: Value,
-}
-
-fn default_error_alias() -> String {
-    "error".to_string()
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-pub struct TryOr {
-    pub r#try: Value,
-    pub or: Value,
-    #[serde(rename = "with error", default = "default_error_alias")]
-    pub with_error: String,
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(untagged)]
-pub enum AtSegment {
-    ObjectKey(String),
-    ArrayIndex(usize),
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-pub struct FromAt {
-    pub from: Value,
-    pub at: rpds::ListSync<AtSegment>,
-}
-
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[serde(untagged)]
-pub enum Value {
-    #[serde(deserialize_with = "deserialize_rational")]
-    Number(Rational),
-    String(String),
-    Bool(bool),
-    Null,
-    Array(rpds::VectorSync<Value>),
-    Constant(Constant),
-    With(Box<WithCompute>),
-    Map(Box<Map>),
-    Filter(Box<Filter>),
-    Fold(Box<Fold>),
-    Branching(Box<Branching>),
-    TryOr(Box<TryOr>),
-    FromAt(Box<FromAt>),
-    Object(rpds::RedBlackTreeMapSync<String, Value>),
-}
-
-#[derive(serde::Deserialize, PartialEq, Debug, Clone)]
-#[serde(untagged)]
-pub enum IncludeFrom {
-    Url(Url),
-    File(std::path::PathBuf),
-}
-
-#[derive(PartialEq, Debug, Clone)]
-pub struct IncludeFromAt {
-    pub from: IncludeFrom,
-    pub at: Vec<AtSegment>,
-}
-
-impl<'de> Deserialize<'de> for IncludeFromAt {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut values = VecDeque::deserialize(deserializer)?;
-        let from = if let Some(first_value) = values.pop_front() {
-            serde_json::from_value(first_value).map_err(serde::de::Error::custom)?
-        } else {
-            return Err(serde::de::Error::invalid_length(
-                0,
-                &"at least one element (url or file path)",
-            ));
-        };
-        let at: Vec<AtSegment> = values
-            .into_iter()
-            .map(|value| serde_json::from_value(value).map_err(serde::de::Error::custom))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(IncludeFromAt { from, at })
-    }
-}
-
-#[derive(serde::Deserialize, PartialEq, Debug, Clone)]
-pub struct Include {
-    #[serde(deserialize_with = "IncludeFromAt::deserialize")]
-    pub include: IncludeFromAt,
-}
-
-#[derive(serde::Deserialize, PartialEq, Debug, Clone)]
-#[serde(untagged)]
-pub enum ValueWithIncludes {
-    Array(Vec<ValueWithIncludes>),
-    Include(Include),
-    Object(BTreeMap<String, ValueWithIncludes>),
-    Other(serde_json::Value),
-}
-
 impl Value {
     pub fn as_number(&self) -> Option<Rational> {
         match self {
@@ -258,20 +102,6 @@ impl Value {
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Value::Bool(result) => Some(*result),
-            _ => None,
-        }
-    }
-
-    pub fn as_array(&self) -> Option<&rpds::VectorSync<Value>> {
-        match self {
-            Value::Array(result) => Some(result),
-            _ => None,
-        }
-    }
-
-    pub fn as_object(&self) -> Option<&rpds::RedBlackTreeMapSync<String, Value>> {
-        match self {
-            Value::Object(result) => Some(result),
             _ => None,
         }
     }
