@@ -1,9 +1,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use dashu::Rational;
 use hiemal::{
-    includes_cache::IncludesCache,
-    interpreter::Interpreter,
-    value::{ProgramWithIncludes, Value},
+    includes_cache::IncludesCache, interpreter::Interpreter,
+    program_with_includes::ProgramWithIncludes, value::Value,
 };
 use serde_json::json;
 
@@ -16,7 +15,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
             let program = serde_json::from_value::<ProgramWithIncludes>(json!({
                 "with": {
                     "functions": [
-                        ["fibonacci", {
+                        {"fibonacci": {
                             "if": {
                                 "is sorted": [
                                     "_",
@@ -44,7 +43,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                     }
                                 ]
                             }
-                        }]
+                        }}
                     ]
                 },
                 "compute": {
@@ -61,7 +60,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
         let program = serde_json::from_value::<ProgramWithIncludes>(json!({
             "with": {
                 "functions": [
-                    ["fibonacci", {
+                    {"fibonacci": {
                         "if": {
                             "is sorted": [
                                 "_",
@@ -89,7 +88,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                 }
                             ]
                         }
-                    }]
+                    }}
                 ]
             },
             "compute": {
@@ -113,7 +112,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
         let program = serde_json::from_value::<ProgramWithIncludes>(json!({
             "with": {
                 "functions": [
-                    ["fibonacci", {
+                    {"fibonacci": {
                         "if": {
                             "is sorted": [
                                 "_",
@@ -141,15 +140,15 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                 }
                             ]
                         }
-                    }]
+                    }}
                 ]
             },
             "compute": {
                 "with": {
                     "constants": [
-                        ["x", {"fibonacci": 20}],
-                        ["y", {"fibonacci": 21}],
-                        ["z", {"fibonacci": 22}]
+                        {"x": {"fibonacci": 20}},
+                        {"y": {"fibonacci": 21}},
+                        {"z": {"fibonacci": 22}}
                     ]
                 },
                 "compute": [
@@ -168,7 +167,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
         let program = serde_json::from_value::<ProgramWithIncludes>(json!({
             "with": {
                 "functions": [
-                    ["fibonacci", {
+                    {"fibonacci": {
                         "if": {
                             "is sorted": [
                                 "_",
@@ -196,7 +195,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                 }
                             ]
                         }
-                    }]
+                    }}
                 ]
             },
             "compute": {
@@ -213,7 +212,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
         let program = serde_json::from_value::<ProgramWithIncludes>(json!({
             "with": {
                 "functions": [
-                    ["fibonacci", {
+                    {"fibonacci": {
                         "if": {
                             "is sorted": [
                                 "_",
@@ -241,7 +240,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                 }
                             ]
                         }
-                    }]
+                    }}
                 ]
             },
             "compute": {
@@ -263,7 +262,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
         let program = serde_json::from_value::<ProgramWithIncludes>(json!({
             "with": {
                 "functions": [
-                    ["factorial", {
+                    {"factorial": {
                         "product": {
                             "sequence": {
                                 "from": 1,
@@ -271,7 +270,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                 "step": 1
                             }
                         }
-                    }]
+                    }}
                 ]
             },
             "compute": {
