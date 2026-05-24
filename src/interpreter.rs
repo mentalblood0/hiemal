@@ -254,7 +254,6 @@ impl Interpreter {
     ) -> Result<Value> {
         let program =
             serde_json::from_value(self.process_includes(&program_with_includes, includes_cache)?)?;
-        dbg!(&program);
         self.check_types(&program)?;
         Ok(self.compute_with_context(
             &program,
@@ -408,6 +407,11 @@ impl Interpreter {
     ) -> Result<Value> {
         Ok(match program {
             Program::Clause(clause) => match clause {
+                Clause::DefaultArgument(_) => context
+                    .constants
+                    .get(DEFAULT_ARGUMENT_NAME)
+                    .unwrap()
+                    .clone(),
                 Clause::Constant(constant_clause) => context
                     .constants
                     .get(&constant_clause.constant)
@@ -435,15 +439,12 @@ impl Interpreter {
                         .constants
                         .iter()
                         .filter(|keyvalue| match &keyvalue.1 {
-                            Program::Value(value) => match value {
-                                Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
-                                _ => {
-                                    compute_context
-                                        .constants
-                                        .insert_mut(keyvalue.0.to_string(), value.clone());
-                                    false
-                                }
-                            },
+                            Program::Value(value) => {
+                                compute_context
+                                    .constants
+                                    .insert_mut(keyvalue.0.to_string(), value.clone());
+                                false
+                            }
                             _ => true,
                         })
                         .collect::<Vec<_>>();
@@ -732,28 +733,25 @@ impl Interpreter {
                         }
                         return self.compute_with_context(&function_body, compute_context);
                     } else if let Some(function) = self.embedded_functions.get(function_name) {
-                        let function_arguments = self.compute_with_context(
-                            &argument,
+                        let function_argument = self.compute_with_context(
+                            argument,
                             context.extended(
                                 [PathSegment::Function(function_name.clone())],
                                 [],
                                 [],
                             ),
                         )?;
-                        return (function.function)(function_arguments);
+                        return (function.function)(function_argument);
                     }
                 }
                 let mut result = rpds::RedBlackTreeMapSync::new_sync();
                 let complex_values = object
                     .iter()
                     .filter(|keyvalue| match &keyvalue.1 {
-                        Program::Value(value) => match value {
-                            Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
-                            _ => {
-                                result.insert_mut(keyvalue.0.to_string(), value.clone());
-                                false
-                            }
-                        },
+                        Program::Value(value) => {
+                            result.insert_mut(keyvalue.0.to_string(), value.clone());
+                            false
+                        }
                         _ => true,
                     })
                     .collect::<Vec<_>>();
@@ -796,18 +794,16 @@ impl Interpreter {
                 }
             }
             Program::Array(array) => {
-                let mut result = rpds::VectorSync::new_sync();
+                let mut result =
+                    rpds::VectorSync::from_iter(std::iter::repeat(Value::Null).take(array.len()));
                 let complex_elements = array
                     .iter()
                     .enumerate()
-                    .filter(|(_, element)| match &element {
-                        Program::Value(value) => match value {
-                            Value::String(string) if string == DEFAULT_ARGUMENT_NAME => true,
-                            _ => {
-                                result.push_back_mut(value.clone());
-                                false
-                            }
-                        },
+                    .filter(|(element_index, element)| match &element {
+                        Program::Value(value) => {
+                            result.set_mut(*element_index, value.clone());
+                            false
+                        }
                         _ => true,
                     })
                     .collect::<Vec<_>>();
@@ -847,20 +843,7 @@ impl Interpreter {
                     }
                 }
             }
-            Program::Value(value) => match value {
-                Value::String(string) => {
-                    if string == DEFAULT_ARGUMENT_NAME {
-                        context
-                            .constants
-                            .get(DEFAULT_ARGUMENT_NAME)
-                            .unwrap()
-                            .clone()
-                    } else {
-                        Value::String(string.clone())
-                    }
-                }
-                _ => value.clone(),
-            },
+            Program::Value(value) => value.clone(),
         })
     }
 
@@ -879,15 +862,6 @@ impl Interpreter {
 
     fn get_value_type(&self, value: &Value, context: &mut TypeCheckingContext) -> Result<Type> {
         match value {
-            Value::String(string) => {
-                if string == DEFAULT_ARGUMENT_NAME
-                    && let Some(constant_type) = context.constants.get(DEFAULT_ARGUMENT_NAME)
-                {
-                    Ok(constant_type.clone())
-                } else {
-                    Ok(Type::String)
-                }
-            }
             Value::Array(array) => {
                 if let Some(first_element) = array.first() {
                     context.path.0.push_back_mut(PathSegment::ArrayIndex(0));
@@ -921,6 +895,7 @@ impl Interpreter {
                 }
                 Ok(Type::Object(result_map))
             }
+            Value::String(_) => Ok(Type::String),
             Value::Number(_) => Ok(Type::Number),
             Value::Bool(_) => Ok(Type::Bool),
             Value::Null => Ok(Type::Null),
@@ -934,6 +909,16 @@ impl Interpreter {
     ) -> Result<Type> {
         match program {
             Program::Clause(clause) => match clause {
+                Clause::DefaultArgument(_) => context
+                    .constants
+                    .get(DEFAULT_ARGUMENT_NAME)
+                    .cloned()
+                    .with_context(|| {
+                        format!(
+                            "Unknown constant {:?} at {:#?}",
+                            DEFAULT_ARGUMENT_NAME, context.path
+                        )
+                    }),
                 Clause::Constant(constant_clause) => context
                     .constants
                     .get(&constant_clause.constant)
@@ -1238,12 +1223,10 @@ impl Interpreter {
                         return Ok(result);
                     }
                     if let Some(function) = self.embedded_functions.get(function_name) {
-                        dbg!(function);
                         context
                             .path
                             .0
                             .push_back_mut(PathSegment::EmbeddedFunction(function_name.clone()));
-                        dbg!(&argument);
                         let arguments_type = self.get_program_type(argument, context)?;
                         let generic_values =
                             context.assert_equal(&function.argument_type, &arguments_type)?;

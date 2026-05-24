@@ -1,7 +1,7 @@
 with:
   functions:
-    - - factorial:
-      - product:
+    - factorial:
+        product:
           sequence:
             from: 1
             to: _

@@ -18,6 +18,8 @@ pub enum Value {
     String(String),
     Bool(bool),
     Null,
+    Array(rpds::VectorSync<Value>),
+    Object(rpds::RedBlackTreeMapSync<String, Value>),
 }
 
 pub fn deserialize_rational<'de, D>(deserializer: D) -> Result<Rational, D::Error>
@@ -102,6 +104,20 @@ impl Value {
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Value::Bool(result) => Some(*result),
+            _ => None,
+        }
+    }
+
+    pub fn as_array(&self) -> Option<&rpds::VectorSync<Value>> {
+        match self {
+            Value::Array(result) => Some(result),
+            _ => None,
+        }
+    }
+
+    pub fn as_object(&self) -> Option<&rpds::RedBlackTreeMapSync<String, Value>> {
+        match self {
+            Value::Object(result) => Some(result),
             _ => None,
         }
     }

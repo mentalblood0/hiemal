@@ -11,6 +11,13 @@ pub enum Clause {
     TryOr(Box<TryOr>),
     FromAt(Box<FromAt>),
     Constant(Constant),
+    DefaultArgument(DefaultArgument),
+}
+
+#[derive(serde::Deserialize, PartialEq, Debug, Clone)]
+pub enum DefaultArgument {
+    #[serde(rename = "_")]
+    Underline,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
