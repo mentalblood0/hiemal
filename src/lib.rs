@@ -6,7 +6,6 @@ pub mod includes_cache;
 pub mod interpreter;
 pub mod path;
 pub mod program;
-pub mod program_with_includes;
 pub mod r#type;
 pub mod value;
 

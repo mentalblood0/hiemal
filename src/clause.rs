@@ -1,3 +1,5 @@
+use url::Url;
+
 use crate::{default_argument_name::DEFAULT_ARGUMENT_NAME, program::Program, value::Value};
 
 #[derive(serde::Deserialize, PartialEq, Debug, Clone)]
@@ -12,12 +14,54 @@ pub enum Clause {
     FromAt(Box<FromAt>),
     Constant(Constant),
     DefaultArgument(DefaultArgument),
+    Include(Include),
 }
 
 #[derive(serde::Deserialize, PartialEq, Debug, Clone)]
 pub enum DefaultArgument {
     #[serde(rename = "_")]
     Underline,
+}
+
+#[derive(serde::Deserialize, PartialEq, Debug, Clone)]
+#[serde(untagged)]
+pub enum IncludeFrom {
+    Url(Url),
+    File(std::path::PathBuf),
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct IncludeFromAt {
+    pub from: IncludeFrom,
+    pub at: Vec<AtSegment>,
+}
+
+impl<'de> serde::Deserialize<'de> for IncludeFromAt {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let mut values = Vec::deserialize(deserializer)?;
+        let from = if let Some(first_value) = values.pop() {
+            serde_json::from_value(first_value).map_err(serde::de::Error::custom)?
+        } else {
+            return Err(serde::de::Error::invalid_length(
+                0,
+                &"at least one element (url or file path)",
+            ));
+        };
+        let at: Vec<AtSegment> = values
+            .into_iter()
+            .map(|value| serde_json::from_value(value).map_err(serde::de::Error::custom))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(IncludeFromAt { from, at })
+    }
+}
+
+#[derive(serde::Deserialize, PartialEq, Debug, Clone)]
+pub struct Include {
+    #[serde(deserialize_with = "IncludeFromAt::deserialize")]
+    pub include: IncludeFromAt,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
@@ -62,11 +106,17 @@ impl<'de> serde::Deserialize<'de> for NamedProgram {
 }
 
 #[derive(serde::Deserialize, PartialEq, Debug, Clone)]
+pub enum ProgramsListElement {
+    NamedProgram(NamedProgram),
+    Link(IncludeFromAt),
+}
+
+#[derive(serde::Deserialize, PartialEq, Debug, Clone)]
 pub struct With {
     #[serde(default)]
-    pub functions: rpds::ListSync<NamedProgram>,
+    pub functions: rpds::ListSync<ProgramsListElement>,
     #[serde(default)]
-    pub constants: rpds::ListSync<NamedProgram>,
+    pub constants: rpds::ListSync<ProgramsListElement>,
 }
 
 #[derive(serde::Deserialize, PartialEq, Debug, Clone)]
