@@ -1,11 +1,12 @@
-use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Error, Result, anyhow};
+use rayon::prelude::*;
 
+use crate::clause::{Include, NamedProgram, ProgramsVectorElement};
 use crate::{
-    clause::{AtSegment, Clause},
+    clause::{AtSegment, Clause, WithCompute},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     function::Function,
     includes_cache::IncludesCache,
@@ -207,11 +208,12 @@ impl TypeCheckingContext {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ComputationContext {
     pub path: Path,
     pub functions: rpds::RedBlackTreeMapSync<String, Program>,
     pub constants: rpds::RedBlackTreeMapSync<String, Value>,
+    pub includes_cache: Arc<Mutex<IncludesCache>>,
 }
 
 impl ComputationContext {
@@ -241,12 +243,17 @@ impl ComputationContext {
                 }
                 result
             },
+            includes_cache: self.includes_cache.clone(),
         }
     }
 }
 
 impl Interpreter {
-    pub fn compute(&self, program: &Program, includes_cache: &mut IncludesCache) -> Result<Value> {
+    pub fn compute(
+        &self,
+        program: &Program,
+        includes_cache: Arc<Mutex<IncludesCache>>,
+    ) -> Result<Value> {
         self.check_types(&program)?;
         Ok(self.compute_with_context(
             &program,
@@ -254,6 +261,7 @@ impl Interpreter {
                 path: Path(rpds::VectorSync::new_sync()),
                 functions: rpds::RedBlackTreeMapSync::new_sync(),
                 constants: rpds::RedBlackTreeMapSync::new_sync(),
+                includes_cache,
             },
         )?)
     }
@@ -275,6 +283,84 @@ impl Interpreter {
                     .get(&constant_clause.constant)
                     .unwrap()
                     .clone(),
+                Clause::Include(include_clause) => {
+                    let mut result = context
+                        .includes_cache
+                        .lock()
+                        .unwrap()
+                        .get(&include_clause.include.from)?;
+                    let mut current_path_segment_index = 0;
+                    while current_path_segment_index < include_clause.include.at.0.len() {
+                        let current_path_segment =
+                            include_clause.include.at.0.get(current_path_segment_index);
+                        match (result, current_path_segment) {
+                            (Program::Array(array), Some(PathSegment::ArrayIndex(array_index))) => {
+                                result = *array.get_mut(*array_index).unwrap();
+                            }
+                            (
+                                Program::Clause(Clause::With(with_clause)),
+                                Some(PathSegment::With),
+                            ) => {
+                                current_path_segment_index += 1;
+                                current_path_segment =
+                                    include_clause.include.at.0.get(current_path_segment_index);
+                                match current_path_segment {
+                                    Some(PathSegment::Functions) => {
+                                        current_path_segment_index += 1;
+                                        current_path_segment = include_clause
+                                            .include
+                                            .at
+                                            .0
+                                            .get(current_path_segment_index);
+                                        match current_path_segment {
+                                            Some(PathSegment::ArrayIndex(array_index)) => {
+                                                match with_clause.with.functions[*array_index] {
+                                                    ProgramsVectorElement::NamedProgram(
+                                                        named_program,
+                                                    ) => {
+                                                        result = named_program.1;
+                                                    }
+                                                    ProgramsVectorElement::Link(
+                                                        include_from_at,
+                                                    ) => {
+                                                        result = context
+                                                            .includes_cache
+                                                            .lock()
+                                                            .unwrap()
+                                                            .get(&include_from_at.from)?;
+                                                    }
+                                                }
+                                            }
+                                            Some(_) => {
+                                                return Err(anyhow!(
+                                                    "Can not get program from {:?} at {:?}",
+                                                    include_clause.include.from,
+                                                    include_clause.include.at
+                                                ));
+                                            }
+                                            None => {
+                                                return Err(anyhow!(
+                                                    "Can not get program from {:?} at {:?}",
+                                                    include_clause.include.from,
+                                                    include_clause.include.at
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        };
+                        current_path_segment_index += 1;
+                    }
+                    self.compute_with_context(
+                        result,
+                        context.extended(
+                            [PathSegment::Include(include_clause.include.clone())],
+                            [],
+                            [],
+                        ),
+                    )?
+                }
                 Clause::With(with_clause) => {
                     let constants_bodies_context =
                         context.extended([PathSegment::With, PathSegment::Constants], [], []);

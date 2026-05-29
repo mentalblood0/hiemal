@@ -1,4 +1,6 @@
-#[derive(Debug)]
+use crate::clause::IncludeFromAt;
+
+#[derive(Debug, serde::Deserialize)]
 pub enum PathSegment {
     ObjectKey(String),
     Constant(String),
@@ -7,6 +9,7 @@ pub enum PathSegment {
     EmbeddedFunction(String),
     ArrayIndex(usize),
     With,
+    Functions,
     Constants,
     Compute,
     Map,
@@ -22,9 +25,10 @@ pub enum PathSegment {
     From,
     At,
     AtIndex(usize),
+    Include(IncludeFromAt),
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Deserialize)]
 pub struct Path(pub rpds::VectorSync<PathSegment>);
 
 impl std::fmt::Debug for Path {

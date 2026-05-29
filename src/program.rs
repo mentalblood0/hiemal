@@ -1,6 +1,6 @@
 use crate::{clause::Clause, value::Value};
 
-#[derive(serde::Deserialize, PartialEq, Debug, Clone)]
+#[derive(serde::Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum Program {
     Array(rpds::VectorSync<Program>),
