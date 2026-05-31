@@ -199,5 +199,5 @@ pub enum AtSegment {
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct FromAt {
     pub from: Program,
-    pub at: rpds::ListSync<AtSegment>,
+    pub at: rpds::VectorSync<AtSegment>,
 }

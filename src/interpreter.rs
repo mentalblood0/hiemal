@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Error, Result, anyhow};
+use dashu::Rational;
 use rayon::prelude::*;
 
 use crate::clause::{Include, IncludeFromAt, NamedProgram, ProgramsVectorElement};
@@ -278,53 +279,162 @@ impl Interpreter {
             .get(&include_clause.include.from)?;
         let mut current_path_segment_index = 0;
         while current_path_segment_index < include_clause.include.at.0.len() {
-            let current_path_segment = include_clause.include.at.0.get(current_path_segment_index);
+            let mut current_path_segment =
+                include_clause.include.at.0.get(current_path_segment_index);
             match (result, current_path_segment) {
                 (Program::Array(array), Some(PathSegment::ArrayIndex(array_index))) => {
-                    result = *array.get_mut(*array_index).unwrap();
+                    result = array.get(*array_index).unwrap().clone();
                 }
                 (Program::Clause(Clause::With(with_clause)), Some(PathSegment::With)) => {
                     current_path_segment_index += 1;
                     current_path_segment =
                         include_clause.include.at.0.get(current_path_segment_index);
+                    let programs_vector = match current_path_segment {
+                        Some(PathSegment::Functions) => with_clause.with.functions,
+                        Some(PathSegment::Constants) => with_clause.with.constants,
+                        _ => {
+                            return Err(anyhow!(
+                                "Can not get program from {:#?} at {:#?}, stuck at path segment \
+                                 {}: {current_path_segment:#?}",
+                                include_clause.include.from,
+                                include_clause.include.at,
+                                current_path_segment_index + 1
+                            ));
+                        }
+                    };
+                    current_path_segment_index += 1;
+                    current_path_segment =
+                        include_clause.include.at.0.get(current_path_segment_index);
                     match current_path_segment {
-                        Some(PathSegment::Functions) => {
-                            current_path_segment_index += 1;
-                            current_path_segment =
-                                include_clause.include.at.0.get(current_path_segment_index);
-                            match current_path_segment {
-                                Some(PathSegment::ArrayIndex(array_index)) => {
-                                    match with_clause.with.functions[*array_index] {
-                                        ProgramsVectorElement::NamedProgram(named_program) => {
-                                            result = named_program.1;
-                                        }
-                                        ProgramsVectorElement::Link(include_from_at) => {
-                                            result = self.process_include(
-                                                &Include {
-                                                    include: include_from_at,
-                                                },
-                                                context.clone(),
-                                            )?;
-                                        }
-                                    }
+                        Some(PathSegment::ArrayIndex(array_index)) => {
+                            match programs_vector[*array_index] {
+                                ProgramsVectorElement::NamedProgram(ref named_program) => {
+                                    result = named_program.1;
                                 }
-                                Some(_) => {
-                                    return Err(anyhow!(
-                                        "Can not get program from {:?} at {:?}",
-                                        include_clause.include.from,
-                                        include_clause.include.at
-                                    ));
-                                }
-                                None => {
-                                    return Err(anyhow!(
-                                        "Can not get program from {:?} at {:?}",
-                                        include_clause.include.from,
-                                        include_clause.include.at
-                                    ));
+                                ProgramsVectorElement::Link(ref include_from_at) => {
+                                    result = self.process_include(
+                                        &Include {
+                                            include: include_from_at.clone(),
+                                        },
+                                        context.clone(),
+                                    )?;
                                 }
                             }
                         }
+                        _ => {
+                            return Err(anyhow!(
+                                "Can not get program from {:#?} at {:#?}, stuck at path segment \
+                                 {}: {current_path_segment:#?}",
+                                include_clause.include.from,
+                                include_clause.include.at,
+                                current_path_segment_index + 1
+                            ));
+                        }
                     }
+                }
+                (Program::Clause(Clause::With(with_clause)), Some(PathSegment::Compute)) => {
+                    result = with_clause.compute.clone();
+                }
+                (Program::Clause(Clause::Map(map_clause)), Some(PathSegment::Map)) => {
+                    result = map_clause.map.clone();
+                }
+                (Program::Clause(Clause::Map(map_clause)), Some(PathSegment::As)) => {
+                    result = Program::Value(Value::String(map_clause.r#as.clone()));
+                }
+                (Program::Clause(Clause::Map(map_clause)), Some(PathSegment::Through)) => {
+                    result = map_clause.through.clone();
+                }
+                (Program::Clause(Clause::Filter(filter_clause)), Some(PathSegment::Filter)) => {
+                    result = filter_clause.filter.clone();
+                }
+                (Program::Clause(Clause::Filter(filter_clause)), Some(PathSegment::As)) => {
+                    result = Program::Value(Value::String(filter_clause.r#as.clone()));
+                }
+                (Program::Clause(Clause::Filter(filter_clause)), Some(PathSegment::Through)) => {
+                    result = filter_clause.through.clone();
+                }
+                (Program::Clause(Clause::Fold(fold_clause)), Some(PathSegment::Fold)) => {
+                    result = fold_clause.fold.clone();
+                }
+                (Program::Clause(Clause::Fold(fold_clause)), Some(PathSegment::As)) => {
+                    result = Program::Value(Value::String(fold_clause.r#as.clone()));
+                }
+                (Program::Clause(Clause::Fold(fold_clause)), Some(PathSegment::AccumulatingIn)) => {
+                    result = Program::Value(Value::String(fold_clause.accumulating_in.clone()));
+                }
+                (Program::Clause(Clause::Fold(fold_clause)), Some(PathSegment::StartingWith)) => {
+                    result = fold_clause.starting_with.clone();
+                }
+                (Program::Clause(Clause::Fold(fold_clause)), Some(PathSegment::Through)) => {
+                    result = fold_clause.through.clone();
+                }
+                (Program::Clause(Clause::Branching(branching_clause)), Some(PathSegment::If)) => {
+                    result = branching_clause.r#if.clone();
+                }
+                (Program::Clause(Clause::Branching(branching_clause)), Some(PathSegment::Then)) => {
+                    result = branching_clause.then.clone();
+                }
+                (Program::Clause(Clause::Branching(branching_clause)), Some(PathSegment::Else)) => {
+                    result = branching_clause.r#else.clone();
+                }
+                (Program::Clause(Clause::TryOr(try_or_clause)), Some(PathSegment::Try)) => {
+                    result = try_or_clause.r#try.clone();
+                }
+                (Program::Clause(Clause::TryOr(try_or_clause)), Some(PathSegment::Or)) => {
+                    result = try_or_clause.or.clone();
+                }
+                (Program::Clause(Clause::TryOr(try_or_clause)), Some(PathSegment::WithError)) => {
+                    result = Program::Value(Value::String(try_or_clause.with_error.clone()));
+                }
+                (Program::Clause(Clause::FromAt(from_at_clause)), Some(PathSegment::From)) => {
+                    result = from_at_clause.from.clone();
+                }
+                (Program::Clause(Clause::FromAt(from_at_clause)), Some(PathSegment::At)) => {
+                    current_path_segment_index += 1;
+                    current_path_segment =
+                        include_clause.include.at.0.get(current_path_segment_index);
+                    match current_path_segment {
+                        Some(PathSegment::ArrayIndex(array_index)) => {
+                            let at_segment =
+                                from_at_clause.at.get(*array_index).with_context(|| {
+                                    format!(
+                                        "Can not get program from {:#?} at {:#?}, stuck at path \
+                                         segment {}: {current_path_segment:#?}",
+                                        include_clause.include.from,
+                                        include_clause.include.at,
+                                        current_path_segment_index + 1
+                                    )
+                                })?;
+                            result = match at_segment {
+                                AtSegment::ObjectKey(object_key) => {
+                                    Program::Value(Value::String(object_key.clone()))
+                                }
+                                AtSegment::ArrayIndex(array_index) => {
+                                    Program::Value(Value::Number(
+                                        Rational::simplest_from_f64(*array_index as f64).unwrap(),
+                                    ))
+                                }
+                            };
+                        }
+                        _ => {
+                            return Err(anyhow!(
+                                "Can not get program from {:#?} at {:#?}, stuck at path segment \
+                                 {}: {current_path_segment:#?}",
+                                include_clause.include.from,
+                                include_clause.include.at,
+                                current_path_segment_index + 1
+                            ));
+                        }
+                    }
+                }
+                _ => {
+                    return Err(anyhow!(
+                        "Can not get program from {:#?} at {:#?}, stuck at path segment {}: \
+                         {current_path_segment:#?}",
+                        include_clause.include.from,
+                        include_clause.include.at,
+                        current_path_segment_index + 1
+                    ));
                 }
             };
             current_path_segment_index += 1;
