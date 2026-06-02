@@ -28,12 +28,29 @@ hiemal examples/include.yml
 
 ### Basic types
 
-- strings, cheap immutable slices thanks to [ropey](https://github.com/cessen/ropey)
-- numbers, arbitrary size and full precision thanks to [dashu](https://github.com/cmpute/dashu), e.g. `1`, `2.3`, `"4"`, `"5.6"`, `"7/9"`
-- booleans
-- null
-- objects, keys are strings
-- arrays, homogeneous, e.g. elements of array must be of the same type
+#### strings
+
+Immutable with cheap slices thanks to [ropey](https://github.com/cessen/ropey)
+
+#### numbers
+
+Arbitrary size and full precision thanks to [dashu](https://github.com/cmpute/dashu), e.g. `1`, `2.3`, `"4"`, `"5.6"`, `"7/9"`
+
+#### booleans
+
+#### null
+
+#### objects
+
+Immutable thanks to [rpds](https://github.com/orium/rpds)
+
+Keys are strings
+
+#### arrays
+
+Immutable thanks to [rpds](https://github.com/orium/rpds)
+
+Homogeneous, e.g. elements of array must be of the same type
 
 ### Embedded functions
 
