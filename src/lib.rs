@@ -337,6 +337,22 @@ mod tests {
     }
 
     #[test]
+    fn test_slice() {
+        assert_eq!(
+            global_interpreter()
+                .compute(
+                    &serde_json::from_value(json!({
+                        "slice": {"source": "abcd", "from": 1, "to": 3},
+                    }))
+                    .unwrap(),
+                    global_includes_cache()
+                )
+                .unwrap(),
+            serde_json::from_value(json!("bc")).unwrap()
+        );
+    }
+
+    #[test]
     fn test_from_at_list() {
         assert_eq!(
             global_interpreter()

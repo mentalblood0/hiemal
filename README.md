@@ -34,7 +34,7 @@ hiemal examples/include.yml
 
 ### Basic types
 
-- strings
+- strings, cheap immutable slices thanks to [ropey](https://github.com/cessen/ropey)
 - numbers, arbitrary size and full precision thanks to [dashu](https://github.com/cmpute/dashu), e.g. `1`, `2.3`, `"4"`, `"5.6"`, `"7/9"`
 - booleans
 - null
@@ -53,6 +53,10 @@ hiemal examples/include.yml
 - are equal: [a, a, a]
 - are equal: [[1, 2], [1, 2], [1, 2]]
 - concat: [ab, cd, efg]
+- slice:
+    source: abcd
+    from: 1
+    to: 3
 - sequence:
     from: 1
     to: 9

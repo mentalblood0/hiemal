@@ -5,6 +5,7 @@ use crate::interpreter::Interpreter;
 use crate::r#type::Type;
 use crate::value::Value;
 
+use anyhow::Context;
 use dashu::Rational;
 
 impl Default for Interpreter {
@@ -58,6 +59,32 @@ impl Default for Interpreter {
                             Ok(Value::Number(Rational::from(
                                 argument.as_string().unwrap().len_chars(),
                             )))
+                        },
+                    },
+                ),
+                (
+                    "slice".to_string(),
+                    Function {
+                        argument_type: Type::Object(BTreeMap::from([
+                            ("source".to_string(), Type::String),
+                            ("from".to_string(), Type::Number),
+                            ("to".to_string(), Type::Number),
+                        ])),
+                        return_type: Type::String,
+                        function: |argument: Value| {
+                            let arguments = argument.as_object().unwrap();
+                            let source = arguments["source"].as_string().unwrap();
+                            let from =
+                                arguments["from"].as_number().unwrap().to_f64_fast() as usize;
+                            let to = arguments["to"].as_number().unwrap().to_f64_fast() as usize;
+                            Ok(Value::String(
+                                source
+                                    .get_slice(from..to)
+                                    .with_context(|| {
+                                        format!("Can not get slice {from}..{to} from {source:?}")
+                                    })?
+                                    .into(),
+                            ))
                         },
                     },
                 ),
