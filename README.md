@@ -26,12 +26,6 @@ hiemal https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/exa
 hiemal examples/include.yml
 ```
 
-### Stages
-
-- include clauses substitution
-- type checking
-- computation
-
 ### Basic types
 
 - strings, cheap immutable slices thanks to [ropey](https://github.com/cessen/ropey)
