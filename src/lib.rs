@@ -28,10 +28,18 @@ pub fn global_includes_cache() -> Arc<Mutex<IncludesCache>> {
 
 #[cfg(test)]
 mod tests {
+    use crate::path::Path;
+
     use super::*;
 
     use pretty_assertions::assert_eq;
     use serde_json::json;
+
+    #[test]
+    fn test_path() {
+        serde_json::from_value::<Path>(json!(["with", "functions", {"object key": "factorial"}]))
+            .unwrap();
+    }
 
     #[test]
     fn test_numbers() {
@@ -705,13 +713,15 @@ mod tests {
                 .compute(
                     &serde_json::from_value(json!([{
                         "with": {
-                            "include": ["examples/factorial.yml", "with"],
+                            "functions": {
+                                "factorial": {"include": ["examples/factorial.yml", "with", "functions", {"object key": "factorial"}]}
+                            }
                         },
                         "compute": {
                             "factorial": 5
                         }
                     }, {
-                        "include": ["https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml", "compute", "factorial"]
+                        "include": ["https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml", "compute", {"object key": "factorial"}]
                     }]))
                     .unwrap(),
                     global_includes_cache()

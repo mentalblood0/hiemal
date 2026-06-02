@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use url::Url;
 
 use crate::{default_argument_name::DEFAULT_ARGUMENT_NAME, path::Path, program::Program};
@@ -41,8 +43,9 @@ impl<'de> serde::Deserialize<'de> for IncludeFromAt {
     where
         D: serde::Deserializer<'de>,
     {
-        let mut values = Vec::deserialize(deserializer)?;
-        let from = if let Some(first_value) = values.pop() {
+        let mut values = VecDeque::deserialize(deserializer)?;
+        let from = if let Some(first_value) = values.pop_front() {
+            dbg!(&first_value);
             serde_json::from_value(first_value).map_err(serde::de::Error::custom)?
         } else {
             return Err(serde::de::Error::invalid_length(

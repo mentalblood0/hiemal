@@ -284,6 +284,21 @@ impl Interpreter {
                 (Program::Array(array), Some(PathSegment::ArrayIndex(array_index))) => {
                     result = array.get(*array_index).unwrap().clone();
                 }
+                (Program::Object(object), Some(PathSegment::ObjectKey(object_key))) => {
+                    result = object.get(object_key).unwrap().clone();
+                }
+                (
+                    Program::Value(Value::Array(array)),
+                    Some(PathSegment::ArrayIndex(array_index)),
+                ) => {
+                    result = Program::Value(array.get(*array_index).unwrap().clone());
+                }
+                (
+                    Program::Value(Value::Object(object)),
+                    Some(PathSegment::ObjectKey(object_key)),
+                ) => {
+                    result = Program::Value(object.get(object_key).unwrap().clone());
+                }
                 (Program::Clause(Clause::With(with_clause)), Some(PathSegment::With)) => {
                     current_path_segment_index += 1;
                     current_path_segment =
@@ -293,7 +308,7 @@ impl Interpreter {
                         Some(PathSegment::Constants) => with_clause.with.constants,
                         _ => {
                             return Err(anyhow!(
-                                "Can not get program from {:#?} at {:#?}, stuck at path segment \
+                                "Can not get program from {:#?} at {:#?}: stuck at path segment \
                                  {}: {current_path_segment:#?}",
                                 include_clause.include.from,
                                 include_clause.include.at,
@@ -312,7 +327,7 @@ impl Interpreter {
                                 }
                                 None => {
                                     return Err(anyhow!(
-                                        "Can not get program from {:#?} at {:#?}, stuck at path \
+                                        "Can not get program from {:#?} at {:#?}: stuck at path \
                                          segment {}: {current_path_segment:#?}",
                                         include_clause.include.from,
                                         include_clause.include.at,
@@ -323,7 +338,7 @@ impl Interpreter {
                         }
                         _ => {
                             return Err(anyhow!(
-                                "Can not get program from {:#?} at {:#?}, stuck at path segment \
+                                "Can not get program from {:#?} at {:#?}: stuck at path segment \
                                  {}: {current_path_segment:#?}",
                                 include_clause.include.from,
                                 include_clause.include.at,
@@ -398,7 +413,7 @@ impl Interpreter {
                             let at_segment =
                                 from_at_clause.at.get(*array_index).with_context(|| {
                                     format!(
-                                        "Can not get program from {:#?} at {:#?}, stuck at path \
+                                        "Can not get program from {:#?} at {:#?}: stuck at path \
                                          segment {}: {current_path_segment:#?}",
                                         include_clause.include.from,
                                         include_clause.include.at,
@@ -418,7 +433,7 @@ impl Interpreter {
                         }
                         _ => {
                             return Err(anyhow!(
-                                "Can not get program from {:#?} at {:#?}, stuck at path segment \
+                                "Can not get program from {:#?} at {:#?}: stuck at path segment \
                                  {}: {current_path_segment:#?}",
                                 include_clause.include.from,
                                 include_clause.include.at,
@@ -429,7 +444,7 @@ impl Interpreter {
                 }
                 _ => {
                     return Err(anyhow!(
-                        "Can not get program from {:#?} at {:#?}, stuck at path segment {}: \
+                        "Can not get program from {:#?} at {:#?}: stuck at path segment {}: \
                          {current_path_segment:#?}",
                         include_clause.include.from,
                         include_clause.include.at,

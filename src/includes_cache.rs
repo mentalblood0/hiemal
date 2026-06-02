@@ -47,7 +47,18 @@ impl IncludesCache {
         ))?
         .next()
         {
-            let result = serde_json::from_str::<Program>(&std::fs::read_to_string(path)?)?;
+            let result_text = std::fs::read_to_string(&path)?;
+            let result = match path
+                .extension()
+                .and_then(std::ffi::OsStr::to_str)
+                .map(|extension| extension.to_lowercase())
+                .unwrap()
+                .as_str()
+            {
+                "json" => serde_json::from_str::<Program>(&result_text)?,
+                "yml" | "yaml" => serde_saphyr::from_str::<Program>(&result_text)?,
+                _ => return Ok(None),
+            };
             self.url_hash_to_program.insert(url_hash, result.clone());
             Ok(Some(result))
         } else {
@@ -115,7 +126,7 @@ impl IncludesCache {
                             } else {
                                 let response = ureq::get(url.as_str()).call()?;
                                 let headers = response.headers();
-                                let etag = headers["ETag"]
+                                let etag = headers["etag"]
                                     .to_str()?
                                     .split("\"")
                                     .nth(1)
@@ -128,7 +139,18 @@ impl IncludesCache {
                                     .into_body()
                                     .read_to_string()
                                     .with_context(|| "Can not read body of response from {url}")?;
-                                let result = serde_json::from_str::<Program>(&result_text)?;
+                                let result = match extension {
+                                    "json" => serde_json::from_str::<Program>(&result_text)?,
+                                    "yaml" | "yml" => {
+                                        serde_saphyr::from_str::<Program>(&result_text)?
+                                    }
+                                    unsupported_extension => {
+                                        return Err(anyhow!(
+                                            "Can not parse {unsupported_extension} program \
+                                             downloaded from {url}"
+                                        ));
+                                    }
+                                };
                                 self.remove_from_disk(&url_hash_hex)?;
                                 self.url_hash_to_program.insert(url_hash, result.clone());
                                 let path = self
