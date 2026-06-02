@@ -69,11 +69,7 @@ Embedding new functions is quite easy, see [here](src/embedded_functions.rs)
 - with:
     functions:
       factorial:
-        include:
-          - examples/factorial.yml
-          - with
-          - functions
-          - {object key: factorial}
+        include: [examples/factorial.yml, with, functions, { object key: factorial }]
   compute:
     factorial: 5
 - include: [https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml]
