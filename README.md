@@ -67,7 +67,13 @@ Embedding new functions is quite easy, see [here](src/embedded_functions.rs)
 
 ```yaml
 - with:
-    include: [examples/factorial.yml, with]
+    functions:
+      factorial:
+        include:
+          - examples/factorial.yml
+          - with
+          - functions
+          - {object key: factorial}
   compute:
     factorial: 5
 - include: [https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml]
@@ -92,15 +98,15 @@ _
 ```yaml
 with:
   functions: # may be omitted
-    - factorial:
-        product:
-          sequence:
-            from: 1
-            to: _
-            step: 1
+    factorial:
+      product:
+        sequence:
+          from: 1
+          to: _
+          step: 1
   constants: # may be omitted
-    - x:
-        sum: [2, 3]
+    x:
+      sum: [2, 3]
 compute:
   factorial:
     constant: x
@@ -113,14 +119,14 @@ If function argument is object with more then one key, it will be 'destructured'
 ```yaml
 with:
   functions:
-    - f:
-        sum:
-          - constant: x
-          - constant: y
-          - constant: z
-          - 4
+    f:
+      sum:
+        - constant: x
+        - constant: y
+        - constant: z
+        - 4
   constants:
-    - z: 3
+    z: 3
   compute:
     f:
       x: 1
