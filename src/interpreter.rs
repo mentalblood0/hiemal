@@ -21,12 +21,6 @@ pub struct Interpreter {
     pub embedded_functions: BTreeMap<String, Function>,
 }
 
-#[derive(Debug, Clone)]
-pub enum TypeOrValue {
-    Type(Type),
-    Value(Value),
-}
-
 #[derive(Debug)]
 pub struct ListMap<V> {
     map: SmallMap<String, Vec<V>>,
