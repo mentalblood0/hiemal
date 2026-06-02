@@ -56,7 +56,7 @@ impl Default for Interpreter {
                         return_type: Type::Number,
                         function: |argument: Value| {
                             Ok(Value::Number(Rational::from(
-                                argument.as_string().unwrap().len(),
+                                argument.as_string().unwrap().len_chars(),
                             )))
                         },
                     },
@@ -111,20 +111,11 @@ impl Default for Interpreter {
                         argument_type: Type::Array(Box::new(Type::String)),
                         return_type: Type::String,
                         function: |argument: Value| {
-                            let mut result = String::new();
+                            let mut result = ropey::Rope::new();
                             for element in argument.as_array().unwrap().iter() {
-                                result += element.as_string().unwrap();
+                                result.append(element.as_string().unwrap().clone());
                             }
-                            Ok(Value::String(
-                                argument
-                                    .as_array()
-                                    .unwrap()
-                                    .iter()
-                                    .map(|element| element.as_string().unwrap())
-                                    .cloned()
-                                    .collect::<Vec<_>>()
-                                    .join(""),
-                            ))
+                            Ok(Value::String(result))
                         },
                     },
                 ),

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use dashu::{Decimal, Rational};
 use serde::{
-    Deserialize, Deserializer, Serialize,
+    Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Unexpected, Visitor},
 };
 use std::str::FromStr;
@@ -10,12 +10,31 @@ use crate::default_argument_name::DEFAULT_ARGUMENT_NAME;
 
 pub type SmallMap<K, V> = small_map::FxSmallMap<32, K, V>;
 
+pub fn serialize_rope<S>(rope: &ropey::Rope, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&rope.to_string())
+}
+
+pub fn deserialize_rope<'de, D>(deserializer: D) -> Result<ropey::Rope, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    Ok(ropey::Rope::from_str(&s))
+}
+
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 #[serde(untagged)]
 pub enum Value {
     #[serde(deserialize_with = "deserialize_rational")]
     Number(Rational),
-    String(String),
+    #[serde(
+        deserialize_with = "deserialize_rope",
+        serialize_with = "serialize_rope"
+    )]
+    String(ropey::Rope),
     Bool(bool),
     Null,
     Array(rpds::VectorSync<Value>),
@@ -94,7 +113,7 @@ impl Value {
         }
     }
 
-    pub fn as_string(&self) -> Option<&String> {
+    pub fn as_string(&self) -> Option<&ropey::Rope> {
         match self {
             Value::String(result) => Some(result),
             _ => None,

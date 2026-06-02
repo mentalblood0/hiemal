@@ -348,7 +348,7 @@ impl Interpreter {
                     result = map_clause.map.clone();
                 }
                 (Program::Clause(Clause::Map(map_clause)), Some(PathSegment::As)) => {
-                    result = Program::Value(Value::String(map_clause.r#as.clone()));
+                    result = Program::Value(Value::String(ropey::Rope::from_str(&map_clause.r#as)));
                 }
                 (Program::Clause(Clause::Map(map_clause)), Some(PathSegment::Through)) => {
                     result = map_clause.through.clone();
@@ -357,7 +357,8 @@ impl Interpreter {
                     result = filter_clause.filter.clone();
                 }
                 (Program::Clause(Clause::Filter(filter_clause)), Some(PathSegment::As)) => {
-                    result = Program::Value(Value::String(filter_clause.r#as.clone()));
+                    result =
+                        Program::Value(Value::String(ropey::Rope::from_str(&filter_clause.r#as)));
                 }
                 (Program::Clause(Clause::Filter(filter_clause)), Some(PathSegment::Through)) => {
                     result = filter_clause.through.clone();
@@ -366,10 +367,13 @@ impl Interpreter {
                     result = fold_clause.fold.clone();
                 }
                 (Program::Clause(Clause::Fold(fold_clause)), Some(PathSegment::As)) => {
-                    result = Program::Value(Value::String(fold_clause.r#as.clone()));
+                    result =
+                        Program::Value(Value::String(ropey::Rope::from_str(&fold_clause.r#as)));
                 }
                 (Program::Clause(Clause::Fold(fold_clause)), Some(PathSegment::AccumulatingIn)) => {
-                    result = Program::Value(Value::String(fold_clause.accumulating_in.clone()));
+                    result = Program::Value(Value::String(ropey::Rope::from_str(
+                        &fold_clause.accumulating_in,
+                    )));
                 }
                 (Program::Clause(Clause::Fold(fold_clause)), Some(PathSegment::StartingWith)) => {
                     result = fold_clause.starting_with.clone();
@@ -393,7 +397,9 @@ impl Interpreter {
                     result = try_or_clause.or.clone();
                 }
                 (Program::Clause(Clause::TryOr(try_or_clause)), Some(PathSegment::WithError)) => {
-                    result = Program::Value(Value::String(try_or_clause.with_error.clone()));
+                    result = Program::Value(Value::String(ropey::Rope::from_str(
+                        &try_or_clause.with_error,
+                    )));
                 }
                 (Program::Clause(Clause::FromAt(from_at_clause)), Some(PathSegment::From)) => {
                     result = from_at_clause.from.clone();
@@ -415,9 +421,9 @@ impl Interpreter {
                                     )
                                 })?;
                             result = match at_segment {
-                                AtSegment::ObjectKey(object_key) => {
-                                    Program::Value(Value::String(object_key.clone()))
-                                }
+                                AtSegment::ObjectKey(object_key) => Program::Value(Value::String(
+                                    ropey::Rope::from_str(&object_key),
+                                )),
                                 AtSegment::ArrayIndex(array_index) => {
                                     Program::Value(Value::Number(
                                         Rational::simplest_from_f64(*array_index as f64).unwrap(),
@@ -699,7 +705,7 @@ impl Interpreter {
                                 [],
                                 [(
                                     try_or_clause.with_error.clone(),
-                                    Value::String(error.to_string()),
+                                    Value::String(ropey::Rope::from(error.to_string())),
                                 )],
                             ),
                         )?,
