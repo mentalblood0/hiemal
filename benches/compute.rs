@@ -1,21 +1,17 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use dashu::Rational;
-use hiemal::{
-    includes_cache::IncludesCache, interpreter::Interpreter,
-    program_with_includes::ProgramWithIncludes, value::Value,
-};
+use hiemal::{global_includes_cache, global_interpreter, program::Program, value::Value};
 use serde_json::json;
 
 fn benchmarks(bencher_context: &mut Criterion) {
-    let interpreter = Interpreter::default();
-    let mut includes_cache = IncludesCache::default();
+    let interpreter = global_interpreter();
 
     {
         for number in [20, 21, 22] {
-            let program = serde_json::from_value::<ProgramWithIncludes>(json!({
+            let program = serde_json::from_value::<Program>(json!({
                 "with": {
-                    "functions": [
-                        {"fibonacci": {
+                    "functions": {
+                        "fibonacci": {
                             "if": {
                                 "is sorted": [
                                     "_",
@@ -43,8 +39,8 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                     }
                                 ]
                             }
-                        }}
-                    ]
+                        }
+                    }
                 },
                 "compute": {
                     "fibonacci": number
@@ -52,15 +48,19 @@ fn benchmarks(bencher_context: &mut Criterion) {
             }))
             .unwrap();
             bencher_context.bench_function(&format!("fibonacci_{number}"), |b| {
-                b.iter(|| interpreter.compute(&program, &mut includes_cache).unwrap())
+                b.iter(|| {
+                    interpreter
+                        .compute(&program, global_includes_cache())
+                        .unwrap()
+                })
             });
         }
     }
     {
-        let program = serde_json::from_value::<ProgramWithIncludes>(json!({
+        let program = serde_json::from_value::<Program>(json!({
             "with": {
-                "functions": [
-                    {"fibonacci": {
+                "functions": {
+                    "fibonacci": {
                         "if": {
                             "is sorted": [
                                 "_",
@@ -88,8 +88,8 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                 }
                             ]
                         }
-                    }}
-                ]
+                    }
+                }
             },
             "compute": {
                 "20": {
@@ -105,14 +105,18 @@ fn benchmarks(bencher_context: &mut Criterion) {
         }))
         .unwrap();
         bencher_context.bench_function(&format!("fibonacci_object"), |b| {
-            b.iter(|| interpreter.compute(&program, &mut includes_cache).unwrap())
+            b.iter(|| {
+                interpreter
+                    .compute(&program, global_includes_cache())
+                    .unwrap()
+            })
         });
     }
     {
-        let program = serde_json::from_value::<ProgramWithIncludes>(json!({
+        let program = serde_json::from_value::<Program>(json!({
             "with": {
-                "functions": [
-                    {"fibonacci": {
+                "functions": {
+                    "fibonacci": {
                         "if": {
                             "is sorted": [
                                 "_",
@@ -140,16 +144,16 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                 }
                             ]
                         }
-                    }}
-                ]
+                    }
+                }
             },
             "compute": {
                 "with": {
-                    "constants": [
-                        {"x": {"fibonacci": 20}},
-                        {"y": {"fibonacci": 21}},
-                        {"z": {"fibonacci": 22}}
-                    ]
+                    "constants": {
+                        "x": {"fibonacci": 20},
+                        "y": {"fibonacci": 21},
+                        "z": {"fibonacci": 22}
+                    }
                 },
                 "compute": [
                     {"constant": "x"},
@@ -160,14 +164,18 @@ fn benchmarks(bencher_context: &mut Criterion) {
         }))
         .unwrap();
         bencher_context.bench_function(&format!("fibonacci_constants"), |b| {
-            b.iter(|| interpreter.compute(&program, &mut includes_cache).unwrap())
+            b.iter(|| {
+                interpreter
+                    .compute(&program, global_includes_cache())
+                    .unwrap()
+            })
         });
     }
     {
-        let program = serde_json::from_value::<ProgramWithIncludes>(json!({
+        let program = serde_json::from_value::<Program>(json!({
             "with": {
-                "functions": [
-                    {"fibonacci": {
+                "functions": {
+                    "fibonacci": {
                         "if": {
                             "is sorted": [
                                 "_",
@@ -195,8 +203,8 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                 }
                             ]
                         }
-                    }}
-                ]
+                    }
+                }
             },
             "compute": {
                 "map": [20, 21, 22],
@@ -205,14 +213,18 @@ fn benchmarks(bencher_context: &mut Criterion) {
         }))
         .unwrap();
         bencher_context.bench_function(&format!("fibonacci_map"), |b| {
-            b.iter(|| interpreter.compute(&program, &mut includes_cache).unwrap())
+            b.iter(|| {
+                interpreter
+                    .compute(&program, global_includes_cache())
+                    .unwrap()
+            })
         });
     }
     {
-        let program = serde_json::from_value::<ProgramWithIncludes>(json!({
+        let program = serde_json::from_value::<Program>(json!({
             "with": {
-                "functions": [
-                    {"fibonacci": {
+                "functions": {
+                    "fibonacci": {
                         "if": {
                             "is sorted": [
                                 "_",
@@ -240,8 +252,8 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                 }
                             ]
                         }
-                    }}
-                ]
+                    }
+                }
             },
             "compute": {
                 "filter": [20, 21, 22],
@@ -252,17 +264,21 @@ fn benchmarks(bencher_context: &mut Criterion) {
         }))
         .unwrap();
         bencher_context.bench_function(&format!("fibonacci_filter"), |b| {
-            b.iter(|| interpreter.compute(&program, &mut includes_cache).unwrap())
+            b.iter(|| {
+                interpreter
+                    .compute(&program, global_includes_cache())
+                    .unwrap()
+            })
         });
     }
     {
         let number = 20u64;
         let correct_raw: u64 = (1..=number).product();
         let correct = Value::Number(Rational::from(correct_raw));
-        let program = serde_json::from_value::<ProgramWithIncludes>(json!({
+        let program = serde_json::from_value::<Program>(json!({
             "with": {
-                "functions": [
-                    {"factorial": {
+                "functions": {
+                    "factorial": {
                         "product": {
                             "sequence": {
                                 "from": 1,
@@ -270,8 +286,8 @@ fn benchmarks(bencher_context: &mut Criterion) {
                                 "step": 1
                             }
                         }
-                    }}
-                ]
+                    }
+                }
             },
             "compute": {
                 "factorial": number
@@ -281,7 +297,9 @@ fn benchmarks(bencher_context: &mut Criterion) {
         bencher_context.bench_function(&format!("factorial_{number}"), |b| {
             b.iter(|| {
                 assert_eq!(
-                    interpreter.compute(&program, &mut includes_cache).unwrap(),
+                    interpreter
+                        .compute(&program, global_includes_cache())
+                        .unwrap(),
                     correct
                 )
             })

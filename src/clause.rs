@@ -1,8 +1,6 @@
 use url::Url;
 
-use crate::{
-    default_argument_name::DEFAULT_ARGUMENT_NAME, path::Path, program::Program, value::Value,
-};
+use crate::{default_argument_name::DEFAULT_ARGUMENT_NAME, path::Path, program::Program};
 
 #[derive(serde::Deserialize, Debug, Clone)]
 #[serde(untagged)]
@@ -71,54 +69,12 @@ pub struct Constant {
     pub constant: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct NamedProgram(pub String, pub Program);
-
-impl<'de> serde::Deserialize<'de> for NamedProgram {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct NamedProgramVisitor;
-
-        impl<'de> serde::de::Visitor<'de> for NamedProgramVisitor {
-            type Value = NamedProgram;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("an object with a single key-value pair")
-            }
-
-            fn visit_map<M>(self, mut map: M) -> Result<NamedProgram, M::Error>
-            where
-                M: serde::de::MapAccess<'de>,
-            {
-                let (program_name, program_body) = match map.next_entry()? {
-                    Some((k, v)) => (k, v),
-                    None => return Err(serde::de::Error::invalid_length(0, &self)),
-                };
-                if map.next_entry::<String, Value>()?.is_some() {
-                    return Err(serde::de::Error::invalid_length(2, &self));
-                }
-                Ok(NamedProgram(program_name, program_body))
-            }
-        }
-
-        deserializer.deserialize_map(NamedProgramVisitor)
-    }
-}
-
-#[derive(serde::Deserialize, Debug, Clone)]
-pub enum ProgramsVectorElement {
-    NamedProgram(NamedProgram),
-    Link(IncludeFromAt),
-}
-
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct With {
     #[serde(default)]
-    pub functions: rpds::VectorSync<ProgramsVectorElement>,
+    pub functions: rpds::RedBlackTreeMapSync<String, Program>,
     #[serde(default)]
-    pub constants: rpds::VectorSync<ProgramsVectorElement>,
+    pub constants: rpds::RedBlackTreeMapSync<String, Program>,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]

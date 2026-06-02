@@ -1,14 +1,14 @@
 with:
   functions:
-    - f1:
-        sum: [_, 1]
-    - f2:
-        sum: [_, 2]
-    - f3:
-        sum: [_, 3]
-    - f:
-        f1:
-          f2:
-            f3: _
+    f1:
+      sum: [_, 1]
+    f2:
+      sum: [_, 2]
+    f3:
+      sum: [_, 3]
+    f:
+      f1:
+        f2:
+          f3: _
 compute:
   f: 0

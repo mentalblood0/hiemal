@@ -5,9 +5,9 @@ use anyhow::{Context, Error, Result, anyhow};
 use dashu::Rational;
 use rayon::prelude::*;
 
-use crate::clause::{Include, IncludeFromAt, NamedProgram, ProgramsVectorElement};
+use crate::clause::Include;
 use crate::{
-    clause::{AtSegment, Clause, WithCompute},
+    clause::{AtSegment, Clause},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     function::Function,
     includes_cache::IncludesCache,
@@ -58,13 +58,13 @@ impl<V> ListMap<V> {
     }
 }
 
-#[derive(Debug)]
 pub struct TypeCheckingContext {
     pub path: Path,
     pub functions: ListMap<Program>,
     pub constants: ListMap<Type>,
     pub entered_functions: BTreeSet<String>,
     pub recursed_functions_types: SmallMap<String, Type>,
+    pub includes_cache: Arc<Mutex<IncludesCache>>,
 }
 
 impl TypeCheckingContext {
@@ -255,7 +255,7 @@ impl Interpreter {
         program: &Program,
         includes_cache: Arc<Mutex<IncludesCache>>,
     ) -> Result<Value> {
-        self.check_types(&program)?;
+        self.check_types(&program, includes_cache.clone())?;
         Ok(self.compute_with_context(
             &program,
             ComputationContext {
@@ -270,10 +270,9 @@ impl Interpreter {
     fn process_include(
         &self,
         include_clause: &Include,
-        context: ComputationContext,
+        includes_cache: Arc<Mutex<IncludesCache>>,
     ) -> Result<Program> {
-        let mut result = context
-            .includes_cache
+        let mut result = includes_cache
             .lock()
             .unwrap()
             .get(&include_clause.include.from)?;
@@ -289,7 +288,7 @@ impl Interpreter {
                     current_path_segment_index += 1;
                     current_path_segment =
                         include_clause.include.at.0.get(current_path_segment_index);
-                    let programs_vector = match current_path_segment {
+                    let programs_map = match current_path_segment {
                         Some(PathSegment::Functions) => with_clause.with.functions,
                         Some(PathSegment::Constants) => with_clause.with.constants,
                         _ => {
@@ -306,18 +305,19 @@ impl Interpreter {
                     current_path_segment =
                         include_clause.include.at.0.get(current_path_segment_index);
                     match current_path_segment {
-                        Some(PathSegment::ArrayIndex(array_index)) => {
-                            match programs_vector[*array_index] {
-                                ProgramsVectorElement::NamedProgram(ref named_program) => {
-                                    result = named_program.1;
+                        Some(PathSegment::ObjectKey(program_name)) => {
+                            match programs_map.get(program_name) {
+                                Some(program_body) => {
+                                    result = program_body.clone();
                                 }
-                                ProgramsVectorElement::Link(ref include_from_at) => {
-                                    result = self.process_include(
-                                        &Include {
-                                            include: include_from_at.clone(),
-                                        },
-                                        context.clone(),
-                                    )?;
+                                None => {
+                                    return Err(anyhow!(
+                                        "Can not get program from {:#?} at {:#?}, stuck at path \
+                                         segment {}: {current_path_segment:#?}",
+                                        include_clause.include.from,
+                                        include_clause.include.at,
+                                        current_path_segment_index + 1
+                                    ));
                                 }
                             }
                         }
@@ -460,7 +460,7 @@ impl Interpreter {
                     .unwrap()
                     .clone(),
                 Clause::Include(include_clause) => self.compute_with_context(
-                    &self.process_include(include_clause, context.clone())?,
+                    &self.process_include(include_clause, context.includes_cache.clone())?,
                     context.clone(),
                 )?,
                 Clause::With(with_clause) => {
@@ -893,7 +893,11 @@ impl Interpreter {
         })
     }
 
-    pub fn check_types(&self, program: &Program) -> Result<Type> {
+    pub fn check_types(
+        &self,
+        program: &Program,
+        includes_cache: Arc<Mutex<IncludesCache>>,
+    ) -> Result<Type> {
         self.get_program_type(
             program,
             &mut TypeCheckingContext {
@@ -902,6 +906,7 @@ impl Interpreter {
                 constants: ListMap::new(),
                 entered_functions: BTreeSet::new(),
                 recursed_functions_types: SmallMap::new(),
+                includes_cache,
             },
         )
     }
@@ -975,6 +980,10 @@ impl Interpreter {
                             constant_clause.constant, context.path
                         )
                     }),
+                Clause::Include(include_clause) => self.get_program_type(
+                    &self.process_include(include_clause, context.includes_cache.clone())?,
+                    context,
+                ),
                 Clause::With(with_clause) => {
                     for function_name_and_body in with_clause.with.functions.iter() {
                         context
