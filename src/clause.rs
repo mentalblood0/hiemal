@@ -1,8 +1,10 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc};
 
 use url::Url;
 
-use crate::{default_argument_name::DEFAULT_ARGUMENT_NAME, path::Path, program::Program};
+use crate::{
+    default_argument_name::DEFAULT_ARGUMENT_NAME, path::Path, program::Program, value::SmallMap,
+};
 
 #[derive(serde::Deserialize, Debug, Clone)]
 #[serde(untagged)]
@@ -74,9 +76,9 @@ pub struct Constant {
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct With {
     #[serde(default)]
-    pub functions: rpds::RedBlackTreeMapSync<String, Program>,
+    pub functions: Arc<SmallMap<String, Program>>,
     #[serde(default)]
-    pub constants: rpds::RedBlackTreeMapSync<String, Program>,
+    pub constants: Arc<SmallMap<String, Program>>,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]

@@ -749,7 +749,7 @@ impl Interpreter {
                 }
             },
             Program::Object(object) => {
-                if object.size() == 1 {
+                if object.len() == 1 {
                     let (function_name, argument) = object.iter().next().unwrap();
                     if let Some(function_body) = context.functions.get(function_name).cloned() {
                         let arguments_bodies_context = context.extended(
@@ -759,7 +759,7 @@ impl Interpreter {
                         );
                         let mut compute_context = arguments_bodies_context.clone();
                         match argument {
-                            Program::Object(arguments) if arguments.size() > 1 => {
+                            Program::Object(arguments) if arguments.len() > 1 => {
                                 for (argument_name, argument_compute_body) in arguments.iter() {
                                     compute_context.constants.insert_mut(
                                         argument_name.clone(),
@@ -1224,7 +1224,7 @@ impl Interpreter {
                 }
             },
             Program::Object(object) => {
-                if object.size() == 1 {
+                if object.len() == 1 {
                     let (function_name, argument) = object.iter().next().unwrap();
                     if let Some(function_body) = context.functions.get(function_name).cloned() {
                         context
@@ -1245,7 +1245,7 @@ impl Interpreter {
                         }
                         let mut arguments_names = vec![];
                         match argument {
-                            Program::Object(arguments) if arguments.size() > 1 => {
+                            Program::Object(arguments) if arguments.len() > 1 => {
                                 for (argument_name, argument_compute_body) in arguments.iter() {
                                     context.path.0.push_back_mut(PathSegment::Argument(
                                         argument_name.clone(),
@@ -1308,7 +1308,7 @@ impl Interpreter {
                     }
                 }
                 let mut result_map = BTreeMap::new();
-                for (key, value) in object {
+                for (key, value) in object.iter() {
                     context
                         .path
                         .0

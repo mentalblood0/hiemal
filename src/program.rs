@@ -1,10 +1,12 @@
+use std::{collections::BTreeMap, sync::Arc};
+
 use crate::{clause::Clause, value::Value};
 
 #[derive(serde::Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum Program {
-    Array(rpds::VectorSync<Program>),
+    Array(Arc<Vec<Program>>),
     Clause(Clause),
-    Object(rpds::RedBlackTreeMapSync<String, Program>),
+    Object(Arc<BTreeMap<String, Program>>),
     Value(Value),
 }
