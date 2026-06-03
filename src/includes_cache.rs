@@ -7,31 +7,35 @@ use url::Url;
 
 use crate::{clause::IncludeFrom, program::Program};
 
+pub type SourceHash = [u8; 16];
+
 pub struct IncludesCache {
     pub directory: std::path::PathBuf,
-    pub url_hash_to_program: BTreeMap<[u8; 16], Program>,
-    pub file_path_to_program: BTreeMap<String, Program>,
+    pub source_hash_to_program: BTreeMap<SourceHash, Program>,
 }
 
 impl Default for IncludesCache {
     fn default() -> IncludesCache {
         Self {
             directory: dirs::cache_dir().unwrap().join("hiemal"),
-            url_hash_to_program: BTreeMap::new(),
-            file_path_to_program: BTreeMap::new(),
+            source_hash_to_program: BTreeMap::new(),
         }
     }
 }
 
 impl IncludesCache {
-    fn url_hash(&self, url: &Url) -> [u8; 16] {
+    fn url_hash(&self, url: &Url) -> SourceHash {
         xxhash_rust::xxh3::xxh3_128(url.to_string().as_bytes()).to_be_bytes()
     }
 
-    fn remove_from_disk(&self, url_hash_hex: &str) -> Result<()> {
+    fn path_hash(&self, path: &std::path::PathBuf) -> SourceHash {
+        xxhash_rust::xxh3::xxh3_128(path.to_str().unwrap().as_bytes()).to_be_bytes()
+    }
+
+    fn remove_from_disk(&self, source_hash_hex: &str) -> Result<()> {
         if let Some(Ok(path)) = glob(&format!(
             "{}.*",
-            self.directory.join(url_hash_hex).to_str().unwrap()
+            self.directory.join(source_hash_hex).to_str().unwrap()
         ))?
         .next()
         {
@@ -40,10 +44,13 @@ impl IncludesCache {
         Ok(())
     }
 
-    fn get_from_disk(&mut self, url_hash: [u8; 16]) -> Result<Option<Program>> {
+    fn get_from_disk(&mut self, source_hash: SourceHash) -> Result<Option<Program>> {
         if let Some(Ok(path)) = glob(&format!(
             "{}.*",
-            self.directory.join(hex::encode(url_hash)).to_str().unwrap()
+            self.directory
+                .join(hex::encode(source_hash))
+                .to_str()
+                .unwrap()
         ))?
         .next()
         {
@@ -59,7 +66,8 @@ impl IncludesCache {
                 "yml" | "yaml" => serde_saphyr::from_str::<Program>(&result_text)?,
                 _ => return Ok(None),
             };
-            self.url_hash_to_program.insert(url_hash, result.clone());
+            self.source_hash_to_program
+                .insert(source_hash, result.clone());
             Ok(Some(result))
         } else {
             Ok(None)
@@ -77,9 +85,9 @@ impl IncludesCache {
                     Some(extension)
                         if extension == "yaml" || extension == "yml" || extension == "json" =>
                     {
-                        let url_hash = self.url_hash(url);
-                        let url_hash_hex = hex::encode(url_hash);
-                        if let Some(result) = self.url_hash_to_program.get(&url_hash) {
+                        let source_hash = self.url_hash(url);
+                        let source_hash_hex = hex::encode(source_hash);
+                        if let Some(result) = self.source_hash_to_program.get(&source_hash) {
                             Ok(result.clone())
                         } else {
                             let extension = std::path::Path::new(url.path())
@@ -87,8 +95,10 @@ impl IncludesCache {
                                 .unwrap()
                                 .to_str()
                                 .unwrap();
-                            let glob_pattern =
-                                format!("{}/{url_hash_hex}.*.*", self.directory.to_str().unwrap());
+                            let glob_pattern = format!(
+                                "{}/{source_hash_hex}.*.*",
+                                self.directory.to_str().unwrap()
+                            );
                             let (response, etag) = if let Some(Ok(path_with_etag)) =
                                 glob(&glob_pattern)?.next()
                             {
@@ -106,7 +116,7 @@ impl IncludesCache {
                                 {
                                     Ok(response) => {
                                         if response.status() == 304 {
-                                            return Ok(self.get_from_disk(url_hash)?.unwrap());
+                                            return Ok(self.get_from_disk(source_hash)?.unwrap());
                                         }
                                         (response, etag)
                                     }
@@ -115,7 +125,7 @@ impl IncludesCache {
                                         | ureq::Error::Timeout(_)
                                         | ureq::Error::BodyStalled,
                                     ) => {
-                                        return Ok(self.get_from_disk(url_hash)?.unwrap());
+                                        return Ok(self.get_from_disk(source_hash)?.unwrap());
                                     }
                                     Err(error) => {
                                         return Err(error).with_context(|| {
@@ -151,11 +161,12 @@ impl IncludesCache {
                                         ));
                                     }
                                 };
-                                self.remove_from_disk(&url_hash_hex)?;
-                                self.url_hash_to_program.insert(url_hash, result.clone());
+                                self.remove_from_disk(&source_hash_hex)?;
+                                self.source_hash_to_program
+                                    .insert(source_hash, result.clone());
                                 let path = self
                                     .directory
-                                    .join(&format!("{}.{etag}.{extension}", url_hash_hex));
+                                    .join(&format!("{}.{etag}.{extension}", source_hash_hex));
                                 if let Some(parent) = path.parent() {
                                     std::fs::create_dir_all(parent)?;
                                 }
@@ -177,21 +188,29 @@ impl IncludesCache {
                     }
                 }
             }
-            IncludeFrom::File(path) => match path.extension() {
-                Some(ext) if ext == "yaml" || ext == "yml" => serde_saphyr::from_reader(
-                    std::io::BufReader::new(std::fs::File::open(path.clone())?),
-                )
-                .with_context(|| format!("Can not parse included file at {path:?}")),
-                Some(ext) if ext == "json" => serde_json::from_reader(std::io::BufReader::new(
-                    std::fs::File::open(path.clone())?,
-                ))
-                .with_context(|| format!("Can not parse included file at {path:?}")),
-                extension => {
-                    return Err(anyhow!(
-                        "Unsupported include file extension {extension:?} in file path {path:?}"
-                    ));
+            IncludeFrom::File(path) => {
+                let source_hash = self.path_hash(path);
+                if let Some(result) = self.source_hash_to_program.get(&source_hash) {
+                    Ok(result.clone())
+                } else {
+                    match path.extension() {
+                        Some(ext) if ext == "yaml" || ext == "yml" => serde_saphyr::from_reader(
+                            std::io::BufReader::new(std::fs::File::open(path.clone())?),
+                        )
+                        .with_context(|| format!("Can not parse included file at {path:?}")),
+                        Some(ext) if ext == "json" => serde_json::from_reader(
+                            std::io::BufReader::new(std::fs::File::open(path.clone())?),
+                        )
+                        .with_context(|| format!("Can not parse included file at {path:?}")),
+                        extension => {
+                            return Err(anyhow!(
+                                "Unsupported include file extension {extension:?} in file path \
+                                 {path:?}"
+                            ));
+                        }
+                    }
                 }
-            },
+            }
         }
     }
 }
