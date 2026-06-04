@@ -27,14 +27,14 @@ pub enum DefaultArgument {
     Underline,
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Deserialize, Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum IncludeFrom {
     Url(Url),
     File(std::path::PathBuf),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialOrd, Ord, Eq, PartialEq)]
 pub struct IncludeFromAt {
     pub from: IncludeFrom,
     pub at: Path,

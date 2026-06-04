@@ -5,12 +5,13 @@ use anyhow::{Context, Error, Result, anyhow};
 use dashu::Rational;
 use rayon::prelude::*;
 
-use crate::clause::Include;
 use crate::{
-    clause::{AtSegment, Clause},
+    clause::{AtSegment, Clause, Include},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     function::Function,
     includes_cache::IncludesCache,
+    intermediate_representation::IntermediateRepresentation,
+    intermediate_representation_clause,
     path::{Path, PathSegment},
     program::Program,
     r#type::Type,
@@ -52,16 +53,16 @@ impl<V> ListMap<V> {
     }
 }
 
-pub struct TypeCheckingContext {
+pub struct CompilationContext {
     pub path: Path,
-    pub functions: ListMap<Program>,
+    pub functions: ListMap<IntermediateRepresentation>,
     pub constants: ListMap<Type>,
     pub entered_functions: BTreeSet<String>,
     pub recursed_functions_types: SmallMap<String, Type>,
     pub includes_cache: Arc<Mutex<IncludesCache>>,
 }
 
-impl TypeCheckingContext {
+impl CompilationContext {
     pub fn error(&self, expected_type: &Type, got_type: &Type) -> Error {
         anyhow!(
             "Expected {expected_type:?} but got {got_type:?} at {:#?}",
@@ -206,7 +207,7 @@ impl TypeCheckingContext {
 #[derive(Clone)]
 pub struct ComputationContext {
     pub path: Path,
-    pub functions: rpds::RedBlackTreeMapSync<String, Program>,
+    pub functions: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
     pub constants: rpds::RedBlackTreeMapSync<String, Value>,
     pub includes_cache: Arc<Mutex<IncludesCache>>,
 }
@@ -215,7 +216,7 @@ impl ComputationContext {
     pub fn extended<P, F, C>(&self, path: P, functions: F, constants: C) -> Self
     where
         P: IntoIterator<Item = PathSegment>,
-        F: IntoIterator<Item = (String, Program)>,
+        F: IntoIterator<Item = (String, IntermediateRepresentation)>,
         C: IntoIterator<Item = (String, Value)>,
     {
         Self {
@@ -249,9 +250,9 @@ impl Interpreter {
         program: &Program,
         includes_cache: Arc<Mutex<IncludesCache>>,
     ) -> Result<Value> {
-        self.check_types(&program, includes_cache.clone())?;
+        let intermediate_representation = self.compile(&program, includes_cache.clone())?;
         Ok(self.compute_with_context(
-            &program,
+            &intermediate_representation,
             ComputationContext {
                 path: Path(rpds::VectorSync::new_sync()),
                 functions: rpds::RedBlackTreeMapSync::new_sync(),
@@ -459,33 +460,30 @@ impl Interpreter {
 
     fn compute_with_context(
         &self,
-        program: &Program,
+        intermediate_representation: &IntermediateRepresentation,
         context: ComputationContext,
     ) -> Result<Value> {
-        Ok(match program {
-            Program::Clause(clause) => match clause {
-                Clause::DefaultArgument(_) => context
-                    .constants
-                    .get(DEFAULT_ARGUMENT_NAME)
-                    .unwrap()
-                    .clone(),
-                Clause::Constant(constant_clause) => context
-                    .constants
-                    .get(&constant_clause.constant)
-                    .unwrap()
-                    .clone(),
-                Clause::Include(include_clause) => self.compute_with_context(
-                    &self.process_include(include_clause, context.includes_cache.clone())?,
-                    context.clone(),
-                )?,
-                Clause::With(with_clause) => {
+        Ok(match intermediate_representation {
+            IntermediateRepresentation::Clause(clause) => match clause {
+                intermediate_representation_clause::Clause::Constant(constant_name) => {
+                    context.constants.get(constant_name).unwrap().clone()
+                }
+                intermediate_representation_clause::Clause::Include(include_clause) => self
+                    .compute_with_context(
+                        &context
+                            .includes_cache
+                            .lock()
+                            .unwrap()
+                            .source_hash_to_intermediate_representation[&include_clause.include],
+                        context.clone(),
+                    )?,
+                intermediate_representation_clause::Clause::With(with_clause) => {
                     let constants_bodies_context =
                         context.extended([PathSegment::With, PathSegment::Constants], [], []);
                     let mut compute_context = context.extended(
                         [PathSegment::With, PathSegment::Compute],
                         with_clause
-                            .with
-                            .functions
+                            .user_functions
                             .iter()
                             .map(|function_name_and_body| {
                                 (
@@ -496,11 +494,10 @@ impl Interpreter {
                         [],
                     );
                     let complex_constants = with_clause
-                        .with
                         .constants
                         .iter()
                         .filter(|keyvalue| match &keyvalue.1 {
-                            Program::Value(value) => {
+                            IntermediateRepresentation::Value(value) => {
                                 compute_context
                                     .constants
                                     .insert_mut(keyvalue.0.to_string(), value.clone());
@@ -565,7 +562,7 @@ impl Interpreter {
                         },
                     )?
                 }
-                Clause::Map(map_clause) => {
+                intermediate_representation_clause::Clause::Map(map_clause) => {
                     let precomputed_array = self
                         .compute_with_context(
                             &map_clause.map,
@@ -599,7 +596,7 @@ impl Interpreter {
                         })
                         .and_then(|_| Ok(Value::Array(result_mutex.into_inner().unwrap())))?
                 }
-                Clause::Filter(filter_clause) => {
+                intermediate_representation_clause::Clause::Filter(filter_clause) => {
                     let precomputed_array = self
                         .compute_with_context(
                             &filter_clause.filter,
@@ -642,7 +639,7 @@ impl Interpreter {
                             )))
                         })?
                 }
-                Clause::Fold(fold_clause) => {
+                intermediate_representation_clause::Clause::Fold(fold_clause) => {
                     let array = self
                         .compute_with_context(&fold_clause.fold, context.clone())?
                         .as_array()
@@ -671,7 +668,7 @@ impl Interpreter {
                     }
                     result
                 }
-                Clause::Branching(branching_clause) => {
+                intermediate_representation_clause::Clause::Branching(branching_clause) => {
                     let if_result = self
                         .compute_with_context(
                             &branching_clause.r#if,
@@ -692,7 +689,7 @@ impl Interpreter {
                     };
                     result
                 }
-                Clause::TryOr(try_or_clause) => {
+                intermediate_representation_clause::Clause::TryOr(try_or_clause) => {
                     let result = match self.compute_with_context(
                         &try_or_clause.r#try,
                         context.extended([PathSegment::Try], [], []),
@@ -712,20 +709,24 @@ impl Interpreter {
                     };
                     result
                 }
-                Clause::FromAt(from_at_clause) => {
+                intermediate_representation_clause::Clause::FromAt(from_at_clause) => {
                     let mut result = self.compute_with_context(
                         &from_at_clause.from,
                         context.extended([PathSegment::From], [], []),
                     )?;
                     for at_segment in from_at_clause.at.iter() {
                         result = match at_segment {
-                            AtSegment::ObjectKey(object_key) => result
+                            intermediate_representation_clause::AtSegment::ObjectKey(
+                                object_key,
+                            ) => result
                                 .as_object()
                                 .unwrap()
                                 .get(&*object_key)
                                 .unwrap()
                                 .clone(),
-                            AtSegment::ArrayIndex(array_index) => {
+                            intermediate_representation_clause::AtSegment::ArrayIndex(
+                                array_index,
+                            ) => {
                                 let array = result.as_array().unwrap();
                                 result
                                     .as_array()
@@ -747,69 +748,47 @@ impl Interpreter {
                     }
                     result
                 }
-            },
-            Program::Object(object) => {
-                if object.len() == 1 {
-                    let (function_name, argument) = object.iter().next().unwrap();
-                    if let Some(function_body) = context.functions.get(function_name).cloned() {
-                        let arguments_bodies_context = context.extended(
-                            [PathSegment::Function(function_name.clone())],
-                            [],
-                            [],
+                intermediate_representation_clause::Clause::UserFunctionCall {
+                    name,
+                    arguments,
+                } => {
+                    let function_body = context.functions.get(name).cloned().unwrap();
+                    let arguments_bodies_context =
+                        context.extended([PathSegment::Function(name.clone())], [], []);
+                    let mut compute_context = arguments_bodies_context.clone();
+                    for (argument_name, argument_compute_body) in arguments.iter() {
+                        compute_context.constants.insert_mut(
+                            argument_name.clone(),
+                            self.compute_with_context(
+                                argument_compute_body,
+                                arguments_bodies_context.extended(
+                                    [PathSegment::Argument(argument_name.clone())],
+                                    [],
+                                    [],
+                                ),
+                            )?,
                         );
-                        let mut compute_context = arguments_bodies_context.clone();
-                        match argument {
-                            Program::Object(arguments) if arguments.len() > 1 => {
-                                for (argument_name, argument_compute_body) in arguments.iter() {
-                                    compute_context.constants.insert_mut(
-                                        argument_name.clone(),
-                                        self.compute_with_context(
-                                            argument_compute_body,
-                                            arguments_bodies_context.extended(
-                                                [PathSegment::Argument(argument_name.clone())],
-                                                [],
-                                                [],
-                                            ),
-                                        )?,
-                                    );
-                                }
-                            }
-                            Program::Value(value) => match value {
-                                Value::Object(arguments) if arguments.size() > 1 => {
-                                    for (argument_name, argument_value) in arguments.iter() {
-                                        compute_context.constants.insert_mut(
-                                            argument_name.clone(),
-                                            argument_value.clone(),
-                                        );
-                                    }
-                                }
-                                _ => compute_context
-                                    .constants
-                                    .insert_mut(DEFAULT_ARGUMENT_NAME.to_string(), value.clone()),
-                            },
-                            _ => compute_context.constants.insert_mut(
-                                DEFAULT_ARGUMENT_NAME.to_string(),
-                                self.compute_with_context(argument, arguments_bodies_context)?,
-                            ),
-                        }
-                        return self.compute_with_context(&function_body, compute_context);
-                    } else if let Some(function) = self.embedded_functions.get(function_name) {
-                        let function_argument = self.compute_with_context(
-                            argument,
-                            context.extended(
-                                [PathSegment::Function(function_name.clone())],
-                                [],
-                                [],
-                            ),
-                        )?;
-                        return (function.function)(function_argument);
                     }
+                    return self.compute_with_context(&function_body, compute_context);
                 }
+                intermediate_representation_clause::Clause::EmbeddedFunctionCall {
+                    name,
+                    argument,
+                } => {
+                    let function = self.embedded_functions.get(name).unwrap();
+                    let function_argument = self.compute_with_context(
+                        argument,
+                        context.extended([PathSegment::Function(name.clone())], [], []),
+                    )?;
+                    return (function.function)(function_argument);
+                }
+            },
+            IntermediateRepresentation::Object(object) => {
                 let mut result = rpds::RedBlackTreeMapSync::new_sync();
                 let complex_values = object
                     .iter()
                     .filter(|keyvalue| match &keyvalue.1 {
-                        Program::Value(value) => {
+                        IntermediateRepresentation::Value(value) => {
                             result.insert_mut(keyvalue.0.to_string(), value.clone());
                             false
                         }
@@ -854,14 +833,14 @@ impl Interpreter {
                     }
                 }
             }
-            Program::Array(array) => {
+            IntermediateRepresentation::Array(array) => {
                 let mut result =
                     rpds::VectorSync::from_iter(std::iter::repeat(Value::Null).take(array.len()));
                 let complex_elements = array
                     .iter()
                     .enumerate()
                     .filter(|(element_index, element)| match &element {
-                        Program::Value(value) => {
+                        IntermediateRepresentation::Value(value) => {
                             result.set_mut(*element_index, value.clone());
                             false
                         }
@@ -904,29 +883,31 @@ impl Interpreter {
                     }
                 }
             }
-            Program::Value(value) => value.clone(),
+            IntermediateRepresentation::Value(value) => value.clone(),
         })
     }
 
-    pub fn check_types(
+    pub fn compile(
         &self,
         program: &Program,
         includes_cache: Arc<Mutex<IncludesCache>>,
-    ) -> Result<Type> {
-        self.get_program_type(
-            program,
-            &mut TypeCheckingContext {
-                path: Path(rpds::VectorSync::new_sync()),
-                functions: ListMap::new(),
-                constants: ListMap::new(),
-                entered_functions: BTreeSet::new(),
-                recursed_functions_types: SmallMap::new(),
-                includes_cache,
-            },
-        )
+    ) -> Result<IntermediateRepresentation> {
+        Ok(self
+            .get_program_type_and_intermediate_representation(
+                program,
+                &mut CompilationContext {
+                    path: Path(rpds::VectorSync::new_sync()),
+                    functions: ListMap::new(),
+                    constants: ListMap::new(),
+                    entered_functions: BTreeSet::new(),
+                    recursed_functions_types: SmallMap::new(),
+                    includes_cache,
+                },
+            )?
+            .1)
     }
 
-    fn get_value_type(&self, value: &Value, context: &mut TypeCheckingContext) -> Result<Type> {
+    fn get_value_type(&self, value: &Value, context: &mut CompilationContext) -> Result<Type> {
         match value {
             Value::Array(array) => {
                 if let Some(first_element) = array.first() {
@@ -968,37 +949,52 @@ impl Interpreter {
         }
     }
 
-    fn get_program_type(
+    fn get_program_type_and_intermediate_representation(
         &self,
         program: &Program,
-        context: &mut TypeCheckingContext,
-    ) -> Result<Type> {
+        context: &mut CompilationContext,
+    ) -> Result<(Type, IntermediateRepresentation)> {
         match program {
             Program::Clause(clause) => match clause {
-                Clause::DefaultArgument(_) => context
-                    .constants
-                    .get(DEFAULT_ARGUMENT_NAME)
-                    .cloned()
-                    .with_context(|| {
-                        format!(
-                            "Unknown constant {:?} at {:#?}",
-                            DEFAULT_ARGUMENT_NAME, context.path
-                        )
-                    }),
-                Clause::Constant(constant_clause) => context
-                    .constants
-                    .get(&constant_clause.constant)
-                    .cloned()
-                    .with_context(|| {
-                        format!(
-                            "Unknown constant {:?} at {:#?}",
-                            constant_clause.constant, context.path
-                        )
-                    }),
-                Clause::Include(include_clause) => self.get_program_type(
-                    &self.process_include(include_clause, context.includes_cache.clone())?,
-                    context,
-                ),
+                Clause::DefaultArgument(_) => Ok((
+                    context
+                        .constants
+                        .get(DEFAULT_ARGUMENT_NAME)
+                        .cloned()
+                        .with_context(|| {
+                            format!(
+                                "Unknown constant {:?} at {:#?}",
+                                DEFAULT_ARGUMENT_NAME, context.path
+                            )
+                        })?,
+                    IntermediateRepresentation::Clause(
+                        intermediate_representation_clause::Clause::Constant(
+                            DEFAULT_ARGUMENT_NAME.to_string(),
+                        ),
+                    ),
+                )),
+                Clause::Constant(constant_clause) => Ok((
+                    context
+                        .constants
+                        .get(&constant_clause.constant)
+                        .cloned()
+                        .with_context(|| {
+                            format!(
+                                "Unknown constant {:?} at {:#?}",
+                                constant_clause.constant, context.path
+                            )
+                        })?,
+                    IntermediateRepresentation::Clause(
+                        intermediate_representation_clause::Clause::Constant(
+                            constant_clause.constant.clone(),
+                        ),
+                    ),
+                )),
+                Clause::Include(include_clause) => self
+                    .get_program_type_and_intermediate_representation(
+                        &self.process_include(include_clause, context.includes_cache.clone())?,
+                        context,
+                    ),
                 Clause::With(with_clause) => {
                     for function_name_and_body in with_clause.with.functions.iter() {
                         context
@@ -1011,8 +1007,11 @@ impl Interpreter {
                         context.path.0.push_back_mut(PathSegment::Constant(
                             constant_name_and_compute_body.0.clone(),
                         ));
-                        let precomputed_constant_type = self
-                            .get_program_type(&constant_name_and_compute_body.1.clone(), context)?;
+                        let (precomputed_constant_type, constant_intermediate_representation) =
+                            self.get_program_type_and_intermediate_representation(
+                                &constant_name_and_compute_body.1.clone(),
+                                context,
+                            )?;
                         context.path.0.drop_last_mut();
                         context
                             .constants
@@ -1020,7 +1019,15 @@ impl Interpreter {
                     }
                     context.path.0.drop_last_mut();
                     context.path.0.push_back_mut(PathSegment::Compute);
-                    let result = self.get_program_type(&with_clause.compute.clone(), context)?;
+                    let result = IntermediateRepresentation::Clause(
+                        intermediate_representation_clause::Clause::With {
+                            user_functions: with_clause.with.functions,
+                        },
+                    );
+                    self.get_program_type_and_intermediate_representation(
+                        &with_clause.compute.clone(),
+                        context,
+                    )?;
                     context.path.0.drop_last_mut();
                     context.path.0.drop_last_mut();
                     for function_name_and_compute_body in with_clause.with.functions.iter() {
@@ -1033,15 +1040,20 @@ impl Interpreter {
                 }
                 Clause::Map(map_clause) => {
                     context.path.0.push_back_mut(PathSegment::Map);
-                    let actual_array_type =
-                        self.get_program_type(&map_clause.map.clone(), context)?;
+                    let actual_array_type = self.get_program_type_and_intermediate_representation(
+                        &map_clause.map.clone(),
+                        context,
+                    )?;
                     context.path.0.drop_last_mut();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context
                             .constants
                             .push(&map_clause.r#as, *array_element_type.clone());
                         context.path.0.push_back_mut(PathSegment::Through);
-                        let result = self.get_program_type(&map_clause.through, context)?;
+                        let result = self.get_program_type_and_intermediate_representation(
+                            &map_clause.through,
+                            context,
+                        )?;
                         context.path.0.drop_last_mut();
                         context.constants.remove(&map_clause.r#as);
                         Ok(Type::Array(Box::new(result)))
@@ -1054,16 +1066,20 @@ impl Interpreter {
                 }
                 Clause::Filter(filter_clause) => {
                     context.path.0.push_back_mut(PathSegment::Filter);
-                    let actual_array_type =
-                        self.get_program_type(&filter_clause.filter, context)?;
+                    let actual_array_type = self.get_program_type_and_intermediate_representation(
+                        &filter_clause.filter,
+                        context,
+                    )?;
                     context.path.0.drop_last_mut();
                     if let Type::Array(ref array_element_type) = actual_array_type {
                         context
                             .constants
                             .push(&filter_clause.r#as, *array_element_type.clone());
                         context.path.0.push_back_mut(PathSegment::Through);
-                        let through_type =
-                            self.get_program_type(&filter_clause.through, context)?;
+                        let through_type = self.get_program_type_and_intermediate_representation(
+                            &filter_clause.through,
+                            context,
+                        )?;
                         context.path.0.drop_last_mut();
                         context
                             .assert_equal(&through_type, &Type::Bool)
@@ -1085,11 +1101,17 @@ impl Interpreter {
                 }
                 Clause::Fold(fold_clause) => {
                     context.path.0.push_back_mut(PathSegment::Fold);
-                    let actual_array_type = self.get_program_type(&fold_clause.fold, context)?;
+                    let actual_array_type = self.get_program_type_and_intermediate_representation(
+                        &fold_clause.fold,
+                        context,
+                    )?;
                     context.path.0.drop_last_mut();
                     if let Type::Array(ref array_element_type) = actual_array_type {
-                        let starting_with_type =
-                            self.get_program_type(&fold_clause.starting_with, context)?;
+                        let starting_with_type = self
+                            .get_program_type_and_intermediate_representation(
+                                &fold_clause.starting_with,
+                                context,
+                            )?;
                         context
                             .constants
                             .push(&fold_clause.r#as, *array_element_type.clone());
@@ -1097,7 +1119,10 @@ impl Interpreter {
                             .constants
                             .push(&fold_clause.accumulating_in, starting_with_type.clone());
                         context.path.0.push_back_mut(PathSegment::Through);
-                        let through_type = self.get_program_type(&fold_clause.through, context)?;
+                        let through_type = self.get_program_type_and_intermediate_representation(
+                            &fold_clause.through,
+                            context,
+                        )?;
                         context.path.0.drop_last_mut();
                         context
                             .assert_equal(&through_type, &starting_with_type)
@@ -1121,16 +1146,23 @@ impl Interpreter {
                 }
                 Clause::Branching(branching_clause) => {
                     context.path.0.push_back_mut(PathSegment::If);
-                    let if_branch_type = self.get_program_type(&branching_clause.r#if, context)?;
+                    let if_branch_type = self.get_program_type_and_intermediate_representation(
+                        &branching_clause.r#if,
+                        context,
+                    )?;
                     context.assert_equal(&Type::Bool, &if_branch_type)?;
                     context.path.0.drop_last_mut();
                     context.path.0.push_back_mut(PathSegment::Then);
-                    let then_branch_type =
-                        self.get_program_type(&branching_clause.then, context)?;
+                    let then_branch_type = self.get_program_type_and_intermediate_representation(
+                        &branching_clause.then,
+                        context,
+                    )?;
                     context.path.0.drop_last_mut();
                     context.path.0.push_back_mut(PathSegment::Else);
-                    let else_branch_type =
-                        self.get_program_type(&branching_clause.r#else, context)?;
+                    let else_branch_type = self.get_program_type_and_intermediate_representation(
+                        &branching_clause.r#else,
+                        context,
+                    )?;
                     context.path.0.drop_last_mut();
                     context
                         .assert_equal(&then_branch_type, &else_branch_type)
@@ -1146,13 +1178,19 @@ impl Interpreter {
                 }
                 Clause::TryOr(try_or_clause) => {
                     context.path.0.push_back_mut(PathSegment::Try);
-                    let try_branch_type = self.get_program_type(&try_or_clause.r#try, context)?;
+                    let try_branch_type = self.get_program_type_and_intermediate_representation(
+                        &try_or_clause.r#try,
+                        context,
+                    )?;
                     context.path.0.drop_last_mut();
                     context.path.0.push_back_mut(PathSegment::Or);
                     context
                         .constants
                         .push(&try_or_clause.with_error, Type::String);
-                    let or_branch_type = self.get_program_type(&try_or_clause.or, context)?;
+                    let or_branch_type = self.get_program_type_and_intermediate_representation(
+                        &try_or_clause.or,
+                        context,
+                    )?;
                     context.path.0.drop_last_mut();
                     context.constants.remove(&try_or_clause.with_error);
                     context
@@ -1169,7 +1207,10 @@ impl Interpreter {
                 }
                 Clause::FromAt(from_at_clause) => {
                     context.path.0.push_back_mut(PathSegment::From);
-                    let mut result = self.get_program_type(&from_at_clause.from, context)?;
+                    let mut result = self.get_program_type_and_intermediate_representation(
+                        &from_at_clause.from,
+                        context,
+                    )?;
                     context.path.0.drop_last_mut();
                     context.path.0.push_back_mut(PathSegment::At);
                     if from_at_clause.at.is_empty() {
@@ -1250,8 +1291,11 @@ impl Interpreter {
                                     context.path.0.push_back_mut(PathSegment::Argument(
                                         argument_name.clone(),
                                     ));
-                                    let argument_type =
-                                        self.get_program_type(&argument_compute_body, context)?;
+                                    let argument_type = self
+                                        .get_program_type_and_intermediate_representation(
+                                            &argument_compute_body,
+                                            context,
+                                        )?;
                                     context.path.0.drop_last_mut();
                                     arguments_names.push(argument_name.clone());
                                     context.constants.push(&argument_name, argument_type);
@@ -1276,14 +1320,20 @@ impl Interpreter {
                                 }
                             },
                             argument_compute_body => {
-                                let argument_type =
-                                    self.get_program_type(argument_compute_body, context)?;
+                                let argument_type = self
+                                    .get_program_type_and_intermediate_representation(
+                                        argument_compute_body,
+                                        context,
+                                    )?;
                                 arguments_names.push(DEFAULT_ARGUMENT_NAME.to_string());
                                 context.constants.push(DEFAULT_ARGUMENT_NAME, argument_type);
                             }
                         };
                         context.entered_functions.insert(function_name.clone());
-                        let result = self.get_program_type(&function_body, context)?;
+                        let result = self.get_program_type_and_intermediate_representation(
+                            &function_body,
+                            context,
+                        )?;
                         context.path.0.drop_last_mut();
                         context.entered_functions.remove(function_name);
                         for argument_name in arguments_names {
@@ -1297,7 +1347,8 @@ impl Interpreter {
                             .path
                             .0
                             .push_back_mut(PathSegment::EmbeddedFunction(function_name.clone()));
-                        let arguments_type = self.get_program_type(argument, context)?;
+                        let arguments_type = self
+                            .get_program_type_and_intermediate_representation(argument, context)?;
                         let generic_values =
                             context.assert_equal(&function.argument_type, &arguments_type)?;
                         context.path.0.drop_last_mut();
@@ -1313,7 +1364,10 @@ impl Interpreter {
                         .path
                         .0
                         .push_back_mut(PathSegment::ObjectKey(key.clone()));
-                    result_map.insert(key.clone(), self.get_program_type(value, context)?);
+                    result_map.insert(
+                        key.clone(),
+                        self.get_program_type_and_intermediate_representation(value, context)?,
+                    );
                     context.path.0.drop_last_mut();
                 }
                 Ok(Type::Object(result_map))
@@ -1326,7 +1380,7 @@ impl Interpreter {
                         .path
                         .0
                         .push_back_mut(PathSegment::ArrayIndex(element_index));
-                    match self.get_program_type(element, context)? {
+                    match self.get_program_type_and_intermediate_representation(element, context)? {
                         Type::RecursedFunction(recursed_function_name) => {
                             recursed_elements_functions_names.push(recursed_function_name);
                         }
