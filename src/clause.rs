@@ -17,8 +17,14 @@ pub enum Clause {
     TryOr(Box<TryOr>),
     FromAt(Box<FromAt>),
     Constant(Constant),
+    Call(Call),
     DefaultArgument(DefaultArgument),
     Include(Include),
+}
+#[derive(serde::Deserialize, Debug, Clone)]
+pub struct Call {
+    call: String,
+    with_arguments: Arc<SmallMap<String, Program>>,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]

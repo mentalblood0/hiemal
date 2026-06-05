@@ -477,24 +477,24 @@ impl Interpreter {
                             .source_hash_to_intermediate_representation[&include_clause.include],
                         context.clone(),
                     )?,
-                intermediate_representation_clause::Clause::With(with_clause) => {
+                intermediate_representation_clause::Clause::With {
+                    user_functions,
+                    constants,
+                    compute,
+                } => {
                     let constants_bodies_context =
                         context.extended([PathSegment::With, PathSegment::Constants], [], []);
                     let mut compute_context = context.extended(
                         [PathSegment::With, PathSegment::Compute],
-                        with_clause
-                            .user_functions
-                            .iter()
-                            .map(|function_name_and_body| {
-                                (
-                                    function_name_and_body.0.clone(),
-                                    function_name_and_body.1.clone(),
-                                )
-                            }),
+                        user_functions.iter().map(|function_name_and_body| {
+                            (
+                                function_name_and_body.0.clone(),
+                                function_name_and_body.1.clone(),
+                            )
+                        }),
                         [],
                     );
-                    let complex_constants = with_clause
-                        .constants
+                    let complex_constants = constants
                         .iter()
                         .filter(|keyvalue| match &keyvalue.1 {
                             IntermediateRepresentation::Value(value) => {
@@ -507,7 +507,7 @@ impl Interpreter {
                         })
                         .collect::<Vec<_>>();
                     self.compute_with_context(
-                        &with_clause.compute,
+                        &compute,
                         match complex_constants.len() {
                             0 => compute_context,
                             1 => {
@@ -953,7 +953,7 @@ impl Interpreter {
         &self,
         program: &Program,
         context: &mut CompilationContext,
-    ) -> Result<(Type, IntermediateRepresentation)> {
+    ) -> Result<(Result<Type>, IntermediateRepresentation)> {
         match program {
             Program::Clause(clause) => match clause {
                 Clause::DefaultArgument(_) => Ok((
@@ -966,7 +966,7 @@ impl Interpreter {
                                 "Unknown constant {:?} at {:#?}",
                                 DEFAULT_ARGUMENT_NAME, context.path
                             )
-                        })?,
+                        }),
                     IntermediateRepresentation::Clause(
                         intermediate_representation_clause::Clause::Constant(
                             DEFAULT_ARGUMENT_NAME.to_string(),
@@ -983,7 +983,7 @@ impl Interpreter {
                                 "Unknown constant {:?} at {:#?}",
                                 constant_clause.constant, context.path
                             )
-                        })?,
+                        }),
                     IntermediateRepresentation::Clause(
                         intermediate_representation_clause::Clause::Constant(
                             constant_clause.constant.clone(),
@@ -997,9 +997,14 @@ impl Interpreter {
                     ),
                 Clause::With(with_clause) => {
                     for function_name_and_body in with_clause.with.functions.iter() {
-                        context
-                            .functions
-                            .push(&function_name_and_body.0, function_name_and_body.1.clone());
+                        context.functions.push(
+                            &function_name_and_body.0,
+                            self.get_program_type_and_intermediate_representation(
+                                function_name_and_body.1,
+                                context,
+                            )?
+                            .1,
+                        );
                     }
                     context.path.0.push_back_mut(PathSegment::With);
                     context.path.0.push_back_mut(PathSegment::Constants);
@@ -1013,9 +1018,10 @@ impl Interpreter {
                                 context,
                             )?;
                         context.path.0.drop_last_mut();
-                        context
-                            .constants
-                            .push(&constant_name_and_compute_body.0, precomputed_constant_type);
+                        context.constants.push(
+                            &constant_name_and_compute_body.0,
+                            precomputed_constant_type?,
+                        );
                     }
                     context.path.0.drop_last_mut();
                     context.path.0.push_back_mut(PathSegment::Compute);
