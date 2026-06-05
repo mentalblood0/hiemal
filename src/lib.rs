@@ -3,8 +3,6 @@ pub mod default_argument_name;
 pub mod embedded_functions;
 pub mod function;
 pub mod includes_cache;
-pub mod intermediate_representation;
-pub mod intermediate_representation_clause;
 pub mod interpreter;
 pub mod path;
 pub mod program;

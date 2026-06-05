@@ -1,6 +1,6 @@
 use crate::clause::IncludeFromAt;
 
-#[derive(Debug, serde::Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, serde::Deserialize)]
 pub enum PathSegment {
     #[serde(rename = "object key")]
     ObjectKey(String),
@@ -58,7 +58,7 @@ pub enum PathSegment {
     Include(IncludeFromAt),
 }
 
-#[derive(Clone, serde::Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, serde::Deserialize)]
 pub struct Path(pub rpds::VectorSync<PathSegment>);
 
 impl std::fmt::Debug for Path {

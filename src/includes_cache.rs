@@ -5,19 +5,13 @@ use anyhow::{Context, Result, anyhow};
 use glob::glob;
 use url::Url;
 
-use crate::{
-    clause::{IncludeFrom, IncludeFromAt},
-    intermediate_representation::IntermediateRepresentation,
-    program::Program,
-};
+use crate::{clause::IncludeFrom, program::Program};
 
 pub type SourceHash = [u8; 16];
 
 pub struct IncludesCache {
     pub directory: std::path::PathBuf,
     pub source_hash_to_program: BTreeMap<SourceHash, Program>,
-    pub source_hash_to_intermediate_representation:
-        BTreeMap<IncludeFromAt, IntermediateRepresentation>,
 }
 
 impl Default for IncludesCache {
@@ -25,7 +19,6 @@ impl Default for IncludesCache {
         Self {
             directory: dirs::cache_dir().unwrap().join("hiemal"),
             source_hash_to_program: BTreeMap::new(),
-            source_hash_to_intermediate_representation: BTreeMap::new(),
         }
     }
 }

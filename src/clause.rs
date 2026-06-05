@@ -17,14 +17,8 @@ pub enum Clause {
     TryOr(Box<TryOr>),
     FromAt(Box<FromAt>),
     Constant(Constant),
-    Call(Call),
     DefaultArgument(DefaultArgument),
     Include(Include),
-}
-#[derive(serde::Deserialize, Debug, Clone)]
-pub struct Call {
-    call: String,
-    with_arguments: Arc<SmallMap<String, Program>>,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
@@ -33,14 +27,14 @@ pub enum DefaultArgument {
     Underline,
 }
 
-#[derive(serde::Deserialize, Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(serde::Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum IncludeFrom {
     Url(Url),
     File(std::path::PathBuf),
 }
 
-#[derive(Debug, Clone, PartialOrd, Ord, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct IncludeFromAt {
     pub from: IncludeFrom,
     pub at: Path,
