@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
 use crate::{r#type::Type, value::Value};
 
@@ -6,6 +6,8 @@ use crate::{r#type::Type, value::Value};
 pub struct IntermediateRepresentation {
     pub r#type: Type,
     pub content: Content,
+    pub available_functions: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
+    pub available_constants: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
     pub external_dependencies: ExternalDependencies,
 }
 
@@ -21,10 +23,7 @@ pub enum Content {
 
 #[derive(Debug, Clone)]
 pub enum Clause {
-    Scope {
-        constants: Arc<BTreeMap<String, IntermediateRepresentation>>,
-        compute: Box<IntermediateRepresentation>,
-    },
+    Scope(Box<IntermediateRepresentation>),
     Branching {
         r#if: Box<IntermediateRepresentation>,
         then: Box<IntermediateRepresentation>,
@@ -43,7 +42,7 @@ pub enum EmbeddedFunction {
 #[derive(Debug, Clone)]
 pub struct ExternalDependencies {
     pub functions: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
-    pub constants_names: rpds::VectorSync<String>,
+    pub constants_names: rpds::RedBlackTreeSetSync<String>,
 }
 
 impl ExternalDependencies {
@@ -63,7 +62,7 @@ impl ExternalDependencies {
             constants_names: {
                 let mut result = self.constants_names.clone();
                 for constant_name in constants_names {
-                    result.push_back_mut(constant_name);
+                    result.insert_mut(constant_name);
                 }
                 result
             },

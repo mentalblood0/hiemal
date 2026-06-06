@@ -1,11 +1,11 @@
 use anyhow::{Error, Result, anyhow};
-use serde_json::ser::CompactFormatter;
 
 use crate::{
-    intermediate_representation::{Content, ExternalDependencies, IntermediateRepresentation},
+    intermediate_representation::{
+        self, Content, ExternalDependencies, IntermediateRepresentation,
+    },
     program::{Clause, Path, PathSegment, Program},
     r#type::Type,
-    value::Value,
 };
 
 pub struct CompilationContext {
@@ -54,7 +54,7 @@ impl CompilationContext {
 
 pub fn compile(
     program: &Program,
-    compilation_context: CompilationContext,
+    mut compilation_context: CompilationContext,
 ) -> Result<IntermediateRepresentation> {
     Ok(match program {
         Program::Array(array) => {
@@ -65,6 +65,10 @@ pub fn compile(
                 ));
             }
             let mut result_content = Vec::with_capacity(array.len());
+            let mut result_external_dependencies = ExternalDependencies {
+                functions: rpds::RedBlackTreeMapSync::new_sync(),
+                constants_names: rpds::RedBlackTreeSetSync::new_sync(),
+            };
             for (element_index, element) in array.iter().enumerate() {
                 let element_compilation_context =
                     compilation_context.extended([PathSegment::ArrayIndex(element_index)], [], []);
@@ -80,16 +84,10 @@ pub fn compile(
                     }
                 }
                 result_content.push(compiled_element);
-            }
-            let mut external_dependencies = ExternalDependencies {
-                functions: rpds::RedBlackTreeMapSync::new_sync(),
-                constants_names: rpds::VectorSync::new_sync(),
-            };
-            for compiled_element in result_content {
                 for (function_name, function_body) in
                     compiled_element.external_dependencies.functions.iter()
                 {
-                    external_dependencies
+                    result_external_dependencies
                         .functions
                         .insert_mut(function_name.clone(), function_body.clone());
                 }
@@ -98,14 +96,17 @@ pub fn compile(
                     .constants_names
                     .iter()
                 {
-                    external_dependencies
+                    result_external_dependencies
                         .constants_names
-                        .push_back_mut(constant_name.clone());
+                        .insert_mut(constant_name.clone());
                 }
             }
             IntermediateRepresentation {
+                r#type: Type::Array(Box::new(result_content.first().unwrap().r#type)),
                 content: Content::Array(result_content),
-                external_dependencies,
+                available_functions: compilation_context.available_functions,
+                available_constants: compilation_context.available_constants,
+                external_dependencies: result_external_dependencies,
             }
         }
         Program::Clause(clause) => match clause {
@@ -123,28 +124,71 @@ pub fn compile(
                             [],
                             [],
                         ),
-                    );
+                    )?;
+                    compiled_functions.push((function_name.clone(), compiled_function));
+                    compilation_context
+                        .available_functions
+                        .insert_mut(function_name.clone(), compiled_function);
                 }
                 let mut compiled_constants = Vec::with_capacity(constants.len());
                 for (constant_name, constant_compute_body) in constants.iter() {
-                    let compiled_function = compile(
+                    let compiled_constant = compile(
                         constant_compute_body,
                         compilation_context.extended(
                             [PathSegment::Scope, PathSegment::Compute],
                             [],
                             [],
                         ),
-                    );
+                    )?;
+                    compiled_constants.push((constant_name.clone(), compiled_constant));
+                    compilation_context
+                        .available_constants
+                        .insert_mut(constant_name.clone(), compiled_constant);
                 }
-                let compute_compilation_context = compilation_context.extended(
-                    [PathSegment::Scope, PathSegment::Compute],
-                    compiled_functions,
-                    compiled_constants,
-                );
+                let compiled_compute = compile(
+                    compute,
+                    compilation_context.extended(
+                        [PathSegment::Scope, PathSegment::Compute],
+                        compiled_functions,
+                        compiled_constants,
+                    ),
+                )?;
+                let mut result_external_dependencies =
+                    compiled_compute.external_dependencies.clone();
+                for (function_name, function_body) in
+                    compiled_compute.external_dependencies.functions.iter()
+                {
+                    if compilation_context
+                        .available_functions
+                        .contains_key(function_name)
+                    {
+                        result_external_dependencies
+                            .functions
+                            .remove_mut(function_name);
+                    }
+                }
+                for constant_name in compiled_compute
+                    .external_dependencies
+                    .constants_names
+                    .iter()
+                {
+                    if compilation_context
+                        .available_constants
+                        .contains_key(constant_name)
+                    {
+                        result_external_dependencies
+                            .constants_names
+                            .remove_mut(constant_name);
+                    }
+                }
                 let mut result = IntermediateRepresentation {
-                    r#type: Type,
-                    content: (),
-                    external_dependencies: (),
+                    r#type: compiled_compute.r#type,
+                    content: Content::Clause(intermediate_representation::Clause::Scope(Box::new(
+                        compiled_compute,
+                    ))),
+                    available_functions: compilation_context.available_functions,
+                    available_constants: compilation_context.available_constants,
+                    external_dependencies: result_external_dependencies,
                 };
                 result
             }
