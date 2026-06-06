@@ -293,7 +293,7 @@ impl Interpreter {
                 ) => {
                     result = Program::Value(object.get(object_key).unwrap().clone());
                 }
-                (Program::Clause(Clause::With(with_clause)), Some(PathSegment::With)) => {
+                (Program::Clause(Clause::Scope(with_clause)), Some(PathSegment::With)) => {
                     current_path_segment_index += 1;
                     current_path_segment =
                         include_clause.include.at.0.get(current_path_segment_index);
@@ -341,7 +341,7 @@ impl Interpreter {
                         }
                     }
                 }
-                (Program::Clause(Clause::With(with_clause)), Some(PathSegment::Compute)) => {
+                (Program::Clause(Clause::Scope(with_clause)), Some(PathSegment::Compute)) => {
                     result = with_clause.compute.clone();
                 }
                 (Program::Clause(Clause::Map(map_clause)), Some(PathSegment::Map)) => {
@@ -478,7 +478,7 @@ impl Interpreter {
                     &self.process_include(include_clause, context.includes_cache.clone())?,
                     context.clone(),
                 )?,
-                Clause::With(with_clause) => {
+                Clause::Scope(with_clause) => {
                     let constants_bodies_context =
                         context.extended([PathSegment::With, PathSegment::Constants], [], []);
                     let mut compute_context = context.extended(
@@ -999,7 +999,7 @@ impl Interpreter {
                     &self.process_include(include_clause, context.includes_cache.clone())?,
                     context,
                 ),
-                Clause::With(with_clause) => {
+                Clause::Scope(with_clause) => {
                     for function_name_and_body in with_clause.with.functions.iter() {
                         context
                             .functions

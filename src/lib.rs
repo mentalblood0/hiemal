@@ -1,8 +1,8 @@
-pub mod clause;
+pub mod compiler;
 pub mod default_argument_name;
 pub mod embedded_functions;
 pub mod function;
-pub mod includes_cache;
+pub mod intermediate_representation;
 pub mod interpreter;
 pub mod path;
 pub mod program;
@@ -11,7 +11,6 @@ pub mod value;
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use includes_cache::IncludesCache;
 use interpreter::Interpreter;
 
 pub fn global_interpreter() -> &'static Interpreter {
