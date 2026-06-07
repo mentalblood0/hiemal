@@ -192,12 +192,11 @@ pub fn compile(
                 }
             }
             Clause::Branching { r#if, then, r#else } => {
-                let if_compiled = compile(
-                    r#if,
-                    compilation_context.extended([PathSegment::Branching, PathSegment::If], [], []),
-                )?;
+                let if_compilation_context =
+                    compilation_context.extended([PathSegment::Branching, PathSegment::If], [], []);
+                let if_compiled = compile(r#if, if_compilation_context)?;
                 if if_compiled.r#type != Type::Bool {
-                    return Err(compilation_context.error(&if_compiled.r#type, &Type::Bool));
+                    return Err(if_compilation_context.error(&if_compiled.r#type, &Type::Bool));
                 }
                 let then_compiled = compile(
                     then,
@@ -207,18 +206,15 @@ pub fn compile(
                         [],
                     ),
                 )?;
-                let else_compiled = compile(
-                    r#else,
-                    compilation_context.extended(
-                        [PathSegment::Branching, PathSegment::Else],
-                        [],
-                        [],
-                    ),
-                )?;
+                let else_compilation_context = compilation_context.extended(
+                    [PathSegment::Branching, PathSegment::Else],
+                    [],
+                    [],
+                );
+                let else_compiled = compile(r#else, else_compilation_context)?;
                 if else_compiled.r#type != then_compiled.r#type {
-                    return Err(
-                        compilation_context.error(&else_compiled.r#type, &then_compiled.r#type)
-                    );
+                    return Err(else_compilation_context
+                        .error(&else_compiled.r#type, &then_compiled.r#type));
                 }
                 IntermediateRepresentation {
                     r#type: then_compiled.r#type,
