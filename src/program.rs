@@ -49,6 +49,7 @@ pub enum PathSegment {
     Compute,
     Functions,
     Constants,
+    Branching,
     If,
     Then,
     Else,

@@ -68,4 +68,24 @@ impl ExternalDependencies {
             },
         }
     }
+
+    pub fn merged<E>(&self, external_dependencies: E) -> Self
+    where
+        E: IntoIterator<Item = ExternalDependencies>,
+    {
+        let mut result_functions = self.functions.clone();
+        let mut result_constants_names = self.constants_names.clone();
+        for external_dependencies_instance in external_dependencies.into_iter() {
+            for function in external_dependencies_instance.functions.iter() {
+                result_functions.insert_mut(function.0.clone(), function.1.clone());
+            }
+            for constant_name in external_dependencies_instance.constants_names.iter() {
+                result_constants_names.insert_mut(constant_name.clone());
+            }
+        }
+        Self {
+            functions: result_functions,
+            constants_names: result_constants_names,
+        }
+    }
 }

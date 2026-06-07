@@ -181,7 +181,7 @@ pub fn compile(
                             .remove_mut(constant_name);
                     }
                 }
-                let mut result = IntermediateRepresentation {
+                IntermediateRepresentation {
                     r#type: compiled_compute.r#type,
                     content: Content::Clause(intermediate_representation::Clause::Scope(Box::new(
                         compiled_compute,
@@ -189,8 +189,51 @@ pub fn compile(
                     available_functions: compilation_context.available_functions,
                     available_constants: compilation_context.available_constants,
                     external_dependencies: result_external_dependencies,
-                };
-                result
+                }
+            }
+            Clause::Branching { r#if, then, r#else } => {
+                let if_compiled = compile(
+                    r#if,
+                    compilation_context.extended([PathSegment::Branching, PathSegment::If], [], []),
+                )?;
+                if if_compiled.r#type != Type::Bool {
+                    return Err(compilation_context.error(&if_compiled.r#type, &Type::Bool));
+                }
+                let then_compiled = compile(
+                    then,
+                    compilation_context.extended(
+                        [PathSegment::Branching, PathSegment::Then],
+                        [],
+                        [],
+                    ),
+                )?;
+                let else_compiled = compile(
+                    r#else,
+                    compilation_context.extended(
+                        [PathSegment::Branching, PathSegment::Else],
+                        [],
+                        [],
+                    ),
+                )?;
+                if else_compiled.r#type != then_compiled.r#type {
+                    return Err(
+                        compilation_context.error(&else_compiled.r#type, &then_compiled.r#type)
+                    );
+                }
+                IntermediateRepresentation {
+                    r#type: then_compiled.r#type,
+                    content: Content::Clause(intermediate_representation::Clause::Branching {
+                        r#if: Box::new(if_compiled),
+                        then: Box::new(then_compiled),
+                        r#else: Box::new(else_compiled),
+                    }),
+                    available_functions: compilation_context.available_functions.clone(),
+                    available_constants: compilation_context.available_constants.clone(),
+                    external_dependencies: if_compiled.external_dependencies.merged([
+                        then_compiled.external_dependencies,
+                        else_compiled.external_dependencies,
+                    ]),
+                }
             }
         },
     })
