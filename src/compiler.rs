@@ -231,6 +231,18 @@ pub fn compile(
                     ]),
                 }
             }
+            Clause::Constant(constant_name) => {
+                if let Some(compiled_constant) =
+                    compilation_context.available_constants.get(constant_name)
+                {
+                    compiled_constant.clone()
+                } else {
+                    return Err(anyhow!(
+                        "Got no constant with name {constant_name:?} at {:#?}",
+                        compilation_context.path
+                    ));
+                }
+            }
         },
     })
 }
