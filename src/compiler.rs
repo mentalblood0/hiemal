@@ -1,6 +1,7 @@
 use anyhow::{Error, Result, anyhow};
 
 use crate::{
+    default_argument_name::DEFAULT_ARGUMENT_NAME,
     intermediate_representation::{
         self, Content, ExternalDependencies, IntermediateRepresentation,
     },
@@ -243,6 +244,10 @@ pub fn compile(
                     ));
                 }
             }
+            Clause::DefaultArgument => compile(
+                &Program::Clause(Clause::Constant(DEFAULT_ARGUMENT_NAME.to_string())),
+                compilation_context,
+            )?,
         },
     })
 }
