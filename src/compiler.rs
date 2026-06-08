@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use anyhow::{Error, Result, anyhow};
 
 use crate::{
@@ -5,7 +7,7 @@ use crate::{
     intermediate_representation::{
         self, Content, ExternalDependencies, IntermediateRepresentation,
     },
-    program::{Clause, Path, PathSegment, Program},
+    program::{Clause, EmbeddedFunction, Path, PathSegment, Program},
     r#type::Type,
 };
 
@@ -249,5 +251,107 @@ pub fn compile(
                 compilation_context,
             )?,
         },
+        Program::EmbeddedFunction(embedded_function) => match **embedded_function {
+            EmbeddedFunction::Sum(argument) => {
+                let argument_compilation_context =
+                    compilation_context.extended([PathSegment::Sum], [], []);
+                let compiled_argument = compile(&argument, argument_compilation_context)?;
+                let expected_type = Type::Array(Box::new(Type::Number));
+                if compiled_argument.r#type != expected_type {
+                    return Err(argument_compilation_context
+                        .error(&compiled_argument.r#type, &expected_type));
+                }
+                IntermediateRepresentation {
+                    r#type: Type::Number,
+                    content: Content::EmbeddedFunctionCall(Box::new(
+                        intermediate_representation::EmbeddedFunction::Sum(compiled_argument),
+                    )),
+                    available_functions: compilation_context.available_functions,
+                    available_constants: compilation_context.available_constants,
+                    external_dependencies: compiled_argument.external_dependencies,
+                }
+            }
+            EmbeddedFunction::IsSorted(argument) => {
+                let argument_compilation_context =
+                    compilation_context.extended([PathSegment::Sum], [], []);
+                let compiled_argument = compile(&argument, argument_compilation_context)?;
+                if let Type::Array(element_type) = compiled_argument.r#type {
+                } else {
+                    return Err(anyhow!(
+                        "Got {:?} but expected Array",
+                        compiled_argument.r#type,
+                    ));
+                }
+                IntermediateRepresentation {
+                    r#type: Type::Bool,
+                    content: Content::EmbeddedFunctionCall(Box::new(
+                        intermediate_representation::EmbeddedFunction::Sum(compiled_argument),
+                    )),
+                    available_functions: compilation_context.available_functions,
+                    available_constants: compilation_context.available_constants,
+                    external_dependencies: compiled_argument.external_dependencies,
+                }
+            }
+        },
+        Program::Object(object) => {
+            match object.len() {
+                0 => {
+                    return Err(anyhow!(
+                        "Expected non-empty list at {:#?}",
+                        compilation_context.path
+                    ));
+                }
+                1 => {
+                    let (function_name, function_body) = object.iter().next().unwrap();
+                    if let Some(compiled_function) =
+                        compilation_context.available_functions.get(function_name)
+                    {
+                        return Ok(compiled_function.clone());
+                    }
+                }
+                2.. => {}
+            };
+            let mut result_inner_types = BTreeMap::new();
+            let mut result_content = BTreeMap::new();
+            let mut result_external_dependencies = ExternalDependencies {
+                functions: rpds::RedBlackTreeMapSync::new_sync(),
+                constants_names: rpds::RedBlackTreeSetSync::new_sync(),
+            };
+            for (object_key, object_value) in object.iter() {
+                let object_value_compilation_context = compilation_context.extended(
+                    [PathSegment::ObjectKey(object_key.clone())],
+                    [],
+                    [],
+                );
+                let compiled_object_value =
+                    compile(object_value, object_value_compilation_context)?;
+                result_content.insert(object_key.clone(), compiled_object_value);
+                result_inner_types.insert(object_key.clone(), compiled_object_value.r#type);
+                for (function_name, function_body) in
+                    compiled_object_value.external_dependencies.functions.iter()
+                {
+                    result_external_dependencies
+                        .functions
+                        .insert_mut(function_name.clone(), function_body.clone());
+                }
+                for constant_name in compiled_object_value
+                    .external_dependencies
+                    .constants_names
+                    .iter()
+                {
+                    result_external_dependencies
+                        .constants_names
+                        .insert_mut(constant_name.clone());
+                }
+            }
+            IntermediateRepresentation {
+                r#type: Type::Object(result_inner_types),
+                content: Content::Object(result_content),
+                available_functions: compilation_context.available_functions,
+                available_constants: compilation_context.available_constants,
+                external_dependencies: result_external_dependencies,
+            }
+        }
+        Program::Value(value) => {}
     })
 }

@@ -25,7 +25,7 @@ where
     Ok(ropey::Rope::from_str(&s))
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd)]
 #[serde(untagged)]
 pub enum Value {
     #[serde(deserialize_with = "deserialize_rational")]

@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::value::Value;
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Deserialize, Debug, Clone, PartialOrd, PartialEq)]
 #[serde(untagged)]
 pub enum Program {
     Array(Arc<Vec<Program>>),
@@ -12,7 +12,7 @@ pub enum Program {
     Value(Value),
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd)]
 pub enum Clause {
     #[serde(rename = "scope")]
     Scope {
@@ -32,7 +32,7 @@ pub enum Clause {
     DefaultArgument,
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd)]
 pub enum EmbeddedFunction {
     #[serde(rename = "sum")]
     Sum(Program),
@@ -40,7 +40,7 @@ pub enum EmbeddedFunction {
     IsSorted(Program),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum PathSegment {
     ArrayIndex(usize),
     Constant(String),
@@ -58,7 +58,7 @@ pub enum PathSegment {
     ObjectKey(String),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, PartialOrd)]
 pub struct Path(pub rpds::VectorSync<PathSegment>);
 
 impl std::fmt::Debug for Path {
