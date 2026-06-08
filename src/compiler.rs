@@ -9,8 +9,10 @@ use crate::{
     },
     program::{Clause, EmbeddedFunction, Path, PathSegment, Program},
     r#type::Type,
+    value::Value,
 };
 
+#[derive(Clone)]
 pub struct CompilationContext {
     pub path: Path,
     pub available_functions: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
@@ -55,6 +57,52 @@ impl CompilationContext {
     }
 }
 
+pub fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Result<Type> {
+    Ok(match value {
+        Value::Number(_) => Type::Number,
+        Value::String(_) => Type::String,
+        Value::Bool(_) => Type::Bool,
+        Value::Null => Type::Null,
+        Value::Array(array) => {
+            let mut element_type_option = None;
+            for (element_index, element) in array.iter().enumerate() {
+                let current_element_compilation_context =
+                    compilation_context.extended([PathSegment::ArrayIndex(element_index)], [], []);
+                let current_element_type =
+                    get_value_type(element, current_element_compilation_context.clone())?;
+                if let Some(element_type) = element_type_option {
+                    return Err(current_element_compilation_context
+                        .error(&current_element_type, &element_type));
+                } else {
+                    element_type_option = Some(current_element_type);
+                }
+            }
+            if let Some(element_type) = element_type_option {
+                element_type
+            } else {
+                return Err(anyhow!(
+                    "Expected non-empty list at {:#?}",
+                    compilation_context.path
+                ));
+            }
+        }
+        Value::Object(object) => {
+            let mut result_inner_types = BTreeMap::new();
+            for (object_key, object_value) in object {
+                let current_object_value_compilation_context = compilation_context.extended(
+                    [PathSegment::ObjectKey(object_key.clone())],
+                    [],
+                    [],
+                );
+                let current_object_value_type =
+                    get_value_type(object_value, current_object_value_compilation_context)?;
+                result_inner_types.insert(object_key.clone(), current_object_value_type);
+            }
+            Type::Object(result_inner_types)
+        }
+    })
+}
+
 pub fn compile(
     program: &Program,
     mut compilation_context: CompilationContext,
@@ -75,10 +123,10 @@ pub fn compile(
             for (element_index, element) in array.iter().enumerate() {
                 let element_compilation_context =
                     compilation_context.extended([PathSegment::ArrayIndex(element_index)], [], []);
-                let compiled_element = compile(element, element_compilation_context)?;
+                let compiled_element = compile(element, element_compilation_context.clone())?;
                 if let Some(previous_element_type) = result_content.last().and_then(
                     |last_compiled_element: &IntermediateRepresentation| {
-                        Some(last_compiled_element.r#type)
+                        Some(last_compiled_element.r#type.clone())
                     },
                 ) {
                     if compiled_element.r#type != previous_element_type {
@@ -86,7 +134,7 @@ pub fn compile(
                             .error(&compiled_element.r#type, &previous_element_type));
                     }
                 }
-                result_content.push(compiled_element);
+                result_content.push(compiled_element.clone());
                 for (function_name, function_body) in
                     compiled_element.external_dependencies.functions.iter()
                 {
@@ -105,7 +153,7 @@ pub fn compile(
                 }
             }
             IntermediateRepresentation {
-                r#type: Type::Array(Box::new(result_content.first().unwrap().r#type)),
+                r#type: Type::Array(Box::new(result_content.first().unwrap().r#type.clone())),
                 content: Content::Array(result_content),
                 available_functions: compilation_context.available_functions,
                 available_constants: compilation_context.available_constants,
@@ -128,7 +176,7 @@ pub fn compile(
                             [],
                         ),
                     )?;
-                    compiled_functions.push((function_name.clone(), compiled_function));
+                    compiled_functions.push((function_name.clone(), compiled_function.clone()));
                     compilation_context
                         .available_functions
                         .insert_mut(function_name.clone(), compiled_function);
@@ -143,7 +191,7 @@ pub fn compile(
                             [],
                         ),
                     )?;
-                    compiled_constants.push((constant_name.clone(), compiled_constant));
+                    compiled_constants.push((constant_name.clone(), compiled_constant.clone()));
                     compilation_context
                         .available_constants
                         .insert_mut(constant_name.clone(), compiled_constant);
@@ -158,9 +206,7 @@ pub fn compile(
                 )?;
                 let mut result_external_dependencies =
                     compiled_compute.external_dependencies.clone();
-                for (function_name, function_body) in
-                    compiled_compute.external_dependencies.functions.iter()
-                {
+                for function_name in compiled_compute.external_dependencies.functions.keys() {
                     if compilation_context
                         .available_functions
                         .contains_key(function_name)
@@ -185,7 +231,7 @@ pub fn compile(
                     }
                 }
                 IntermediateRepresentation {
-                    r#type: compiled_compute.r#type,
+                    r#type: compiled_compute.r#type.clone(),
                     content: Content::Clause(intermediate_representation::Clause::Scope(Box::new(
                         compiled_compute,
                     ))),
@@ -197,7 +243,7 @@ pub fn compile(
             Clause::Branching { r#if, then, r#else } => {
                 let if_compilation_context =
                     compilation_context.extended([PathSegment::Branching, PathSegment::If], [], []);
-                let if_compiled = compile(r#if, if_compilation_context)?;
+                let if_compiled = compile(r#if, if_compilation_context.clone())?;
                 if if_compiled.r#type != Type::Bool {
                     return Err(if_compilation_context.error(&if_compiled.r#type, &Type::Bool));
                 }
@@ -214,17 +260,17 @@ pub fn compile(
                     [],
                     [],
                 );
-                let else_compiled = compile(r#else, else_compilation_context)?;
+                let else_compiled = compile(r#else, else_compilation_context.clone())?;
                 if else_compiled.r#type != then_compiled.r#type {
                     return Err(else_compilation_context
                         .error(&else_compiled.r#type, &then_compiled.r#type));
                 }
                 IntermediateRepresentation {
-                    r#type: then_compiled.r#type,
+                    r#type: then_compiled.r#type.clone(),
                     content: Content::Clause(intermediate_representation::Clause::Branching {
-                        r#if: Box::new(if_compiled),
-                        then: Box::new(then_compiled),
-                        r#else: Box::new(else_compiled),
+                        r#if: Box::new(if_compiled.clone()),
+                        then: Box::new(then_compiled.clone()),
+                        r#else: Box::new(else_compiled.clone()),
                     }),
                     available_functions: compilation_context.available_functions.clone(),
                     available_constants: compilation_context.available_constants.clone(),
@@ -251,11 +297,11 @@ pub fn compile(
                 compilation_context,
             )?,
         },
-        Program::EmbeddedFunction(embedded_function) => match **embedded_function {
+        Program::EmbeddedFunction(embedded_function) => match &**embedded_function {
             EmbeddedFunction::Sum(argument) => {
                 let argument_compilation_context =
                     compilation_context.extended([PathSegment::Sum], [], []);
-                let compiled_argument = compile(&argument, argument_compilation_context)?;
+                let compiled_argument = compile(&argument, argument_compilation_context.clone())?;
                 let expected_type = Type::Array(Box::new(Type::Number));
                 if compiled_argument.r#type != expected_type {
                     return Err(argument_compilation_context
@@ -264,7 +310,9 @@ pub fn compile(
                 IntermediateRepresentation {
                     r#type: Type::Number,
                     content: Content::EmbeddedFunctionCall(Box::new(
-                        intermediate_representation::EmbeddedFunction::Sum(compiled_argument),
+                        intermediate_representation::EmbeddedFunction::Sum(
+                            compiled_argument.clone(),
+                        ),
                     )),
                     available_functions: compilation_context.available_functions,
                     available_constants: compilation_context.available_constants,
@@ -275,7 +323,7 @@ pub fn compile(
                 let argument_compilation_context =
                     compilation_context.extended([PathSegment::Sum], [], []);
                 let compiled_argument = compile(&argument, argument_compilation_context)?;
-                if let Type::Array(element_type) = compiled_argument.r#type {
+                if let Type::Array(_) = compiled_argument.r#type {
                 } else {
                     return Err(anyhow!(
                         "Got {:?} but expected Array",
@@ -285,7 +333,9 @@ pub fn compile(
                 IntermediateRepresentation {
                     r#type: Type::Bool,
                     content: Content::EmbeddedFunctionCall(Box::new(
-                        intermediate_representation::EmbeddedFunction::Sum(compiled_argument),
+                        intermediate_representation::EmbeddedFunction::Sum(
+                            compiled_argument.clone(),
+                        ),
                     )),
                     available_functions: compilation_context.available_functions,
                     available_constants: compilation_context.available_constants,
@@ -302,7 +352,7 @@ pub fn compile(
                     ));
                 }
                 1 => {
-                    let (function_name, function_body) = object.iter().next().unwrap();
+                    let (function_name, _) = object.iter().next().unwrap();
                     if let Some(compiled_function) =
                         compilation_context.available_functions.get(function_name)
                     {
@@ -325,7 +375,7 @@ pub fn compile(
                 );
                 let compiled_object_value =
                     compile(object_value, object_value_compilation_context)?;
-                result_content.insert(object_key.clone(), compiled_object_value);
+                result_content.insert(object_key.clone(), compiled_object_value.clone());
                 result_inner_types.insert(object_key.clone(), compiled_object_value.r#type);
                 for (function_name, function_body) in
                     compiled_object_value.external_dependencies.functions.iter()
@@ -352,6 +402,15 @@ pub fn compile(
                 external_dependencies: result_external_dependencies,
             }
         }
-        Program::Value(value) => {}
+        Program::Value(value) => IntermediateRepresentation {
+            r#type: get_value_type(value, compilation_context.clone())?,
+            content: Content::Value(value.clone()),
+            available_functions: compilation_context.available_functions,
+            available_constants: compilation_context.available_constants,
+            external_dependencies: ExternalDependencies {
+                functions: rpds::RedBlackTreeMapSync::new_sync(),
+                constants_names: rpds::RedBlackTreeSetSync::new_sync(),
+            },
+        },
     })
 }
