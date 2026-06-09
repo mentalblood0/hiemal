@@ -42,7 +42,7 @@ pub enum EmbeddedFunction {
 
 #[derive(Debug, Clone)]
 pub struct ExternalDependencies {
-    pub functions: rpds::RedBlackTreeSetSync<String>,
+    pub functions_names: rpds::RedBlackTreeSetSync<String>,
     pub constants_names: rpds::RedBlackTreeSetSync<String>,
 }
 
@@ -53,8 +53,8 @@ impl ExternalDependencies {
         C: IntoIterator<Item = String>,
     {
         Self {
-            functions: {
-                let mut result = self.functions.clone();
+            functions_names: {
+                let mut result = self.functions_names.clone();
                 for function in functions {
                     result.insert_mut(function);
                 }
@@ -74,10 +74,10 @@ impl ExternalDependencies {
     where
         E: IntoIterator<Item = ExternalDependencies>,
     {
-        let mut result_functions = self.functions.clone();
+        let mut result_functions = self.functions_names.clone();
         let mut result_constants_names = self.constants_names.clone();
         for external_dependencies_instance in external_dependencies.into_iter() {
-            for function in external_dependencies_instance.functions.iter() {
+            for function in external_dependencies_instance.functions_names.iter() {
                 result_functions.insert_mut(function.clone());
             }
             for constant_name in external_dependencies_instance.constants_names.iter() {
@@ -85,7 +85,7 @@ impl ExternalDependencies {
             }
         }
         Self {
-            functions: result_functions,
+            functions_names: result_functions,
             constants_names: result_constants_names,
         }
     }
