@@ -34,7 +34,7 @@ mod tests {
             &serde_json::from_value(json!({
               "scope": {
                 "functions": {
-                  "fibonacci": {
+                  "fibonacci:": {
                     "branching": {
                       "if": {
                         "is sorted": [
@@ -46,7 +46,7 @@ mod tests {
                       "else": {
                           "sum": [
                             {
-                              "fibonacci": {
+                              "fibonacci:": {
                                 "sum": [
                                   "_",
                                   -1
@@ -54,7 +54,7 @@ mod tests {
                               }
                             },
                             {
-                              "fibonacci": {
+                              "fibonacci:": {
                                 "sum": [
                                   "_",
                                   -2
@@ -67,7 +67,7 @@ mod tests {
                   }
                 },
                 "compute": {
-                  "fibonacci": 10
+                  "fibonacci:": 10
                 }
             }}))
             .unwrap(),

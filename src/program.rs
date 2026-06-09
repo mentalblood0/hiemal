@@ -48,10 +48,12 @@ pub enum EmbeddedFunction {
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum PathSegment {
     ArrayIndex(usize),
-    Constant(String),
     Scope,
     Compute,
+    Functions,
+    Function(String),
     Constants,
+    Constant(String),
     Branching,
     If,
     Then,

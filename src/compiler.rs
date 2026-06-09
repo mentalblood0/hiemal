@@ -195,16 +195,32 @@ fn compile_with_context(
                     )?;
                     compiled_constants.push((constant_name.clone(), compiled_constant));
                 }
-                let compiled_compute = compile_with_context(
-                    compute,
-                    compilation_context.extended(
-                        [PathSegment::Scope, PathSegment::Compute],
-                        functions
-                            .iter()
-                            .map(|(name, body)| (name.clone(), body.clone())),
-                        compiled_constants,
-                    ),
-                )?;
+                let mut compiled_functions = Vec::with_capacity(functions.len());
+                for (function_name, function_body) in functions.iter() {
+                    if !function_name.ends_with(":") {
+                        let function_compilation_context = compilation_context.extended(
+                            [
+                                PathSegment::Functions,
+                                PathSegment::Function(function_name.clone()),
+                            ],
+                            [],
+                            [],
+                        );
+                        return Err(anyhow!(
+                            "Got function named {function_name:?}, but expect function named {:?} \
+                             at {:#?}",
+                            format!("{function_name}:"),
+                            function_compilation_context.path
+                        ));
+                    }
+                    compiled_functions.push((function_name.clone(), function_body.clone()));
+                }
+                let compute_compilation_context = compilation_context.extended(
+                    [PathSegment::Scope, PathSegment::Compute],
+                    compiled_functions,
+                    compiled_constants,
+                );
+                let compiled_compute = compile_with_context(compute, compute_compilation_context)?;
                 let mut result_external_dependencies =
                     compiled_compute.external_dependencies.clone();
                 for function_name in compiled_compute.external_dependencies.functions.keys() {
