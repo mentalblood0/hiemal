@@ -129,7 +129,7 @@ fn compile_with_context(
             }
             let mut result_content = Vec::with_capacity(array.len());
             let mut result_external_dependencies = ExternalDependencies {
-                functions: rpds::RedBlackTreeMapSync::new_sync(),
+                functions: rpds::RedBlackTreeSetSync::new_sync(),
                 constants_names: rpds::RedBlackTreeSetSync::new_sync(),
             };
             for (element_index, element) in array.iter().enumerate() {
@@ -148,12 +148,10 @@ fn compile_with_context(
                     }
                 }
                 result_content.push(compiled_element.clone());
-                for (function_name, function_body) in
-                    compiled_element.external_dependencies.functions.iter()
-                {
+                for function_name in compiled_element.external_dependencies.functions.iter() {
                     result_external_dependencies
                         .functions
-                        .insert_mut(function_name.clone(), function_body.clone());
+                        .insert_mut(function_name.clone());
                 }
                 for constant_name in compiled_element
                     .external_dependencies
@@ -223,7 +221,7 @@ fn compile_with_context(
                 let compiled_compute = compile_with_context(compute, compute_compilation_context)?;
                 let mut result_external_dependencies =
                     compiled_compute.external_dependencies.clone();
-                for function_name in compiled_compute.external_dependencies.functions.keys() {
+                for function_name in compiled_compute.external_dependencies.functions.iter() {
                     if compilation_context
                         .available_functions
                         .contains_key(function_name)
@@ -307,7 +305,7 @@ fn compile_with_context(
                         available_functions: compilation_context.available_functions.clone(),
                         available_constants: compilation_context.available_constants.clone(),
                         external_dependencies: ExternalDependencies {
-                            functions: rpds::RedBlackTreeMapSync::new_sync(),
+                            functions: rpds::RedBlackTreeSetSync::new_sync(),
                             constants_names: rpds::RedBlackTreeSetSync::from_iter([
                                 constant_name.clone()
                             ]),
@@ -481,7 +479,7 @@ fn compile_with_context(
             let mut result_inner_types = BTreeMap::new();
             let mut result_content = BTreeMap::new();
             let mut result_external_dependencies = ExternalDependencies {
-                functions: rpds::RedBlackTreeMapSync::new_sync(),
+                functions: rpds::RedBlackTreeSetSync::new_sync(),
                 constants_names: rpds::RedBlackTreeSetSync::new_sync(),
             };
             for (object_key, object_value) in object.iter() {
@@ -494,12 +492,10 @@ fn compile_with_context(
                     compile_with_context(object_value, object_value_compilation_context)?;
                 result_content.insert(object_key.clone(), compiled_object_value.clone());
                 result_inner_types.insert(object_key.clone(), compiled_object_value.r#type);
-                for (function_name, function_body) in
-                    compiled_object_value.external_dependencies.functions.iter()
-                {
+                for function_name in compiled_object_value.external_dependencies.functions.iter() {
                     result_external_dependencies
                         .functions
-                        .insert_mut(function_name.clone(), function_body.clone());
+                        .insert_mut(function_name.clone());
                 }
                 for constant_name in compiled_object_value
                     .external_dependencies
@@ -525,7 +521,7 @@ fn compile_with_context(
             available_functions: compilation_context.available_functions,
             available_constants: compilation_context.available_constants,
             external_dependencies: ExternalDependencies {
-                functions: rpds::RedBlackTreeMapSync::new_sync(),
+                functions: rpds::RedBlackTreeSetSync::new_sync(),
                 constants_names: rpds::RedBlackTreeSetSync::new_sync(),
             },
         },
