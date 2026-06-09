@@ -55,6 +55,7 @@ pub enum PathSegment {
     Else,
     Sum,
     IsSorted,
+    UserFunctionCall(String),
     ObjectKey(String),
 }
 

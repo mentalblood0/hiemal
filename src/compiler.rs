@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Error, Result, anyhow};
+use rpds::{RedBlackTreeMapSync, VectorSync};
 
 use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
@@ -57,7 +58,7 @@ impl CompilationContext {
     }
 }
 
-pub fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Result<Type> {
+fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Result<Type> {
     Ok(match value {
         Value::Number(_) => Type::Number,
         Value::String(_) => Type::String,
@@ -103,7 +104,18 @@ pub fn get_value_type(value: &Value, compilation_context: CompilationContext) ->
     })
 }
 
-pub fn compile(
+pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
+    compile_with_context(
+        program,
+        CompilationContext {
+            path: Path(VectorSync::new_sync()),
+            available_functions: RedBlackTreeMapSync::new_sync(),
+            available_constants: RedBlackTreeMapSync::new_sync(),
+        },
+    )
+}
+
+fn compile_with_context(
     program: &Program,
     mut compilation_context: CompilationContext,
 ) -> Result<IntermediateRepresentation> {
@@ -123,7 +135,8 @@ pub fn compile(
             for (element_index, element) in array.iter().enumerate() {
                 let element_compilation_context =
                     compilation_context.extended([PathSegment::ArrayIndex(element_index)], [], []);
-                let compiled_element = compile(element, element_compilation_context.clone())?;
+                let compiled_element =
+                    compile_with_context(element, element_compilation_context.clone())?;
                 if let Some(previous_element_type) = result_content.last().and_then(
                     |last_compiled_element: &IntermediateRepresentation| {
                         Some(last_compiled_element.r#type.clone())
@@ -168,7 +181,7 @@ pub fn compile(
             } => {
                 let mut compiled_functions = Vec::with_capacity(functions.len());
                 for (function_name, function_body) in functions.iter() {
-                    let compiled_function = compile(
+                    let compiled_function = compile_with_context(
                         function_body,
                         compilation_context.extended(
                             [PathSegment::Scope, PathSegment::Compute],
@@ -183,7 +196,7 @@ pub fn compile(
                 }
                 let mut compiled_constants = Vec::with_capacity(constants.len());
                 for (constant_name, constant_compute_body) in constants.iter() {
-                    let compiled_constant = compile(
+                    let compiled_constant = compile_with_context(
                         constant_compute_body,
                         compilation_context.extended(
                             [PathSegment::Scope, PathSegment::Compute],
@@ -196,7 +209,7 @@ pub fn compile(
                         .available_constants
                         .insert_mut(constant_name.clone(), compiled_constant);
                 }
-                let compiled_compute = compile(
+                let compiled_compute = compile_with_context(
                     compute,
                     compilation_context.extended(
                         [PathSegment::Scope, PathSegment::Compute],
@@ -243,11 +256,11 @@ pub fn compile(
             Clause::Branching { r#if, then, r#else } => {
                 let if_compilation_context =
                     compilation_context.extended([PathSegment::Branching, PathSegment::If], [], []);
-                let if_compiled = compile(r#if, if_compilation_context.clone())?;
+                let if_compiled = compile_with_context(r#if, if_compilation_context.clone())?;
                 if if_compiled.r#type != Type::Bool {
                     return Err(if_compilation_context.error(&if_compiled.r#type, &Type::Bool));
                 }
-                let then_compiled = compile(
+                let then_compiled = compile_with_context(
                     then,
                     compilation_context.extended(
                         [PathSegment::Branching, PathSegment::Then],
@@ -260,7 +273,7 @@ pub fn compile(
                     [],
                     [],
                 );
-                let else_compiled = compile(r#else, else_compilation_context.clone())?;
+                let else_compiled = compile_with_context(r#else, else_compilation_context.clone())?;
                 if else_compiled.r#type != then_compiled.r#type {
                     return Err(else_compilation_context
                         .error(&else_compiled.r#type, &then_compiled.r#type));
@@ -292,7 +305,7 @@ pub fn compile(
                     ));
                 }
             }
-            Clause::DefaultArgument => compile(
+            Clause::DefaultArgument => compile_with_context(
                 &Program::Clause(Clause::Constant(DEFAULT_ARGUMENT_NAME.to_string())),
                 compilation_context,
             )?,
@@ -301,7 +314,8 @@ pub fn compile(
             EmbeddedFunction::Sum(argument) => {
                 let argument_compilation_context =
                     compilation_context.extended([PathSegment::Sum], [], []);
-                let compiled_argument = compile(&argument, argument_compilation_context.clone())?;
+                let compiled_argument =
+                    compile_with_context(&argument, argument_compilation_context.clone())?;
                 let expected_type = Type::Array(Box::new(Type::Number));
                 if compiled_argument.r#type != expected_type {
                     return Err(argument_compilation_context
@@ -322,7 +336,8 @@ pub fn compile(
             EmbeddedFunction::IsSorted(argument) => {
                 let argument_compilation_context =
                     compilation_context.extended([PathSegment::Sum], [], []);
-                let compiled_argument = compile(&argument, argument_compilation_context)?;
+                let compiled_argument =
+                    compile_with_context(&argument, argument_compilation_context)?;
                 if let Type::Array(_) = compiled_argument.r#type {
                 } else {
                     return Err(anyhow!(
@@ -352,11 +367,51 @@ pub fn compile(
                     ));
                 }
                 1 => {
-                    let (function_name, _) = object.iter().next().unwrap();
+                    let (function_name, function_argument) = object.iter().next().unwrap();
                     if let Some(compiled_function) =
                         compilation_context.available_functions.get(function_name)
                     {
-                        return Ok(compiled_function.clone());
+                        let compiled_argument = compile_with_context(
+                            function_argument,
+                            compilation_context.extended(
+                                [PathSegment::UserFunctionCall(function_name.clone())],
+                                [],
+                                [],
+                            ),
+                        )?;
+                        let mut result_available_constants =
+                            compilation_context.available_constants.clone();
+                        if let Content::Object(function_arguments) = compiled_argument.content {
+                            if function_arguments.len() > 1 {
+                                result_available_constants.insert_mut(
+                                    DEFAULT_ARGUMENT_NAME.to_string(),
+                                    function_arguments.values().next().unwrap().clone(),
+                                );
+                            } else {
+                                for (function_argument_name, function_argument_body) in
+                                    function_arguments.iter()
+                                {
+                                    result_available_constants.insert_mut(
+                                        function_argument_name.clone(),
+                                        function_argument_body.clone(),
+                                    );
+                                }
+                            }
+                        }
+                        let mut result_external_dependencies =
+                            compiled_function.external_dependencies.clone();
+                        for constant_name in compilation_context.available_constants.keys() {
+                            result_external_dependencies
+                                .constants_names
+                                .remove_mut(constant_name);
+                        }
+                        return Ok(IntermediateRepresentation {
+                            r#type: compiled_function.r#type.clone(),
+                            content: Content::UserFunctionCall(Box::new(compiled_function.clone())),
+                            available_functions: compiled_function.available_functions.clone(),
+                            available_constants: result_available_constants,
+                            external_dependencies: result_external_dependencies,
+                        });
                     }
                 }
                 2.. => {}
@@ -374,7 +429,7 @@ pub fn compile(
                     [],
                 );
                 let compiled_object_value =
-                    compile(object_value, object_value_compilation_context)?;
+                    compile_with_context(object_value, object_value_compilation_context)?;
                 result_content.insert(object_key.clone(), compiled_object_value.clone());
                 result_inner_types.insert(object_key.clone(), compiled_object_value.r#type);
                 for (function_name, function_body) in
