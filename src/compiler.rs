@@ -8,7 +8,7 @@ use crate::{
     intermediate_representation::{
         self, Content, ExternalDependencies, IntermediateRepresentation,
     },
-    program::{Clause, EmbeddedFunction, Path, PathSegment, Program},
+    program::{Clause, EmbeddedFunction, Path, PathSegment, Program, Scope},
     r#type::Type,
     value::Value,
 };
@@ -16,7 +16,7 @@ use crate::{
 #[derive(Clone)]
 pub struct CompilationContext {
     pub path: Path,
-    pub available_functions: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
+    pub available_functions: rpds::RedBlackTreeMapSync<String, Program>,
     pub available_constants: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
 }
 
@@ -24,7 +24,7 @@ impl CompilationContext {
     pub fn extended<P, F, C>(&self, path: P, available_functions: F, available_constants: C) -> Self
     where
         P: IntoIterator<Item = PathSegment>,
-        F: IntoIterator<Item = (String, IntermediateRepresentation)>,
+        F: IntoIterator<Item = (String, Program)>,
         C: IntoIterator<Item = (String, IntermediateRepresentation)>,
     {
         Self {
@@ -117,7 +117,7 @@ pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
 
 fn compile_with_context(
     program: &Program,
-    mut compilation_context: CompilationContext,
+    compilation_context: CompilationContext,
 ) -> Result<IntermediateRepresentation> {
     Ok(match program {
         Program::Array(array) => {
@@ -174,46 +174,34 @@ fn compile_with_context(
             }
         }
         Program::Clause(clause) => match clause {
-            Clause::Scope {
+            Clause::Scope(Scope {
                 functions,
                 constants,
                 compute,
-            } => {
-                let mut compiled_functions = Vec::with_capacity(functions.len());
-                for (function_name, function_body) in functions.iter() {
-                    let compiled_function = compile_with_context(
-                        function_body,
-                        compilation_context.extended(
-                            [PathSegment::Scope, PathSegment::Compute],
-                            [],
-                            [],
-                        ),
-                    )?;
-                    compiled_functions.push((function_name.clone(), compiled_function.clone()));
-                    compilation_context
-                        .available_functions
-                        .insert_mut(function_name.clone(), compiled_function);
-                }
+            }) => {
                 let mut compiled_constants = Vec::with_capacity(constants.len());
                 for (constant_name, constant_compute_body) in constants.iter() {
                     let compiled_constant = compile_with_context(
                         constant_compute_body,
                         compilation_context.extended(
-                            [PathSegment::Scope, PathSegment::Compute],
+                            [
+                                PathSegment::Scope,
+                                PathSegment::Constants,
+                                PathSegment::Constant(constant_name.clone()),
+                            ],
                             [],
                             [],
                         ),
                     )?;
-                    compiled_constants.push((constant_name.clone(), compiled_constant.clone()));
-                    compilation_context
-                        .available_constants
-                        .insert_mut(constant_name.clone(), compiled_constant);
+                    compiled_constants.push((constant_name.clone(), compiled_constant));
                 }
                 let compiled_compute = compile_with_context(
                     compute,
                     compilation_context.extended(
                         [PathSegment::Scope, PathSegment::Compute],
-                        compiled_functions,
+                        functions
+                            .iter()
+                            .map(|(name, body)| (name.clone(), body.clone())),
                         compiled_constants,
                     ),
                 )?;
@@ -297,11 +285,27 @@ fn compile_with_context(
                 if let Some(compiled_constant) =
                     compilation_context.available_constants.get(constant_name)
                 {
-                    compiled_constant.clone()
+                    IntermediateRepresentation {
+                        r#type: compiled_constant.r#type.clone(),
+                        content: Content::Constant(constant_name.clone()),
+                        available_functions: compilation_context.available_functions.clone(),
+                        available_constants: compilation_context.available_constants.clone(),
+                        external_dependencies: ExternalDependencies {
+                            functions: rpds::RedBlackTreeMapSync::new_sync(),
+                            constants_names: rpds::RedBlackTreeSetSync::from_iter([
+                                constant_name.clone()
+                            ]),
+                        },
+                    }
                 } else {
                     return Err(anyhow!(
-                        "Got no constant with name {constant_name:?} at {:#?}",
-                        compilation_context.path
+                        "Got no constant with name {constant_name:?} at {:#?}, available \
+                         constants are {:?}",
+                        compilation_context.path,
+                        compilation_context
+                            .available_constants
+                            .keys()
+                            .collect::<Vec<_>>()
                     ));
                 }
             }
@@ -368,48 +372,76 @@ fn compile_with_context(
                 }
                 1 => {
                     let (function_name, function_argument) = object.iter().next().unwrap();
-                    if let Some(compiled_function) =
+                    if let Some(function_body) =
                         compilation_context.available_functions.get(function_name)
                     {
+                        let argument_compilation_context = compilation_context.extended(
+                            [PathSegment::UserFunctionCall(function_name.clone())],
+                            [],
+                            [],
+                        );
                         let compiled_argument = compile_with_context(
                             function_argument,
-                            compilation_context.extended(
-                                [PathSegment::UserFunctionCall(function_name.clone())],
-                                [],
-                                [],
-                            ),
+                            argument_compilation_context.clone(),
                         )?;
-                        let mut result_available_constants =
-                            compilation_context.available_constants.clone();
+                        for required_constant_name in compiled_argument
+                            .external_dependencies
+                            .constants_names
+                            .iter()
+                        {
+                            if !argument_compilation_context
+                                .available_constants
+                                .contains_key(required_constant_name)
+                            {
+                                return Err(anyhow!(
+                                    "Got function call which requires constant \
+                                     {required_constant_name:?} but no such constant available"
+                                ));
+                            }
+                        }
+                        let mut function_body_available_constants_from_arguments = Vec::new();
                         if let Content::Object(function_arguments) = compiled_argument.content {
                             if function_arguments.len() > 1 {
-                                result_available_constants.insert_mut(
+                                function_body_available_constants_from_arguments.push((
                                     DEFAULT_ARGUMENT_NAME.to_string(),
                                     function_arguments.values().next().unwrap().clone(),
-                                );
+                                ));
                             } else {
                                 for (function_argument_name, function_argument_body) in
                                     function_arguments.iter()
                                 {
-                                    result_available_constants.insert_mut(
+                                    function_body_available_constants_from_arguments.push((
                                         function_argument_name.clone(),
                                         function_argument_body.clone(),
-                                    );
+                                    ));
                                 }
                             }
+                        } else {
+                            function_body_available_constants_from_arguments
+                                .push((DEFAULT_ARGUMENT_NAME.to_string(), compiled_argument));
                         }
+                        let compiled_function_body = compile_with_context(
+                            function_body,
+                            argument_compilation_context.extended(
+                                [],
+                                [],
+                                function_body_available_constants_from_arguments.clone(),
+                            ),
+                        )?;
                         let mut result_external_dependencies =
-                            compiled_function.external_dependencies.clone();
-                        for constant_name in compilation_context.available_constants.keys() {
+                            compiled_function_body.external_dependencies.clone();
+                        for (constant_name, _) in function_body_available_constants_from_arguments {
                             result_external_dependencies
                                 .constants_names
-                                .remove_mut(constant_name);
+                                .remove_mut(&constant_name);
                         }
                         return Ok(IntermediateRepresentation {
-                            r#type: compiled_function.r#type.clone(),
-                            content: Content::UserFunctionCall(Box::new(compiled_function.clone())),
-                            available_functions: compiled_function.available_functions.clone(),
-                            available_constants: result_available_constants,
+                            r#type: compiled_function_body.r#type.clone(),
+                            content: Content::UserFunctionCall(Box::new(
+                                compiled_function_body.clone(),
+                            )),
+                            available_functions: compiled_function_body.available_functions,
+                            available_constants: compiled_function_body.available_constants,
                             external_dependencies: result_external_dependencies,
                         });
                     }

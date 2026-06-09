@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
-use crate::{r#type::Type, value::Value};
+use crate::{program::Program, r#type::Type, value::Value};
 
 #[derive(Debug, Clone)]
 pub struct IntermediateRepresentation {
     pub r#type: Type,
     pub content: Content,
-    pub available_functions: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
+    pub available_functions: rpds::RedBlackTreeMapSync<String, Program>,
     pub available_constants: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
     pub external_dependencies: ExternalDependencies,
 }
@@ -16,6 +16,7 @@ pub enum Content {
     Array(Vec<IntermediateRepresentation>),
     Clause(Clause),
     EmbeddedFunctionCall(Box<EmbeddedFunction>),
+    Constant(String),
     UserFunctionCall(Box<IntermediateRepresentation>),
     Object(BTreeMap<String, IntermediateRepresentation>),
     Value(Value),

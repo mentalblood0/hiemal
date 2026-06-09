@@ -15,11 +15,7 @@ pub enum Program {
 #[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd)]
 pub enum Clause {
     #[serde(rename = "scope")]
-    Scope {
-        functions: Arc<BTreeMap<String, Program>>,
-        constants: Arc<BTreeMap<String, Program>>,
-        compute: Box<Program>,
-    },
+    Scope(Scope),
     #[serde(rename = "branching")]
     Branching {
         r#if: Box<Program>,
@@ -30,6 +26,15 @@ pub enum Clause {
     Constant(String),
     #[serde(rename = "_")]
     DefaultArgument,
+}
+
+#[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+pub struct Scope {
+    #[serde(default)]
+    pub functions: Arc<BTreeMap<String, Program>>,
+    #[serde(default)]
+    pub constants: Arc<BTreeMap<String, Program>>,
+    pub compute: Box<Program>,
 }
 
 #[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd)]
@@ -44,10 +49,8 @@ pub enum EmbeddedFunction {
 pub enum PathSegment {
     ArrayIndex(usize),
     Constant(String),
-    Function(String),
     Scope,
     Compute,
-    Functions,
     Constants,
     Branching,
     If,

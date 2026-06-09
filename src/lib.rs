@@ -35,36 +35,37 @@ mod tests {
               "scope": {
                 "functions": {
                   "fibonacci": {
-                    "if": {
-                      "is sorted": [
-                        "_",
-                        1
-                      ]
-                    },
-                    "then": "_",
-                    "else": {
-                        "sum": [
-                          {
-                            "fibonacci": {
-                              "sum": [
-                                "_",
-                                -1
-                              ]
-                            }
-                          },
-                          {
-                            "fibonacci": {
-                              "sum": [
-                                "_",
-                                -2
-                              ]
-                            }
-                          }
+                    "branching": {
+                      "if": {
+                        "is sorted": [
+                          "_",
+                          1
                         ]
+                      },
+                      "then": "_",
+                      "else": {
+                          "sum": [
+                            {
+                              "fibonacci": {
+                                "sum": [
+                                  "_",
+                                  -1
+                                ]
+                              }
+                            },
+                            {
+                              "fibonacci": {
+                                "sum": [
+                                  "_",
+                                  -2
+                                ]
+                              }
+                            }
+                          ]
+                      }
                     }
                   }
                 },
-                "constants": {},
                 "compute": {
                   "fibonacci": 10
                 }
