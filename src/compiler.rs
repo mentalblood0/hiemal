@@ -18,14 +18,22 @@ pub struct CompilationContext {
     pub path: Path,
     pub available_functions: rpds::RedBlackTreeMapSync<String, Program>,
     pub available_constants: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
+    pub entered_user_functions: rpds::RedBlackTreeSetSync<Program>,
 }
 
 impl CompilationContext {
-    pub fn extended<P, F, C>(&self, path: P, available_functions: F, available_constants: C) -> Self
+    pub fn extended<P, F, C, E>(
+        &self,
+        path: P,
+        available_functions: F,
+        available_constants: C,
+        entered_user_functions: E,
+    ) -> Self
     where
         P: IntoIterator<Item = PathSegment>,
         F: IntoIterator<Item = (String, Program)>,
         C: IntoIterator<Item = (String, IntermediateRepresentation)>,
+        E: IntoIterator<Item = Program>,
     {
         Self {
             path: {
@@ -44,6 +52,13 @@ impl CompilationContext {
                 let mut result = self.available_constants.clone();
                 for constant in available_constants {
                     result.insert_mut(constant.0, constant.1);
+                }
+                result
+            },
+            entered_user_functions: {
+                let mut result = self.entered_user_functions.clone();
+                for function_body in entered_user_functions {
+                    result.insert_mut(function_body);
                 }
                 result
             },
@@ -67,8 +82,12 @@ fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Res
         Value::Array(array) => {
             let mut element_type_option = None;
             for (element_index, element) in array.iter().enumerate() {
-                let current_element_compilation_context =
-                    compilation_context.extended([PathSegment::ArrayIndex(element_index)], [], []);
+                let current_element_compilation_context = compilation_context.extended(
+                    [PathSegment::ArrayIndex(element_index)],
+                    [],
+                    [],
+                    [],
+                );
                 let current_element_type =
                     get_value_type(element, current_element_compilation_context.clone())?;
                 if let Some(element_type) = element_type_option {
@@ -94,6 +113,7 @@ fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Res
                     [PathSegment::ObjectKey(object_key.clone())],
                     [],
                     [],
+                    [],
                 );
                 let current_object_value_type =
                     get_value_type(object_value, current_object_value_compilation_context)?;
@@ -111,6 +131,7 @@ pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
             path: Path(VectorSync::new_sync()),
             available_functions: RedBlackTreeMapSync::new_sync(),
             available_constants: RedBlackTreeMapSync::new_sync(),
+            entered_user_functions: rpds::RedBlackTreeSetSync::new_sync(),
         },
     )
 }
@@ -133,8 +154,12 @@ fn compile_with_context(
                 constants_names: rpds::RedBlackTreeSetSync::new_sync(),
             };
             for (element_index, element) in array.iter().enumerate() {
-                let element_compilation_context =
-                    compilation_context.extended([PathSegment::ArrayIndex(element_index)], [], []);
+                let element_compilation_context = compilation_context.extended(
+                    [PathSegment::ArrayIndex(element_index)],
+                    [],
+                    [],
+                    [],
+                );
                 let compiled_element =
                     compile_with_context(element, element_compilation_context.clone())?;
                 if let Some(previous_element_type) = result_content.last().and_then(
@@ -193,6 +218,7 @@ fn compile_with_context(
                             ],
                             [],
                             [],
+                            [],
                         ),
                     )?;
                     compiled_constants.push((constant_name.clone(), compiled_constant));
@@ -205,6 +231,7 @@ fn compile_with_context(
                                 PathSegment::Functions,
                                 PathSegment::Function(function_name.clone()),
                             ],
+                            [],
                             [],
                             [],
                         );
@@ -221,6 +248,7 @@ fn compile_with_context(
                     [PathSegment::Scope, PathSegment::Compute],
                     compiled_functions,
                     compiled_constants,
+                    [],
                 );
                 let compiled_compute = compile_with_context(compute, compute_compilation_context)?;
                 let mut result_external_dependencies =
@@ -264,8 +292,12 @@ fn compile_with_context(
                 }
             }
             Clause::Branching { r#if, then, r#else } => {
-                let if_compilation_context =
-                    compilation_context.extended([PathSegment::Branching, PathSegment::If], [], []);
+                let if_compilation_context = compilation_context.extended(
+                    [PathSegment::Branching, PathSegment::If],
+                    [],
+                    [],
+                    [],
+                );
                 let if_compiled = compile_with_context(r#if, if_compilation_context.clone())?;
                 if if_compiled.r#type != Type::Bool {
                     return Err(if_compilation_context.error(&if_compiled.r#type, &Type::Bool));
@@ -276,10 +308,12 @@ fn compile_with_context(
                         [PathSegment::Branching, PathSegment::Then],
                         [],
                         [],
+                        [],
                     ),
                 )?;
                 let else_compilation_context = compilation_context.extended(
                     [PathSegment::Branching, PathSegment::Else],
+                    [],
                     [],
                     [],
                 );
@@ -321,8 +355,7 @@ fn compile_with_context(
                     }
                 } else {
                     return Err(anyhow!(
-                        "Got no constant with name {constant_name:?} at {:#?}, available \
-                         constants are {:?}",
+                        "Got no constant {constant_name:?} at {:#?}, available constants are {:?}",
                         compilation_context.path,
                         compilation_context
                             .available_constants
@@ -339,7 +372,7 @@ fn compile_with_context(
         Program::EmbeddedFunction(embedded_function) => match &**embedded_function {
             EmbeddedFunction::Sum(argument) => {
                 let argument_compilation_context =
-                    compilation_context.extended([PathSegment::Sum], [], []);
+                    compilation_context.extended([PathSegment::Sum], [], [], []);
                 let compiled_argument =
                     compile_with_context(&argument, argument_compilation_context.clone())?;
                 let expected_type = Type::Array(Box::new(Type::Number));
@@ -361,7 +394,7 @@ fn compile_with_context(
             }
             EmbeddedFunction::IsSorted(argument) => {
                 let argument_compilation_context =
-                    compilation_context.extended([PathSegment::Sum], [], []);
+                    compilation_context.extended([PathSegment::Sum], [], [], []);
                 let compiled_argument =
                     compile_with_context(&argument, argument_compilation_context)?;
                 if let Type::Array(_) = compiled_argument.r#type {
@@ -388,7 +421,7 @@ fn compile_with_context(
             match object.len() {
                 0 => {
                     return Err(anyhow!(
-                        "Expected non-empty list at {:#?}",
+                        "Expected non-empty object at {:#?}",
                         compilation_context.path
                     ));
                 }
@@ -398,10 +431,20 @@ fn compile_with_context(
                         if let Some(function_body) =
                             compilation_context.available_functions.get(function_name)
                         {
+                            if compilation_context
+                                .entered_user_functions
+                                .contains(&function_body)
+                            {
+                                return Err(anyhow!(
+                                    "Got recursion at {:#?}",
+                                    compilation_context.path
+                                ));
+                            }
                             let argument_compilation_context = compilation_context.extended(
                                 [PathSegment::UserFunctionCall(function_name.clone())],
                                 [],
                                 [],
+                                [function_body.clone()],
                             );
                             let compiled_argument = compile_with_context(
                                 function_argument,
@@ -449,6 +492,7 @@ fn compile_with_context(
                                     [],
                                     [],
                                     function_body_available_constants_from_arguments.clone(),
+                                    [],
                                 ),
                             )?;
                             let mut result_external_dependencies =
@@ -471,8 +515,8 @@ fn compile_with_context(
                             });
                         } else {
                             return Err(anyhow!(
-                                "Got no function with name {function_name:?} at {:#?}, available \
-                                 functions are {:?}",
+                                "Got no function {function_name:?} at {:#?}, available functions \
+                                 are {:?}",
                                 compilation_context.path,
                                 compilation_context
                                     .available_functions
@@ -493,6 +537,7 @@ fn compile_with_context(
             for (object_key, object_value) in object.iter() {
                 let object_value_compilation_context = compilation_context.extended(
                     [PathSegment::ObjectKey(object_key.clone())],
+                    [],
                     [],
                     [],
                 );

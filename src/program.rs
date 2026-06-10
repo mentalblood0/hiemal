@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::value::Value;
 
-#[derive(serde::Deserialize, Debug, Clone, PartialOrd, PartialEq)]
+#[derive(serde::Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
 #[serde(untagged)]
 pub enum Program {
     Array(Arc<Vec<Program>>),
@@ -12,7 +12,7 @@ pub enum Program {
     Value(Value),
 }
 
-#[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+#[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub enum Clause {
     #[serde(rename = "scope")]
     Scope(Scope),
@@ -28,7 +28,7 @@ pub enum Clause {
     DefaultArgument,
 }
 
-#[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+#[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Scope {
     #[serde(default)]
     pub functions: Arc<BTreeMap<String, Program>>,
@@ -37,7 +37,7 @@ pub struct Scope {
     pub compute: Box<Program>,
 }
 
-#[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+#[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub enum EmbeddedFunction {
     #[serde(rename = "sum")]
     Sum(Program),
@@ -45,7 +45,7 @@ pub enum EmbeddedFunction {
     IsSorted(Program),
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub enum PathSegment {
     ArrayIndex(usize),
     Scope,
@@ -64,7 +64,7 @@ pub enum PathSegment {
     ObjectKey(String),
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Path(pub rpds::VectorSync<PathSegment>);
 
 impl std::fmt::Debug for Path {

@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use crate::program::Program;
+
 #[derive(PartialEq, Debug, Clone, Eq)]
 pub enum Type {
     Number,
@@ -8,6 +10,5 @@ pub enum Type {
     Null,
     Array(Box<Type>),
     Object(BTreeMap<String, Type>),
-    GenericArgument(u8),
-    RecursedFunction(String),
+    Unknown(Program),
 }
