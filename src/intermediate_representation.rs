@@ -18,6 +18,7 @@ pub enum Content {
     EmbeddedFunctionCall(Box<EmbeddedFunction>),
     Constant(String),
     UserFunctionCall(Box<IntermediateRepresentation>),
+    RecursedUserFunctionCall(String),
     Object(BTreeMap<String, IntermediateRepresentation>),
     Value(Value),
 }
@@ -47,6 +48,13 @@ pub struct ExternalDependencies {
 }
 
 impl ExternalDependencies {
+    pub fn new() -> Self {
+        Self {
+            functions_names: rpds::RedBlackTreeSetSync::new_sync(),
+            constants_names: rpds::RedBlackTreeSetSync::new_sync(),
+        }
+    }
+
     pub fn extended<P, F, C>(&self, functions: F, constants_names: C) -> Self
     where
         F: IntoIterator<Item = String>,

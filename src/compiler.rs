@@ -149,10 +149,7 @@ fn compile_with_context(
                 ));
             }
             let mut result_content = Vec::with_capacity(array.len());
-            let mut result_external_dependencies = ExternalDependencies {
-                functions_names: rpds::RedBlackTreeSetSync::new_sync(),
-                constants_names: rpds::RedBlackTreeSetSync::new_sync(),
-            };
+            let mut result_external_dependencies = ExternalDependencies::new();
             for (element_index, element) in array.iter().enumerate() {
                 let element_compilation_context = compilation_context.extended(
                     [PathSegment::ArrayIndex(element_index)],
@@ -431,15 +428,6 @@ fn compile_with_context(
                         if let Some(function_body) =
                             compilation_context.available_functions.get(function_name)
                         {
-                            if compilation_context
-                                .entered_user_functions
-                                .contains(&function_body)
-                            {
-                                return Err(anyhow!(
-                                    "Got recursion at {:#?}",
-                                    compilation_context.path
-                                ));
-                            }
                             let argument_compilation_context = compilation_context.extended(
                                 [PathSegment::UserFunctionCall(function_name.clone())],
                                 [],
@@ -486,33 +474,58 @@ fn compile_with_context(
                                 function_body_available_constants_from_arguments
                                     .push((DEFAULT_ARGUMENT_NAME.to_string(), compiled_argument));
                             }
-                            let compiled_function_body = compile_with_context(
-                                function_body,
-                                argument_compilation_context.extended(
-                                    [],
-                                    [],
-                                    function_body_available_constants_from_arguments.clone(),
-                                    [],
-                                ),
-                            )?;
-                            let mut result_external_dependencies =
-                                compiled_function_body.external_dependencies.clone();
-                            for (constant_name, _) in
-                                function_body_available_constants_from_arguments
+                            if compilation_context
+                                .entered_user_functions
+                                .contains(&function_body)
                             {
-                                result_external_dependencies
-                                    .constants_names
-                                    .remove_mut(&constant_name);
+                                return Ok(IntermediateRepresentation {
+                                    r#type: Type::Unknown(function_body.clone()),
+                                    content: Content::RecursedUserFunctionCall(
+                                        function_name.clone(),
+                                    ),
+                                    available_functions: compilation_context
+                                        .available_functions
+                                        .clone(),
+                                    available_constants: compilation_context
+                                        .extended(
+                                            [],
+                                            [],
+                                            function_body_available_constants_from_arguments
+                                                .clone(),
+                                            [],
+                                        )
+                                        .available_constants,
+                                    external_dependencies: ExternalDependencies::new(),
+                                });
+                            } else {
+                                let compiled_function_body = compile_with_context(
+                                    function_body,
+                                    argument_compilation_context.extended(
+                                        [],
+                                        [],
+                                        function_body_available_constants_from_arguments.clone(),
+                                        [],
+                                    ),
+                                )?;
+                                let mut result_external_dependencies =
+                                    compiled_function_body.external_dependencies.clone();
+                                for (constant_name, _) in
+                                    function_body_available_constants_from_arguments
+                                {
+                                    result_external_dependencies
+                                        .constants_names
+                                        .remove_mut(&constant_name);
+                                }
+                                return Ok(IntermediateRepresentation {
+                                    r#type: compiled_function_body.r#type.clone(),
+                                    content: Content::UserFunctionCall(Box::new(
+                                        compiled_function_body.clone(),
+                                    )),
+                                    available_functions: compiled_function_body.available_functions,
+                                    available_constants: compiled_function_body.available_constants,
+                                    external_dependencies: result_external_dependencies,
+                                });
                             }
-                            return Ok(IntermediateRepresentation {
-                                r#type: compiled_function_body.r#type.clone(),
-                                content: Content::UserFunctionCall(Box::new(
-                                    compiled_function_body.clone(),
-                                )),
-                                available_functions: compiled_function_body.available_functions,
-                                available_constants: compiled_function_body.available_constants,
-                                external_dependencies: result_external_dependencies,
-                            });
                         } else {
                             return Err(anyhow!(
                                 "Got no function {function_name:?} at {:#?}, available functions \
