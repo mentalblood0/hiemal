@@ -67,7 +67,7 @@ impl CompilationContext {
 
     pub fn error(&self, got_type: &Type, expected_type: &Type) -> Error {
         anyhow!(
-            "Got {got_type:?} but expected {expected_type:?} at {:#?}",
+            "Got {got_type:#?} but expected {expected_type:#?} at {:#?}",
             self.path,
         )
     }
@@ -124,6 +124,53 @@ fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Res
     })
 }
 
+fn resolve_types(
+    got_type: &Type,
+    expected_type: &Type,
+    compilation_context: &CompilationContext,
+    resolved_types: &mut rpds::RedBlackTreeMapSync<Program, Type>,
+) -> Result<()> {
+    match (got_type, expected_type) {
+        (Type::Number, Type::Number)
+        | (Type::String, Type::String)
+        | (Type::Bool, Type::Bool)
+        | (Type::Null, Type::Null) => Ok(()),
+        (Type::Array(got_element_type), Type::Array(expected_element_type)) => resolve_types(
+            got_element_type,
+            expected_element_type,
+            compilation_context,
+            resolved_types,
+        ),
+        (Type::Object(got_element_inner_types), Type::Object(expected_element_inner_types)) => {
+            for (expected_value_key, expected_value_type) in expected_element_inner_types {
+                if let Some(got_value_type) = got_element_inner_types.get(expected_value_key) {
+                    resolve_types(
+                        got_value_type,
+                        expected_value_type,
+                        compilation_context,
+                        resolved_types,
+                    )?;
+                } else {
+                    return Err(compilation_context.error(got_type, expected_type));
+                }
+            }
+            Ok(())
+        }
+        (Type::Unknown(got_program), expected_type)
+        | (expected_type, Type::Unknown(got_program)) => {
+            if let Some(previously_resolved_type) = resolved_types.get(got_program) {
+                if previously_resolved_type != expected_type {
+                    return Err(compilation_context.error(got_type, expected_type));
+                }
+            } else {
+                resolved_types.insert_mut(got_program.clone(), expected_type.clone());
+            }
+            Ok(())
+        }
+        _ => Err(compilation_context.error(got_type, expected_type)),
+    }
+}
+
 pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
     compile_with_context(
         program,
@@ -134,6 +181,54 @@ pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
             entered_user_functions: rpds::RedBlackTreeSetSync::new_sync(),
         },
     )
+}
+
+pub fn extend_map<'a, K, V, U>(map: &mut rpds::RedBlackTreeMapSync<K, V>, update: U)
+where
+    K: Ord + Clone + 'a,
+    V: Clone + 'a,
+    U: Iterator<Item = (&'a K, &'a V)>,
+{
+    for (key, value) in update {
+        map.insert_mut(key.clone(), value.clone());
+    }
+}
+
+pub fn extend_set<'a, V, U>(map: &mut rpds::RedBlackTreeSetSync<V>, update: U)
+where
+    V: Ord + Clone + 'a,
+    U: Iterator<Item = &'a V>,
+{
+    for value in update {
+        map.insert_mut(value.clone());
+    }
+}
+
+pub fn extended_map<'a, K, V, U>(
+    map: &rpds::RedBlackTreeMapSync<K, V>,
+    update: U,
+) -> rpds::RedBlackTreeMapSync<K, V>
+where
+    K: Ord + Clone + 'a,
+    V: Clone + 'a,
+    U: Iterator<Item = (&'a K, &'a V)>,
+{
+    let mut result = map.clone();
+    extend_map(&mut result, update);
+    result
+}
+
+pub fn extended_set<'a, V, U>(
+    set: &rpds::RedBlackTreeSetSync<V>,
+    update: U,
+) -> rpds::RedBlackTreeSetSync<V>
+where
+    V: Ord + Clone + 'a,
+    U: Iterator<Item = &'a V>,
+{
+    let mut result = set.clone();
+    extend_set(&mut result, update);
+    result
 }
 
 fn compile_with_context(
@@ -150,6 +245,7 @@ fn compile_with_context(
             }
             let mut result_content = Vec::with_capacity(array.len());
             let mut result_external_dependencies = ExternalDependencies::new();
+            let mut result_resolved_types = rpds::RedBlackTreeMapSync::new_sync();
             for (element_index, element) in array.iter().enumerate() {
                 let element_compilation_context = compilation_context.extended(
                     [PathSegment::ArrayIndex(element_index)],
@@ -159,35 +255,37 @@ fn compile_with_context(
                 );
                 let compiled_element =
                     compile_with_context(element, element_compilation_context.clone())?;
+                extend_map(
+                    &mut result_resolved_types,
+                    compiled_element.resolved_types.iter(),
+                );
                 if let Some(previous_element_type) = result_content.last().and_then(
                     |last_compiled_element: &IntermediateRepresentation| {
                         Some(last_compiled_element.r#type.clone())
                     },
                 ) {
-                    if compiled_element.r#type != previous_element_type {
-                        return Err(element_compilation_context
-                            .error(&compiled_element.r#type, &previous_element_type));
-                    }
+                    resolve_types(
+                        &compiled_element.r#type,
+                        &previous_element_type,
+                        &compilation_context,
+                        &mut result_resolved_types,
+                    )?;
                 }
                 result_content.push(compiled_element.clone());
-                for function_name in compiled_element
-                    .external_dependencies
-                    .functions_names
-                    .iter()
-                {
-                    result_external_dependencies
+                extend_set(
+                    &mut result_external_dependencies.functions_names,
+                    compiled_element
+                        .external_dependencies
                         .functions_names
-                        .insert_mut(function_name.clone());
-                }
-                for constant_name in compiled_element
-                    .external_dependencies
-                    .constants_names
-                    .iter()
-                {
-                    result_external_dependencies
+                        .iter(),
+                );
+                extend_set(
+                    &mut result_external_dependencies.constants_names,
+                    compiled_element
+                        .external_dependencies
                         .constants_names
-                        .insert_mut(constant_name.clone());
-                }
+                        .iter(),
+                );
             }
             IntermediateRepresentation {
                 r#type: Type::Array(Box::new(result_content.first().unwrap().r#type.clone())),
@@ -195,6 +293,7 @@ fn compile_with_context(
                 available_functions: compilation_context.available_functions,
                 available_constants: compilation_context.available_constants,
                 external_dependencies: result_external_dependencies,
+                resolved_types: result_resolved_types,
             }
         }
         Program::Clause(clause) => match clause {
@@ -281,11 +380,12 @@ fn compile_with_context(
                 IntermediateRepresentation {
                     r#type: compiled_compute.r#type.clone(),
                     content: Content::Clause(intermediate_representation::Clause::Scope(Box::new(
-                        compiled_compute,
+                        compiled_compute.clone(),
                     ))),
                     available_functions: compilation_context.available_functions,
                     available_constants: compilation_context.available_constants,
                     external_dependencies: result_external_dependencies,
+                    resolved_types: compiled_compute.resolved_types,
                 }
             }
             Clause::Branching { r#if, then, r#else } => {
@@ -332,6 +432,13 @@ fn compile_with_context(
                         then_compiled.external_dependencies,
                         else_compiled.external_dependencies,
                     ]),
+                    resolved_types: extended_map(
+                        &if_compiled.resolved_types,
+                        else_compiled
+                            .resolved_types
+                            .iter()
+                            .chain(then_compiled.resolved_types.iter()),
+                    ),
                 }
             }
             Clause::Constant(constant_name) => {
@@ -349,6 +456,7 @@ fn compile_with_context(
                                 constant_name.clone()
                             ]),
                         },
+                        resolved_types: rpds::RedBlackTreeMapSync::new_sync(),
                     }
                 } else {
                     return Err(anyhow!(
@@ -373,10 +481,13 @@ fn compile_with_context(
                 let compiled_argument =
                     compile_with_context(&argument, argument_compilation_context.clone())?;
                 let expected_type = Type::Array(Box::new(Type::Number));
-                if compiled_argument.r#type != expected_type {
-                    return Err(argument_compilation_context
-                        .error(&compiled_argument.r#type, &expected_type));
-                }
+                let mut result_resolved_types = rpds::RedBlackTreeMapSync::new_sync();
+                resolve_types(
+                    &compiled_argument.r#type,
+                    &expected_type,
+                    &compilation_context,
+                    &mut result_resolved_types,
+                )?;
                 IntermediateRepresentation {
                     r#type: Type::Number,
                     content: Content::EmbeddedFunctionCall(Box::new(
@@ -387,6 +498,7 @@ fn compile_with_context(
                     available_functions: compilation_context.available_functions,
                     available_constants: compilation_context.available_constants,
                     external_dependencies: compiled_argument.external_dependencies,
+                    resolved_types: result_resolved_types,
                 }
             }
             EmbeddedFunction::IsSorted(argument) => {
@@ -411,6 +523,7 @@ fn compile_with_context(
                     available_functions: compilation_context.available_functions,
                     available_constants: compilation_context.available_constants,
                     external_dependencies: compiled_argument.external_dependencies,
+                    resolved_types: rpds::RedBlackTreeMapSync::new_sync(),
                 }
             }
         },
@@ -496,6 +609,7 @@ fn compile_with_context(
                                         )
                                         .available_constants,
                                     external_dependencies: ExternalDependencies::new(),
+                                    resolved_types: rpds::RedBlackTreeMapSync::new_sync(),
                                 });
                             } else {
                                 let compiled_function_body = compile_with_context(
@@ -524,6 +638,7 @@ fn compile_with_context(
                                     available_functions: compiled_function_body.available_functions,
                                     available_constants: compiled_function_body.available_constants,
                                     external_dependencies: result_external_dependencies,
+                                    resolved_types: compiled_function_body.resolved_types.clone(),
                                 });
                             }
                         } else {
@@ -547,6 +662,7 @@ fn compile_with_context(
                 functions_names: rpds::RedBlackTreeSetSync::new_sync(),
                 constants_names: rpds::RedBlackTreeSetSync::new_sync(),
             };
+            let mut result_resolved_types = rpds::RedBlackTreeMapSync::new_sync();
             for (object_key, object_value) in object.iter() {
                 let object_value_compilation_context = compilation_context.extended(
                     [PathSegment::ObjectKey(object_key.clone())],
@@ -558,24 +674,24 @@ fn compile_with_context(
                     compile_with_context(object_value, object_value_compilation_context)?;
                 result_content.insert(object_key.clone(), compiled_object_value.clone());
                 result_inner_types.insert(object_key.clone(), compiled_object_value.r#type);
-                for function_name in compiled_object_value
-                    .external_dependencies
-                    .functions_names
-                    .iter()
-                {
-                    result_external_dependencies
+                extend_set(
+                    &mut result_external_dependencies.functions_names,
+                    compiled_object_value
+                        .external_dependencies
                         .functions_names
-                        .insert_mut(function_name.clone());
-                }
-                for constant_name in compiled_object_value
-                    .external_dependencies
-                    .constants_names
-                    .iter()
-                {
-                    result_external_dependencies
+                        .iter(),
+                );
+                extend_set(
+                    &mut result_external_dependencies.constants_names,
+                    compiled_object_value
+                        .external_dependencies
                         .constants_names
-                        .insert_mut(constant_name.clone());
-                }
+                        .iter(),
+                );
+                extend_map(
+                    &mut result_resolved_types,
+                    compiled_object_value.resolved_types.iter(),
+                );
             }
             IntermediateRepresentation {
                 r#type: Type::Object(result_inner_types),
@@ -583,6 +699,7 @@ fn compile_with_context(
                 available_functions: compilation_context.available_functions,
                 available_constants: compilation_context.available_constants,
                 external_dependencies: result_external_dependencies,
+                resolved_types: result_resolved_types,
             }
         }
         Program::Value(value) => IntermediateRepresentation {
@@ -594,6 +711,7 @@ fn compile_with_context(
                 functions_names: rpds::RedBlackTreeSetSync::new_sync(),
                 constants_names: rpds::RedBlackTreeSetSync::new_sync(),
             },
+            resolved_types: rpds::RedBlackTreeMapSync::new_sync(),
         },
     })
 }

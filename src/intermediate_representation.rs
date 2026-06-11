@@ -9,6 +9,7 @@ pub struct IntermediateRepresentation {
     pub available_functions: rpds::RedBlackTreeMapSync<String, Program>,
     pub available_constants: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
     pub external_dependencies: ExternalDependencies,
+    pub resolved_types: rpds::RedBlackTreeMapSync<Program, Type>,
 }
 
 #[derive(Debug, Clone)]

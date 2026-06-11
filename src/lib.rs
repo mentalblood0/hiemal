@@ -58,6 +58,7 @@ mod tests {
                                 ]
                               }
                             },
+                            1,
                             {
                               "fibonacci:": {
                                 "sum": [
