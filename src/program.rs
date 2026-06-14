@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::value::Value;
+use crate::{containers::Vector, value::Value};
 
 #[derive(serde::Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
 #[serde(untagged)]
@@ -45,9 +45,10 @@ pub enum EmbeddedFunction {
     IsSorted(Program),
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Default)]
 pub enum PathSegment {
     ArrayIndex(usize),
+    #[default]
     Scope,
     Compute,
     Functions,
@@ -64,12 +65,12 @@ pub enum PathSegment {
     ObjectKey(String),
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub struct Path(pub rpds::VectorSync<PathSegment>);
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default)]
+pub struct Path(pub Vector<PathSegment>);
 
 impl std::fmt::Debug for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let collected: Vec<&PathSegment> = self.0.iter().collect();
+        let collected: Vec<&PathSegment> = self.0.inner.iter().collect();
         f.debug_tuple("Path").field(&collected).finish()
     }
 }

@@ -1,70 +1,27 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Error, Result, anyhow};
-use rpds::{RedBlackTreeMapSync, VectorSync};
 
 use crate::{
+    containers::Map,
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     intermediate_representation::{
-        self, Content, ExternalDependencies, IntermediateRepresentation,
+        self, Content, ExternalDependencies, IntermediateRepresentation, Node,
     },
     program::{Clause, EmbeddedFunction, Path, PathSegment, Program, Scope},
     r#type::Type,
     value::Value,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct CompilationContext {
     pub path: Path,
-    pub available_functions: rpds::RedBlackTreeMapSync<String, Program>,
-    pub available_constants: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
-    pub entered_user_functions: rpds::RedBlackTreeSetSync<Program>,
+    pub available_functions: Map<String, usize>,
+    pub available_constants: Map<String, usize>,
+    pub entered_user_functions: rpds::RedBlackTreeSetSync<usize>,
 }
 
 impl CompilationContext {
-    pub fn extended<P, F, C, E>(
-        &self,
-        path: P,
-        available_functions: F,
-        available_constants: C,
-        entered_user_functions: E,
-    ) -> Self
-    where
-        P: IntoIterator<Item = PathSegment>,
-        F: IntoIterator<Item = (String, Program)>,
-        C: IntoIterator<Item = (String, IntermediateRepresentation)>,
-        E: IntoIterator<Item = Program>,
-    {
-        Self {
-            path: {
-                let mut result = self.path.clone();
-                result.0.extend(path);
-                result
-            },
-            available_functions: {
-                let mut result = self.available_functions.clone();
-                for function in available_functions {
-                    result.insert_mut(function.0, function.1);
-                }
-                result
-            },
-            available_constants: {
-                let mut result = self.available_constants.clone();
-                for constant in available_constants {
-                    result.insert_mut(constant.0, constant.1);
-                }
-                result
-            },
-            entered_user_functions: {
-                let mut result = self.entered_user_functions.clone();
-                for function_body in entered_user_functions {
-                    result.insert_mut(function_body);
-                }
-                result
-            },
-        }
-    }
-
     pub fn error(&self, got_type: &Type, expected_type: &Type) -> Error {
         anyhow!(
             "Got {got_type:#?} but expected {expected_type:#?} at {:#?}",
@@ -81,13 +38,12 @@ fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Res
         Value::Null => Type::Null,
         Value::Array(array) => {
             let mut element_type_option = None;
-            for (element_index, element) in array.iter().enumerate() {
-                let current_element_compilation_context = compilation_context.extended(
-                    [PathSegment::ArrayIndex(element_index)],
-                    [],
-                    [],
-                    [],
-                );
+            for (element_index, element) in array.inner.iter().enumerate() {
+                let mut current_element_compilation_context = compilation_context.clone();
+                current_element_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::ArrayIndex(element_index)]);
                 let current_element_type =
                     get_value_type(element, current_element_compilation_context.clone())?;
                 if let Some(element_type) = element_type_option {
@@ -108,13 +64,12 @@ fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Res
         }
         Value::Object(object) => {
             let mut result_inner_types = BTreeMap::new();
-            for (object_key, object_value) in object {
-                let current_object_value_compilation_context = compilation_context.extended(
-                    [PathSegment::ObjectKey(object_key.clone())],
-                    [],
-                    [],
-                    [],
-                );
+            for (object_key, object_value) in object.inner.iter() {
+                let mut current_object_value_compilation_context = compilation_context.clone();
+                current_object_value_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::ObjectKey(object_key.clone())]);
                 let current_object_value_type =
                     get_value_type(object_value, current_object_value_compilation_context)?;
                 result_inner_types.insert(object_key.clone(), current_object_value_type);
@@ -128,7 +83,7 @@ fn resolve_types(
     got_type: &Type,
     expected_type: &Type,
     compilation_context: &CompilationContext,
-    resolved_types: &mut rpds::RedBlackTreeMapSync<Program, Type>,
+    global_compilation_context: &mut GlobalCompilationContext,
 ) -> Result<()> {
     match (got_type, expected_type) {
         (Type::Number, Type::Number)
@@ -139,7 +94,7 @@ fn resolve_types(
             got_element_type,
             expected_element_type,
             compilation_context,
-            resolved_types,
+            global_compilation_context,
         ),
         (Type::Object(got_element_inner_types), Type::Object(expected_element_inner_types)) => {
             for (expected_value_key, expected_value_type) in expected_element_inner_types {
@@ -148,7 +103,7 @@ fn resolve_types(
                         got_value_type,
                         expected_value_type,
                         compilation_context,
-                        resolved_types,
+                        global_compilation_context,
                     )?;
                 } else {
                     return Err(compilation_context.error(got_type, expected_type));
@@ -158,12 +113,19 @@ fn resolve_types(
         }
         (Type::Unknown(got_program), expected_type)
         | (expected_type, Type::Unknown(got_program)) => {
-            if let Some(previously_resolved_type) = resolved_types.get(got_program) {
+            if let Some((_, Some(previously_resolved_type))) = global_compilation_context
+                .user_function_to_index_and_type_option
+                .get(got_program)
+            {
                 if previously_resolved_type != expected_type {
                     return Err(compilation_context.error(got_type, expected_type));
                 }
             } else {
-                resolved_types.insert_mut(got_program.clone(), expected_type.clone());
+                global_compilation_context
+                    .user_function_to_index_and_type_option
+                    .get_mut(got_program)
+                    .unwrap()
+                    .1 = Some(expected_type.clone());
             }
             Ok(())
         }
@@ -171,130 +133,71 @@ fn resolve_types(
     }
 }
 
+#[derive(Default)]
+pub struct GlobalCompilationContext {
+    pub user_function_to_index_and_type_option: BTreeMap<Program, (usize, Option<Type>)>,
+    pub user_functions: Vec<Content>,
+    pub constant_to_index: BTreeMap<Program, usize>,
+    pub constants: Vec<Content>,
+}
+
 pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
-    compile_with_context(
-        program,
-        CompilationContext {
-            path: Path(VectorSync::new_sync()),
-            available_functions: RedBlackTreeMapSync::new_sync(),
-            available_constants: RedBlackTreeMapSync::new_sync(),
-            entered_user_functions: rpds::RedBlackTreeSetSync::new_sync(),
-        },
-    )
-}
-
-pub fn extend_map<'a, K, V, U>(map: &mut rpds::RedBlackTreeMapSync<K, V>, update: U)
-where
-    K: Ord + Clone + 'a,
-    V: Clone + 'a,
-    U: Iterator<Item = (&'a K, &'a V)>,
-{
-    for (key, value) in update {
-        map.insert_mut(key.clone(), value.clone());
-    }
-}
-
-pub fn extend_set<'a, V, U>(map: &mut rpds::RedBlackTreeSetSync<V>, update: U)
-where
-    V: Ord + Clone + 'a,
-    U: Iterator<Item = &'a V>,
-{
-    for value in update {
-        map.insert_mut(value.clone());
-    }
-}
-
-pub fn extended_map<'a, K, V, U>(
-    map: &rpds::RedBlackTreeMapSync<K, V>,
-    update: U,
-) -> rpds::RedBlackTreeMapSync<K, V>
-where
-    K: Ord + Clone + 'a,
-    V: Clone + 'a,
-    U: Iterator<Item = (&'a K, &'a V)>,
-{
-    let mut result = map.clone();
-    extend_map(&mut result, update);
-    result
-}
-
-pub fn extended_set<'a, V, U>(
-    set: &rpds::RedBlackTreeSetSync<V>,
-    update: U,
-) -> rpds::RedBlackTreeSetSync<V>
-where
-    V: Ord + Clone + 'a,
-    U: Iterator<Item = &'a V>,
-{
-    let mut result = set.clone();
-    extend_set(&mut result, update);
-    result
+    let mut global_compilation_context = GlobalCompilationContext::default();
+    Ok(IntermediateRepresentation {
+        root: compile_with_context(
+            program,
+            CompilationContext::default(),
+            &mut global_compilation_context,
+        )?
+        .1,
+        user_functions: global_compilation_context.user_functions,
+        constants: global_compilation_context.constants,
+    })
 }
 
 fn compile_with_context(
     program: &Program,
     compilation_context: CompilationContext,
-) -> Result<IntermediateRepresentation> {
+    global_compilation_context: &mut GlobalCompilationContext,
+) -> Result<(Type, Node)> {
     Ok(match program {
         Program::Array(array) => {
             if array.is_empty() {
                 return Err(anyhow!(
-                    "Expected non-empty list at {:#?}",
+                    "Expected non-empty array at {:#?}",
                     compilation_context.path
                 ));
             }
             let mut result_content = Vec::with_capacity(array.len());
-            let mut result_external_dependencies = ExternalDependencies::new();
-            let mut result_resolved_types = rpds::RedBlackTreeMapSync::new_sync();
+            let mut previous_element_type_option = None;
             for (element_index, element) in array.iter().enumerate() {
-                let element_compilation_context = compilation_context.extended(
-                    [PathSegment::ArrayIndex(element_index)],
-                    [],
-                    [],
-                    [],
-                );
-                let compiled_element =
-                    compile_with_context(element, element_compilation_context.clone())?;
-                extend_map(
-                    &mut result_resolved_types,
-                    compiled_element.resolved_types.iter(),
-                );
-                if let Some(previous_element_type) = result_content.last().and_then(
-                    |last_compiled_element: &IntermediateRepresentation| {
-                        Some(last_compiled_element.r#type.clone())
-                    },
-                ) {
+                let mut element_compilation_context = compilation_context.clone();
+                element_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::ArrayIndex(element_index)]);
+                let (element_type, element_node) = compile_with_context(
+                    element,
+                    element_compilation_context.clone(),
+                    global_compilation_context,
+                )?;
+                if let Some(previous_element_type) = previous_element_type_option {
                     resolve_types(
-                        &compiled_element.r#type,
+                        &element_type,
                         &previous_element_type,
                         &compilation_context,
-                        &mut result_resolved_types,
+                        global_compilation_context,
                     )?;
                 }
-                result_content.push(compiled_element.clone());
-                extend_set(
-                    &mut result_external_dependencies.functions_names,
-                    compiled_element
-                        .external_dependencies
-                        .functions_names
-                        .iter(),
-                );
-                extend_set(
-                    &mut result_external_dependencies.constants_names,
-                    compiled_element
-                        .external_dependencies
-                        .constants_names
-                        .iter(),
-                );
+                result_content.push(element_node);
             }
-            IntermediateRepresentation {
-                r#type: Type::Array(Box::new(result_content.first().unwrap().r#type.clone())),
-                content: Content::Array(result_content),
-                available_functions: compilation_context.available_functions,
-                available_constants: compilation_context.available_constants,
-                external_dependencies: result_external_dependencies,
-                resolved_types: result_resolved_types,
-            }
+            (
+                Type::Array(Box::new(previous_element_type_option.unwrap())),
+                Node {
+                    path: compilation_context.path.clone(),
+                    content: Content::Array(result_content),
+                },
+            )
         }
         Program::Clause(clause) => match clause {
             Clause::Scope(Scope {

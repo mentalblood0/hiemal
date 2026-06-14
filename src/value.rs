@@ -6,7 +6,10 @@ use serde::{
 };
 use std::str::FromStr;
 
-use crate::default_argument_name::DEFAULT_ARGUMENT_NAME;
+use crate::{
+    containers::{Map, Vector},
+    default_argument_name::DEFAULT_ARGUMENT_NAME,
+};
 
 pub type SmallMap<K, V> = small_map::FxSmallMap<32, K, V>;
 
@@ -37,8 +40,8 @@ pub enum Value {
     String(ropey::Rope),
     Bool(bool),
     Null,
-    Array(rpds::VectorSync<Value>),
-    Object(rpds::RedBlackTreeMapSync<String, Value>),
+    Array(Vector<Value>),
+    Object(Map<String, Value>),
 }
 
 pub fn deserialize_rational<'de, D>(deserializer: D) -> Result<Rational, D::Error>
@@ -127,14 +130,14 @@ impl Value {
         }
     }
 
-    pub fn as_array(&self) -> Option<&rpds::VectorSync<Value>> {
+    pub fn as_array(&self) -> Option<&Vector<Value>> {
         match self {
             Value::Array(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_object(&self) -> Option<&rpds::RedBlackTreeMapSync<String, Value>> {
+    pub fn as_object(&self) -> Option<&Map<String, Value>> {
         match self {
             Value::Object(result) => Some(result),
             _ => None,

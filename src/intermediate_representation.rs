@@ -1,45 +1,47 @@
 use std::collections::BTreeMap;
 
-use crate::{program::Program, r#type::Type, value::Value};
+use crate::{program::Path, value::Value};
 
 #[derive(Debug, Clone)]
 pub struct IntermediateRepresentation {
-    pub r#type: Type,
-    pub content: Content,
-    pub available_functions: rpds::RedBlackTreeMapSync<String, Program>,
-    pub available_constants: rpds::RedBlackTreeMapSync<String, IntermediateRepresentation>,
-    pub external_dependencies: ExternalDependencies,
-    pub resolved_types: rpds::RedBlackTreeMapSync<Program, Type>,
+    pub root: Node,
+    pub user_functions: Vec<Content>,
+    pub constants: Vec<Content>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Node {
+    path: Path,
+    content: Content,
 }
 
 #[derive(Debug, Clone)]
 pub enum Content {
-    Array(Vec<IntermediateRepresentation>),
+    Array(Vec<Node>),
     Clause(Clause),
     EmbeddedFunctionCall(Box<EmbeddedFunction>),
     Constant(String),
-    UserFunctionCall(Box<IntermediateRepresentation>),
-    RecursedUserFunctionCall(String),
-    Object(BTreeMap<String, IntermediateRepresentation>),
+    UserFunctionCall(usize),
+    Object(BTreeMap<String, Node>),
     Value(Value),
 }
 
 #[derive(Debug, Clone)]
 pub enum Clause {
-    Scope(Box<IntermediateRepresentation>),
+    Scope(Box<Node>),
     Branching {
-        r#if: Box<IntermediateRepresentation>,
-        then: Box<IntermediateRepresentation>,
-        r#else: Box<IntermediateRepresentation>,
+        r#if: Box<Node>,
+        then: Box<Node>,
+        r#else: Box<Node>,
     },
-    Constant(String),
+    Constant(usize),
     DefaultArgument,
 }
 
 #[derive(Debug, Clone)]
 pub enum EmbeddedFunction {
-    Sum(IntermediateRepresentation),
-    IsSorted(IntermediateRepresentation),
+    Sum(Node),
+    IsSorted(Node),
 }
 
 #[derive(Debug, Clone)]
