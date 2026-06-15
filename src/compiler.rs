@@ -336,55 +336,57 @@ fn compile_with_context(
         },
         Program::EmbeddedFunction(embedded_function) => match &**embedded_function {
             EmbeddedFunction::Sum(argument) => {
-                let argument_compilation_context =
-                    compilation_context.extended([PathSegment::Sum], [], [], []);
-                let compiled_argument =
-                    compile_with_context(&argument, argument_compilation_context.clone())?;
+                let mut argument_compilation_context = compilation_context.clone();
+                argument_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::Sum]);
+                let (argument_type, argument_node) = compile_with_context(
+                    &argument,
+                    argument_compilation_context.clone(),
+                    global_compilation_context,
+                )?;
                 let expected_type = Type::Array(Box::new(Type::Number));
-                let mut result_resolved_types = rpds::RedBlackTreeMapSync::new_sync();
                 resolve_types(
-                    &compiled_argument.r#type,
+                    &argument_type,
                     &expected_type,
                     &compilation_context,
-                    &mut result_resolved_types,
+                    global_compilation_context,
                 )?;
-                IntermediateRepresentation {
-                    r#type: Type::Number,
-                    content: Content::EmbeddedFunctionCall(Box::new(
-                        intermediate_representation::EmbeddedFunction::Sum(
-                            compiled_argument.clone(),
-                        ),
-                    )),
-                    available_functions: compilation_context.available_functions,
-                    available_constants: compilation_context.available_constants,
-                    external_dependencies: compiled_argument.external_dependencies,
-                    resolved_types: result_resolved_types,
-                }
+                (
+                    argument_type,
+                    Node {
+                        path: argument_compilation_context.path.clone(),
+                        content: Box::new(Content::EmbeddedFunctionCall(
+                            intermediate_representation::EmbeddedFunction::Sum(argument_node),
+                        )),
+                    },
+                )
             }
             EmbeddedFunction::IsSorted(argument) => {
-                let argument_compilation_context =
-                    compilation_context.extended([PathSegment::Sum], [], [], []);
-                let compiled_argument =
-                    compile_with_context(&argument, argument_compilation_context)?;
-                if let Type::Array(_) = compiled_argument.r#type {
+                let mut argument_compilation_context = compilation_context.clone();
+                argument_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::Sum]);
+                let (argument_type, argument_node) = compile_with_context(
+                    &argument,
+                    argument_compilation_context.clone(),
+                    global_compilation_context,
+                )?;
+                if let Type::Array(_) = argument_type {
                 } else {
-                    return Err(anyhow!(
-                        "Got {:?} but expected Array",
-                        compiled_argument.r#type,
-                    ));
+                    return Err(anyhow!("Got {:?} but expected Array", argument_type,));
                 }
-                IntermediateRepresentation {
-                    r#type: Type::Bool,
-                    content: Content::EmbeddedFunctionCall(Box::new(
-                        intermediate_representation::EmbeddedFunction::Sum(
-                            compiled_argument.clone(),
-                        ),
-                    )),
-                    available_functions: compilation_context.available_functions,
-                    available_constants: compilation_context.available_constants,
-                    external_dependencies: compiled_argument.external_dependencies,
-                    resolved_types: rpds::RedBlackTreeMapSync::new_sync(),
-                }
+                (
+                    argument_type,
+                    Node {
+                        path: argument_compilation_context.path.clone(),
+                        content: Box::new(Content::EmbeddedFunctionCall(
+                            intermediate_representation::EmbeddedFunction::IsSorted(argument_node),
+                        )),
+                    },
+                )
             }
         },
         Program::Object(object) => {

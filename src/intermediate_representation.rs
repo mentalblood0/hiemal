@@ -12,14 +12,14 @@ pub struct IntermediateRepresentation {
 #[derive(Debug, Clone)]
 pub struct Node {
     pub path: Path,
-    pub content: Content,
+    pub content: Box<Content>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Content {
     Array(Vec<Node>),
     Clause(Clause),
-    EmbeddedFunctionCall(Box<EmbeddedFunction>),
+    EmbeddedFunctionCall(EmbeddedFunction),
     Constant(String),
     UserFunctionCall(usize),
     Object(BTreeMap<String, Node>),
@@ -28,11 +28,11 @@ pub enum Content {
 
 #[derive(Debug, Clone)]
 pub enum Clause {
-    Scope(Box<Node>),
+    Scope(Node),
     Branching {
-        r#if: Box<Node>,
-        then: Box<Node>,
-        r#else: Box<Node>,
+        r#if: Node,
+        then: Node,
+        r#else: Node,
     },
     Constant(usize),
     DefaultArgument,
