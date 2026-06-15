@@ -419,15 +419,19 @@ fn compile_with_context(
                                         compilation_context.path
                                     ));
                                 }
-                                let arguments_iterator: Box<
-                                    dyn Iterator<Item = (&String, &Program)>,
-                                > = if function_arguments.len() > 1 {
-                                    Box::new(function_arguments.iter())
-                                } else {
-                                    Box::new(
-                                        [(DEFAULT_ARGUMENT_NAME, function_argument)].into_iter(),
-                                    )
-                                };
+                                let arguments_iterator: Box<dyn Iterator<Item = (&str, &Program)>> =
+                                    if function_arguments.len() > 1 {
+                                        Box::new(
+                                            function_arguments
+                                                .iter()
+                                                .map(|(key, value)| (key.as_str(), value)),
+                                        )
+                                    } else {
+                                        Box::new(
+                                            [(DEFAULT_ARGUMENT_NAME, function_argument)]
+                                                .into_iter(),
+                                        )
+                                    };
                                 for (function_argument_name, function_argument_body) in
                                     arguments_iterator
                                 {
@@ -435,7 +439,7 @@ fn compile_with_context(
                                         compilation_context.clone();
                                     argument_compilation_context.path.0.extend([
                                         PathSegment::UserFunctionCall(function_name.clone()),
-                                        PathSegment::Argument(function_argument_name.clone()),
+                                        PathSegment::Argument(function_argument_name.to_string()),
                                     ]);
                                     let (constant_type, constant_node) = compile_with_context(
                                         &function_argument_body,
@@ -446,9 +450,10 @@ fn compile_with_context(
                                     global_compilation_context
                                         .constants
                                         .push((constant_type, constant_node));
-                                    body_compilation_context
-                                        .available_constants
-                                        .extend([(function_argument_name.clone(), constant_index)]);
+                                    body_compilation_context.available_constants.extend([(
+                                        function_argument_name.to_string(),
+                                        constant_index,
+                                    )]);
                                 }
                             }
                             let (function_index, _) = global_compilation_context

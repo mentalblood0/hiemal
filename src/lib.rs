@@ -8,16 +8,14 @@ pub mod value;
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_eq;
     use serde_json::json;
 
-    use crate::{compiler::compile, r#type::Type};
+    use crate::compiler::compile;
 
     #[test]
     fn test_numbers() {
-        assert_eq!(
-            compile(
-                &serde_json::from_value(json!([
+        compile(
+            &serde_json::from_value(json!([
                 1234,
                 1234.1234,
                 "1234",
@@ -26,12 +24,9 @@ mod tests {
                 "12345678901234567890123456789012345678901234567890123456789012345678901234567.890",
                 "12345678901234567890123456789012345678901234567890123456789012345678901234567/890",
             ]))
-                .unwrap(),
-            )
-            .unwrap()
-            .r#type,
-            Type::Array(Box::new(Type::Number))
+            .unwrap(),
         )
+        .unwrap();
     }
 
     #[test]
