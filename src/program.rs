@@ -12,6 +12,12 @@ pub enum Program {
     Value(Value),
 }
 
+impl Default for Program {
+    fn default() -> Self {
+        Self::Value(Value::Null)
+    }
+}
+
 #[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub enum Clause {
     #[serde(rename = "scope")]
@@ -55,6 +61,7 @@ pub enum PathSegment {
     Function(String),
     Constants,
     Constant(String),
+    Argument(String),
     Branching,
     If,
     Then,

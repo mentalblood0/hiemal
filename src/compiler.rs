@@ -5,9 +5,7 @@ use anyhow::{Error, Result, anyhow};
 use crate::{
     containers::Map,
     default_argument_name::DEFAULT_ARGUMENT_NAME,
-    intermediate_representation::{
-        self, Content, ExternalDependencies, IntermediateRepresentation, Node,
-    },
+    intermediate_representation::{self, Content, IntermediateRepresentation, Node},
     program::{Clause, EmbeddedFunction, Path, PathSegment, Program, Scope},
     r#type::Type,
     value::Value,
@@ -184,13 +182,15 @@ fn compile_with_context(
                     element_compilation_context.clone(),
                     global_compilation_context,
                 )?;
-                if let Some(previous_element_type) = previous_element_type_option {
+                if let Some(ref previous_element_type) = previous_element_type_option {
                     resolve_types(
                         &element_type,
                         &previous_element_type,
                         &compilation_context,
                         global_compilation_context,
                     )?;
+                } else {
+                    previous_element_type_option = Some(element_type);
                 }
                 result_content.push(element_node);
             }
@@ -198,7 +198,7 @@ fn compile_with_context(
                 Type::Array(Box::new(previous_element_type_option.unwrap())),
                 Node {
                     path: compilation_context.path.clone(),
-                    content: Content::Array(result_content),
+                    content: Box::new(Content::Array(result_content)),
                 },
             )
         }
@@ -299,11 +299,13 @@ fn compile_with_context(
                     then_type,
                     Node {
                         path: compilation_context.path.clone(),
-                        content: Content::Clause(intermediate_representation::Clause::Branching {
-                            r#if: Box::new(if_node),
-                            then: Box::new(then_node),
-                            r#else: Box::new(else_node),
-                        }),
+                        content: Box::new(Content::Clause(
+                            intermediate_representation::Clause::Branching {
+                                r#if: if_node,
+                                then: then_node,
+                                r#else: else_node,
+                            },
+                        )),
                     },
                 )
             }
@@ -314,7 +316,7 @@ fn compile_with_context(
                     .get(constant_name)
                 {
                     let (constant_type, constant_node) =
-                        global_compilation_context.constants[*constant_index];
+                        global_compilation_context.constants[*constant_index].clone();
                     (constant_type, constant_node)
                 } else {
                     return Err(anyhow!(
@@ -400,116 +402,87 @@ fn compile_with_context(
                 1 => {
                     let (function_name, function_argument) = object.iter().next().unwrap();
                     if function_name.ends_with(":") {
-                        if let Some(function_body) =
-                            compilation_context.available_functions.get(function_name)
+                        if let Some(function_body) = compilation_context
+                            .available_functions
+                            .inner
+                            .get(function_name)
                         {
-                            let argument_compilation_context = compilation_context.extended(
-                                [PathSegment::UserFunctionCall(function_name.clone())],
-                                [],
-                                [],
-                                [function_body.clone()],
-                            );
-                            let compiled_argument = compile_with_context(
-                                function_argument,
-                                argument_compilation_context.clone(),
-                            )?;
-                            for required_constant_name in compiled_argument
-                                .external_dependencies
-                                .constants_names
-                                .iter()
-                            {
-                                if !argument_compilation_context
-                                    .available_constants
-                                    .contains_key(required_constant_name)
-                                {
+                            let mut body_compilation_context = compilation_context.clone();
+                            body_compilation_context
+                                .path
+                                .0
+                                .extend([PathSegment::UserFunctionCall(function_name.clone())]);
+                            if let Program::Object(function_arguments) = function_argument {
+                                if function_arguments.is_empty() {
                                     return Err(anyhow!(
-                                        "Got function call which requires constant \
-                                         {required_constant_name:?} but no such constant available"
+                                        "Got zero arguments, but expected at least one at {:#?}",
+                                        compilation_context.path
                                     ));
                                 }
-                            }
-                            let mut function_body_available_constants_from_arguments = Vec::new();
-                            if let Content::Object(function_arguments) = compiled_argument.content {
-                                if function_arguments.len() > 1 {
-                                    function_body_available_constants_from_arguments.push((
-                                        DEFAULT_ARGUMENT_NAME.to_string(),
-                                        function_arguments.values().next().unwrap().clone(),
-                                    ));
+                                let arguments_iterator: Box<
+                                    dyn Iterator<Item = (&String, &Program)>,
+                                > = if function_arguments.len() > 1 {
+                                    Box::new(function_arguments.iter())
                                 } else {
-                                    for (function_argument_name, function_argument_body) in
-                                        function_arguments.iter()
-                                    {
-                                        function_body_available_constants_from_arguments.push((
-                                            function_argument_name.clone(),
-                                            function_argument_body.clone(),
-                                        ));
-                                    }
+                                    Box::new(
+                                        [(DEFAULT_ARGUMENT_NAME, function_argument)].into_iter(),
+                                    )
+                                };
+                                for (function_argument_name, function_argument_body) in
+                                    arguments_iterator
+                                {
+                                    let mut argument_compilation_context =
+                                        compilation_context.clone();
+                                    argument_compilation_context.path.0.extend([
+                                        PathSegment::UserFunctionCall(function_name.clone()),
+                                        PathSegment::Argument(function_argument_name.clone()),
+                                    ]);
+                                    let (constant_type, constant_node) = compile_with_context(
+                                        &function_argument_body,
+                                        argument_compilation_context,
+                                        global_compilation_context,
+                                    )?;
+                                    let constant_index = global_compilation_context.constants.len();
+                                    global_compilation_context
+                                        .constants
+                                        .push((constant_type, constant_node));
+                                    body_compilation_context
+                                        .available_constants
+                                        .extend([(function_argument_name.clone(), constant_index)]);
                                 }
-                            } else {
-                                function_body_available_constants_from_arguments
-                                    .push((DEFAULT_ARGUMENT_NAME.to_string(), compiled_argument));
                             }
+                            let (function_index, _) = global_compilation_context
+                                .user_function_to_index_and_type_option
+                                .get(function_body)
+                                .unwrap();
                             if compilation_context
                                 .entered_user_functions
-                                .contains(&function_body)
+                                .contains(function_index)
                             {
-                                return Ok(IntermediateRepresentation {
-                                    r#type: Type::Unknown(function_body.clone()),
-                                    content: Content::RecursedUserFunctionCall(
-                                        function_name.clone(),
-                                    ),
-                                    available_functions: compilation_context
-                                        .available_functions
-                                        .clone(),
-                                    available_constants: compilation_context
-                                        .extended(
-                                            [],
-                                            [],
-                                            function_body_available_constants_from_arguments
-                                                .clone(),
-                                            [],
-                                        )
-                                        .available_constants,
-                                    external_dependencies: ExternalDependencies::new(),
-                                    resolved_types: rpds::RedBlackTreeMapSync::new_sync(),
-                                });
+                                return Ok((
+                                    Type::Unknown(function_body.clone()),
+                                    Node {
+                                        path: body_compilation_context.path.clone(),
+                                        content: Box::new(Content::UserFunctionCall(
+                                            *function_index,
+                                        )),
+                                    },
+                                ));
                             } else {
-                                let compiled_function_body = compile_with_context(
+                                return compile_with_context(
                                     function_body,
-                                    argument_compilation_context.extended(
-                                        [],
-                                        [],
-                                        function_body_available_constants_from_arguments.clone(),
-                                        [],
-                                    ),
-                                )?;
-                                let mut result_external_dependencies =
-                                    compiled_function_body.external_dependencies.clone();
-                                for (constant_name, _) in
-                                    function_body_available_constants_from_arguments
-                                {
-                                    result_external_dependencies
-                                        .constants_names
-                                        .remove_mut(&constant_name);
-                                }
-                                return Ok(IntermediateRepresentation {
-                                    r#type: compiled_function_body.r#type.clone(),
-                                    content: Content::UserFunctionCall(Box::new(
-                                        compiled_function_body.clone(),
-                                    )),
-                                    available_functions: compiled_function_body.available_functions,
-                                    available_constants: compiled_function_body.available_constants,
-                                    external_dependencies: result_external_dependencies,
-                                    resolved_types: compiled_function_body.resolved_types.clone(),
-                                });
+                                    body_compilation_context,
+                                    global_compilation_context,
+                                );
                             }
                         } else {
                             return Err(anyhow!(
-                                "Got no function {function_name:?} at {:#?}, available functions \
-                                 are {:?}",
+                                "Got function {function_name:?} at {:#?}, but expected one of \
+                                 available functions: {:#?}",
                                 compilation_context.path,
                                 compilation_context
                                     .available_functions
+                                    .inner
                                     .keys()
                                     .collect::<Vec<_>>()
                             ));
@@ -520,60 +493,34 @@ fn compile_with_context(
             };
             let mut result_inner_types = BTreeMap::new();
             let mut result_content = BTreeMap::new();
-            let mut result_external_dependencies = ExternalDependencies {
-                functions_names: rpds::RedBlackTreeSetSync::new_sync(),
-                constants_names: rpds::RedBlackTreeSetSync::new_sync(),
-            };
-            let mut result_resolved_types = rpds::RedBlackTreeMapSync::new_sync();
             for (object_key, object_value) in object.iter() {
-                let object_value_compilation_context = compilation_context.extended(
-                    [PathSegment::ObjectKey(object_key.clone())],
-                    [],
-                    [],
-                    [],
-                );
-                let compiled_object_value =
-                    compile_with_context(object_value, object_value_compilation_context)?;
-                result_content.insert(object_key.clone(), compiled_object_value.clone());
-                result_inner_types.insert(object_key.clone(), compiled_object_value.r#type);
-                extend_set(
-                    &mut result_external_dependencies.functions_names,
-                    compiled_object_value
-                        .external_dependencies
-                        .functions_names
-                        .iter(),
-                );
-                extend_set(
-                    &mut result_external_dependencies.constants_names,
-                    compiled_object_value
-                        .external_dependencies
-                        .constants_names
-                        .iter(),
-                );
-                extend_map(
-                    &mut result_resolved_types,
-                    compiled_object_value.resolved_types.iter(),
-                );
+                let mut object_value_compilation_context = compilation_context.clone();
+                object_value_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::ObjectKey(object_key.clone())]);
+                let (object_value_type, object_value_node) = compile_with_context(
+                    object_value,
+                    object_value_compilation_context,
+                    global_compilation_context,
+                )?;
+                result_content.insert(object_key.clone(), object_value_node);
+                result_inner_types.insert(object_key.clone(), object_value_type);
             }
-            IntermediateRepresentation {
-                r#type: Type::Object(result_inner_types),
-                content: Content::Object(result_content),
-                available_functions: compilation_context.available_functions,
-                available_constants: compilation_context.available_constants,
-                external_dependencies: result_external_dependencies,
-                resolved_types: result_resolved_types,
-            }
+            (
+                Type::Object(result_inner_types),
+                Node {
+                    path: compilation_context.path.clone(),
+                    content: Box::new(Content::Object(result_content)),
+                },
+            )
         }
-        Program::Value(value) => IntermediateRepresentation {
-            r#type: get_value_type(value, compilation_context.clone())?,
-            content: Content::Value(value.clone()),
-            available_functions: compilation_context.available_functions,
-            available_constants: compilation_context.available_constants,
-            external_dependencies: ExternalDependencies {
-                functions_names: rpds::RedBlackTreeSetSync::new_sync(),
-                constants_names: rpds::RedBlackTreeSetSync::new_sync(),
+        Program::Value(value) => (
+            get_value_type(value, compilation_context.clone())?,
+            Node {
+                path: compilation_context.path.clone(),
+                content: Box::new(Content::Value(value.clone())),
             },
-            resolved_types: rpds::RedBlackTreeMapSync::new_sync(),
-        },
+        ),
     })
 }

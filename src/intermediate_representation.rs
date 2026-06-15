@@ -20,7 +20,6 @@ pub enum Content {
     Array(Vec<Node>),
     Clause(Clause),
     EmbeddedFunctionCall(EmbeddedFunction),
-    Constant(String),
     UserFunctionCall(usize),
     Object(BTreeMap<String, Node>),
     Value(Value),
