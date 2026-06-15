@@ -16,7 +16,7 @@ use crate::{
 #[derive(Clone, Default)]
 pub struct CompilationContext {
     pub path: Path,
-    pub available_functions: Map<String, usize>,
+    pub available_functions: Map<String, Program>,
     pub available_constants: Map<String, usize>,
     pub entered_user_functions: rpds::RedBlackTreeSetSync<usize>,
 }
@@ -136,9 +136,8 @@ fn resolve_types(
 #[derive(Default)]
 pub struct GlobalCompilationContext {
     pub user_function_to_index_and_type_option: BTreeMap<Program, (usize, Option<Type>)>,
-    pub user_functions: Vec<Content>,
-    pub constant_to_index: BTreeMap<Program, usize>,
-    pub constants: Vec<Content>,
+    pub user_functions: Vec<Node>,
+    pub constants: Vec<(Type, Node)>,
 }
 
 pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
@@ -151,7 +150,11 @@ pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
         )?
         .1,
         user_functions: global_compilation_context.user_functions,
-        constants: global_compilation_context.constants,
+        constants: global_compilation_context
+            .constants
+            .into_iter()
+            .map(|constant| constant.1)
+            .collect(),
     })
 }
 
@@ -205,35 +208,38 @@ fn compile_with_context(
                 constants,
                 compute,
             }) => {
-                let mut compiled_constants = Vec::with_capacity(constants.len());
+                let mut compute_compilation_context = compilation_context.clone();
+                compute_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::Scope, PathSegment::Compute]);
                 for (constant_name, constant_compute_body) in constants.iter() {
-                    let compiled_constant = compile_with_context(
+                    let mut constant_compilation_context = compilation_context.clone();
+                    constant_compilation_context.path.0.extend([
+                        PathSegment::Scope,
+                        PathSegment::Constants,
+                        PathSegment::Constant(constant_name.clone()),
+                    ]);
+                    let (constant_type, constant_node) = compile_with_context(
                         constant_compute_body,
-                        compilation_context.extended(
-                            [
-                                PathSegment::Scope,
-                                PathSegment::Constants,
-                                PathSegment::Constant(constant_name.clone()),
-                            ],
-                            [],
-                            [],
-                            [],
-                        ),
+                        constant_compilation_context,
+                        global_compilation_context,
                     )?;
-                    compiled_constants.push((constant_name.clone(), compiled_constant));
+                    let constant_index = global_compilation_context.constants.len();
+                    compute_compilation_context
+                        .available_constants
+                        .extend([(constant_name.clone(), constant_index)]);
+                    global_compilation_context
+                        .constants
+                        .push((constant_type, constant_node));
                 }
-                let mut compiled_functions = Vec::with_capacity(functions.len());
                 for (function_name, function_body) in functions.iter() {
                     if !function_name.ends_with(":") {
-                        let function_compilation_context = compilation_context.extended(
-                            [
-                                PathSegment::Functions,
-                                PathSegment::Function(function_name.clone()),
-                            ],
-                            [],
-                            [],
-                            [],
-                        );
+                        let mut function_compilation_context = compilation_context.clone();
+                        function_compilation_context.path.0.extend([
+                            PathSegment::Functions,
+                            PathSegment::Function(function_name.clone()),
+                        ]);
                         return Err(anyhow!(
                             "Got function named {function_name:?}, but expect function named {:?} \
                              at {:#?}",
@@ -241,132 +247,82 @@ fn compile_with_context(
                             function_compilation_context.path
                         ));
                     }
-                    compiled_functions.push((function_name.clone(), function_body.clone()));
-                }
-                let compute_compilation_context = compilation_context.extended(
-                    [PathSegment::Scope, PathSegment::Compute],
-                    compiled_functions,
-                    compiled_constants,
-                    [],
-                );
-                let compiled_compute = compile_with_context(compute, compute_compilation_context)?;
-                let mut result_external_dependencies =
-                    compiled_compute.external_dependencies.clone();
-                for function_name in compiled_compute
-                    .external_dependencies
-                    .functions_names
-                    .iter()
-                {
-                    if compilation_context
+                    compute_compilation_context
                         .available_functions
-                        .contains_key(function_name)
-                    {
-                        result_external_dependencies
-                            .functions_names
-                            .remove_mut(function_name);
-                    }
+                        .extend([(function_name.clone(), function_body.clone())]);
                 }
-                for constant_name in compiled_compute
-                    .external_dependencies
-                    .constants_names
-                    .iter()
-                {
-                    if compilation_context
-                        .available_constants
-                        .contains_key(constant_name)
-                    {
-                        result_external_dependencies
-                            .constants_names
-                            .remove_mut(constant_name);
-                    }
-                }
-                IntermediateRepresentation {
-                    r#type: compiled_compute.r#type.clone(),
-                    content: Content::Clause(intermediate_representation::Clause::Scope(Box::new(
-                        compiled_compute.clone(),
-                    ))),
-                    available_functions: compilation_context.available_functions,
-                    available_constants: compilation_context.available_constants,
-                    external_dependencies: result_external_dependencies,
-                    resolved_types: compiled_compute.resolved_types,
-                }
+                let (compute_type, compute_node) = compile_with_context(
+                    compute,
+                    compute_compilation_context,
+                    global_compilation_context,
+                )?;
+                (compute_type, compute_node)
             }
             Clause::Branching { r#if, then, r#else } => {
-                let if_compilation_context = compilation_context.extended(
-                    [PathSegment::Branching, PathSegment::If],
-                    [],
-                    [],
-                    [],
-                );
-                let if_compiled = compile_with_context(r#if, if_compilation_context.clone())?;
-                if if_compiled.r#type != Type::Bool {
-                    return Err(if_compilation_context.error(&if_compiled.r#type, &Type::Bool));
-                }
-                let then_compiled = compile_with_context(
-                    then,
-                    compilation_context.extended(
-                        [PathSegment::Branching, PathSegment::Then],
-                        [],
-                        [],
-                        [],
-                    ),
+                let mut if_compilation_context = compilation_context.clone();
+                if_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::Branching, PathSegment::If]);
+                let (if_type, if_node) = compile_with_context(
+                    r#if,
+                    if_compilation_context.clone(),
+                    global_compilation_context,
                 )?;
-                let else_compilation_context = compilation_context.extended(
-                    [PathSegment::Branching, PathSegment::Else],
-                    [],
-                    [],
-                    [],
-                );
-                let else_compiled = compile_with_context(r#else, else_compilation_context.clone())?;
-                if else_compiled.r#type != then_compiled.r#type {
-                    return Err(else_compilation_context
-                        .error(&else_compiled.r#type, &then_compiled.r#type));
+                if if_type != Type::Bool {
+                    return Err(if_compilation_context.error(&if_type, &Type::Bool));
                 }
-                IntermediateRepresentation {
-                    r#type: then_compiled.r#type.clone(),
-                    content: Content::Clause(intermediate_representation::Clause::Branching {
-                        r#if: Box::new(if_compiled.clone()),
-                        then: Box::new(then_compiled.clone()),
-                        r#else: Box::new(else_compiled.clone()),
-                    }),
-                    available_functions: compilation_context.available_functions.clone(),
-                    available_constants: compilation_context.available_constants.clone(),
-                    external_dependencies: if_compiled.external_dependencies.merged([
-                        then_compiled.external_dependencies,
-                        else_compiled.external_dependencies,
-                    ]),
-                    resolved_types: extended_map(
-                        &if_compiled.resolved_types,
-                        else_compiled
-                            .resolved_types
-                            .iter()
-                            .chain(then_compiled.resolved_types.iter()),
-                    ),
+                let mut then_compilation_context = compilation_context.clone();
+                then_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::Branching, PathSegment::Then]);
+                let (then_type, then_node) = compile_with_context(
+                    then,
+                    then_compilation_context,
+                    global_compilation_context,
+                )?;
+                let mut else_compilation_context = compilation_context.clone();
+                else_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::Branching, PathSegment::Else]);
+                let (else_type, else_node) = compile_with_context(
+                    r#else,
+                    else_compilation_context.clone(),
+                    global_compilation_context,
+                )?;
+                if else_type != then_type {
+                    return Err(else_compilation_context.error(&else_type, &then_type));
                 }
+                (
+                    then_type,
+                    Node {
+                        path: compilation_context.path.clone(),
+                        content: Content::Clause(intermediate_representation::Clause::Branching {
+                            r#if: Box::new(if_node),
+                            then: Box::new(then_node),
+                            r#else: Box::new(else_node),
+                        }),
+                    },
+                )
             }
             Clause::Constant(constant_name) => {
-                if let Some(compiled_constant) =
-                    compilation_context.available_constants.get(constant_name)
+                if let Some(constant_index) = compilation_context
+                    .available_constants
+                    .inner
+                    .get(constant_name)
                 {
-                    IntermediateRepresentation {
-                        r#type: compiled_constant.r#type.clone(),
-                        content: Content::Constant(constant_name.clone()),
-                        available_functions: compilation_context.available_functions.clone(),
-                        available_constants: compilation_context.available_constants.clone(),
-                        external_dependencies: ExternalDependencies {
-                            functions_names: rpds::RedBlackTreeSetSync::new_sync(),
-                            constants_names: rpds::RedBlackTreeSetSync::from_iter([
-                                constant_name.clone()
-                            ]),
-                        },
-                        resolved_types: rpds::RedBlackTreeMapSync::new_sync(),
-                    }
+                    let (constant_type, constant_node) =
+                        global_compilation_context.constants[*constant_index];
+                    (constant_type, constant_node)
                 } else {
                     return Err(anyhow!(
-                        "Got no constant {constant_name:?} at {:#?}, available constants are {:?}",
+                        "Got no constant {constant_name:?} at {:#?}, available constants are {:#?}",
                         compilation_context.path,
                         compilation_context
                             .available_constants
+                            .inner
                             .keys()
                             .collect::<Vec<_>>()
                     ));
@@ -375,6 +331,7 @@ fn compile_with_context(
             Clause::DefaultArgument => compile_with_context(
                 &Program::Clause(Clause::Constant(DEFAULT_ARGUMENT_NAME.to_string())),
                 compilation_context,
+                global_compilation_context,
             )?,
         },
         Program::EmbeddedFunction(embedded_function) => match &**embedded_function {

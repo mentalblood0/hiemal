@@ -5,14 +5,14 @@ use crate::{program::Path, value::Value};
 #[derive(Debug, Clone)]
 pub struct IntermediateRepresentation {
     pub root: Node,
-    pub user_functions: Vec<Content>,
-    pub constants: Vec<Content>,
+    pub user_functions: Vec<Node>,
+    pub constants: Vec<Node>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Node {
-    path: Path,
-    content: Content,
+    pub path: Path,
+    pub content: Content,
 }
 
 #[derive(Debug, Clone)]
