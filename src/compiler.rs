@@ -289,7 +289,15 @@ fn compile_with_context(
                     compute_compilation_context,
                     global_compilation_context,
                 )?;
-                (compute_type, compute_node)
+                (
+                    compute_type,
+                    Node {
+                        path: Path(compilation_context.path.0.extended([PathSegment::Scope])),
+                        content: Box::new(Content::Clause(
+                            intermediate_representation::Clause::Scope(compute_node),
+                        )),
+                    },
+                )
             }
             Clause::Branching { r#if, then, r#else } => {
                 let mut if_compilation_context = compilation_context.clone();
@@ -331,12 +339,7 @@ fn compile_with_context(
                 (
                     then_type,
                     Node {
-                        path: Path(
-                            compilation_context
-                                .path
-                                .0
-                                .extended([PathSegment::Branching]),
-                        ),
+                        path: compilation_context.path.clone(),
                         content: Box::new(Content::Clause(
                             intermediate_representation::Clause::Branching {
                                 r#if: if_node,
@@ -358,12 +361,7 @@ fn compile_with_context(
                     (
                         constant_type,
                         Node {
-                            path: Path(
-                                compilation_context
-                                    .path
-                                    .0
-                                    .extended([PathSegment::Constant(constant_name.clone())]),
-                            ),
+                            path: compilation_context.path.clone(),
                             content: Box::new(Content::Clause(
                                 intermediate_representation::Clause::Constant(*constant_index),
                             )),
@@ -409,12 +407,7 @@ fn compile_with_context(
                 (
                     Type::Number,
                     Node {
-                        path: Path(
-                            argument_compilation_context
-                                .path
-                                .0
-                                .extended([PathSegment::Sum]),
-                        ),
+                        path: compilation_context.path.clone(),
                         content: Box::new(Content::EmbeddedFunctionCall(
                             intermediate_representation::EmbeddedFunction::Sum(argument_node),
                         )),
@@ -426,7 +419,7 @@ fn compile_with_context(
                 argument_compilation_context
                     .path
                     .0
-                    .extend([PathSegment::Sum]);
+                    .extend([PathSegment::IsSorted]);
                 let (argument_type, argument_node) = compile_with_context(
                     &argument,
                     argument_compilation_context.clone(),
@@ -439,12 +432,7 @@ fn compile_with_context(
                 (
                     Type::Bool,
                     Node {
-                        path: Path(
-                            argument_compilation_context
-                                .path
-                                .0
-                                .extended([PathSegment::IsSorted]),
-                        ),
+                        path: compilation_context.path.clone(),
                         content: Box::new(Content::EmbeddedFunctionCall(
                             intermediate_representation::EmbeddedFunction::IsSorted(argument_node),
                         )),
@@ -535,7 +523,7 @@ fn compile_with_context(
                                 return Ok((
                                     function_type.clone(),
                                     Node {
-                                        path: body_compilation_context.path.clone(),
+                                        path: compilation_context.path.clone(),
                                         content: Box::new(Content::UserFunctionCall(
                                             *function_index,
                                         )),
@@ -568,7 +556,15 @@ fn compile_with_context(
                                     .1 = function_type.clone();
                                 global_compilation_context.user_functions[function_index] =
                                     ProgramOrNode::Node(function_node.clone());
-                                return Ok((function_type, function_node));
+                                return Ok((
+                                    function_type,
+                                    Node {
+                                        path: compilation_context.path.clone(),
+                                        content: Box::new(Content::UserFunctionCall(
+                                            function_index,
+                                        )),
+                                    },
+                                ));
                             }
                         } else {
                             return Err(anyhow!(
