@@ -1,309 +1,55 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use dashu::Rational;
-use hiemal::{global_includes_cache, global_interpreter, program::Program, value::Value};
+use hiemal::{compiler::compile, computer::compute, program::Program};
 use serde_json::json;
 
 fn benchmarks(bencher_context: &mut Criterion) {
-    let interpreter = global_interpreter();
-
     {
         for number in [20, 21, 22] {
             let program = serde_json::from_value::<Program>(json!({
-                "with": {
-                    "functions": {
-                        "fibonacci": {
-                            "if": {
-                                "is sorted": [
-                                    "_",
-                                    1
-                                ]
-                            },
-                            "then": "_",
-                            "else": {
+              "scope": {
+                "functions": {
+                  "fibonacci:": {
+                    "branching": {
+                      "if": {
+                        "is sorted": [
+                          "_",
+                          1
+                        ]
+                      },
+                      "then": "_",
+                      "else": {
+                          "sum": [
+                            {
+                              "fibonacci:": {
                                 "sum": [
-                                    {
-                                        "fibonacci": {
-                                            "sum": [
-                                                "_",
-                                                -1
-                                            ]
-                                        }
-                                    },
-                                    {
-                                        "fibonacci": {
-                                            "sum": [
-                                                "_",
-                                                -2
-                                            ]
-                                        }
-                                    }
+                                  "_",
+                                  -1
                                 ]
+                              }
+                            },
+                            {
+                              "fibonacci:": {
+                                "sum": [
+                                  "_",
+                                  -2
+                                ]
+                              }
                             }
-                        }
+                          ]
+                      }
                     }
+                  }
                 },
                 "compute": {
-                    "fibonacci": number
+                  "fibonacci:": number
                 }
+              }
             }))
             .unwrap();
             bencher_context.bench_function(&format!("fibonacci_{number}"), |b| {
-                b.iter(|| {
-                    interpreter
-                        .compute(&program, global_includes_cache())
-                        .unwrap()
-                })
+                b.iter(|| compute(&compile(&program).unwrap()).unwrap())
             });
         }
-    }
-    {
-        let program = serde_json::from_value::<Program>(json!({
-            "with": {
-                "functions": {
-                    "fibonacci": {
-                        "if": {
-                            "is sorted": [
-                                "_",
-                                1
-                            ]
-                        },
-                        "then": "_",
-                        "else": {
-                            "sum": [
-                                {
-                                    "fibonacci": {
-                                        "sum": [
-                                            "_",
-                                            -1
-                                        ]
-                                    }
-                                },
-                                {
-                                    "fibonacci": {
-                                        "sum": [
-                                            "_",
-                                            -2
-                                        ]
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            },
-            "compute": {
-                "20": {
-                    "fibonacci": 20
-                },
-                "21": {
-                    "fibonacci": 21
-                },
-                "22": {
-                    "fibonacci": 22
-                }
-            }
-        }))
-        .unwrap();
-        bencher_context.bench_function(&format!("fibonacci_object"), |b| {
-            b.iter(|| {
-                interpreter
-                    .compute(&program, global_includes_cache())
-                    .unwrap()
-            })
-        });
-    }
-    {
-        let program = serde_json::from_value::<Program>(json!({
-            "with": {
-                "functions": {
-                    "fibonacci": {
-                        "if": {
-                            "is sorted": [
-                                "_",
-                                1
-                            ]
-                        },
-                        "then": "_",
-                        "else": {
-                            "sum": [
-                                {
-                                    "fibonacci": {
-                                        "sum": [
-                                            "_",
-                                            -1
-                                        ]
-                                    }
-                                },
-                                {
-                                    "fibonacci": {
-                                        "sum": [
-                                            "_",
-                                            -2
-                                        ]
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            },
-            "compute": {
-                "with": {
-                    "constants": {
-                        "x": {"fibonacci": 20},
-                        "y": {"fibonacci": 21},
-                        "z": {"fibonacci": 22}
-                    }
-                },
-                "compute": [
-                    {"constant": "x"},
-                    {"constant": "y"},
-                    {"constant": "z"}
-                ]
-            }
-        }))
-        .unwrap();
-        bencher_context.bench_function(&format!("fibonacci_constants"), |b| {
-            b.iter(|| {
-                interpreter
-                    .compute(&program, global_includes_cache())
-                    .unwrap()
-            })
-        });
-    }
-    {
-        let program = serde_json::from_value::<Program>(json!({
-            "with": {
-                "functions": {
-                    "fibonacci": {
-                        "if": {
-                            "is sorted": [
-                                "_",
-                                1
-                            ]
-                        },
-                        "then": "_",
-                        "else": {
-                            "sum": [
-                                {
-                                    "fibonacci": {
-                                        "sum": [
-                                            "_",
-                                            -1
-                                        ]
-                                    }
-                                },
-                                {
-                                    "fibonacci": {
-                                        "sum": [
-                                            "_",
-                                            -2
-                                        ]
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            },
-            "compute": {
-                "map": [20, 21, 22],
-                "through": {"fibonacci": "_"}
-            }
-        }))
-        .unwrap();
-        bencher_context.bench_function(&format!("fibonacci_map"), |b| {
-            b.iter(|| {
-                interpreter
-                    .compute(&program, global_includes_cache())
-                    .unwrap()
-            })
-        });
-    }
-    {
-        let program = serde_json::from_value::<Program>(json!({
-            "with": {
-                "functions": {
-                    "fibonacci": {
-                        "if": {
-                            "is sorted": [
-                                "_",
-                                1
-                            ]
-                        },
-                        "then": "_",
-                        "else": {
-                            "sum": [
-                                {
-                                    "fibonacci": {
-                                        "sum": [
-                                            "_",
-                                            -1
-                                        ]
-                                    }
-                                },
-                                {
-                                    "fibonacci": {
-                                        "sum": [
-                                            "_",
-                                            -2
-                                        ]
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            },
-            "compute": {
-                "filter": [20, 21, 22],
-                "through": {
-                    "is sorted": [0, {"fibonacci": "_"}]
-                }
-            }
-        }))
-        .unwrap();
-        bencher_context.bench_function(&format!("fibonacci_filter"), |b| {
-            b.iter(|| {
-                interpreter
-                    .compute(&program, global_includes_cache())
-                    .unwrap()
-            })
-        });
-    }
-    {
-        let number = 20u64;
-        let correct_raw: u64 = (1..=number).product();
-        let correct = Value::Number(Rational::from(correct_raw));
-        let program = serde_json::from_value::<Program>(json!({
-            "with": {
-                "functions": {
-                    "factorial": {
-                        "product": {
-                            "sequence": {
-                                "from": 1,
-                                "to": "_",
-                                "step": 1
-                            }
-                        }
-                    }
-                }
-            },
-            "compute": {
-                "factorial": number
-            }
-        }))
-        .unwrap();
-        bencher_context.bench_function(&format!("factorial_{number}"), |b| {
-            b.iter(|| {
-                assert_eq!(
-                    interpreter
-                        .compute(&program, global_includes_cache())
-                        .unwrap(),
-                    correct
-                )
-            })
-        });
     }
 }
 

@@ -22,7 +22,7 @@ pub fn compute(intermediate_representation: &IntermediateRepresentation) -> Resu
             constants: Vector {
                 inner: rpds::VectorSync::from_iter(
                     std::iter::repeat(Value::Null)
-                        .take(intermediate_representation.constants.len()),
+                        .take(intermediate_representation.unique_constants_names_count),
                 ),
             },
         },

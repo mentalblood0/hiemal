@@ -187,6 +187,9 @@ pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
             .into_iter()
             .map(|constant| constant.1)
             .collect(),
+        unique_constants_names_count: global_compilation_context
+            .constants_names_to_name_clustered_constants_indices
+            .len(),
     })
 }
 

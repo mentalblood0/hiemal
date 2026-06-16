@@ -7,6 +7,7 @@ pub struct IntermediateRepresentation {
     pub root: Node,
     pub user_functions: Vec<Node>,
     pub constants: Vec<Node>,
+    pub unique_constants_names_count: usize,
 }
 
 #[derive(Debug, Clone)]

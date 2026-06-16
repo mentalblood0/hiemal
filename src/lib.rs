@@ -9,6 +9,7 @@ pub mod value;
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_eq;
     use serde_json::json;
 
     use crate::{compiler::compile, computer::compute};
@@ -32,53 +33,58 @@ mod tests {
 
     #[test]
     fn test_recursive_normal() {
-        compute(
-            &compile(
-                &serde_json::from_value(json!({
-                  "scope": {
-                    "functions": {
-                      "fibonacci:": {
-                        "branching": {
-                          "if": {
-                            "is sorted": [
-                              "_",
-                              1
-                            ]
-                          },
-                          "then": "_",
-                          "else": {
-                              "sum": [
-                                {
-                                  "fibonacci:": {
-                                    "sum": [
+        assert_eq!(
+            serde_json::to_value(
+                compute(
+                    &compile(
+                        &serde_json::from_value(json!({
+                          "scope": {
+                            "functions": {
+                              "fibonacci:": {
+                                "branching": {
+                                  "if": {
+                                    "is sorted": [
                                       "_",
-                                      -1
+                                      1
                                     ]
-                                  }
-                                },
-                                0,
-                                {
-                                  "fibonacci:": {
-                                    "sum": [
-                                      "_",
-                                      -2
-                                    ]
+                                  },
+                                  "then": "_",
+                                  "else": {
+                                      "sum": [
+                                        {
+                                          "fibonacci:": {
+                                            "sum": [
+                                              "_",
+                                              -1
+                                            ]
+                                          }
+                                        },
+                                        {
+                                          "fibonacci:": {
+                                            "sum": [
+                                              "_",
+                                              -2
+                                            ]
+                                          }
+                                        }
+                                      ]
                                   }
                                 }
-                              ]
-                          }
-                        }
-                      }
-                    },
-                    "compute": {
-                      "fibonacci:": 10
-                    }
-                }}))
-                .unwrap(),
+                              }
+                            },
+                            "compute": {
+                              "fibonacci:": 10
+                            }
+                        }}))
+                        .unwrap(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap()
             )
             .unwrap(),
-        )
-        .unwrap();
+            json!("55")
+        );
     }
 
     #[test]
