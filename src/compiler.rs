@@ -35,7 +35,7 @@ fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Res
         Value::Bool(_) => Type::Bool,
         Value::Null => Type::Null,
         Value::Array(array) => {
-            let mut element_type_option = None;
+            let mut previous_element_type_option = None;
             for (element_index, element) in array.inner.iter().enumerate() {
                 let mut current_element_compilation_context = compilation_context.clone();
                 current_element_compilation_context
@@ -44,16 +44,16 @@ fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Res
                     .extend([PathSegment::ArrayIndex(element_index)]);
                 let current_element_type =
                     get_value_type(element, current_element_compilation_context.clone())?;
-                if let Some(ref element_type) = element_type_option {
+                if let Some(ref element_type) = previous_element_type_option {
                     if &current_element_type != element_type {
                         return Err(current_element_compilation_context
                             .error(&current_element_type, element_type));
                     }
                 } else {
-                    element_type_option = Some(current_element_type);
+                    previous_element_type_option = Some(current_element_type);
                 }
             }
-            if let Some(element_type) = element_type_option {
+            if let Some(element_type) = previous_element_type_option {
                 element_type
             } else {
                 return Err(anyhow!(
@@ -79,7 +79,7 @@ fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Res
     })
 }
 
-fn resolve_types(
+fn assert_equal(
     got_type: &Type,
     expected_type: &Type,
     compilation_context: &CompilationContext,
@@ -90,7 +90,7 @@ fn resolve_types(
         | (Type::String, Type::String)
         | (Type::Bool, Type::Bool)
         | (Type::Null, Type::Null) => Ok(()),
-        (Type::Array(got_element_type), Type::Array(expected_element_type)) => resolve_types(
+        (Type::Array(got_element_type), Type::Array(expected_element_type)) => assert_equal(
             got_element_type,
             expected_element_type,
             compilation_context,
@@ -99,7 +99,7 @@ fn resolve_types(
         (Type::Object(got_element_inner_types), Type::Object(expected_element_inner_types)) => {
             for (expected_value_key, expected_value_type) in expected_element_inner_types {
                 if let Some(got_value_type) = got_element_inner_types.get(expected_value_key) {
-                    resolve_types(
+                    assert_equal(
                         got_value_type,
                         expected_value_type,
                         compilation_context,
@@ -220,7 +220,7 @@ fn compile_with_context(
                     global_compilation_context,
                 )?;
                 if let Some(ref previous_element_type) = previous_element_type_option {
-                    resolve_types(
+                    assert_equal(
                         &element_type,
                         &previous_element_type,
                         &compilation_context,
@@ -332,9 +332,12 @@ fn compile_with_context(
                     if_compilation_context.clone(),
                     global_compilation_context,
                 )?;
-                if if_type != Type::Bool {
-                    return Err(if_compilation_context.error(&if_type, &Type::Bool));
-                }
+                assert_equal(
+                    &if_type,
+                    &Type::Bool,
+                    &compilation_context,
+                    global_compilation_context,
+                )?;
                 let mut then_compilation_context = compilation_context.clone();
                 then_compilation_context
                     .path
@@ -355,9 +358,12 @@ fn compile_with_context(
                     else_compilation_context.clone(),
                     global_compilation_context,
                 )?;
-                if else_type != then_type {
-                    return Err(else_compilation_context.error(&else_type, &then_type));
-                }
+                assert_equal(
+                    &else_type,
+                    &then_type,
+                    &compilation_context,
+                    global_compilation_context,
+                )?;
                 (
                     then_type,
                     Node {
@@ -418,7 +424,7 @@ fn compile_with_context(
                     global_compilation_context,
                 )?;
                 let expected_type = Type::Array(Box::new(Type::Number));
-                resolve_types(
+                assert_equal(
                     &argument_type,
                     &expected_type,
                     &compilation_context,
