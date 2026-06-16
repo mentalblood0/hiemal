@@ -101,7 +101,6 @@ pub fn compute_node(
                     .unwrap()
                     .inner
                     .iter()
-                    .map(|element| element.as_number().unwrap())
                     .is_sorted(),
             )),
         },
