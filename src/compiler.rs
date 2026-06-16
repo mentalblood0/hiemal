@@ -235,7 +235,7 @@ fn compile_with_context(
                 Type::Array(Box::new(previous_element_type_option.unwrap())),
                 Node {
                     path: compilation_context.path.clone(),
-                    content: Box::new(Content::Array(result_content)),
+                    content: Content::Array(result_content),
                 },
             )
         }
@@ -314,12 +314,10 @@ fn compile_with_context(
                     compute_type,
                     Node {
                         path: Path(compilation_context.path.0.extended([PathSegment::Scope])),
-                        content: Box::new(Content::Clause(
-                            intermediate_representation::Clause::Scope {
-                                constants: new_constants_indices,
-                                compute: compute_node,
-                            },
-                        )),
+                        content: Content::Scope {
+                            constants: new_constants_indices,
+                            compute: Box::new(compute_node),
+                        },
                     },
                 )
             }
@@ -364,8 +362,8 @@ fn compile_with_context(
                     then_type,
                     Node {
                         path: compilation_context.path.clone(),
-                        content: Box::new(Content::Clause(
-                            intermediate_representation::Clause::Branching {
+                        content: Content::Branching(Box::new(
+                            intermediate_representation::Branching {
                                 r#if: if_node,
                                 then: then_node,
                                 r#else: else_node,
@@ -386,9 +384,7 @@ fn compile_with_context(
                         constant_type,
                         Node {
                             path: compilation_context.path.clone(),
-                            content: Box::new(Content::Clause(
-                                intermediate_representation::Clause::Constant(*constant_index),
-                            )),
+                            content: Content::Constant(*constant_index),
                         },
                     )
                 } else {
@@ -432,7 +428,7 @@ fn compile_with_context(
                     Type::Number,
                     Node {
                         path: compilation_context.path.clone(),
-                        content: Box::new(Content::EmbeddedFunctionCall(
+                        content: Content::EmbeddedFunctionCall(Box::new(
                             intermediate_representation::EmbeddedFunction::Sum(argument_node),
                         )),
                     },
@@ -457,7 +453,7 @@ fn compile_with_context(
                     Type::Bool,
                     Node {
                         path: compilation_context.path.clone(),
-                        content: Box::new(Content::EmbeddedFunctionCall(
+                        content: Content::EmbeddedFunctionCall(Box::new(
                             intermediate_representation::EmbeddedFunction::IsSorted(argument_node),
                         )),
                     },
@@ -567,10 +563,10 @@ fn compile_with_context(
                                     function_type.clone(),
                                     Node {
                                         path: compilation_context.path.clone(),
-                                        content: Box::new(Content::UserFunctionCall {
+                                        content: Content::UserFunctionCall {
                                             arguments: new_constants_indices,
                                             body: *function_index,
-                                        }),
+                                        },
                                     },
                                 ));
                             } else {
@@ -604,10 +600,10 @@ fn compile_with_context(
                                     function_type,
                                     Node {
                                         path: compilation_context.path.clone(),
-                                        content: Box::new(Content::UserFunctionCall {
+                                        content: Content::UserFunctionCall {
                                             arguments: new_constants_indices,
                                             body: function_index,
-                                        }),
+                                        },
                                     },
                                 ));
                             }
@@ -647,7 +643,7 @@ fn compile_with_context(
                 Type::Object(result_inner_types),
                 Node {
                     path: compilation_context.path.clone(),
-                    content: Box::new(Content::Object(result_content)),
+                    content: Content::Object(result_content),
                 },
             )
         }
@@ -655,7 +651,7 @@ fn compile_with_context(
             get_value_type(value, compilation_context.clone())?,
             Node {
                 path: compilation_context.path.clone(),
-                content: Box::new(Content::Value(value.clone())),
+                content: Content::Value(value.clone()),
             },
         ),
     })

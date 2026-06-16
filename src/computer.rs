@@ -3,9 +3,7 @@ use dashu::Rational;
 
 use crate::{
     containers::{Map, Vector},
-    intermediate_representation::{
-        Clause, Content, EmbeddedFunction, IntermediateRepresentation, Node,
-    },
+    intermediate_representation::{Content, EmbeddedFunction, IntermediateRepresentation, Node},
     value::Value,
 };
 
@@ -34,7 +32,7 @@ pub fn compute_node(
     intermediate_representation: &IntermediateRepresentation,
     computation_context: ComputationContext,
 ) -> Result<Value> {
-    match &*node.content {
+    match &node.content {
         Content::Array(array) => {
             let mut result = Vector::default();
             for element in array {
@@ -46,42 +44,48 @@ pub fn compute_node(
             }
             Ok(Value::Array(result))
         }
-        Content::Clause(clause) => match clause {
-            Clause::Scope { constants, compute } => {
-                let mut result_computation_context = computation_context.clone();
-                for (constant_name_clustered_index, constant_index) in constants {
-                    result_computation_context.constants.inner[*constant_name_clustered_index] =
-                        compute_node(
-                            &intermediate_representation.constants[*constant_index],
-                            intermediate_representation,
-                            computation_context.clone(),
-                        )?;
-                }
+        Content::Scope { constants, compute } => {
+            let mut result_computation_context = computation_context.clone();
+            for (constant_name_clustered_index, constant_index) in constants {
+                result_computation_context.constants.inner[*constant_name_clustered_index] =
+                    compute_node(
+                        &intermediate_representation.constants[*constant_index],
+                        intermediate_representation,
+                        computation_context.clone(),
+                    )?;
+            }
+            compute_node(
+                &compute,
+                intermediate_representation,
+                result_computation_context,
+            )
+        }
+        Content::Branching(branching) => {
+            if compute_node(
+                &branching.r#if,
+                intermediate_representation,
+                computation_context.clone(),
+            )?
+            .as_bool()
+            .unwrap()
+            {
                 compute_node(
-                    &compute,
+                    &branching.then,
                     intermediate_representation,
-                    result_computation_context,
+                    computation_context,
+                )
+            } else {
+                compute_node(
+                    &branching.r#else,
+                    intermediate_representation,
+                    computation_context,
                 )
             }
-            Clause::Branching { r#if, then, r#else } => {
-                if compute_node(
-                    r#if,
-                    intermediate_representation,
-                    computation_context.clone(),
-                )?
-                .as_bool()
-                .unwrap()
-                {
-                    compute_node(then, intermediate_representation, computation_context)
-                } else {
-                    compute_node(r#else, intermediate_representation, computation_context)
-                }
-            }
-            Clause::Constant(constant_index) => {
-                Ok(computation_context.constants.inner[*constant_index].clone())
-            }
-        },
-        Content::EmbeddedFunctionCall(embedded_function) => match embedded_function {
+        }
+        Content::Constant(constant_index) => {
+            Ok(computation_context.constants.inner[*constant_index].clone())
+        }
+        Content::EmbeddedFunctionCall(embedded_function) => match &**embedded_function {
             EmbeddedFunction::Sum(argument) => Ok(Value::Number(
                 compute_node(argument, intermediate_representation, computation_context)?
                     .as_array()

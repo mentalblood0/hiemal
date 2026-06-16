@@ -13,14 +13,19 @@ pub struct IntermediateRepresentation {
 #[derive(Debug, Clone)]
 pub struct Node {
     pub path: Path,
-    pub content: Box<Content>,
+    pub content: Content,
 }
 
 #[derive(Debug, Clone)]
 pub enum Content {
     Array(Vec<Node>),
-    Clause(Clause),
-    EmbeddedFunctionCall(EmbeddedFunction),
+    Scope {
+        constants: Vec<(usize, usize)>,
+        compute: Box<Node>,
+    },
+    Branching(Box<Branching>),
+    Constant(usize),
+    EmbeddedFunctionCall(Box<EmbeddedFunction>),
     UserFunctionCall {
         arguments: Vec<(usize, usize)>,
         body: usize,
@@ -30,17 +35,10 @@ pub enum Content {
 }
 
 #[derive(Debug, Clone)]
-pub enum Clause {
-    Scope {
-        constants: Vec<(usize, usize)>,
-        compute: Node,
-    },
-    Branching {
-        r#if: Node,
-        then: Node,
-        r#else: Node,
-    },
-    Constant(usize),
+pub struct Branching {
+    pub r#if: Node,
+    pub then: Node,
+    pub r#else: Node,
 }
 
 #[derive(Debug, Clone)]
