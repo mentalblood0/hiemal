@@ -20,21 +20,23 @@ pub enum Content {
     Array(Vec<Node>),
     Clause(Clause),
     EmbeddedFunctionCall(EmbeddedFunction),
-    UserFunctionCall(usize),
+    UserFunctionCall { arguments: Vec<usize>, body: usize },
     Object(BTreeMap<String, Node>),
     Value(Value),
 }
 
 #[derive(Debug, Clone)]
 pub enum Clause {
-    Scope(Node),
+    Scope {
+        constants: Vec<usize>,
+        compute: Node,
+    },
     Branching {
         r#if: Node,
         then: Node,
         r#else: Node,
     },
     Constant(usize),
-    DefaultArgument,
 }
 
 #[derive(Debug, Clone)]

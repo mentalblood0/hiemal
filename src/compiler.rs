@@ -246,6 +246,7 @@ fn compile_with_context(
                     .path
                     .0
                     .extend([PathSegment::Scope, PathSegment::Compute]);
+                let mut new_constants_indices = Vec::with_capacity(constants.len());
                 for (constant_name, constant_compute_body) in constants.iter() {
                     let mut constant_compilation_context = compilation_context.clone();
                     constant_compilation_context.path.0.extend([
@@ -259,6 +260,7 @@ fn compile_with_context(
                         global_compilation_context,
                     )?;
                     let constant_index = global_compilation_context.constants.len();
+                    new_constants_indices.push(constant_index);
                     compute_compilation_context
                         .available_constants
                         .extend([(constant_name.clone(), constant_index)]);
@@ -294,7 +296,10 @@ fn compile_with_context(
                     Node {
                         path: Path(compilation_context.path.0.extended([PathSegment::Scope])),
                         content: Box::new(Content::Clause(
-                            intermediate_representation::Clause::Scope(compute_node),
+                            intermediate_representation::Clause::Scope {
+                                constants: new_constants_indices,
+                                compute: compute_node,
+                            },
                         )),
                     },
                 )
@@ -490,6 +495,7 @@ fn compile_with_context(
                                     [(DEFAULT_ARGUMENT_NAME, function_argument)].into_iter(),
                                 ),
                             };
+                            let mut new_constants_indices = Vec::new();
                             for (function_argument_name, function_argument_body) in
                                 arguments_iterator
                             {
@@ -504,6 +510,7 @@ fn compile_with_context(
                                     global_compilation_context,
                                 )?;
                                 let constant_index = global_compilation_context.constants.len();
+                                new_constants_indices.push(constant_index);
                                 global_compilation_context
                                     .constants
                                     .push((constant_type, constant_node));
@@ -524,9 +531,10 @@ fn compile_with_context(
                                     function_type.clone(),
                                     Node {
                                         path: compilation_context.path.clone(),
-                                        content: Box::new(Content::UserFunctionCall(
-                                            *function_index,
-                                        )),
+                                        content: Box::new(Content::UserFunctionCall {
+                                            arguments: new_constants_indices,
+                                            body: *function_index,
+                                        }),
                                     },
                                 ));
                             } else {
@@ -560,9 +568,10 @@ fn compile_with_context(
                                     function_type,
                                     Node {
                                         path: compilation_context.path.clone(),
-                                        content: Box::new(Content::UserFunctionCall(
-                                            function_index,
-                                        )),
+                                        content: Box::new(Content::UserFunctionCall {
+                                            arguments: new_constants_indices,
+                                            body: function_index,
+                                        }),
                                     },
                                 ));
                             }

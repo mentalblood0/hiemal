@@ -1,4 +1,5 @@
 pub mod compiler;
+pub mod computer;
 pub mod containers;
 pub mod default_argument_name;
 pub mod intermediate_representation;
@@ -10,7 +11,7 @@ pub mod value;
 mod tests {
     use serde_json::json;
 
-    use crate::compiler::compile;
+    use crate::{compiler::compile, computer::compute};
 
     #[test]
     fn test_numbers() {
@@ -31,47 +32,50 @@ mod tests {
 
     #[test]
     fn test_recursive_normal() {
-        compile(
-            &serde_json::from_value(json!({
-              "scope": {
-                "functions": {
-                  "fibonacci:": {
-                    "branching": {
-                      "if": {
-                        "is sorted": [
-                          "_",
-                          1
-                        ]
-                      },
-                      "then": "_",
-                      "else": {
-                          "sum": [
-                            {
-                              "fibonacci:": {
-                                "sum": [
-                                  "_",
-                                  -1
-                                ]
-                              }
-                            },
-                            0,
-                            {
-                              "fibonacci:": {
-                                "sum": [
-                                  "_",
-                                  -2
-                                ]
-                              }
-                            }
-                          ]
+        compute(
+            &compile(
+                &serde_json::from_value(json!({
+                  "scope": {
+                    "functions": {
+                      "fibonacci:": {
+                        "branching": {
+                          "if": {
+                            "is sorted": [
+                              "_",
+                              1
+                            ]
+                          },
+                          "then": "_",
+                          "else": {
+                              "sum": [
+                                {
+                                  "fibonacci:": {
+                                    "sum": [
+                                      "_",
+                                      -1
+                                    ]
+                                  }
+                                },
+                                0,
+                                {
+                                  "fibonacci:": {
+                                    "sum": [
+                                      "_",
+                                      -2
+                                    ]
+                                  }
+                                }
+                              ]
+                          }
+                        }
                       }
+                    },
+                    "compute": {
+                      "fibonacci:": 10
                     }
-                  }
-                },
-                "compute": {
-                  "fibonacci:": 10
-                }
-            }}))
+                }}))
+                .unwrap(),
+            )
             .unwrap(),
         )
         .unwrap();

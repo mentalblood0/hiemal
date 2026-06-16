@@ -28,7 +28,7 @@ where
     Ok(ropey::Rope::from_str(&s))
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord)]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Default)]
 #[serde(untagged)]
 pub enum Value {
     #[serde(deserialize_with = "deserialize_rational")]
@@ -39,6 +39,7 @@ pub enum Value {
     )]
     String(ropey::Rope),
     Bool(bool),
+    #[default]
     Null,
     Array(Vector<Value>),
     Object(Map<String, Value>),
