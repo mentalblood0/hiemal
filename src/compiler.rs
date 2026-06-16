@@ -163,6 +163,7 @@ impl ProgramOrNode {
 pub struct GlobalCompilationContext {
     pub user_function_to_index_and_type_option: BTreeMap<Program, (usize, Type)>,
     pub user_functions: Vec<ProgramOrNode>,
+    pub constants_names_to_name_clustered_constants_indices: BTreeMap<String, usize>,
     pub constants: Vec<(Type, Node)>,
 }
 
@@ -260,7 +261,22 @@ fn compile_with_context(
                         global_compilation_context,
                     )?;
                     let constant_index = global_compilation_context.constants.len();
-                    new_constants_indices.push(constant_index);
+                    let constant_name_clustered_index = if let Some(constant_name_clustered_index) =
+                        global_compilation_context
+                            .constants_names_to_name_clustered_constants_indices
+                            .get(constant_name)
+                    {
+                        *constant_name_clustered_index
+                    } else {
+                        let result = global_compilation_context
+                            .constants_names_to_name_clustered_constants_indices
+                            .len();
+                        global_compilation_context
+                            .constants_names_to_name_clustered_constants_indices
+                            .insert(constant_name.clone(), result);
+                        result
+                    };
+                    new_constants_indices.push((constant_name_clustered_index, constant_index));
                     compute_compilation_context
                         .available_constants
                         .extend([(constant_name.clone(), constant_index)]);
@@ -510,7 +526,24 @@ fn compile_with_context(
                                     global_compilation_context,
                                 )?;
                                 let constant_index = global_compilation_context.constants.len();
-                                new_constants_indices.push(constant_index);
+                                let constant_name_clustered_index =
+                                    if let Some(constant_name_clustered_index) =
+                                        global_compilation_context
+                                            .constants_names_to_name_clustered_constants_indices
+                                            .get(function_argument_name)
+                                    {
+                                        *constant_name_clustered_index
+                                    } else {
+                                        let result = global_compilation_context
+                                            .constants_names_to_name_clustered_constants_indices
+                                            .len();
+                                        global_compilation_context
+                                            .constants_names_to_name_clustered_constants_indices
+                                            .insert(function_argument_name.to_string(), result);
+                                        result
+                                    };
+                                new_constants_indices
+                                    .push((constant_name_clustered_index, constant_index));
                                 global_compilation_context
                                     .constants
                                     .push((constant_type, constant_node));

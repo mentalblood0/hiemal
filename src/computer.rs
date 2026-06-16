@@ -49,12 +49,13 @@ pub fn compute_node(
         Content::Clause(clause) => match clause {
             Clause::Scope { constants, compute } => {
                 let mut result_computation_context = computation_context.clone();
-                for constant_index in constants {
-                    result_computation_context.constants.inner[*constant_index] = compute_node(
-                        &intermediate_representation.constants[*constant_index],
-                        intermediate_representation,
-                        computation_context.clone(),
-                    )?;
+                for (constant_name_clustered_index, constant_index) in constants {
+                    result_computation_context.constants.inner[*constant_name_clustered_index] =
+                        compute_node(
+                            &intermediate_representation.constants[*constant_index],
+                            intermediate_representation,
+                            computation_context.clone(),
+                        )?;
                 }
                 compute_node(
                     &compute,
@@ -102,12 +103,14 @@ pub fn compute_node(
         },
         Content::UserFunctionCall { arguments, body } => {
             let mut result_computation_context = computation_context.clone();
-            for constant_index in arguments {
-                result_computation_context.constants.inner[*constant_index] = compute_node(
+            for (constant_name_clustered_index, constant_index) in arguments {
+                let new_constant_value = compute_node(
                     &intermediate_representation.constants[*constant_index],
                     intermediate_representation,
                     computation_context.clone(),
                 )?;
+                result_computation_context.constants.inner[*constant_name_clustered_index] =
+                    new_constant_value;
             }
             compute_node(
                 &intermediate_representation.user_functions[*body],
