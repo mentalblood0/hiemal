@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::{Error, Result, anyhow};
 
 use crate::{
-    containers::Map,
+    containers::{Map, Set},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     intermediate_representation::{self, Content, IntermediateRepresentation, Node},
     program::{Clause, EmbeddedFunction, Path, PathSegment, Program, Scope},
@@ -16,7 +16,7 @@ pub struct CompilationContext {
     pub path: Path,
     pub available_functions: Map<String, Program>,
     pub available_constants: Map<String, usize>,
-    pub entered_user_functions: rpds::RedBlackTreeSetSync<usize>,
+    pub entered_user_functions: Set<Program>,
 }
 
 impl CompilationContext {
@@ -44,9 +44,11 @@ fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Res
                     .extend([PathSegment::ArrayIndex(element_index)]);
                 let current_element_type =
                     get_value_type(element, current_element_compilation_context.clone())?;
-                if let Some(element_type) = element_type_option {
-                    return Err(current_element_compilation_context
-                        .error(&current_element_type, &element_type));
+                if let Some(ref element_type) = element_type_option {
+                    if &current_element_type != element_type {
+                        return Err(current_element_compilation_context
+                            .error(&current_element_type, element_type));
+                    }
                 } else {
                     element_type_option = Some(current_element_type);
                 }
@@ -109,21 +111,26 @@ fn resolve_types(
             }
             Ok(())
         }
-        (Type::Unknown(got_program), expected_type)
-        | (expected_type, Type::Unknown(got_program)) => {
-            if let Some((_, Some(previously_resolved_type))) = global_compilation_context
+        (Type::Unknown(got_program_index), expected_type)
+        | (expected_type, Type::Unknown(got_program_index)) => {
+            let got_program = global_compilation_context.user_functions[*got_program_index]
+                .as_program()
+                .unwrap();
+            let previously_resolved_type = &global_compilation_context
                 .user_function_to_index_and_type_option
                 .get(got_program)
-            {
-                if previously_resolved_type != expected_type {
-                    return Err(compilation_context.error(got_type, expected_type));
-                }
-            } else {
+                .unwrap()
+                .1;
+            if let Type::Unknown(_) = previously_resolved_type {
                 global_compilation_context
                     .user_function_to_index_and_type_option
                     .get_mut(got_program)
                     .unwrap()
-                    .1 = Some(expected_type.clone());
+                    .1 = expected_type.clone();
+            } else {
+                if previously_resolved_type != expected_type {
+                    return Err(compilation_context.error(&previously_resolved_type, expected_type));
+                }
             }
             Ok(())
         }
@@ -131,23 +138,49 @@ fn resolve_types(
     }
 }
 
+#[derive(Debug)]
+pub enum ProgramOrNode {
+    Program(Program),
+    Node(Node),
+}
+
+impl ProgramOrNode {
+    pub fn as_program(&self) -> Option<&Program> {
+        match self {
+            &ProgramOrNode::Program(ref program) => Some(program),
+            &ProgramOrNode::Node(_) => None,
+        }
+    }
+    pub fn as_node(&self) -> Option<&Node> {
+        match self {
+            &ProgramOrNode::Node(ref node) => Some(node),
+            &ProgramOrNode::Program(_) => None,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct GlobalCompilationContext {
-    pub user_function_to_index_and_type_option: BTreeMap<Program, (usize, Option<Type>)>,
-    pub user_functions: Vec<Node>,
+    pub user_function_to_index_and_type_option: BTreeMap<Program, (usize, Type)>,
+    pub user_functions: Vec<ProgramOrNode>,
     pub constants: Vec<(Type, Node)>,
 }
 
 pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
     let mut global_compilation_context = GlobalCompilationContext::default();
+    let result_root = compile_with_context(
+        program,
+        CompilationContext::default(),
+        &mut global_compilation_context,
+    )?
+    .1;
     Ok(IntermediateRepresentation {
-        root: compile_with_context(
-            program,
-            CompilationContext::default(),
-            &mut global_compilation_context,
-        )?
-        .1,
-        user_functions: global_compilation_context.user_functions,
+        root: result_root,
+        user_functions: global_compilation_context
+            .user_functions
+            .into_iter()
+            .map(|program_or_node| program_or_node.as_node().unwrap().clone())
+            .collect(),
         constants: global_compilation_context
             .constants
             .into_iter()
@@ -298,7 +331,12 @@ fn compile_with_context(
                 (
                     then_type,
                     Node {
-                        path: compilation_context.path.clone(),
+                        path: Path(
+                            compilation_context
+                                .path
+                                .0
+                                .extended([PathSegment::Branching]),
+                        ),
                         content: Box::new(Content::Clause(
                             intermediate_representation::Clause::Branching {
                                 r#if: if_node,
@@ -315,9 +353,22 @@ fn compile_with_context(
                     .inner
                     .get(constant_name)
                 {
-                    let (constant_type, constant_node) =
+                    let (constant_type, _) =
                         global_compilation_context.constants[*constant_index].clone();
-                    (constant_type, constant_node)
+                    (
+                        constant_type,
+                        Node {
+                            path: Path(
+                                compilation_context
+                                    .path
+                                    .0
+                                    .extended([PathSegment::Constant(constant_name.clone())]),
+                            ),
+                            content: Box::new(Content::Clause(
+                                intermediate_representation::Clause::Constant(*constant_index),
+                            )),
+                        },
+                    )
                 } else {
                     return Err(anyhow!(
                         "Got no constant {constant_name:?} at {:#?}, available constants are {:#?}",
@@ -356,9 +407,14 @@ fn compile_with_context(
                     global_compilation_context,
                 )?;
                 (
-                    argument_type,
+                    Type::Number,
                     Node {
-                        path: argument_compilation_context.path.clone(),
+                        path: Path(
+                            argument_compilation_context
+                                .path
+                                .0
+                                .extended([PathSegment::Sum]),
+                        ),
                         content: Box::new(Content::EmbeddedFunctionCall(
                             intermediate_representation::EmbeddedFunction::Sum(argument_node),
                         )),
@@ -381,9 +437,14 @@ fn compile_with_context(
                     return Err(anyhow!("Got {:?} but expected Array", argument_type,));
                 }
                 (
-                    argument_type,
+                    Type::Bool,
                     Node {
-                        path: argument_compilation_context.path.clone(),
+                        path: Path(
+                            argument_compilation_context
+                                .path
+                                .0
+                                .extended([PathSegment::IsSorted]),
+                        ),
                         content: Box::new(Content::EmbeddedFunctionCall(
                             intermediate_representation::EmbeddedFunction::IsSorted(argument_node),
                         )),
@@ -412,15 +473,18 @@ fn compile_with_context(
                                 .path
                                 .0
                                 .extend([PathSegment::UserFunctionCall(function_name.clone())]);
-                            if let Program::Object(function_arguments) = function_argument {
-                                if function_arguments.is_empty() {
-                                    return Err(anyhow!(
-                                        "Got zero arguments, but expected at least one at {:#?}",
-                                        compilation_context.path
-                                    ));
-                                }
-                                let arguments_iterator: Box<dyn Iterator<Item = (&str, &Program)>> =
-                                    if function_arguments.len() > 1 {
+                            let arguments_iterator = match function_argument {
+                                Program::Object(function_arguments) => {
+                                    if function_arguments.is_empty() {
+                                        return Err(anyhow!(
+                                            "Got zero arguments, but expected at least one at \
+                                             {:#?}",
+                                            compilation_context.path
+                                        ));
+                                    }
+                                    let arguments_iterator: Box<
+                                        dyn Iterator<Item = (&str, &Program)>,
+                                    > = if function_arguments.len() > 1 {
                                         Box::new(
                                             function_arguments
                                                 .iter()
@@ -432,40 +496,44 @@ fn compile_with_context(
                                                 .into_iter(),
                                         )
                                     };
-                                for (function_argument_name, function_argument_body) in
                                     arguments_iterator
-                                {
-                                    let mut argument_compilation_context =
-                                        compilation_context.clone();
-                                    argument_compilation_context.path.0.extend([
-                                        PathSegment::UserFunctionCall(function_name.clone()),
-                                        PathSegment::Argument(function_argument_name.to_string()),
-                                    ]);
-                                    let (constant_type, constant_node) = compile_with_context(
-                                        &function_argument_body,
-                                        argument_compilation_context,
-                                        global_compilation_context,
-                                    )?;
-                                    let constant_index = global_compilation_context.constants.len();
-                                    global_compilation_context
-                                        .constants
-                                        .push((constant_type, constant_node));
-                                    body_compilation_context.available_constants.extend([(
-                                        function_argument_name.to_string(),
-                                        constant_index,
-                                    )]);
                                 }
+                                _ => Box::new(
+                                    [(DEFAULT_ARGUMENT_NAME, function_argument)].into_iter(),
+                                ),
+                            };
+                            for (function_argument_name, function_argument_body) in
+                                arguments_iterator
+                            {
+                                let mut argument_compilation_context = compilation_context.clone();
+                                argument_compilation_context.path.0.extend([
+                                    PathSegment::UserFunctionCall(function_name.clone()),
+                                    PathSegment::Argument(function_argument_name.to_string()),
+                                ]);
+                                let (constant_type, constant_node) = compile_with_context(
+                                    &function_argument_body,
+                                    argument_compilation_context,
+                                    global_compilation_context,
+                                )?;
+                                let constant_index = global_compilation_context.constants.len();
+                                global_compilation_context
+                                    .constants
+                                    .push((constant_type, constant_node));
+                                body_compilation_context
+                                    .available_constants
+                                    .extend([(function_argument_name.to_string(), constant_index)]);
                             }
-                            let (function_index, _) = global_compilation_context
-                                .user_function_to_index_and_type_option
-                                .get(function_body)
-                                .unwrap();
                             if compilation_context
                                 .entered_user_functions
-                                .contains(function_index)
+                                .inner
+                                .contains(function_body)
                             {
+                                let (function_index, function_type) = global_compilation_context
+                                    .user_function_to_index_and_type_option
+                                    .get(function_body)
+                                    .unwrap();
                                 return Ok((
-                                    Type::Unknown(function_body.clone()),
+                                    function_type.clone(),
                                     Node {
                                         path: body_compilation_context.path.clone(),
                                         content: Box::new(Content::UserFunctionCall(
@@ -474,11 +542,33 @@ fn compile_with_context(
                                     },
                                 ));
                             } else {
-                                return compile_with_context(
+                                body_compilation_context
+                                    .entered_user_functions
+                                    .extend([function_body.clone()]);
+                                let function_index =
+                                    global_compilation_context.user_functions.len();
+                                global_compilation_context
+                                    .user_functions
+                                    .push(ProgramOrNode::Program(function_body.clone()));
+                                global_compilation_context
+                                    .user_function_to_index_and_type_option
+                                    .insert(
+                                        function_body.clone(),
+                                        (function_index, Type::Unknown(function_index)),
+                                    );
+                                let (function_type, function_node) = compile_with_context(
                                     function_body,
                                     body_compilation_context,
                                     global_compilation_context,
-                                );
+                                )?;
+                                global_compilation_context
+                                    .user_function_to_index_and_type_option
+                                    .get_mut(function_body)
+                                    .unwrap()
+                                    .1 = function_type.clone();
+                                global_compilation_context.user_functions[function_index] =
+                                    ProgramOrNode::Node(function_node.clone());
+                                return Ok((function_type, function_node));
                             }
                         } else {
                             return Err(anyhow!(

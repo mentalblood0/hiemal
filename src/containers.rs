@@ -24,7 +24,7 @@ where
         }
     }
 
-    pub fn extended<A>(&mut self, addition: A) -> Self
+    pub fn extended<A>(&self, addition: A) -> Self
     where
         A: IntoIterator<Item = (K, V)>,
     {
@@ -56,7 +56,7 @@ where
         }
     }
 
-    pub fn extended<A>(&mut self, addition: A) -> Self
+    pub fn extended<A>(&self, addition: A) -> Self
     where
         A: IntoIterator<Item = V>,
     {
@@ -88,7 +88,7 @@ where
         }
     }
 
-    pub fn extended<A>(&mut self, addition: A) -> Self
+    pub fn extended<A>(&self, addition: A) -> Self
     where
         A: IntoIterator<Item = V>,
     {
