@@ -16,7 +16,7 @@ pub fn compute(intermediate_representation: &IntermediateRepresentation) -> Resu
     compute_node(
         &intermediate_representation.root,
         intermediate_representation,
-        ComputationContext {
+        &ComputationContext {
             constants: Vector {
                 inner: rpds::VectorSync::from_iter(
                     std::iter::repeat(Value::Null)
@@ -30,7 +30,7 @@ pub fn compute(intermediate_representation: &IntermediateRepresentation) -> Resu
 pub fn compute_node(
     node: &Node,
     intermediate_representation: &IntermediateRepresentation,
-    computation_context: ComputationContext,
+    computation_context: &ComputationContext,
 ) -> Result<Value> {
     match &node.content {
         Content::Array(array) => {
@@ -39,7 +39,7 @@ pub fn compute_node(
                 result.inner.push_back_mut(compute_node(
                     &element,
                     intermediate_representation,
-                    computation_context.clone(),
+                    computation_context,
                 )?);
             }
             Ok(Value::Array(result))
@@ -51,20 +51,20 @@ pub fn compute_node(
                     compute_node(
                         &intermediate_representation.constants[*constant_index],
                         intermediate_representation,
-                        computation_context.clone(),
+                        &computation_context,
                     )?;
             }
             compute_node(
                 &compute,
                 intermediate_representation,
-                result_computation_context,
+                &result_computation_context,
             )
         }
         Content::Branching(branching) => {
             if compute_node(
                 &branching.r#if,
                 intermediate_representation,
-                computation_context.clone(),
+                &computation_context,
             )?
             .as_bool()
             .unwrap()
@@ -72,13 +72,13 @@ pub fn compute_node(
                 compute_node(
                     &branching.then,
                     intermediate_representation,
-                    computation_context,
+                    &computation_context,
                 )
             } else {
                 compute_node(
                     &branching.r#else,
                     intermediate_representation,
-                    computation_context,
+                    &computation_context,
                 )
             }
         }
@@ -111,7 +111,7 @@ pub fn compute_node(
                 let new_constant_value = compute_node(
                     &intermediate_representation.constants[*constant_index],
                     intermediate_representation,
-                    computation_context.clone(),
+                    &computation_context,
                 )?;
                 result_computation_context.constants.inner[*constant_name_clustered_index] =
                     new_constant_value;
@@ -119,7 +119,7 @@ pub fn compute_node(
             compute_node(
                 &intermediate_representation.user_functions[*body],
                 intermediate_representation,
-                result_computation_context,
+                &result_computation_context,
             )
         }
         Content::Object(object) => {
@@ -129,11 +129,7 @@ pub fn compute_node(
             for (key, value) in object {
                 result.inner.insert_mut(
                     key.clone(),
-                    compute_node(
-                        &value,
-                        intermediate_representation,
-                        computation_context.clone(),
-                    )?,
+                    compute_node(&value, intermediate_representation, &computation_context)?,
                 );
             }
             Ok(Value::Object(result))
