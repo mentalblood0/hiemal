@@ -1,14 +1,14 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
 use crate::{containers::Vector, value::Value};
 
 #[derive(serde::Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
 #[serde(untagged)]
 pub enum Program {
-    Array(Arc<Vec<Program>>),
+    Array(Vec<Program>),
     Clause(Clause),
     EmbeddedFunction(Box<EmbeddedFunction>),
-    Object(Arc<BTreeMap<String, Program>>),
+    Object(BTreeMap<String, Program>),
     Value(Value),
 }
 
@@ -37,9 +37,9 @@ pub enum Clause {
 #[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Scope {
     #[serde(default)]
-    pub functions: Arc<BTreeMap<String, Program>>,
+    pub functions: BTreeMap<String, Program>,
     #[serde(default)]
-    pub constants: Arc<BTreeMap<String, Program>>,
+    pub constants: BTreeMap<String, Program>,
     pub compute: Box<Program>,
 }
 
