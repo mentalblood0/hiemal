@@ -67,7 +67,7 @@ fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Res
                 element_type
             } else {
                 return Err(anyhow!(
-                    "Expected non-empty list at {:#?}",
+                    "Expected non-empty array at {:#?}",
                     compilation_context.path
                 ));
             }
@@ -480,9 +480,12 @@ fn compile_with_context(
         Program::Object(object) => {
             match object.len() {
                 0 => {
-                    return Err(anyhow!(
-                        "Expected non-empty object at {:#?}",
-                        compilation_context.path
+                    return Ok((
+                        Type::Object(BTreeMap::new()),
+                        Node {
+                            path: compilation_context.path.clone(),
+                            content: Content::Object(BTreeMap::new()),
+                        },
                     ));
                 }
                 1 => {
