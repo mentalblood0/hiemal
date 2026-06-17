@@ -39,55 +39,52 @@ fn compute_nodes<'a, N>(
 where
     N: Iterator<Item = &'a Node>,
 {
-    let mut result = Vector {
-        inner: rpds::VectorSync::from_iter(std::iter::repeat(Value::Null).take(nodes_count)),
-    };
+    let mut result = vec![Value::Null; nodes_count];
     let complex_elements = nodes_iterator
         .enumerate()
         .filter(|(element_index, element)| match &element.content {
             Content::Value(value) => {
-                result.inner.set_mut(*element_index, value.clone());
+                result[*element_index] = value.clone();
                 false
             }
             _ => true,
         })
         .collect::<Vec<_>>();
-    Ok(match complex_elements.len() {
-        0 => Value::Array(result),
-        1 => {
-            let (element_index, element_node) = complex_elements.into_iter().next().unwrap();
-            result.inner.set_mut(
-                element_index,
-                compute_node(
-                    &element_node,
-                    intermediate_representation,
-                    computation_context,
-                )?,
-            );
-            Value::Array(result)
-        }
-        2.. => {
-            let result_mutex = Mutex::new(result);
-            complex_elements
-                .into_par_iter()
-                .try_for_each(|(element_index, element_node)| {
-                    compute_node(
+    Ok(Value::Array(Vector {
+        inner: rpds::VectorSync::from_iter(
+            match complex_elements.len() {
+                0 => result,
+                1 => {
+                    let (element_index, element_node) =
+                        complex_elements.into_iter().next().unwrap();
+                    result[element_index] = compute_node(
                         &element_node,
                         intermediate_representation,
                         computation_context,
-                    )
-                    .and_then(|result| {
-                        result_mutex
-                            .lock()
-                            .unwrap()
-                            .inner
-                            .set_mut(element_index, result);
-                        Ok(())
-                    })
-                })
-                .and_then(|_| Ok(Value::Array(result_mutex.into_inner().unwrap())))?
-        }
-    })
+                    )?;
+                    result
+                }
+                2.. => {
+                    let result_mutex = Mutex::new(result);
+                    complex_elements
+                        .into_par_iter()
+                        .try_for_each(|(element_index, element_node)| {
+                            compute_node(
+                                &element_node,
+                                intermediate_representation,
+                                computation_context,
+                            )
+                            .and_then(|result| {
+                                result_mutex.lock().unwrap()[element_index] = result;
+                                Ok(())
+                            })
+                        })
+                        .and_then(|_| Ok(result_mutex.into_inner().unwrap()))?
+                }
+            }
+            .into_iter(),
+        ),
+    }))
 }
 
 fn compute_node(
