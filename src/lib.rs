@@ -11,7 +11,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
-    use crate::{compiler::compile, computer::compute};
+    use crate::{compiler::compile, computer::Computer};
 
     #[test]
     fn test_numbers() {
@@ -75,8 +75,9 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
+        let computer = Computer::default();
         assert_eq!(
-            serde_json::to_value(compute(&intermediate_representation).unwrap()).unwrap(),
+            serde_json::to_value(computer.compute(&intermediate_representation).unwrap()).unwrap(),
             json!("55")
         );
     }
@@ -193,8 +194,9 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
+        let computer = Computer::default();
         assert_eq!(
-            serde_json::to_value(compute(&intermediate_representation).unwrap()).unwrap(),
+            serde_json::to_value(computer.compute(&intermediate_representation).unwrap()).unwrap(),
             json!(["55", "55", "55"])
         );
     }
