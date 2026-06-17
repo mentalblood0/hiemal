@@ -1,5 +1,8 @@
+use std::sync::Mutex;
+
 use anyhow::Result;
 use dashu::Rational;
+use rayon::prelude::*;
 
 use crate::{
     containers::{Map, Vector},
@@ -34,15 +37,59 @@ pub fn compute_node(
 ) -> Result<Value> {
     match &node.content {
         Content::Array(array) => {
-            let mut result = Vector::default();
-            for element in array {
-                result.inner.push_back_mut(compute_node(
-                    &element,
-                    intermediate_representation,
-                    computation_context,
-                )?);
-            }
-            Ok(Value::Array(result))
+            let mut result = Vector {
+                inner: rpds::VectorSync::from_iter(
+                    std::iter::repeat(Value::Null).take(array.len()),
+                ),
+            };
+            let complex_elements = array
+                .iter()
+                .enumerate()
+                .filter(|(element_index, element)| match &element.content {
+                    Content::Value(value) => {
+                        result.inner.set_mut(*element_index, value.clone());
+                        false
+                    }
+                    _ => true,
+                })
+                .collect::<Vec<_>>();
+            Ok(match complex_elements.len() {
+                0 => Value::Array(result),
+                1 => {
+                    let (element_index, element_node) =
+                        complex_elements.into_iter().next().unwrap();
+                    result.inner.set_mut(
+                        element_index,
+                        compute_node(
+                            &element_node,
+                            intermediate_representation,
+                            computation_context,
+                        )?,
+                    );
+                    Value::Array(result)
+                }
+                2.. => {
+                    let result_mutex = Mutex::new(result);
+                    complex_elements
+                        .into_par_iter()
+                        .try_for_each(|(element_index, element_node)| {
+                            compute_node(
+                                &element_node,
+                                intermediate_representation,
+                                computation_context,
+                            )
+                            .and_then(|result| {
+                                result_mutex
+                                    .lock()
+                                    .unwrap()
+                                    .inner
+                                    .set_mut(element_index, result);
+                                Ok(())
+                            })
+                        })
+                        .and_then(|_| Ok(Value::Array(result_mutex.into_inner().unwrap())))?
+                }
+            })
         }
         Content::Scope { constants, compute } => {
             let mut result_computation_context = computation_context.clone();
