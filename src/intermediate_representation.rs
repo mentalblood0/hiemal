@@ -10,13 +10,13 @@ pub struct IntermediateRepresentation {
     pub unique_constants_names_count: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq)]
 pub struct Node {
     pub path: Path,
     pub content: Content,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq)]
 pub enum Content {
     Array(Vec<Node>),
     Scope {
@@ -34,14 +34,14 @@ pub enum Content {
     Value(Value),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq)]
 pub struct Branching {
     pub r#if: Node,
     pub then: Node,
     pub r#else: Node,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq)]
 pub enum EmbeddedFunction {
     Sum(Node),
     IsSorted(Node),

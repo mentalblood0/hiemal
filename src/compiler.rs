@@ -121,26 +121,49 @@ fn assert_equal(
             }
             Ok(())
         }
+        (Type::Unknown(_), Type::Unknown(_)) => Ok(()),
         (Type::Unknown(got_program_index), expected_type)
         | (expected_type, Type::Unknown(got_program_index)) => {
-            let got_program = global_compilation_context.user_functions[*got_program_index]
-                .1
-                .as_program()
-                .unwrap();
-            let previously_resolved_type = &global_compilation_context
-                .user_function_to_index_and_type_option
-                .get(got_program)
-                .unwrap()
-                .1;
-            if let Type::Unknown(_) = previously_resolved_type {
-                global_compilation_context
-                    .user_function_to_index_and_type_option
-                    .get_mut(got_program)
-                    .unwrap()
-                    .1 = expected_type.clone();
-            } else {
-                if previously_resolved_type != expected_type {
-                    return Err(compilation_context.error(&previously_resolved_type, expected_type));
+            match &global_compilation_context.user_functions[*got_program_index].1 {
+                ProgramOrNode::Program(got_program) => {
+                    let previously_resolved_type = &global_compilation_context
+                        .user_function_to_index_and_type_option
+                        .get(got_program)
+                        .unwrap()
+                        .1;
+                    if let Type::Unknown(_) = previously_resolved_type {
+                        global_compilation_context
+                            .user_function_to_index_and_type_option
+                            .get_mut(got_program)
+                            .unwrap()
+                            .1 = expected_type.clone();
+                    } else {
+                        if previously_resolved_type != expected_type {
+                            return Err(
+                                compilation_context.error(&previously_resolved_type, expected_type)
+                            );
+                        }
+                    }
+                }
+                ProgramOrNode::Node(got_node) => {
+                    let previously_resolved_type = &global_compilation_context
+                        .user_function_node_to_index_and_type_option
+                        .get(got_node)
+                        .unwrap()
+                        .1;
+                    if let Type::Unknown(_) = previously_resolved_type {
+                        global_compilation_context
+                            .user_function_node_to_index_and_type_option
+                            .get_mut(got_node)
+                            .unwrap()
+                            .1 = expected_type.clone();
+                    } else {
+                        if previously_resolved_type != expected_type {
+                            return Err(
+                                compilation_context.error(&previously_resolved_type, expected_type)
+                            );
+                        }
+                    }
                 }
             }
             Ok(())
@@ -156,13 +179,6 @@ enum ProgramOrNode {
 }
 
 impl ProgramOrNode {
-    fn as_program(&self) -> Option<&Program> {
-        match self {
-            &ProgramOrNode::Program(ref program) => Some(program),
-            &ProgramOrNode::Node(_) => None,
-        }
-    }
-
     fn as_node(&self) -> Option<&Node> {
         match self {
             &ProgramOrNode::Node(ref node) => Some(node),
@@ -174,6 +190,7 @@ impl ProgramOrNode {
 #[derive(Default)]
 struct GlobalCompilationContext {
     user_function_to_index_and_type_option: BTreeMap<Program, (usize, Type)>,
+    user_function_node_to_index_and_type_option: BTreeMap<Node, (usize, Type)>,
     user_functions: Vec<(Vec<usize>, ProgramOrNode)>,
     constants_names_to_name_clustered_constants_indices: BTreeMap<String, usize>,
     constants: Vec<(Type, Node)>,
@@ -445,17 +462,18 @@ fn compile_with_context(
                 {
                     let (constant_type, _) =
                         global_compilation_context.constants[*constant_index].clone();
+                    let name_clustered_constant_index = *global_compilation_context
+                        .constants_names_to_name_clustered_constants_indices
+                        .get(constant_name)
+                        .unwrap();
                     NodeAndMetadata {
                         r#type: constant_type,
                         external_constants_name_clustered_indices: BTreeSet::from_iter([
-                            *global_compilation_context
-                                .constants_names_to_name_clustered_constants_indices
-                                .get(constant_name)
-                                .unwrap(),
+                            name_clustered_constant_index,
                         ]),
                         node: Node {
                             path: compilation_context.path.clone(),
-                            content: Content::Constant(*constant_index),
+                            content: Content::Constant(name_clustered_constant_index),
                         },
                     }
                 } else {
@@ -688,6 +706,12 @@ fn compile_with_context(
                                     .get_mut(function_body)
                                     .unwrap()
                                     .1 = compiled_function.r#type.clone();
+                                global_compilation_context
+                                    .user_function_node_to_index_and_type_option
+                                    .insert(
+                                        compiled_function.node.clone(),
+                                        (function_index, compiled_function.r#type.clone()),
+                                    );
                                 global_compilation_context.user_functions[function_index] = (
                                     Vec::from_iter(
                                         compiled_function
