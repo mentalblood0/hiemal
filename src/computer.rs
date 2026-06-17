@@ -1,4 +1,7 @@
-use std::sync::Mutex;
+use parking_lot::{Mutex, RwLock};
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
+use std::{collections::HashMap, hash::DefaultHasher};
 
 use anyhow::Result;
 use dashu::Rational;
@@ -10,9 +13,20 @@ use crate::{
     value::Value,
 };
 
+#[derive(Default)]
+struct GlobalComputationContext {
+    functions_results_cache: HashMap<FunctionCallIdentifier, Value>,
+}
+
 #[derive(Clone, Debug)]
 struct ComputationContext {
     constants: Vector<Value>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct FunctionCallIdentifier {
+    external_constants_hash: u64,
+    function_index: usize,
 }
 
 pub fn compute(intermediate_representation: &IntermediateRepresentation) -> Result<Value> {
@@ -27,6 +41,7 @@ pub fn compute(intermediate_representation: &IntermediateRepresentation) -> Resu
                 ),
             },
         },
+        &Arc::new(RwLock::new(GlobalComputationContext::default())),
     )
 }
 
@@ -35,6 +50,7 @@ fn compute_nodes<'a, N>(
     nodes_count: usize,
     intermediate_representation: &IntermediateRepresentation,
     computation_context: &ComputationContext,
+    global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
 ) -> Result<Value>
 where
     N: Iterator<Item = &'a Node>,
@@ -61,6 +77,7 @@ where
                         &element_node,
                         intermediate_representation,
                         computation_context,
+                        global_computation_context,
                     )?;
                     result
                 }
@@ -73,13 +90,14 @@ where
                                 &element_node,
                                 intermediate_representation,
                                 computation_context,
+                                global_computation_context,
                             )
                             .and_then(|result| {
-                                result_mutex.lock().unwrap()[element_index] = result;
+                                result_mutex.lock()[element_index] = result;
                                 Ok(())
                             })
                         })
-                        .and_then(|_| Ok(result_mutex.into_inner().unwrap()))?
+                        .and_then(|_| Ok(result_mutex.into_inner()))?
                 }
             }
             .into_iter(),
@@ -91,6 +109,7 @@ fn compute_node(
     node: &Node,
     intermediate_representation: &IntermediateRepresentation,
     computation_context: &ComputationContext,
+    global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
 ) -> Result<Value> {
     match &node.content {
         Content::Array(array) => compute_nodes(
@@ -98,6 +117,7 @@ fn compute_node(
             array.len(),
             intermediate_representation,
             computation_context,
+            global_computation_context,
         ),
         Content::Scope { constants, compute } => {
             let mut result_computation_context = computation_context.clone();
@@ -107,12 +127,14 @@ fn compute_node(
                     &intermediate_representation.constants[constant_definition.index],
                     intermediate_representation,
                     &computation_context,
+                    global_computation_context,
                 )?;
             }
             compute_node(
                 &compute,
                 intermediate_representation,
                 &result_computation_context,
+                global_computation_context,
             )
         }
         Content::Branching(branching) => {
@@ -120,6 +142,7 @@ fn compute_node(
                 &branching.r#if,
                 intermediate_representation,
                 &computation_context,
+                global_computation_context,
             )?
             .as_bool()
             .unwrap()
@@ -128,12 +151,14 @@ fn compute_node(
                     &branching.then,
                     intermediate_representation,
                     &computation_context,
+                    global_computation_context,
                 )
             } else {
                 compute_node(
                     &branching.r#else,
                     intermediate_representation,
                     &computation_context,
+                    global_computation_context,
                 )
             }
         }
@@ -142,22 +167,32 @@ fn compute_node(
         }
         Content::EmbeddedFunctionCall(embedded_function) => match &**embedded_function {
             EmbeddedFunction::Sum(argument) => Ok(Value::Number(
-                compute_node(argument, intermediate_representation, computation_context)?
-                    .as_array()
-                    .unwrap()
-                    .inner
-                    .iter()
-                    .fold(Rational::ZERO, |accumulator, current| {
-                        accumulator + current.as_number().unwrap()
-                    }),
+                compute_node(
+                    argument,
+                    intermediate_representation,
+                    computation_context,
+                    global_computation_context,
+                )?
+                .as_array()
+                .unwrap()
+                .inner
+                .iter()
+                .fold(Rational::ZERO, |accumulator, current| {
+                    accumulator + current.as_number().unwrap()
+                }),
             )),
             EmbeddedFunction::IsSorted(argument) => Ok(Value::Bool(
-                compute_node(argument, intermediate_representation, computation_context)?
-                    .as_array()
-                    .unwrap()
-                    .inner
-                    .iter()
-                    .is_sorted(),
+                compute_node(
+                    argument,
+                    intermediate_representation,
+                    computation_context,
+                    global_computation_context,
+                )?
+                .as_array()
+                .unwrap()
+                .inner
+                .iter()
+                .is_sorted(),
             )),
         },
         Content::UserFunctionCall { arguments, body } => {
@@ -167,22 +202,59 @@ fn compute_node(
                     &intermediate_representation.constants[constant_definition.index],
                     intermediate_representation,
                     &computation_context,
+                    global_computation_context,
                 )?;
                 result_computation_context.constants.inner
                     [constant_definition.name_clustered_index] = new_constant_value;
             }
-            compute_node(
-                &intermediate_representation.user_functions[*body].node,
-                intermediate_representation,
-                &result_computation_context,
-            )
+            let user_function = &intermediate_representation.user_functions[*body];
+            let external_constants_hash = {
+                let mut external_constants_hasher = DefaultHasher::new();
+                for constant_name_clustered_index in
+                    &user_function.external_constants_name_clustered_indices
+                {
+                    let constant_value =
+                        &result_computation_context.constants.inner[*constant_name_clustered_index];
+                    constant_value.hash(&mut external_constants_hasher);
+                }
+                external_constants_hasher.finish()
+            };
+            let function_call_identifier = FunctionCallIdentifier {
+                external_constants_hash,
+                function_index: *body,
+            };
+            let global_computation_context_read_guard = global_computation_context.read();
+            if let Some(cached_function_result) = global_computation_context_read_guard
+                .functions_results_cache
+                .get(&function_call_identifier)
+            {
+                Ok(cached_function_result.clone())
+            } else {
+                drop(global_computation_context_read_guard);
+                let result = compute_node(
+                    &user_function.node,
+                    intermediate_representation,
+                    &result_computation_context,
+                    global_computation_context,
+                )?;
+                global_computation_context
+                    .write()
+                    .functions_results_cache
+                    .insert(function_call_identifier, result.clone());
+                Ok(result)
+            }
         }
         Content::Object(object) => {
             let mut result = Map::default();
             for (key, value) in object {
                 result.inner.insert_mut(
                     key.clone(),
-                    compute_node(&value, intermediate_representation, &computation_context)?,
+                    compute_node(
+                        &value,
+                        intermediate_representation,
+                        &computation_context,
+                        global_computation_context,
+                    )?,
                 );
             }
             Ok(Value::Object(result))
