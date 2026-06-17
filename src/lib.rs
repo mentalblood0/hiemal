@@ -32,63 +32,58 @@ mod tests {
 
     #[test]
     fn test_recursive_normal() {
-        assert_eq!(
-            serde_json::to_value(
-                compute(
-                    &compile(
-                        &serde_json::from_value(json!({
-                          "scope": {
-                            "functions": {
+        let intermediate_representation = compile(
+            &serde_json::from_value(json!({
+              "scope": {
+                "functions": {
+                  "fibonacci:": {
+                    "branching": {
+                      "if": {
+                        "is sorted": [
+                          "_",
+                          1
+                        ]
+                      },
+                      "then": "_",
+                      "else": {
+                          "sum": [
+                            {
                               "fibonacci:": {
-                                "branching": {
-                                  "if": {
-                                    "is sorted": [
-                                      "_",
-                                      1
-                                    ]
-                                  },
-                                  "then": "_",
-                                  "else": {
-                                      "sum": [
-                                        {
-                                          "fibonacci:": {
-                                            "sum": [
-                                              "_",
-                                              -1
-                                            ]
-                                          }
-                                        },
-                                        {
-                                          "fibonacci:": {
-                                            "sum": [
-                                              "_",
-                                              -2
-                                            ]
-                                          }
-                                        }
-                                      ]
-                                  }
-                                }
+                                "sum": [
+                                  "_",
+                                  -1
+                                ]
                               }
                             },
-                            "compute": {
-                              "fibonacci:": 10
+                            {
+                              "fibonacci:": {
+                                "sum": [
+                                  "_",
+                                  -2
+                                ]
+                              }
                             }
-                        }}))
-                        .unwrap(),
-                    )
-                    .unwrap(),
-                )
-                .unwrap()
-            )
+                          ]
+                      }
+                    }
+                  }
+                },
+                "compute": {
+                  "fibonacci:": 10
+                }
+            }}))
             .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(compute(&intermediate_representation).unwrap()).unwrap(),
             json!("55")
         );
     }
 
     #[test]
     fn test_recursive_big() {
-        compile(
+        let intermediate_representation = compile(
             &serde_json::from_value(json!({
               "scope": {
                 "functions": {
@@ -189,14 +184,18 @@ mod tests {
                     }
                   }
                 },
-                "compute": {
-                  "fibonacci_1:": 10,
-                  "fibonacci_2:": 10,
-                  "fibonacci_3:": 10,
-                }
+                "compute": [
+                  {"fibonacci_1:": 10},
+                  {"fibonacci_2:": 10},
+                  {"fibonacci_3:": 10},
+                ]
             }}))
             .unwrap(),
         )
         .unwrap();
+        assert_eq!(
+            serde_json::to_value(compute(&intermediate_representation).unwrap()).unwrap(),
+            json!(["55", "55", "55"])
+        );
     }
 }

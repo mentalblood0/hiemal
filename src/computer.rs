@@ -171,15 +171,13 @@ fn compute_node(
                     new_constant_value;
             }
             compute_node(
-                &intermediate_representation.user_functions[*body],
+                &intermediate_representation.user_functions[*body].1,
                 intermediate_representation,
                 &result_computation_context,
             )
         }
         Content::Object(object) => {
-            let mut result = Map {
-                inner: rpds::RedBlackTreeMapSync::new_sync(),
-            };
+            let mut result = Map::default();
             for (key, value) in object {
                 result.inner.insert_mut(
                     key.clone(),
