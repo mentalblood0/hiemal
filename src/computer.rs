@@ -101,13 +101,13 @@ fn compute_node(
         ),
         Content::Scope { constants, compute } => {
             let mut result_computation_context = computation_context.clone();
-            for (constant_name_clustered_index, constant_index) in constants {
-                result_computation_context.constants.inner[*constant_name_clustered_index] =
-                    compute_node(
-                        &intermediate_representation.constants[*constant_index],
-                        intermediate_representation,
-                        &computation_context,
-                    )?;
+            for constant_definition in constants {
+                result_computation_context.constants.inner
+                    [constant_definition.name_clustered_index] = compute_node(
+                    &intermediate_representation.constants[constant_definition.index],
+                    intermediate_representation,
+                    &computation_context,
+                )?;
             }
             compute_node(
                 &compute,
@@ -162,17 +162,17 @@ fn compute_node(
         },
         Content::UserFunctionCall { arguments, body } => {
             let mut result_computation_context = computation_context.clone();
-            for (constant_name_clustered_index, constant_index) in arguments {
+            for constant_definition in arguments {
                 let new_constant_value = compute_node(
-                    &intermediate_representation.constants[*constant_index],
+                    &intermediate_representation.constants[constant_definition.index],
                     intermediate_representation,
                     &computation_context,
                 )?;
-                result_computation_context.constants.inner[*constant_name_clustered_index] =
-                    new_constant_value;
+                result_computation_context.constants.inner
+                    [constant_definition.name_clustered_index] = new_constant_value;
             }
             compute_node(
-                &intermediate_representation.user_functions[*body].1,
+                &intermediate_representation.user_functions[*body].node,
                 intermediate_representation,
                 &result_computation_context,
             )

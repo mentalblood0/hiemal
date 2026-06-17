@@ -5,7 +5,9 @@ use anyhow::{Error, Result, anyhow};
 use crate::{
     containers::{Map, Set},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
-    intermediate_representation::{self, Content, IntermediateRepresentation, Node},
+    intermediate_representation::{
+        self, ConstantDefinition, Content, IntermediateRepresentation, Node, UserFunction,
+    },
     program::{Clause, EmbeddedFunction, Path, PathSegment, Program, Scope},
     value::Value,
 };
@@ -210,11 +212,9 @@ pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
             .user_functions
             .into_iter()
             .map(
-                |(external_constants_name_clustered_indices, program_or_node)| {
-                    (
-                        external_constants_name_clustered_indices,
-                        program_or_node.as_node().unwrap().clone(),
-                    )
+                |(external_constants_name_clustered_indices, program_or_node)| UserFunction {
+                    external_constants_name_clustered_indices,
+                    node: program_or_node.as_node().unwrap().clone(),
                 },
             )
             .collect(),
@@ -298,7 +298,7 @@ fn compile_with_context(
                     .path
                     .0
                     .extend([PathSegment::Scope, PathSegment::Compute]);
-                let mut new_constants_indices = Vec::with_capacity(constants.len());
+                let mut new_constants_definitions = Vec::with_capacity(constants.len());
                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();
                 let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
                 for (constant_name, constant_compute_body) in constants.iter() {
@@ -321,26 +321,28 @@ fn compile_with_context(
                     );
                     result_external_constants_name_clustered_indices
                         .append(&mut compiled_constant.external_constants_name_clustered_indices);
-                    let constant_index = global_compilation_context.constants.len();
-                    let constant_name_clustered_index = if let Some(constant_name_clustered_index) =
-                        global_compilation_context
-                            .constants_names_to_name_clustered_constants_indices
-                            .get(constant_name)
-                    {
-                        *constant_name_clustered_index
-                    } else {
-                        let result = global_compilation_context
-                            .constants_names_to_name_clustered_constants_indices
-                            .len();
-                        global_compilation_context
-                            .constants_names_to_name_clustered_constants_indices
-                            .insert(constant_name.clone(), result);
-                        result
+                    let constant_definition = ConstantDefinition {
+                        index: global_compilation_context.constants.len(),
+                        name_clustered_index: if let Some(constant_name_clustered_index) =
+                            global_compilation_context
+                                .constants_names_to_name_clustered_constants_indices
+                                .get(constant_name)
+                        {
+                            *constant_name_clustered_index
+                        } else {
+                            let result = global_compilation_context
+                                .constants_names_to_name_clustered_constants_indices
+                                .len();
+                            global_compilation_context
+                                .constants_names_to_name_clustered_constants_indices
+                                .insert(constant_name.clone(), result);
+                            result
+                        },
                     };
-                    new_constants_indices.push((constant_name_clustered_index, constant_index));
                     compute_compilation_context
                         .available_constants
-                        .extend([(constant_name.clone(), constant_index)]);
+                        .extend([(constant_name.clone(), constant_definition.index)]);
+                    new_constants_definitions.push(constant_definition);
                     global_compilation_context
                         .constants
                         .push((compiled_constant.r#type, compiled_constant.node));
@@ -382,7 +384,7 @@ fn compile_with_context(
                     node: Node {
                         path: Path(compilation_context.path.0.extended([PathSegment::Scope])),
                         content: Content::Scope {
-                            constants: new_constants_indices,
+                            constants: new_constants_definitions,
                             compute: Box::new(compiled_compute.node),
                         },
                     },
@@ -614,7 +616,7 @@ fn compile_with_context(
                                     [(DEFAULT_ARGUMENT_NAME, function_argument)].into_iter(),
                                 ),
                             };
-                            let mut new_constants_indices = Vec::new();
+                            let mut new_constants_definitions = Vec::new();
                             let mut result_external_constants_name_clustered_indices =
                                 BTreeSet::new();
                             for (function_argument_name, function_argument_body) in
@@ -634,12 +636,13 @@ fn compile_with_context(
                                     &mut compiled_constant
                                         .external_constants_name_clustered_indices,
                                 );
-                                let constant_index = global_compilation_context.constants.len();
-                                let constant_name_clustered_index =
-                                    if let Some(constant_name_clustered_index) =
-                                        global_compilation_context
-                                            .constants_names_to_name_clustered_constants_indices
-                                            .get(function_argument_name)
+                                let constant_definition = ConstantDefinition {
+                                    index: global_compilation_context.constants.len(),
+                                    name_clustered_index: if let Some(
+                                        constant_name_clustered_index,
+                                    ) = global_compilation_context
+                                        .constants_names_to_name_clustered_constants_indices
+                                        .get(function_argument_name)
                                     {
                                         *constant_name_clustered_index
                                     } else {
@@ -650,15 +653,16 @@ fn compile_with_context(
                                             .constants_names_to_name_clustered_constants_indices
                                             .insert(function_argument_name.to_string(), result);
                                         result
-                                    };
-                                new_constants_indices
-                                    .push((constant_name_clustered_index, constant_index));
+                                    },
+                                };
+                                body_compilation_context.available_constants.extend([(
+                                    function_argument_name.to_string(),
+                                    constant_definition.index,
+                                )]);
+                                new_constants_definitions.push(constant_definition);
                                 global_compilation_context
                                     .constants
                                     .push((compiled_constant.r#type, compiled_constant.node));
-                                body_compilation_context
-                                    .available_constants
-                                    .extend([(function_argument_name.to_string(), constant_index)]);
                             }
                             if compilation_context
                                 .entered_user_functions
@@ -675,7 +679,7 @@ fn compile_with_context(
                                     node: Node {
                                         path: compilation_context.path.clone(),
                                         content: Content::UserFunctionCall {
-                                            arguments: new_constants_indices,
+                                            arguments: new_constants_definitions,
                                             body: *function_index,
                                         },
                                     },
@@ -732,7 +736,7 @@ fn compile_with_context(
                                     node: Node {
                                         path: compilation_context.path.clone(),
                                         content: Content::UserFunctionCall {
-                                            arguments: new_constants_indices,
+                                            arguments: new_constants_definitions,
                                             body: function_index,
                                         },
                                     },
