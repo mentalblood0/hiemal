@@ -137,8 +137,8 @@ fn compute_node(
                 )
             }
         }
-        Content::Constant(constant_index) => {
-            Ok(computation_context.constants.inner[*constant_index].clone())
+        Content::Constant(constant_name_clustered_index) => {
+            Ok(computation_context.constants.inner[*constant_name_clustered_index].clone())
         }
         Content::EmbeddedFunctionCall(embedded_function) => match &**embedded_function {
             EmbeddedFunction::Sum(argument) => Ok(Value::Number(
@@ -147,8 +147,9 @@ fn compute_node(
                     .unwrap()
                     .inner
                     .iter()
-                    .map(|element| element.as_number().unwrap())
-                    .fold(Rational::ZERO, |accumulator, current| accumulator + current),
+                    .fold(Rational::ZERO, |accumulator, current| {
+                        accumulator + current.as_number().unwrap()
+                    }),
             )),
             EmbeddedFunction::IsSorted(argument) => Ok(Value::Bool(
                 compute_node(argument, intermediate_representation, computation_context)?
