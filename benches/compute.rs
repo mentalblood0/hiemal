@@ -4,7 +4,7 @@ use serde_json::json;
 
 fn benchmarks(bencher_context: &mut Criterion) {
     {
-        for number in [20, 21, 22] {
+        for number in [22, 23, 24] {
             let program = serde_json::from_value::<Program>(json!({
               "scope": {
                 "functions": {

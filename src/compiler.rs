@@ -7,20 +7,30 @@ use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     intermediate_representation::{self, Content, IntermediateRepresentation, Node},
     program::{Clause, EmbeddedFunction, Path, PathSegment, Program, Scope},
-    r#type::Type,
     value::Value,
 };
 
+#[derive(PartialEq, Debug, Clone, Eq)]
+pub enum Type {
+    Number,
+    String,
+    Bool,
+    Null,
+    Array(Box<Type>),
+    Object(BTreeMap<String, Type>),
+    Unknown(usize),
+}
+
 #[derive(Clone, Default)]
-pub struct CompilationContext {
-    pub path: Path,
-    pub available_functions: Map<String, Program>,
-    pub available_constants: Map<String, usize>,
-    pub entered_user_functions: Set<Program>,
+struct CompilationContext {
+    path: Path,
+    available_functions: Map<String, Program>,
+    available_constants: Map<String, usize>,
+    entered_user_functions: Set<Program>,
 }
 
 impl CompilationContext {
-    pub fn error(&self, got_type: &Type, expected_type: &Type) -> Error {
+    fn error(&self, got_type: &Type, expected_type: &Type) -> Error {
         anyhow!(
             "Got {got_type:#?} but expected {expected_type:#?} at {:#?}",
             self.path,
@@ -139,19 +149,20 @@ fn assert_equal(
 }
 
 #[derive(Debug)]
-pub enum ProgramOrNode {
+enum ProgramOrNode {
     Program(Program),
     Node(Node),
 }
 
 impl ProgramOrNode {
-    pub fn as_program(&self) -> Option<&Program> {
+    fn as_program(&self) -> Option<&Program> {
         match self {
             &ProgramOrNode::Program(ref program) => Some(program),
             &ProgramOrNode::Node(_) => None,
         }
     }
-    pub fn as_node(&self) -> Option<&Node> {
+
+    fn as_node(&self) -> Option<&Node> {
         match self {
             &ProgramOrNode::Node(ref node) => Some(node),
             &ProgramOrNode::Program(_) => None,
@@ -160,11 +171,11 @@ impl ProgramOrNode {
 }
 
 #[derive(Default)]
-pub struct GlobalCompilationContext {
-    pub user_function_to_index_and_type_option: BTreeMap<Program, (usize, Type)>,
-    pub user_functions: Vec<ProgramOrNode>,
-    pub constants_names_to_name_clustered_constants_indices: BTreeMap<String, usize>,
-    pub constants: Vec<(Type, Node)>,
+struct GlobalCompilationContext {
+    user_function_to_index_and_type_option: BTreeMap<Program, (usize, Type)>,
+    user_functions: Vec<ProgramOrNode>,
+    constants_names_to_name_clustered_constants_indices: BTreeMap<String, usize>,
+    constants: Vec<(Type, Node)>,
 }
 
 pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
