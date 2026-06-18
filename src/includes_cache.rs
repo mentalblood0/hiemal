@@ -108,16 +108,25 @@ impl IncludesCache {
                                     .unwrap()
                                     .splitn(3, '.') // url hash, etag, extension
                                     .collect::<Vec<_>>();
-                                let etag = file_name_splitted[1].to_string();
+                                let current_etag = file_name_splitted[1].to_string();
                                 match ureq::get(url.as_str())
-                                    .header("If-None-Match", format!("\"{etag}\", W/\"{etag}\""))
+                                    .header(
+                                        "If-None-Match",
+                                        format!("\"{current_etag}\", W/\"{current_etag}\""),
+                                    )
                                     .call()
                                 {
                                     Ok(response) => {
                                         if response.status() == 304 {
                                             return Ok(self.get_from_disk(source_hash)?.unwrap());
                                         }
-                                        (response, etag)
+                                        let new_etag = response.headers()["etag"]
+                                            .to_str()?
+                                            .split("\"")
+                                            .nth(1)
+                                            .unwrap()
+                                            .to_string(); // etag can be W/"<etag_value>" or "<etag_value>"
+                                        (response, new_etag)
                                     }
                                     Err(
                                         ureq::Error::ConnectionFailed
@@ -134,8 +143,7 @@ impl IncludesCache {
                                 }
                             } else {
                                 let response = ureq::get(url.as_str()).call()?;
-                                let headers = response.headers();
-                                let etag = headers["etag"]
+                                let etag = response.headers()["etag"]
                                     .to_str()?
                                     .split("\"")
                                     .nth(1)
