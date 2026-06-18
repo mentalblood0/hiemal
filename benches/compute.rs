@@ -10,10 +10,8 @@ fn benchmarks(bencher_context: &mut Criterion) {
     {
         for number in [22, 23, 24] {
             let program = serde_json::from_value::<Program>(json!({
-              "scope": {
                 "functions": {
                   "fibonacci:": {
-                    "branching": {
                       "if": {
                         "is sorted": [
                           "_",
@@ -41,13 +39,11 @@ fn benchmarks(bencher_context: &mut Criterion) {
                             }
                           ]
                       }
-                    }
                   }
                 },
                 "compute": {
                   "fibonacci:": number
                 }
-              }
             }))
             .unwrap();
             let intermediate_representation = compile(&program).unwrap();

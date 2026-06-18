@@ -8,7 +8,7 @@ use crate::{
     intermediate_representation::{
         self, ConstantDefinition, Content, IntermediateRepresentation, Node, UserFunction,
     },
-    program::{Clause, EmbeddedFunction, Path, PathSegment, Program, Scope},
+    program::{EmbeddedFunction, Path, PathSegment, Program},
     value::Value,
 };
 
@@ -260,7 +260,7 @@ fn compile_with_context(
                     .extend([PathSegment::ArrayIndex(element_index)]);
                 let mut compiled_element = compile_with_context(
                     element,
-                    element_compilation_context.clone(),
+                    element_compilation_context,
                     global_compilation_context,
                 )?;
                 result_external_constants_name_clustered_indices
@@ -287,215 +287,215 @@ fn compile_with_context(
                 },
             }
         }
-        Program::Clause(clause) => match clause {
-            Clause::Scope(Scope {
-                functions,
-                constants,
-                compute,
-            }) => {
-                let mut compute_compilation_context = compilation_context.clone();
-                compute_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::Scope, PathSegment::Compute]);
-                let mut new_constants_definitions = Vec::with_capacity(constants.len());
-                let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-                let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
-                for (constant_name, constant_compute_body) in constants.iter() {
-                    let mut constant_compilation_context = compilation_context.clone();
-                    constant_compilation_context.path.0.extend([
-                        PathSegment::Scope,
-                        PathSegment::Constants,
-                        PathSegment::Constant(constant_name.clone()),
-                    ]);
-                    let mut compiled_constant = compile_with_context(
-                        constant_compute_body,
-                        constant_compilation_context,
-                        global_compilation_context,
-                    )?;
-                    constants_name_clustered_indices.push(
-                        *global_compilation_context
-                            .constants_names_to_name_clustered_constants_indices
-                            .get(constant_name)
-                            .unwrap(),
-                    );
-                    result_external_constants_name_clustered_indices
-                        .append(&mut compiled_constant.external_constants_name_clustered_indices);
-                    let constant_definition = ConstantDefinition {
-                        index: global_compilation_context.constants.len(),
-                        name_clustered_index: if let Some(constant_name_clustered_index) =
-                            global_compilation_context
-                                .constants_names_to_name_clustered_constants_indices
-                                .get(constant_name)
-                        {
-                            *constant_name_clustered_index
-                        } else {
-                            let result = global_compilation_context
-                                .constants_names_to_name_clustered_constants_indices
-                                .len();
-                            global_compilation_context
-                                .constants_names_to_name_clustered_constants_indices
-                                .insert(constant_name.clone(), result);
-                            result
-                        },
-                    };
-                    compute_compilation_context
-                        .available_constants
-                        .extend([(constant_name.clone(), constant_definition.index)]);
-                    new_constants_definitions.push(constant_definition);
-                    global_compilation_context
-                        .constants
-                        .push((compiled_constant.r#type, compiled_constant.node));
-                }
-                for (function_name, function_body) in functions.iter() {
-                    if !function_name.ends_with(":") {
-                        let mut function_compilation_context = compilation_context.clone();
-                        function_compilation_context.path.0.extend([
-                            PathSegment::Functions,
-                            PathSegment::Function(function_name.clone()),
-                        ]);
-                        return Err(anyhow!(
-                            "Got function named {function_name:?}, but expect function named {:?} \
-                             at {:#?}",
-                            format!("{function_name}:"),
-                            function_compilation_context.path
-                        ));
-                    }
-                    compute_compilation_context
-                        .available_functions
-                        .extend([(function_name.clone(), function_body.clone())]);
-                }
-                let mut compiled_compute = compile_with_context(
-                    compute,
-                    compute_compilation_context,
+        Program::Scope {
+            functions,
+            constants,
+            compute,
+        } => {
+            let mut compute_compilation_context = compilation_context.clone();
+            compute_compilation_context
+                .path
+                .0
+                .extend([PathSegment::Scope, PathSegment::Compute]);
+            let mut new_constants_definitions = Vec::with_capacity(constants.len());
+            let mut result_external_constants_name_clustered_indices = BTreeSet::new();
+            let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
+            for (constant_name, constant_compute_body) in constants.iter() {
+                let mut constant_compilation_context = compilation_context.clone();
+                constant_compilation_context.path.0.extend([
+                    PathSegment::Scope,
+                    PathSegment::Constants,
+                    PathSegment::Constant(constant_name.clone()),
+                ]);
+                let mut compiled_constant = compile_with_context(
+                    constant_compute_body,
+                    constant_compilation_context,
                     global_compilation_context,
                 )?;
-                for constant_name_clustered_index in constants_name_clustered_indices {
-                    compiled_compute
-                        .external_constants_name_clustered_indices
-                        .remove(&constant_name_clustered_index);
-                }
-                result_external_constants_name_clustered_indices
-                    .append(&mut compiled_compute.external_constants_name_clustered_indices);
-                NodeAndMetadata {
-                    r#type: compiled_compute.r#type,
-                    external_constants_name_clustered_indices:
-                        result_external_constants_name_clustered_indices,
-                    node: Node {
-                        path: Path(compilation_context.path.0.extended([PathSegment::Scope])),
-                        content: Content::Scope {
-                            constants: new_constants_definitions,
-                            compute: Box::new(compiled_compute.node),
-                        },
-                    },
-                }
-            }
-            Clause::Branching { r#if, then, r#else } => {
-                let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-                let mut if_compilation_context = compilation_context.clone();
-                if_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::Branching, PathSegment::If]);
-                let mut compiled_if = compile_with_context(
-                    r#if,
-                    if_compilation_context.clone(),
-                    global_compilation_context,
-                )?;
-                result_external_constants_name_clustered_indices
-                    .append(&mut compiled_if.external_constants_name_clustered_indices);
-                assert_equal(
-                    &compiled_if.r#type,
-                    &Type::Bool,
-                    &compilation_context,
-                    global_compilation_context,
-                )?;
-                let mut then_compilation_context = compilation_context.clone();
-                then_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::Branching, PathSegment::Then]);
-                let mut compiled_then = compile_with_context(
-                    then,
-                    then_compilation_context,
-                    global_compilation_context,
-                )?;
-                result_external_constants_name_clustered_indices
-                    .append(&mut compiled_then.external_constants_name_clustered_indices);
-                let mut else_compilation_context = compilation_context.clone();
-                else_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::Branching, PathSegment::Else]);
-                let mut compiled_else = compile_with_context(
-                    r#else,
-                    else_compilation_context.clone(),
-                    global_compilation_context,
-                )?;
-                result_external_constants_name_clustered_indices
-                    .append(&mut compiled_else.external_constants_name_clustered_indices);
-                assert_equal(
-                    &compiled_else.r#type,
-                    &compiled_then.r#type,
-                    &compilation_context,
-                    global_compilation_context,
-                )?;
-                NodeAndMetadata {
-                    r#type: compiled_then.r#type,
-                    external_constants_name_clustered_indices:
-                        result_external_constants_name_clustered_indices,
-                    node: Node {
-                        path: compilation_context.path.clone(),
-                        content: Content::Branching(Box::new(
-                            intermediate_representation::Branching {
-                                r#if: compiled_if.node,
-                                then: compiled_then.node,
-                                r#else: compiled_else.node,
-                            },
-                        )),
-                    },
-                }
-            }
-            Clause::Constant(constant_name) => {
-                if let Some(constant_index) = compilation_context
-                    .available_constants
-                    .inner
-                    .get(constant_name)
-                {
-                    let (constant_type, _) =
-                        global_compilation_context.constants[*constant_index].clone();
-                    let name_clustered_constant_index = *global_compilation_context
+                constants_name_clustered_indices.push(
+                    *global_compilation_context
                         .constants_names_to_name_clustered_constants_indices
                         .get(constant_name)
-                        .unwrap();
-                    NodeAndMetadata {
-                        r#type: constant_type,
-                        external_constants_name_clustered_indices: BTreeSet::from_iter([
-                            name_clustered_constant_index,
-                        ]),
-                        node: Node {
-                            path: compilation_context.path.clone(),
-                            content: Content::Constant(name_clustered_constant_index),
-                        },
-                    }
-                } else {
+                        .unwrap(),
+                );
+                result_external_constants_name_clustered_indices
+                    .append(&mut compiled_constant.external_constants_name_clustered_indices);
+                let constant_definition = ConstantDefinition {
+                    index: global_compilation_context.constants.len(),
+                    name_clustered_index: if let Some(constant_name_clustered_index) =
+                        global_compilation_context
+                            .constants_names_to_name_clustered_constants_indices
+                            .get(constant_name)
+                    {
+                        *constant_name_clustered_index
+                    } else {
+                        let result = global_compilation_context
+                            .constants_names_to_name_clustered_constants_indices
+                            .len();
+                        global_compilation_context
+                            .constants_names_to_name_clustered_constants_indices
+                            .insert(constant_name.clone(), result);
+                        result
+                    },
+                };
+                compute_compilation_context
+                    .available_constants
+                    .extend([(constant_name.clone(), constant_definition.index)]);
+                new_constants_definitions.push(constant_definition);
+                global_compilation_context
+                    .constants
+                    .push((compiled_constant.r#type, compiled_constant.node));
+            }
+            for (function_name, function_body) in functions.iter() {
+                if !function_name.ends_with(":") {
+                    let mut function_compilation_context = compilation_context.clone();
+                    function_compilation_context.path.0.extend([
+                        PathSegment::Functions,
+                        PathSegment::Function(function_name.clone()),
+                    ]);
                     return Err(anyhow!(
-                        "Got no constant {constant_name:?} at {:#?}, available constants are {:#?}",
-                        compilation_context.path,
-                        compilation_context
-                            .available_constants
-                            .inner
-                            .keys()
-                            .collect::<Vec<_>>()
+                        "Got function named {function_name:?}, but expect function named {:?} at \
+                         {:#?}",
+                        format!("{function_name}:"),
+                        function_compilation_context.path
                     ));
                 }
+                compute_compilation_context
+                    .available_functions
+                    .extend([(function_name.clone(), function_body.clone())]);
             }
-            Clause::DefaultArgument => compile_with_context(
-                &Program::Clause(Clause::Constant(DEFAULT_ARGUMENT_NAME.to_string())),
-                compilation_context,
+            let mut compiled_compute = compile_with_context(
+                compute,
+                compute_compilation_context,
                 global_compilation_context,
-            )?,
-        },
+            )?;
+            for constant_name_clustered_index in constants_name_clustered_indices {
+                compiled_compute
+                    .external_constants_name_clustered_indices
+                    .remove(&constant_name_clustered_index);
+            }
+            result_external_constants_name_clustered_indices
+                .append(&mut compiled_compute.external_constants_name_clustered_indices);
+            NodeAndMetadata {
+                r#type: compiled_compute.r#type,
+                external_constants_name_clustered_indices:
+                    result_external_constants_name_clustered_indices,
+                node: Node {
+                    path: Path(compilation_context.path.0.extended([PathSegment::Scope])),
+                    content: Content::Scope {
+                        constants: new_constants_definitions,
+                        compute: Box::new(compiled_compute.node),
+                    },
+                },
+            }
+        }
+        Program::Branching(branching_clause) => {
+            let mut result_external_constants_name_clustered_indices = BTreeSet::new();
+            let mut if_compilation_context = compilation_context.clone();
+            if_compilation_context
+                .path
+                .0
+                .extend([PathSegment::Branching, PathSegment::If]);
+            let mut compiled_if = compile_with_context(
+                &branching_clause.r#if,
+                if_compilation_context.clone(),
+                global_compilation_context,
+            )?;
+            result_external_constants_name_clustered_indices
+                .append(&mut compiled_if.external_constants_name_clustered_indices);
+            assert_equal(
+                &compiled_if.r#type,
+                &Type::Bool,
+                &compilation_context,
+                global_compilation_context,
+            )?;
+            let mut then_compilation_context = compilation_context.clone();
+            then_compilation_context
+                .path
+                .0
+                .extend([PathSegment::Branching, PathSegment::Then]);
+            let mut compiled_then = compile_with_context(
+                &branching_clause.then,
+                then_compilation_context,
+                global_compilation_context,
+            )?;
+            result_external_constants_name_clustered_indices
+                .append(&mut compiled_then.external_constants_name_clustered_indices);
+            let mut else_compilation_context = compilation_context.clone();
+            else_compilation_context
+                .path
+                .0
+                .extend([PathSegment::Branching, PathSegment::Else]);
+            let mut compiled_else = compile_with_context(
+                &branching_clause.r#else,
+                else_compilation_context.clone(),
+                global_compilation_context,
+            )?;
+            result_external_constants_name_clustered_indices
+                .append(&mut compiled_else.external_constants_name_clustered_indices);
+            assert_equal(
+                &compiled_else.r#type,
+                &compiled_then.r#type,
+                &compilation_context,
+                global_compilation_context,
+            )?;
+            NodeAndMetadata {
+                r#type: compiled_then.r#type,
+                external_constants_name_clustered_indices:
+                    result_external_constants_name_clustered_indices,
+                node: Node {
+                    path: compilation_context.path.clone(),
+                    content: Content::Branching(Box::new(intermediate_representation::Branching {
+                        r#if: compiled_if.node,
+                        then: compiled_then.node,
+                        r#else: compiled_else.node,
+                    })),
+                },
+            }
+        }
+        Program::Constant {
+            constant: constant_name,
+        } => {
+            if let Some(constant_index) = compilation_context
+                .available_constants
+                .inner
+                .get(constant_name)
+            {
+                let (constant_type, _) =
+                    global_compilation_context.constants[*constant_index].clone();
+                let name_clustered_constant_index = *global_compilation_context
+                    .constants_names_to_name_clustered_constants_indices
+                    .get(constant_name)
+                    .unwrap();
+                NodeAndMetadata {
+                    r#type: constant_type,
+                    external_constants_name_clustered_indices: BTreeSet::from_iter([
+                        name_clustered_constant_index,
+                    ]),
+                    node: Node {
+                        path: compilation_context.path.clone(),
+                        content: Content::Constant(name_clustered_constant_index),
+                    },
+                }
+            } else {
+                return Err(anyhow!(
+                    "Got no constant {constant_name:?} at {:#?}, available constants are {:#?}",
+                    compilation_context.path,
+                    compilation_context
+                        .available_constants
+                        .inner
+                        .keys()
+                        .collect::<Vec<_>>()
+                ));
+            }
+        }
+        Program::Shortcut(_) => compile_with_context(
+            &Program::Constant {
+                constant: DEFAULT_ARGUMENT_NAME.to_string(),
+            },
+            compilation_context,
+            global_compilation_context,
+        )?,
         Program::EmbeddedFunction(embedded_function) => match &**embedded_function {
             EmbeddedFunction::Sum(argument) => {
                 let mut argument_compilation_context = compilation_context.clone();

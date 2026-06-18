@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::hash::Hash;
 use std::sync::Arc;
@@ -7,6 +6,7 @@ use anyhow::Result;
 use dashu::Rational;
 use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     containers::{Map, Vector},

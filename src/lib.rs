@@ -34,10 +34,8 @@ mod tests {
     fn test_recursive_normal() {
         let intermediate_representation = compile(
             &serde_json::from_value(json!({
-              "scope": {
                 "functions": {
                   "fibonacci:": {
-                    "branching": {
                       "if": {
                         "is sorted": [
                           "_",
@@ -65,13 +63,12 @@ mod tests {
                             }
                           ]
                       }
-                    }
                   }
                 },
                 "compute": {
                   "fibonacci:": 10
                 }
-            }}))
+            }))
             .unwrap(),
         )
         .unwrap();
@@ -86,10 +83,8 @@ mod tests {
     fn test_recursive_big() {
         let intermediate_representation = compile(
             &serde_json::from_value(json!({
-              "scope": {
                 "functions": {
                   "fibonacci_1:": {
-                    "branching": {
                       "if": {
                         "is sorted": [
                           "_",
@@ -118,10 +113,8 @@ mod tests {
                             }
                           ]
                       }
-                    }
                   },
                   "fibonacci_2:": {
-                    "branching": {
                       "if": {
                         "is sorted": [
                           "_",
@@ -149,11 +142,9 @@ mod tests {
                               }
                             }
                           ]
-                      }
                     }
                   },
                   "fibonacci_3:": {
-                    "branching": {
                       "if": {
                         "is sorted": [
                           "_",
@@ -181,7 +172,6 @@ mod tests {
                               }
                             }
                           ]
-                      }
                     }
                   }
                 },
@@ -190,7 +180,7 @@ mod tests {
                   {"fibonacci_2:": 10},
                   {"fibonacci_3:": 10},
                 ]
-            }}))
+            }))
             .unwrap(),
         )
         .unwrap();

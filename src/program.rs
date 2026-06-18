@@ -6,41 +6,41 @@ use crate::{containers::Vector, value::Value};
 #[serde(untagged)]
 pub enum Program {
     Array(Vec<Program>),
-    Clause(Clause),
+    Scope {
+        #[serde(default)]
+        functions: BTreeMap<String, Program>,
+        #[serde(default)]
+        constants: BTreeMap<String, Program>,
+        compute: Box<Program>,
+    },
+    Branching(Box<Branching>),
+    Constant {
+        constant: String,
+    },
+    Shortcut(Shortcut),
     EmbeddedFunction(Box<EmbeddedFunction>),
     Object(BTreeMap<String, Program>),
     Value(Value),
+}
+
+#[derive(serde::Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
+pub struct Branching {
+    pub r#if: Program,
+    pub then: Program,
+    #[serde(default)]
+    pub r#else: Program,
+}
+
+#[derive(serde::Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
+pub enum Shortcut {
+    #[serde(rename = "_")]
+    DefaultArgument,
 }
 
 impl Default for Program {
     fn default() -> Self {
         Self::Value(Value::Null)
     }
-}
-
-#[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub enum Clause {
-    #[serde(rename = "scope")]
-    Scope(Scope),
-    #[serde(rename = "branching")]
-    Branching {
-        r#if: Box<Program>,
-        then: Box<Program>,
-        r#else: Box<Program>,
-    },
-    #[serde(rename = "constant")]
-    Constant(String),
-    #[serde(rename = "_")]
-    DefaultArgument,
-}
-
-#[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub struct Scope {
-    #[serde(default)]
-    pub functions: BTreeMap<String, Program>,
-    #[serde(default)]
-    pub constants: BTreeMap<String, Program>,
-    pub compute: Box<Program>,
 }
 
 #[derive(serde::Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
