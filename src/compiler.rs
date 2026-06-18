@@ -625,7 +625,7 @@ fn compile_with_context(
                         .external_constants_name_clustered_indices,
                     node: Node {
                         content: Content::EmbeddedFunctionCall {
-                            path: Some(argument_compilation_context.path.clone()),
+                            path: None,
                             embedded_function: Box::new(
                                 intermediate_representation::EmbeddedFunction::Sum(
                                     compiled_argument.node,
@@ -659,7 +659,7 @@ fn compile_with_context(
                         .external_constants_name_clustered_indices,
                     node: Node {
                         content: Content::EmbeddedFunctionCall {
-                            path: Some(argument_compilation_context.path.clone()),
+                            path: None,
                             embedded_function: Box::new(
                                 intermediate_representation::EmbeddedFunction::IsSorted(
                                     compiled_argument.node,
