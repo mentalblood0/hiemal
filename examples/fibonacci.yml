@@ -2,20 +2,13 @@ with:
   functions:
     fibonacci::
       if:
-        is sorted:
-          - _
-          - 1
+        is sorted: [_, 1]
       then: _
       else:
-        sum: # => Array(Number) = Array(Tfibonacci) => Number = Tfibonacci
-          # Array(Tfibonacci)
-          - fibonacci:: # Tfibonacci
-              sum: # Number
-                - _
-                - -1
-          - fibonacci:: # Tfibonacci
-              sum: # Number
-                - _
-                - -2
+        sum:
+          - fibonacci::
+              sum: [_, -1]
+          - fibonacci::
+              sum: [_, -2]
 compute:
   fibonacci:: 10
