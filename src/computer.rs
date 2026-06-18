@@ -65,7 +65,7 @@ impl Computer {
             .enumerate()
             .filter(|(element_index, element)| match &element.content {
                 Content::Value(value) => {
-                    result[*element_index] = value.clone();
+                    result[*element_index] = unsafe { std::mem::transmute(value.clone()) };
                     false
                 }
                 _ => true,
@@ -172,7 +172,10 @@ impl Computer {
             Content::Constant(constant_name_clustered_index) => {
                 Ok(computation_context.constants.inner[*constant_name_clustered_index].clone())
             }
-            Content::EmbeddedFunctionCall(embedded_function) => match &**embedded_function {
+            Content::EmbeddedFunctionCall {
+                path: _,
+                embedded_function,
+            } => match &**embedded_function {
                 EmbeddedFunction::Sum(argument) => Ok(Value::Number(
                     self.compute_node(
                         argument,
@@ -272,7 +275,7 @@ impl Computer {
                 }
                 Ok(Value::Object(result))
             }
-            Content::Value(value) => Ok(value.clone()),
+            Content::Value(value) => Ok(unsafe { std::mem::transmute(value.clone()) }),
         }
     }
 }

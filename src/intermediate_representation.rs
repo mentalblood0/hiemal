@@ -1,8 +1,32 @@
 use std::collections::BTreeMap;
 
+use dashu::Rational;
 use serde::{Deserialize, Serialize};
+use serde_with::{DisplayFromStr, serde_as};
 
-use crate::{program::Path, value::Value};
+use crate::{
+    containers::{Map, Vector},
+    program::Path,
+};
+
+#[serde_as]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Default, Hash)]
+pub enum Value {
+    Number(#[serde_as(as = "DisplayFromStr")] Rational),
+
+    String(
+        #[serde(
+            deserialize_with = "crate::value::deserialize_rope",
+            serialize_with = "crate::value::serialize_rope"
+        )]
+        ropey::Rope,
+    ),
+    Bool(bool),
+    #[default]
+    Null,
+    Array(Vector<Value>),
+    Object(Map<String, Value>),
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntermediateRepresentation {
@@ -14,7 +38,6 @@ pub struct IntermediateRepresentation {
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
 pub struct Node {
-    pub path: Path,
     pub content: Content,
 }
 
@@ -27,7 +50,10 @@ pub enum Content {
     },
     Branching(Box<Branching>),
     Constant(usize),
-    EmbeddedFunctionCall(Box<EmbeddedFunction>),
+    EmbeddedFunctionCall {
+        path: Option<Path>,
+        embedded_function: Box<EmbeddedFunction>,
+    },
     UserFunctionCall {
         arguments: Vec<ConstantDefinition>,
         body: usize,

@@ -390,7 +390,6 @@ fn compile_with_context(
                 external_constants_name_clustered_indices:
                     result_external_constants_name_clustered_indices,
                 node: Node {
-                    path: compilation_context.path.clone(),
                     content: Content::Array(result_content),
                 },
             }
@@ -488,7 +487,6 @@ fn compile_with_context(
                 external_constants_name_clustered_indices:
                     result_external_constants_name_clustered_indices,
                 node: Node {
-                    path: compilation_context.path.clone(),
                     content: Content::Scope {
                         constants: new_constants_definitions,
                         compute: Box::new(compiled_compute.node),
@@ -542,7 +540,6 @@ fn compile_with_context(
                 external_constants_name_clustered_indices:
                     result_external_constants_name_clustered_indices,
                 node: Node {
-                    path: compilation_context.path.clone(),
                     content: Content::Branching(Box::new(intermediate_representation::Branching {
                         r#if: compiled_if.node,
                         then: compiled_then.node,
@@ -571,7 +568,6 @@ fn compile_with_context(
                         name_clustered_constant_index,
                     ]),
                     node: Node {
-                        path: compilation_context.path.clone(),
                         content: Content::Constant(name_clustered_constant_index),
                     },
                 }
@@ -628,12 +624,14 @@ fn compile_with_context(
                     external_constants_name_clustered_indices: compiled_argument
                         .external_constants_name_clustered_indices,
                     node: Node {
-                        path: compilation_context.path.clone(),
-                        content: Content::EmbeddedFunctionCall(Box::new(
-                            intermediate_representation::EmbeddedFunction::Sum(
-                                compiled_argument.node,
+                        content: Content::EmbeddedFunctionCall {
+                            path: Some(argument_compilation_context.path.clone()),
+                            embedded_function: Box::new(
+                                intermediate_representation::EmbeddedFunction::Sum(
+                                    compiled_argument.node,
+                                ),
                             ),
-                        )),
+                        },
                     },
                 }
             }
@@ -660,12 +658,14 @@ fn compile_with_context(
                     external_constants_name_clustered_indices: compiled_argument
                         .external_constants_name_clustered_indices,
                     node: Node {
-                        path: compilation_context.path.clone(),
-                        content: Content::EmbeddedFunctionCall(Box::new(
-                            intermediate_representation::EmbeddedFunction::IsSorted(
-                                compiled_argument.node,
+                        content: Content::EmbeddedFunctionCall {
+                            path: Some(argument_compilation_context.path.clone()),
+                            embedded_function: Box::new(
+                                intermediate_representation::EmbeddedFunction::IsSorted(
+                                    compiled_argument.node,
+                                ),
                             ),
-                        )),
+                        },
                     },
                 }
             }
@@ -677,7 +677,6 @@ fn compile_with_context(
                         r#type: Type::Object(BTreeMap::new()),
                         external_constants_name_clustered_indices: BTreeSet::new(),
                         node: Node {
-                            path: compilation_context.path.clone(),
                             content: Content::Object(BTreeMap::new()),
                         },
                     });
@@ -785,7 +784,6 @@ fn compile_with_context(
                                     r#type: function_type.clone(),
                                     external_constants_name_clustered_indices: BTreeSet::new(),
                                     node: Node {
-                                        path: compilation_context.path.clone(),
                                         content: Content::UserFunctionCall {
                                             arguments: new_constants_definitions,
                                             body: *function_index,
@@ -842,7 +840,6 @@ fn compile_with_context(
                                     external_constants_name_clustered_indices:
                                         result_external_constants_name_clustered_indices.clone(),
                                     node: Node {
-                                        path: compilation_context.path.clone(),
                                         content: Content::UserFunctionCall {
                                             arguments: new_constants_definitions,
                                             body: function_index,
@@ -890,7 +887,6 @@ fn compile_with_context(
                 external_constants_name_clustered_indices:
                     result_external_constants_name_clustered_indices,
                 node: Node {
-                    path: compilation_context.path.clone(),
                     content: Content::Object(result_content),
                 },
             }
@@ -899,8 +895,7 @@ fn compile_with_context(
             r#type: get_value_type(value, compilation_context.clone())?,
             external_constants_name_clustered_indices: BTreeSet::new(),
             node: Node {
-                path: compilation_context.path.clone(),
-                content: Content::Value(value.clone()),
+                content: Content::Value(unsafe { std::mem::transmute(value.clone()) }),
             },
         },
     })
