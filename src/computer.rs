@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::hash::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -17,18 +16,12 @@ use crate::{
 
 #[derive(Default)]
 struct GlobalComputationContext {
-    functions_results_cache: BTreeMap<FunctionCallIdentifier, Value>,
+    functions_results_cache: BTreeMap<u128, Value>,
 }
 
 #[derive(Clone, Debug)]
 struct ComputationContext {
     constants: Vector<Value>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-struct FunctionCallIdentifier {
-    external_constants_hash: u64,
-    function_index: usize,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -223,20 +216,17 @@ impl Computer {
                 }
                 let user_function = &intermediate_representation.user_functions[*body];
                 if self.user_functions_caching {
-                    let external_constants_hash = {
-                        let mut external_constants_hasher = DefaultHasher::new();
+                    let function_call_identifier = {
+                        let mut hasher = gxhash::GxHasher::default();
                         for constant_name_clustered_index in
                             &user_function.external_constants_name_clustered_indices
                         {
                             let constant_value = &result_computation_context.constants.inner
                                 [*constant_name_clustered_index];
-                            constant_value.hash(&mut external_constants_hasher);
+                            constant_value.hash(&mut hasher);
                         }
-                        external_constants_hasher.finish()
-                    };
-                    let function_call_identifier = FunctionCallIdentifier {
-                        external_constants_hash,
-                        function_index: *body,
+                        body.hash(&mut hasher);
+                        hasher.finish_u128()
                     };
                     let global_computation_context_read_guard = global_computation_context.read();
                     if let Some(cached_function_result) = global_computation_context_read_guard
