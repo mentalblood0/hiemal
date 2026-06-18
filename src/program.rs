@@ -5,7 +5,7 @@ use url::Url;
 
 use crate::{containers::Vector, value::Value};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Program {
     Array(Vec<Program>),
@@ -30,7 +30,7 @@ pub enum Program {
     Value(Value),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 pub struct Branching {
     pub r#if: Program,
     pub then: Program,
@@ -38,13 +38,13 @@ pub struct Branching {
     pub r#else: Program,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 pub enum DefaultArgument {
     #[serde(rename = "_")]
     Underline,
 }
 
-#[derive(Serialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
+#[derive(Serialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 pub struct IncludeFromAt {
     pub from: IncludeFrom,
     #[serde(default)]
@@ -76,7 +76,7 @@ impl<'de> serde::Deserialize<'de> for IncludeFromAt {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum IncludeFrom {
     Url(Url),
@@ -89,7 +89,7 @@ impl Default for Program {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum EmbeddedFunction {
     #[serde(rename = "sum")]
     Sum(Program),
@@ -97,7 +97,7 @@ pub enum EmbeddedFunction {
     IsSorted(Program),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Default, Hash)]
 pub enum PathSegment {
     #[serde(rename = "array index")]
     ArrayIndex(usize),
@@ -130,7 +130,7 @@ pub enum PathSegment {
     ObjectKey(String),
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Hash)]
 pub struct Path(pub Vector<PathSegment>);
 
 impl std::fmt::Debug for Path {
