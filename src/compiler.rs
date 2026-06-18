@@ -5,10 +5,11 @@ use anyhow::{Error, Result, anyhow};
 use crate::{
     containers::{Map, Set},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
+    includes_cache::IncludesCache,
     intermediate_representation::{
         self, ConstantDefinition, Content, IntermediateRepresentation, Node, UserFunction,
     },
-    program::{EmbeddedFunction, Path, PathSegment, Program},
+    program::{EmbeddedFunction, IncludeFromAt, Path, PathSegment, Program},
     value::Value,
 };
 
@@ -189,6 +190,13 @@ impl ProgramOrNode {
     }
 }
 
+#[derive(Clone, Debug)]
+struct NodeAndMetadata {
+    node: Node,
+    r#type: Type,
+    external_constants_name_clustered_indices: BTreeSet<usize>,
+}
+
 #[derive(Default)]
 struct GlobalCompilationContext {
     user_function_to_index_and_type_option: BTreeMap<Program, (usize, Type)>,
@@ -196,6 +204,113 @@ struct GlobalCompilationContext {
     user_functions: Vec<(Vec<usize>, ProgramOrNode)>,
     constants_names_to_name_clustered_constants_indices: BTreeMap<String, usize>,
     constants: Vec<(Type, Node)>,
+    includes_cache: IncludesCache,
+}
+
+fn process_include(
+    include_clause: &IncludeFromAt,
+    includes_cache: &mut IncludesCache,
+) -> Result<Program> {
+    let mut result = includes_cache.get(&include_clause.from)?;
+    let mut current_path_segment_index = 0;
+    while current_path_segment_index < include_clause.at.0.inner.len() {
+        let mut current_path_segment = include_clause.at.0.inner.get(current_path_segment_index);
+        match (result, current_path_segment) {
+            (Program::Array(array), Some(PathSegment::ArrayIndex(array_index))) => {
+                result = array.get(*array_index).unwrap().clone();
+            }
+            (Program::Object(object), Some(PathSegment::ObjectKey(object_key))) => {
+                result = object.get(object_key).unwrap().clone();
+            }
+            (Program::Value(Value::Array(array)), Some(PathSegment::ArrayIndex(array_index))) => {
+                result = Program::Value(array.inner.get(*array_index).unwrap().clone());
+            }
+            (Program::Value(Value::Object(object)), Some(PathSegment::ObjectKey(object_key))) => {
+                result = Program::Value(object.inner.get(object_key).unwrap().clone());
+            }
+            (
+                Program::Scope {
+                    functions,
+                    constants,
+                    compute: _,
+                },
+                Some(PathSegment::Functions | PathSegment::Constants),
+            ) => {
+                let programs_map = match current_path_segment {
+                    Some(PathSegment::Functions) => functions,
+                    Some(PathSegment::Constants) => constants,
+                    _ => {
+                        return Err(anyhow!(
+                            "Can not get program from {:#?} at {:#?}: stuck at path segment {}: \
+                             {current_path_segment:#?}",
+                            include_clause.from,
+                            include_clause.at,
+                            current_path_segment_index + 1
+                        ));
+                    }
+                };
+                current_path_segment_index += 1;
+                current_path_segment = include_clause.at.0.inner.get(current_path_segment_index);
+                match current_path_segment {
+                    Some(PathSegment::ObjectKey(program_name)) => {
+                        match programs_map.get(program_name) {
+                            Some(program_body) => {
+                                result = program_body.clone();
+                            }
+                            None => {
+                                return Err(anyhow!(
+                                    "Can not get program from {:#?} at {:#?}: stuck at path \
+                                     segment {}: {current_path_segment:#?}",
+                                    include_clause.from,
+                                    include_clause.at,
+                                    current_path_segment_index + 1
+                                ));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(anyhow!(
+                            "Can not get program from {:#?} at {:#?}: stuck at path segment {}: \
+                             {current_path_segment:#?}",
+                            include_clause.from,
+                            include_clause.at,
+                            current_path_segment_index + 1
+                        ));
+                    }
+                }
+            }
+            (
+                Program::Scope {
+                    functions: _,
+                    constants: _,
+                    compute,
+                },
+                Some(PathSegment::Compute),
+            ) => {
+                result = *compute.clone();
+            }
+            (Program::Branching(branching_clause), Some(PathSegment::If)) => {
+                result = branching_clause.r#if.clone();
+            }
+            (Program::Branching(branching_clause), Some(PathSegment::Then)) => {
+                result = branching_clause.then.clone();
+            }
+            (Program::Branching(branching_clause), Some(PathSegment::Else)) => {
+                result = branching_clause.r#else.clone();
+            }
+            _ => {
+                return Err(anyhow!(
+                    "Can not get program from {:#?} at {:#?}: stuck at path segment {}: \
+                     {current_path_segment:#?}",
+                    include_clause.from,
+                    include_clause.at,
+                    current_path_segment_index + 1
+                ));
+            }
+        };
+        current_path_segment_index += 1;
+    }
+    Ok(result)
 }
 
 pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
@@ -229,13 +344,6 @@ pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
     })
 }
 
-#[derive(Clone, Debug)]
-struct NodeAndMetadata {
-    node: Node,
-    r#type: Type,
-    external_constants_name_clustered_indices: BTreeSet<usize>,
-}
-
 fn compile_with_context(
     program: &Program,
     compilation_context: CompilationContext,
@@ -260,7 +368,7 @@ fn compile_with_context(
                     .extend([PathSegment::ArrayIndex(element_index)]);
                 let mut compiled_element = compile_with_context(
                     element,
-                    element_compilation_context,
+                    element_compilation_context.clone(),
                     global_compilation_context,
                 )?;
                 result_external_constants_name_clustered_indices
@@ -269,7 +377,7 @@ fn compile_with_context(
                     assert_equal(
                         &compiled_element.r#type,
                         &previous_element_type,
-                        &compilation_context,
+                        &element_compilation_context,
                         global_compilation_context,
                     )?;
                 } else {
@@ -296,14 +404,13 @@ fn compile_with_context(
             compute_compilation_context
                 .path
                 .0
-                .extend([PathSegment::Scope, PathSegment::Compute]);
+                .extend([PathSegment::Compute]);
             let mut new_constants_definitions = Vec::with_capacity(constants.len());
             let mut result_external_constants_name_clustered_indices = BTreeSet::new();
             let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
             for (constant_name, constant_compute_body) in constants.iter() {
                 let mut constant_compilation_context = compilation_context.clone();
                 constant_compilation_context.path.0.extend([
-                    PathSegment::Scope,
                     PathSegment::Constants,
                     PathSegment::Constant(constant_name.clone()),
                 ]);
@@ -381,7 +488,7 @@ fn compile_with_context(
                 external_constants_name_clustered_indices:
                     result_external_constants_name_clustered_indices,
                 node: Node {
-                    path: Path(compilation_context.path.0.extended([PathSegment::Scope])),
+                    path: compilation_context.path.clone(),
                     content: Content::Scope {
                         constants: new_constants_definitions,
                         compute: Box::new(compiled_compute.node),
@@ -392,10 +499,7 @@ fn compile_with_context(
         Program::Branching(branching_clause) => {
             let mut result_external_constants_name_clustered_indices = BTreeSet::new();
             let mut if_compilation_context = compilation_context.clone();
-            if_compilation_context
-                .path
-                .0
-                .extend([PathSegment::Branching, PathSegment::If]);
+            if_compilation_context.path.0.extend([PathSegment::If]);
             let mut compiled_if = compile_with_context(
                 &branching_clause.r#if,
                 if_compilation_context.clone(),
@@ -410,10 +514,7 @@ fn compile_with_context(
                 global_compilation_context,
             )?;
             let mut then_compilation_context = compilation_context.clone();
-            then_compilation_context
-                .path
-                .0
-                .extend([PathSegment::Branching, PathSegment::Then]);
+            then_compilation_context.path.0.extend([PathSegment::Then]);
             let mut compiled_then = compile_with_context(
                 &branching_clause.then,
                 then_compilation_context,
@@ -422,10 +523,7 @@ fn compile_with_context(
             result_external_constants_name_clustered_indices
                 .append(&mut compiled_then.external_constants_name_clustered_indices);
             let mut else_compilation_context = compilation_context.clone();
-            else_compilation_context
-                .path
-                .0
-                .extend([PathSegment::Branching, PathSegment::Else]);
+            else_compilation_context.path.0.extend([PathSegment::Else]);
             let mut compiled_else = compile_with_context(
                 &branching_clause.r#else,
                 else_compilation_context.clone(),
@@ -489,10 +587,20 @@ fn compile_with_context(
                 ));
             }
         }
-        Program::Shortcut(_) => compile_with_context(
+        Program::DefaultArgument(_) => compile_with_context(
             &Program::Constant {
                 constant: DEFAULT_ARGUMENT_NAME.to_string(),
             },
+            compilation_context,
+            global_compilation_context,
+        )?,
+        Program::Include {
+            include: include_clause,
+        } => compile_with_context(
+            &process_include(
+                include_clause,
+                &mut global_compilation_context.includes_cache,
+            )?,
             compilation_context,
             global_compilation_context,
         )?,

@@ -2,6 +2,7 @@ pub mod compiler;
 pub mod computer;
 pub mod containers;
 pub mod default_argument_name;
+pub mod includes_cache;
 pub mod intermediate_representation;
 pub mod program;
 pub mod value;
@@ -74,8 +75,8 @@ mod tests {
         .unwrap();
         let computer = Computer::default();
         assert_eq!(
-            serde_json::to_value(computer.compute(&intermediate_representation).unwrap()).unwrap(),
-            json!("55")
+            computer.compute(&intermediate_representation).unwrap(),
+            serde_json::from_value(json!("55")).unwrap()
         );
     }
 
@@ -186,8 +187,30 @@ mod tests {
         .unwrap();
         let computer = Computer::default();
         assert_eq!(
-            serde_json::to_value(computer.compute(&intermediate_representation).unwrap()).unwrap(),
-            json!(["55", "55", "55"])
+            computer.compute(&intermediate_representation).unwrap(),
+            serde_json::from_value(json!([55, 55, 55])).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_includes() {
+        let intermediate_representation = compile(
+            &serde_json::from_value(json!([{
+                "functions": {
+                    "fibonacci:": {"include": ["examples/fibonacci.yml", "functions", {"object key": "fibonacci:"}]}
+                },
+                "compute": {
+                    "fibonacci:": 10
+                }
+            }, {
+                "include": ["https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/fibonacci.yml", "compute", {"object key": "fibonacci:"}]
+            }])).unwrap(),
+        )
+        .unwrap();
+        let computer = Computer::default();
+        assert_eq!(
+            computer.compute(&intermediate_representation).unwrap(),
+            serde_json::from_value(json!(["55", "10"])).unwrap()
         );
     }
 }

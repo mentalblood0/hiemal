@@ -11,8 +11,6 @@ use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
 };
 
-pub type SmallMap<K, V> = small_map::FxSmallMap<32, K, V>;
-
 pub fn serialize_rope<S>(rope: &ropey::Rope, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,

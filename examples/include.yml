@@ -1,8 +1,7 @@
-- with:
-    functions:
-      factorial:
-        include:
-          [examples/factorial.yml, with, functions, { object key: factorial }]
+- functions:
+    factorial:
+      include:
+        [examples/factorial.yml, with, functions, { object key: factorial }]
   compute:
     factorial: 5
 - include:

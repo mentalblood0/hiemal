@@ -12,7 +12,6 @@ ureq = { version = "3.3" }
 url = { version = "2.5.8", features = ["serde"] }
 dirs = "6.0.0"
 glob = "0.3.3"
-small-map = { "version" = "0.1.5", features = ["serde"] }
 dashu = { version = "0.4.1", features = [
   "num-order",
   "std",
@@ -21,7 +20,6 @@ dashu = { version = "0.4.1", features = [
 ] }
 rpds = { "version" = "1.2.1", "features" = ["std", "serde", "rayon"] }
 rayon = "1.12.0"
-hex = "0.4.3"
 ropey = "1.6.1"
 parking_lot = { version = "0.12.5", features = ["hardware-lock-elision"] }
 gxhash = "3.5.0"
