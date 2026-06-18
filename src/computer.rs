@@ -1,11 +1,12 @@
-use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::hash::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use std::{collections::HashMap, hash::DefaultHasher};
 
 use anyhow::Result;
 use dashu::Rational;
+use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 
 use crate::{
@@ -16,7 +17,7 @@ use crate::{
 
 #[derive(Default)]
 struct GlobalComputationContext {
-    functions_results_cache: HashMap<FunctionCallIdentifier, Value>,
+    functions_results_cache: BTreeMap<FunctionCallIdentifier, Value>,
 }
 
 #[derive(Clone, Debug)]
@@ -24,7 +25,7 @@ struct ComputationContext {
     constants: Vector<Value>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 struct FunctionCallIdentifier {
     external_constants_hash: u64,
     function_index: usize,
