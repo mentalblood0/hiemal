@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -21,9 +21,9 @@ pub enum Program {
         constant: String,
     },
     DefaultArgument(DefaultArgument),
-    Include {
-        #[serde(deserialize_with = "IncludeFromAt::deserialize")]
-        include: IncludeFromAt,
+    FromAt {
+        from: From,
+        at: Vec<AtSegment>,
     },
     EmbeddedFunction(Box<EmbeddedFunction>),
     Object(BTreeMap<String, Program>),
@@ -44,43 +44,21 @@ pub enum DefaultArgument {
     Underline,
 }
 
-#[derive(Serialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
-pub struct IncludeFromAt {
-    pub from: IncludeFrom,
-    #[serde(default)]
-    pub at: Path,
-}
-
-impl<'de> serde::Deserialize<'de> for IncludeFromAt {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let mut values = VecDeque::deserialize(deserializer)?;
-        let from = if let Some(first_value) = values.pop_front() {
-            serde_json::from_value(first_value).map_err(serde::de::Error::custom)?
-        } else {
-            return Err(serde::de::Error::invalid_length(
-                0,
-                &"at least one element (url or file path)",
-            ));
-        };
-        let mut at = rpds::VectorSync::new_sync();
-        for value in values {
-            at.push_back_mut(serde_json::from_value(value).map_err(serde::de::Error::custom)?);
-        }
-        Ok(IncludeFromAt {
-            from,
-            at: Path(Vector { inner: at }),
-        })
-    }
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[serde(untagged)]
+pub enum From {
+    Url(Url),
+    File(std::path::PathBuf),
+    Program(Box<Program>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
-pub enum IncludeFrom {
-    Url(Url),
-    File(std::path::PathBuf),
+pub enum AtSegment {
+    ProgramPathSegment(PathSegment),
+    ValueArrayIndex(usize),
+    ValueObjectKey(String),
+    Program(Box<Program>),
 }
 
 impl Default for Program {
@@ -101,6 +79,10 @@ pub enum EmbeddedFunction {
 pub enum PathSegment {
     #[serde(rename = "array index")]
     ArrayIndex(usize),
+    #[serde(rename = "from")]
+    From,
+    #[serde(rename = "atindex")]
+    At,
     #[serde(rename = "compute")]
     #[default]
     Compute,

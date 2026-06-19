@@ -218,6 +218,7 @@ impl IncludesCache {
                     }
                 }
             }
+            IncludeFrom::Program(program) => Ok(*program.clone()),
         }
     }
 }

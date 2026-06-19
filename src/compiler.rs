@@ -3,13 +3,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Error, Result, anyhow};
 
 use crate::{
-    containers::{Map, Set},
+    containers::{Map, Set, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     includes_cache::IncludesCache,
     intermediate_representation::{
         self, ConstantDefinition, Content, IntermediateRepresentation, Node, UserFunction,
     },
-    program::{EmbeddedFunction, IncludeFromAt, Path, PathSegment, Program},
+    program::{EmbeddedFunction, From, AtSegment, Path, PathSegment, Program},
     value::Value,
 };
 
@@ -207,25 +207,26 @@ struct GlobalCompilationContext {
     includes_cache: IncludesCache,
 }
 
-fn process_include(
-    include_clause: &IncludeFromAt,
+fn process_from_at(
+    from: &From,
+    at: &Vec<AtSegment>,
     includes_cache: &mut IncludesCache,
 ) -> Result<Program> {
-    let mut result = includes_cache.get(&include_clause.from)?;
+    let mut result = includes_cache.get(&from)?;
     let mut current_path_segment_index = 0;
-    while current_path_segment_index < include_clause.at.0.inner.len() {
-        let mut current_path_segment = include_clause.at.0.inner.get(current_path_segment_index);
+    while current_path_segment_index < at.len() {
+        let mut current_path_segment = at.get(current_path_segment_index);
         match (result, current_path_segment) {
-            (Program::Array(array), Some(PathSegment::ArrayIndex(array_index))) => {
+            (Program::Array(array), Some(AtSegment::ProgramPathSegment(PathSegment::ArrayIndex(array_index))) ) => {
                 result = array.get(*array_index).unwrap().clone();
             }
-            (Program::Object(object), Some(PathSegment::ObjectKey(object_key))) => {
+            (Program::Object(object), Some(AtSegment::ProgramPathSegment(PathSegment::ObjectKey(object_key)))) => {
                 result = object.get(object_key).unwrap().clone();
             }
-            (Program::Value(Value::Array(array)), Some(PathSegment::ArrayIndex(array_index))) => {
+            (Program::Value(Value::Array(array)), Some(AtSegment::ProgramPathSegment(PathSegment::ArrayIndex(array_index)))) => {
                 result = Program::Value(array.inner.get(*array_index).unwrap().clone());
             }
-            (Program::Value(Value::Object(object)), Some(PathSegment::ObjectKey(object_key))) => {
+            (Program::Value(Value::Object(object)), Some(AtSegment::ProgramPathSegment(PathSegment::ObjectKey(object_key)))) => {
                 result = Program::Value(object.inner.get(object_key).unwrap().clone());
             }
             (
@@ -234,25 +235,25 @@ fn process_include(
                     constants,
                     compute: _,
                 },
-                Some(PathSegment::Functions | PathSegment::Constants),
+                Some(AtSegment::ProgramPathSegment(PathSegment::Functions | PathSegment::Constants)),
             ) => {
                 let programs_map = match current_path_segment {
-                    Some(PathSegment::Functions) => functions,
-                    Some(PathSegment::Constants) => constants,
+                    Some(AtSegment::ProgramPathSegment(PathSegment::Functions)) => functions,
+                    Some(AtSegment::ProgramPathSegment(PathSegment::Constants)) => constants,
                     _ => {
                         return Err(anyhow!(
                             "Can not get program from {:#?} at {:#?}: stuck at path segment {}: \
                              {current_path_segment:#?}",
-                            include_clause.from,
-                            include_clause.at,
+                            from,
+                            at,
                             current_path_segment_index + 1
                         ));
                     }
                 };
                 current_path_segment_index += 1;
-                current_path_segment = include_clause.at.0.inner.get(current_path_segment_index);
+                current_path_segment = at.get(current_path_segment_index);
                 match current_path_segment {
-                    Some(PathSegment::ObjectKey(program_name)) => {
+                    Some(AtSegment::ProgramPathSegment(PathSegment::ObjectKey(program_name))) => {
                         match programs_map.get(program_name) {
                             Some(program_body) => {
                                 result = program_body.clone();
@@ -261,8 +262,8 @@ fn process_include(
                                 return Err(anyhow!(
                                     "Can not get program from {:#?} at {:#?}: stuck at path \
                                      segment {}: {current_path_segment:#?}",
-                                    include_clause.from,
-                                    include_clause.at,
+                                    from,
+                                    at,
                                     current_path_segment_index + 1
                                 ));
                             }
@@ -272,8 +273,8 @@ fn process_include(
                         return Err(anyhow!(
                             "Can not get program from {:#?} at {:#?}: stuck at path segment {}: \
                              {current_path_segment:#?}",
-                            include_clause.from,
-                            include_clause.at,
+                            from,
+                            at,
                             current_path_segment_index + 1
                         ));
                     }
@@ -285,25 +286,25 @@ fn process_include(
                     constants: _,
                     compute,
                 },
-                Some(PathSegment::Compute),
+                Some(AtSegment::ProgramPathSegment(PathSegment::Compute)),
             ) => {
                 result = *compute.clone();
             }
-            (Program::Branching(branching_clause), Some(PathSegment::If)) => {
+            (Program::Branching(branching_clause), Some(AtSegment::ProgramPathSegment(PathSegment::If))) => {
                 result = branching_clause.r#if.clone();
             }
-            (Program::Branching(branching_clause), Some(PathSegment::Then)) => {
+            (Program::Branching(branching_clause), Some(AtSegment::ProgramPathSegment(PathSegment::Then))) => {
                 result = branching_clause.then.clone();
             }
-            (Program::Branching(branching_clause), Some(PathSegment::Else)) => {
+            (Program::Branching(branching_clause), Some(AtSegment::ProgramPathSegment(PathSegment::Else))) => {
                 result = branching_clause.r#else.clone();
             }
             _ => {
                 return Err(anyhow!(
                     "Can not get program from {:#?} at {:#?}: stuck at path segment {}: \
                      {current_path_segment:#?}",
-                    include_clause.from,
-                    include_clause.at,
+                    from,
+                    at,
                     current_path_segment_index + 1
                 ));
             }
@@ -590,16 +591,46 @@ fn compile_with_context(
             compilation_context,
             global_compilation_context,
         )?,
-        Program::Include {
-            include: include_clause,
+        Program::FromAt {
+            from, at
         } => compile_with_context(
-            &process_include(
-                include_clause,
+            &process_from_at(
+                from, at,
                 &mut global_compilation_context.includes_cache,
             )?,
             compilation_context,
             global_compilation_context,
         )?,
+        Program::FromAt { from, at } => {
+            let from_compilation_context = compilation_context.clone();
+            from_compilation_context.path.0.extend([PathSegment::From]);
+            let compiled_from =
+                compile_with_context(from, from_compilation_context, global_compilation_context)?;
+            let mut compiled_value_path_segments = Vec::with_capacity(at.len());
+            let mut current_type = compiled_from.r#type.clone();
+            for (value_path_segment_index, value_path_segment) in at.iter().enumerate() {
+                let value_path_segment_compilation_context = compilation_context.clone();
+                value_path_segment_compilation_context.path.0.extend([
+                    PathSegment::At,
+                    PathSegment::ArrayIndex(value_path_segment_index),
+                ]);
+                let compiled_value_path_segment = compile_with_context(
+                    value_path_segment,
+                    value_path_segment_compilation_context,
+                    global_compilation_context,
+                )?;
+                match (current_type, compiled_value_path_segment.r#type) {
+                    (Type::Number, Type::Array(element_type)) => {
+                        compiled_value_path_segments.push(compiled_value_path_segment);
+                        current_type = *element_type;
+                    }
+                    (Type::String, Type::Object(object_inner_types)) => {
+                        if let Some(inner_type) = object_inner_types.get();
+                    }
+                }
+            }
+            Ok(())
+        }
         Program::EmbeddedFunction(embedded_function) => match &**embedded_function {
             EmbeddedFunction::Sum(argument) => {
                 let mut argument_compilation_context = compilation_context.clone();
