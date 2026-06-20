@@ -5,7 +5,7 @@ use std::io::Write;
 use anyhow::{Context, Result, anyhow};
 use glob::glob;
 
-use crate::{program::IncludeFrom, program::Program};
+use crate::{program::From, program::Program};
 
 pub struct IncludesCache {
     pub directory: std::path::PathBuf,
@@ -73,9 +73,9 @@ impl IncludesCache {
         hasher.finish_u128()
     }
 
-    pub fn get(&mut self, from: &IncludeFrom) -> Result<Program> {
+    pub fn get(&mut self, from: &From) -> Result<Program> {
         match from {
-            IncludeFrom::Url(url) => {
+            From::Url(url) => {
                 match std::path::Path::new(url.path())
                     .extension()
                     .and_then(std::ffi::OsStr::to_str)
@@ -195,7 +195,7 @@ impl IncludesCache {
                     }
                 }
             }
-            IncludeFrom::File(path) => {
+            From::File(path) => {
                 let source_hash = self.source_hash(path);
                 if let Some(result) = self.source_hash_to_program.get(&source_hash) {
                     Ok(result.clone())
@@ -218,7 +218,7 @@ impl IncludesCache {
                     }
                 }
             }
-            IncludeFrom::Program(program) => Ok(*program.clone()),
+            From::Program(program) => Ok(*program.clone()),
         }
     }
 }

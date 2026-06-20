@@ -58,7 +58,6 @@ pub enum AtSegment {
     ProgramPathSegment(PathSegment),
     ValueArrayIndex(usize),
     ValueObjectKey(String),
-    Program(Box<Program>),
 }
 
 impl Default for Program {

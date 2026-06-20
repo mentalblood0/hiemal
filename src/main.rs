@@ -3,14 +3,11 @@ use std::hash::Hash;
 use anyhow::{Context, Result};
 use gxhash::GxHasher;
 
-use hiemal::{
-    compiler::compile, computer::Computer, includes_cache::IncludesCache, program::IncludeFrom,
-};
+use hiemal::{compiler::compile, computer::Computer, includes_cache::IncludesCache, program::From};
 
 fn main() -> Result<()> {
     if let Some(target) = std::env::args().nth(1) {
-        let include_from =
-            serde_json::from_value::<IncludeFrom>(serde_json::Value::String(target))?;
+        let include_from = serde_json::from_value::<From>(serde_json::Value::String(target))?;
         let program = IncludesCache::default().get(&include_from)?;
         let program_hash = {
             let mut hasher = GxHasher::default();

@@ -58,6 +58,10 @@ pub enum Content {
         arguments: Vec<ConstantDefinition>,
         body: usize,
     },
+    FromAt {
+        from: Box<Node>,
+        value_path_segments: Vec<ValuePathSegment>,
+    },
     Object(BTreeMap<String, Node>),
     Value(Value),
 }
@@ -85,4 +89,10 @@ pub struct UserFunction {
 pub struct ConstantDefinition {
     pub name_clustered_index: usize,
     pub index: usize,
+}
+
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+pub enum ValuePathSegment {
+    ArrayIndex(usize),
+    ObjectKey(String),
 }

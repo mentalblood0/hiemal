@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     containers::{Map, Vector},
-    intermediate_representation::{Content, EmbeddedFunction, IntermediateRepresentation, Node},
+    intermediate_representation::{
+        Content, EmbeddedFunction, IntermediateRepresentation, Node, ValuePathSegment,
+    },
     value::Value,
 };
 
@@ -259,6 +261,42 @@ impl Computer {
                         global_computation_context,
                     )
                 }
+            }
+            Content::FromAt {
+                from,
+                value_path_segments,
+            } => {
+                let mut result = self.compute_node(
+                    from,
+                    intermediate_representation,
+                    computation_context,
+                    global_computation_context,
+                )?;
+                for path_segment in value_path_segments {
+                    match path_segment {
+                        ValuePathSegment::ArrayIndex(array_index) => {
+                            result = std::mem::take(
+                                result
+                                    .as_array_mut()
+                                    .unwrap()
+                                    .inner
+                                    .get_mut(*array_index)
+                                    .unwrap(),
+                            )
+                        }
+                        ValuePathSegment::ObjectKey(object_key) => {
+                            result = std::mem::take(
+                                result
+                                    .as_object_mut()
+                                    .unwrap()
+                                    .inner
+                                    .get_mut(object_key)
+                                    .unwrap(),
+                            )
+                        }
+                    }
+                }
+                Ok(result)
             }
             Content::Object(object) => {
                 let mut result = Map::default();

@@ -197,13 +197,13 @@ mod tests {
         let intermediate_representation = compile(
             &serde_json::from_value(json!([{
                 "functions": {
-                    "fibonacci:": {"include": ["examples/fibonacci.yml", "functions", {"object key": "fibonacci:"}]}
+                    "fibonacci:": {"from": "examples/fibonacci.yml", "at": ["functions", {"object key": "fibonacci:"}]}
                 },
                 "compute": {
                     "fibonacci:": 10
                 }
             }, {
-                "include": ["https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/fibonacci.yml", "compute", {"object key": "fibonacci:"}]
+                "from": "examples/fibonacci.yml", "at": ["compute", {"object key": "fibonacci:"}]
             }])).unwrap(),
         )
         .unwrap();

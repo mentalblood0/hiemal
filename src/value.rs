@@ -136,7 +136,21 @@ impl Value {
         }
     }
 
+    pub fn as_array_mut(&mut self) -> Option<&mut Vector<Value>> {
+        match self {
+            Value::Array(result) => Some(result),
+            _ => None,
+        }
+    }
+
     pub fn as_object(&self) -> Option<&Map<String, Value>> {
+        match self {
+            Value::Object(result) => Some(result),
+            _ => None,
+        }
+    }
+
+    pub fn as_object_mut(&mut self) -> Option<&mut Map<String, Value>> {
         match self {
             Value::Object(result) => Some(result),
             _ => None,
