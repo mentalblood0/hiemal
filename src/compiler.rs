@@ -13,7 +13,7 @@ use crate::{
     value::Value,
 };
 
-#[derive(PartialEq, Debug, Clone, Eq)]
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Type {
     Number,
     String,
@@ -21,6 +21,7 @@ pub enum Type {
     Null,
     Array(Box<Type>),
     Object(BTreeMap<String, Type>),
+    Union(BTreeSet<Type>),
     Unknown(usize),
 }
 
@@ -98,80 +99,131 @@ fn assert_equal(
     compilation_context: &CompilationContext,
     global_compilation_context: &mut GlobalCompilationContext,
 ) -> Result<()> {
-    match (got_type, expected_type) {
-        (Type::Number, Type::Number)
-        | (Type::String, Type::String)
-        | (Type::Bool, Type::Bool)
-        | (Type::Null, Type::Null) => Ok(()),
-        (Type::Array(got_element_type), Type::Array(expected_element_type)) => assert_equal(
-            got_element_type,
-            expected_element_type,
-            compilation_context,
-            global_compilation_context,
-        ),
-        (Type::Object(got_inner_types), Type::Object(expected_inner_types)) => {
-            for (expected_value_key, expected_value_type) in expected_inner_types {
-                if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
+    if got_type == expected_type {
+        Ok(())
+    } else {
+        match (got_type, expected_type) {
+            (Type::Array(got_element_type), Type::Array(expected_element_type)) => assert_equal(
+                got_element_type,
+                expected_element_type,
+                compilation_context,
+                global_compilation_context,
+            ),
+            (Type::Object(got_inner_types), Type::Object(expected_inner_types)) => {
+                for (expected_value_key, expected_value_type) in expected_inner_types {
+                    if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
+                        assert_equal(
+                            got_value_type,
+                            expected_value_type,
+                            compilation_context,
+                            global_compilation_context,
+                        )?;
+                    } else {
+                        return Err(compilation_context.error(got_type, expected_type));
+                    }
+                }
+                Ok(())
+            }
+            (Type::Unknown(_), Type::Unknown(_)) => Ok(()),
+            (Type::Unknown(got_program_index), expected_type)
+            | (expected_type, Type::Unknown(got_program_index)) => {
+                match &global_compilation_context.user_functions[*got_program_index].1 {
+                    ProgramOrNode::Program(got_program) => {
+                        let previously_resolved_type = &global_compilation_context
+                            .user_function_to_index_and_type_option
+                            .get(got_program)
+                            .unwrap()
+                            .1;
+                        if let Type::Unknown(_) = previously_resolved_type {
+                            global_compilation_context
+                                .user_function_to_index_and_type_option
+                                .get_mut(got_program)
+                                .unwrap()
+                                .1 = expected_type.clone();
+                        } else {
+                            if previously_resolved_type != expected_type {
+                                return Err(compilation_context
+                                    .error(&previously_resolved_type, expected_type));
+                            }
+                        }
+                    }
+                    ProgramOrNode::Node(got_node) => {
+                        let previously_resolved_type = &global_compilation_context
+                            .user_function_node_to_index_and_type_option
+                            .get(got_node)
+                            .unwrap()
+                            .1;
+                        if let Type::Unknown(_) = previously_resolved_type {
+                            global_compilation_context
+                                .user_function_node_to_index_and_type_option
+                                .get_mut(got_node)
+                                .unwrap()
+                                .1 = expected_type.clone();
+                        } else {
+                            if previously_resolved_type != expected_type {
+                                return Err(compilation_context
+                                    .error(&previously_resolved_type, expected_type));
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
+            (Type::Union(got_union_types), Type::Union(expected_union_types)) => {
+                if !got_union_types.is_subset(expected_union_types) {
+                    for one_of_got_types in got_union_types {
+                        let mut found = false;
+                        for one_of_expected_types in expected_union_types {
+                            if assert_equal(
+                                one_of_got_types,
+                                one_of_expected_types,
+                                compilation_context,
+                                global_compilation_context,
+                            )
+                            .is_ok()
+                            {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if !found {
+                            return Err(compilation_context.error(got_type, expected_type));
+                        }
+                    }
+                }
+                Ok(())
+            }
+            (Type::Union(got_union_types), expected_type) => {
+                for one_of_got_types in got_union_types {
                     assert_equal(
-                        got_value_type,
-                        expected_value_type,
+                        one_of_got_types,
+                        expected_type,
                         compilation_context,
                         global_compilation_context,
                     )?;
-                } else {
+                }
+                Ok(())
+            }
+            (got_type, Type::Union(expected_union_types)) => {
+                if !expected_union_types.contains(expected_type) {
+                    for one_of_expected_types in expected_union_types {
+                        if assert_equal(
+                            got_type,
+                            one_of_expected_types,
+                            compilation_context,
+                            global_compilation_context,
+                        )
+                        .is_ok()
+                        {
+                            return Ok(());
+                        }
+                    }
                     return Err(compilation_context.error(got_type, expected_type));
                 }
+                Ok(())
             }
-            Ok(())
+            _ => Err(compilation_context.error(got_type, expected_type)),
         }
-        (Type::Unknown(_), Type::Unknown(_)) => Ok(()),
-        (Type::Unknown(got_program_index), expected_type)
-        | (expected_type, Type::Unknown(got_program_index)) => {
-            match &global_compilation_context.user_functions[*got_program_index].1 {
-                ProgramOrNode::Program(got_program) => {
-                    let previously_resolved_type = &global_compilation_context
-                        .user_function_to_index_and_type_option
-                        .get(got_program)
-                        .unwrap()
-                        .1;
-                    if let Type::Unknown(_) = previously_resolved_type {
-                        global_compilation_context
-                            .user_function_to_index_and_type_option
-                            .get_mut(got_program)
-                            .unwrap()
-                            .1 = expected_type.clone();
-                    } else {
-                        if previously_resolved_type != expected_type {
-                            return Err(
-                                compilation_context.error(&previously_resolved_type, expected_type)
-                            );
-                        }
-                    }
-                }
-                ProgramOrNode::Node(got_node) => {
-                    let previously_resolved_type = &global_compilation_context
-                        .user_function_node_to_index_and_type_option
-                        .get(got_node)
-                        .unwrap()
-                        .1;
-                    if let Type::Unknown(_) = previously_resolved_type {
-                        global_compilation_context
-                            .user_function_node_to_index_and_type_option
-                            .get_mut(got_node)
-                            .unwrap()
-                            .1 = expected_type.clone();
-                    } else {
-                        if previously_resolved_type != expected_type {
-                            return Err(
-                                compilation_context.error(&previously_resolved_type, expected_type)
-                            );
-                        }
-                    }
-                }
-            }
-            Ok(())
-        }
-        _ => Err(compilation_context.error(got_type, expected_type)),
     }
 }
 
@@ -373,7 +425,7 @@ fn compile_with_context(
             }
             let mut result_content = Vec::with_capacity(array.len());
             let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-            let mut previous_element_type_option = None;
+            let mut result_types_union = BTreeSet::new();
             for (element_index, element) in array.iter().enumerate() {
                 let mut element_compilation_context = compilation_context.clone();
                 element_compilation_context
@@ -385,22 +437,17 @@ fn compile_with_context(
                     element_compilation_context.clone(),
                     global_compilation_context,
                 )?;
+                result_content.push(compiled_element.node);
                 result_external_constants_name_clustered_indices
                     .append(&mut compiled_element.external_constants_name_clustered_indices);
-                if let Some(ref previous_element_type) = previous_element_type_option {
-                    assert_equal(
-                        &compiled_element.r#type,
-                        &previous_element_type,
-                        &element_compilation_context,
-                        global_compilation_context,
-                    )?;
-                } else {
-                    previous_element_type_option = Some(compiled_element.r#type);
-                }
-                result_content.push(compiled_element.node);
+                result_types_union.insert(compiled_element.r#type.clone());
             }
             NodeAndMetadata {
-                r#type: Type::Array(Box::new(previous_element_type_option.unwrap())),
+                r#type: Type::Array(Box::new(if result_types_union.len() > 1 {
+                    Type::Union(result_types_union)
+                } else {
+                    result_types_union.into_iter().next().unwrap()
+                })),
                 external_constants_name_clustered_indices:
                     result_external_constants_name_clustered_indices,
                 node: Node {
