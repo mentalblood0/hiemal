@@ -13,6 +13,7 @@ use crate::{
     value::Value,
 };
 
+#[repr(u8)]
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Type {
     Number,
@@ -227,6 +228,7 @@ fn assert_equal(
     }
 }
 
+#[repr(u8)]
 #[derive(Debug)]
 enum ProgramOrNode {
     Program(Program),

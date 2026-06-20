@@ -26,6 +26,7 @@ where
     Ok(ropey::Rope::from_str(&s))
 }
 
+#[repr(u8)]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Default, Hash)]
 #[serde(untagged)]
 pub enum Value {

@@ -10,6 +10,7 @@ use crate::{
 };
 
 #[serde_as]
+#[repr(u8)]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Default, Hash)]
 pub enum Value {
     Number(#[serde_as(as = "DisplayFromStr")] Rational),
@@ -41,6 +42,7 @@ pub struct Node {
     pub content: Content,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
 pub enum Content {
     Array(Vec<Node>),
@@ -73,6 +75,7 @@ pub struct Branching {
     pub r#else: Node,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
 pub enum EmbeddedFunction {
     Sum(Node),
@@ -91,6 +94,7 @@ pub struct ConstantDefinition {
     pub index: usize,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
 pub enum ValuePathSegment {
     ArrayIndex(usize),

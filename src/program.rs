@@ -5,6 +5,7 @@ use url::Url;
 
 use crate::{containers::Vector, value::Value};
 
+#[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Program {
@@ -38,12 +39,14 @@ pub struct Branching {
     pub r#else: Program,
 }
 
+#[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 pub enum DefaultArgument {
     #[serde(rename = "_")]
     Underline,
 }
 
+#[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum From {
@@ -52,6 +55,7 @@ pub enum From {
     Program(Box<Program>),
 }
 
+#[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum AtSegment {
@@ -66,6 +70,7 @@ impl Default for Program {
     }
 }
 
+#[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum EmbeddedFunction {
     #[serde(rename = "sum")]
@@ -74,6 +79,7 @@ pub enum EmbeddedFunction {
     IsSorted(Program),
 }
 
+#[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Default, Hash)]
 pub enum PathSegment {
     #[serde(rename = "array index")]
