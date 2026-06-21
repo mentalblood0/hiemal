@@ -220,7 +220,7 @@ impl Computer {
                         [constant_definition.name_clustered_index] = new_constant_value;
                 }
                 let user_function = &intermediate_representation.user_functions[*body];
-                if self.user_functions_caching {
+                if self.user_functions_caching && user_function.is_pure {
                     let function_call_identifier = {
                         let mut hasher = gxhash::GxHasher::default();
                         for constant_name_clustered_index in

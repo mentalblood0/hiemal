@@ -86,6 +86,7 @@ pub enum EmbeddedFunction {
 pub struct UserFunction {
     pub external_constants_name_clustered_indices: Vec<usize>,
     pub node: Node,
+    pub is_pure: bool,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
