@@ -603,14 +603,15 @@ fn compile_with_context(
             )?;
             result_external_constants_name_clustered_indices
                 .append(&mut compiled_else.external_constants_name_clustered_indices);
-            assert_equal(
-                &compiled_else.r#type,
-                &compiled_then.r#type,
-                &compilation_context,
-                global_compilation_context,
-            )?;
             NodeAndMetadata {
-                r#type: compiled_then.r#type,
+                r#type: if compiled_then.r#type == compiled_else.r#type {
+                    compiled_then.r#type
+                } else {
+                    Type::Union(BTreeSet::from_iter([
+                        compiled_then.r#type,
+                        compiled_else.r#type,
+                    ]))
+                },
                 external_constants_name_clustered_indices:
                     result_external_constants_name_clustered_indices,
                 node: Node {

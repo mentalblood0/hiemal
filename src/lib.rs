@@ -213,4 +213,23 @@ mod tests {
             serde_json::from_value(json!(["55", "10"])).unwrap()
         );
     }
+
+    #[test]
+    fn test_heterogenous_array() {
+        compile(&serde_json::from_value(json!([1, "string", ["array"], {"object": 4}])).unwrap())
+            .unwrap();
+    }
+
+    #[test]
+    fn test_heterogenous_branching() {
+        compile(
+            &serde_json::from_value(json!({
+                "if": true,
+                "then": 1,
+                "else": "string"
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
 }
