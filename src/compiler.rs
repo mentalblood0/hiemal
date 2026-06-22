@@ -821,13 +821,20 @@ fn compile_with_context(
                     global_compilation_context,
                 )?,
                 1 => {
-                    let (result_type, result_case) = result_cases.into_iter().next().unwrap();
-                    NodeAndMetadata {
-                        node: result_case,
-                        r#type: result_type,
-                        external_constants_name_clustered_indices:
-                            result_external_constants_name_clustered_indices,
-                        is_pure: case_is_pure,
+                    if compiled_match.is_pure {
+                        let (result_type, result_case) = result_cases.into_iter().next().unwrap();
+                        NodeAndMetadata {
+                            node: result_case,
+                            r#type: result_type,
+                            external_constants_name_clustered_indices:
+                                result_external_constants_name_clustered_indices,
+                            is_pure: case_is_pure,
+                        }
+                    } else {
+                        return Err(anyhow!(
+                            "expected pure match body or multiple valid cases at {:#?}",
+                            compilation_context.path
+                        ));
                     }
                 }
                 _ => NodeAndMetadata {
