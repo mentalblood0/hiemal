@@ -7,6 +7,7 @@ use serde_with::{DisplayFromStr, serde_as};
 use crate::{
     containers::{Map, Vector},
     program::Path,
+    r#type::Type,
 };
 
 #[serde_as]
@@ -63,6 +64,10 @@ pub enum Content {
     FromAt {
         from: Box<Node>,
         value_path_segments: Vec<ValuePathSegment>,
+    },
+    Match {
+        r#match: Box<Node>,
+        cases: BTreeMap<Type, Node>,
     },
     Object(BTreeMap<String, Node>),
     Value(Value),

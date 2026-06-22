@@ -298,6 +298,23 @@ impl Computer {
                 }
                 Ok(result)
             }
+            Content::Match { r#match, cases } => self.compute_node(
+                cases
+                    .get(
+                        &self
+                            .compute_node(
+                                r#match,
+                                intermediate_representation,
+                                computation_context,
+                                global_computation_context,
+                            )?
+                            .r#type(),
+                    )
+                    .unwrap(),
+                intermediate_representation,
+                computation_context,
+                global_computation_context,
+            ),
             Content::Object(object) => {
                 let mut result = Map::default();
                 for (key, value) in object {

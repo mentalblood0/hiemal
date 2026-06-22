@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{containers::Vector, value::Value};
+use crate::{containers::Vector, r#type::Type, value::Value};
 
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
@@ -27,6 +27,10 @@ pub enum Program {
         at: Vec<AtSegment>,
     },
     EmbeddedFunction(Box<EmbeddedFunction>),
+    Match {
+        r#match: Box<Program>,
+        cases: Vec<(Type, Program)>,
+    },
     Object(BTreeMap<String, Program>),
     Value(Value),
 }
@@ -86,8 +90,14 @@ pub enum PathSegment {
     ArrayIndex(usize),
     #[serde(rename = "from")]
     From,
-    #[serde(rename = "atindex")]
+    #[serde(rename = "at")]
     At,
+    #[serde(rename = "match")]
+    Match,
+    #[serde(rename = "cases")]
+    Cases,
+    #[serde(rename = "case")]
+    Case(Type),
     #[serde(rename = "compute")]
     #[default]
     Compute,

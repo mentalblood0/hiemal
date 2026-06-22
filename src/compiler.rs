@@ -368,8 +368,8 @@ fn compile_with_context(
             }
             let mut result_content = Vec::with_capacity(array.len());
             let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-            let mut result_types_union = BTreeSet::new();
-            let mut is_pure = true;
+            let mut result_union_types = BTreeSet::new();
+            let mut result_is_pure = true;
             for (element_index, element) in array.iter().enumerate() {
                 let mut element_compilation_context = compilation_context.clone();
                 element_compilation_context
@@ -384,21 +384,17 @@ fn compile_with_context(
                 result_content.push(compiled_element.node);
                 result_external_constants_name_clustered_indices
                     .append(&mut compiled_element.external_constants_name_clustered_indices);
-                result_types_union.insert(compiled_element.r#type.clone());
-                is_pure &= compiled_element.is_pure;
+                result_union_types.insert(compiled_element.r#type.clone());
+                result_is_pure &= compiled_element.is_pure;
             }
             NodeAndMetadata {
-                r#type: Type::Array(Box::new(if result_types_union.len() > 1 {
-                    Type::Union(result_types_union)
-                } else {
-                    result_types_union.into_iter().next().unwrap()
-                })),
+                r#type: Type::Array(Box::new(Type::from(result_union_types))),
                 external_constants_name_clustered_indices:
                     result_external_constants_name_clustered_indices,
                 node: Node {
                     content: Content::Array(result_content),
                 },
-                is_pure,
+                is_pure: result_is_pure,
             }
         }
         Program::Scope {
@@ -414,7 +410,7 @@ fn compile_with_context(
             let mut new_constants_definitions = Vec::with_capacity(constants.len());
             let mut result_external_constants_name_clustered_indices = BTreeSet::new();
             let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
-            let mut is_pure = true;
+            let mut result_is_pure = true;
             for (constant_name, constant_compute_body) in constants.iter() {
                 let mut constant_compilation_context = compilation_context.clone();
                 constant_compilation_context.path.0.extend([
@@ -456,7 +452,7 @@ fn compile_with_context(
                     .available_constants
                     .extend([(constant_name.clone(), constant_definition.index)]);
                 new_constants_definitions.push(constant_definition);
-                is_pure &= compiled_constant.is_pure;
+                result_is_pure &= compiled_constant.is_pure;
                 global_compilation_context
                     .constants
                     .push((compiled_constant.r#type, compiled_constant.node));
@@ -491,7 +487,7 @@ fn compile_with_context(
             }
             result_external_constants_name_clustered_indices
                 .append(&mut compiled_compute.external_constants_name_clustered_indices);
-            is_pure &= compiled_compute.is_pure;
+            result_is_pure &= compiled_compute.is_pure;
             NodeAndMetadata {
                 r#type: compiled_compute.r#type,
                 external_constants_name_clustered_indices:
@@ -502,7 +498,7 @@ fn compile_with_context(
                         compute: Box::new(compiled_compute.node),
                     },
                 },
-                is_pure,
+                is_pure: result_is_pure,
             }
         }
         Program::Branching(branching_clause) => {
@@ -624,7 +620,7 @@ fn compile_with_context(
             let external_constants_name_clustered_indices =
                 compiled_extracted_from.external_constants_name_clustered_indices;
             let mut static_value_path_segments = Vec::new();
-            let mut current_type = compiled_extracted_from.r#type.clone();
+            let mut current_type = compiled_extracted_from.r#type;
             if let Some(first_non_program_path_segment_index) =
                 first_non_program_path_segment_index_option
             {
@@ -778,6 +774,76 @@ fn compile_with_context(
                 }
             }
         },
+        Program::Match { r#match, cases } => {
+            let mut match_compilation_context = compilation_context.clone();
+            match_compilation_context
+                .path
+                .0
+                .extend([PathSegment::Match]);
+            let compiled_match = compile_with_context(
+                r#match,
+                match_compilation_context,
+                global_compilation_context,
+            )?;
+            let got_union_types = if let Type::Union(union_types) = compiled_match.r#type {
+                union_types
+            } else {
+                BTreeSet::from_iter([compiled_match.r#type])
+            };
+            let mut result_cases = BTreeMap::new();
+            let mut result_types = BTreeSet::new();
+            let mut result_external_constants_name_clustered_indices =
+                compiled_match.external_constants_name_clustered_indices;
+            let mut case_is_pure = true;
+            for (expected_type, case) in cases {
+                if got_union_types.contains(expected_type) {
+                    let mut case_compilation_context = compilation_context.clone();
+                    case_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::Cases, PathSegment::Case(expected_type.clone())]);
+                    let mut compiled_case = compile_with_context(
+                        case,
+                        case_compilation_context,
+                        global_compilation_context,
+                    )?;
+                    result_cases.insert(expected_type.clone(), compiled_case.node);
+                    result_types.insert(compiled_case.r#type);
+                    result_external_constants_name_clustered_indices
+                        .append(&mut compiled_case.external_constants_name_clustered_indices);
+                    case_is_pure &= compiled_case.is_pure;
+                }
+            }
+            match result_cases.len() {
+                0 => compile_with_context(
+                    &Program::Value(Value::Null),
+                    compilation_context,
+                    global_compilation_context,
+                )?,
+                1 => {
+                    let (result_type, result_case) = result_cases.into_iter().next().unwrap();
+                    NodeAndMetadata {
+                        node: result_case,
+                        r#type: result_type,
+                        external_constants_name_clustered_indices:
+                            result_external_constants_name_clustered_indices,
+                        is_pure: case_is_pure,
+                    }
+                }
+                _ => NodeAndMetadata {
+                    node: Node {
+                        content: Content::Match {
+                            r#match: Box::new(compiled_match.node),
+                            cases: result_cases,
+                        },
+                    },
+                    r#type: Type::from(result_types),
+                    external_constants_name_clustered_indices:
+                        result_external_constants_name_clustered_indices,
+                    is_pure: compiled_match.is_pure && case_is_pure,
+                },
+            }
+        }
         Program::Object(object) => {
             let mut is_pure = true;
             match object.len() {
