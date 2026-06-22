@@ -487,7 +487,7 @@ fn compile_with_context(
                         PathSegment::Function(function_name.clone()),
                     ]);
                     return Err(anyhow!(
-                        "Got function named {function_name:?}, but expect function named {:?} at \
+                        "expected function named {:?}, found function named {function_name:?} at \
                          {:#?}",
                         format!("{function_name}:"),
                         function_compilation_context.path
@@ -601,13 +601,13 @@ fn compile_with_context(
                 }
             } else {
                 return Err(anyhow!(
-                    "Got no constant {constant_name:?} at {:#?}, available constants are {:#?}",
-                    compilation_context.path,
+                    "expected one of available constants {:#?}, found {constant_name:?} at {:#?}",
                     compilation_context
                         .available_constants
                         .inner
                         .keys()
-                        .collect::<Vec<_>>()
+                        .collect::<Vec<_>>(),
+                    compilation_context.path,
                 ));
             }
         }
@@ -914,13 +914,6 @@ fn compile_with_context(
                                 .extend([PathSegment::UserFunctionCall(function_name.clone())]);
                             let arguments_iterator = match function_argument {
                                 Program::Object(function_arguments) => {
-                                    if function_arguments.is_empty() {
-                                        return Err(anyhow!(
-                                            "Got zero arguments, but expected at least one at \
-                                             {:#?}",
-                                            compilation_context.path
-                                        ));
-                                    }
                                     let arguments_iterator: Box<
                                         dyn Iterator<Item = (&str, &Program)>,
                                     > = if function_arguments.len() > 1 {
@@ -1073,14 +1066,14 @@ fn compile_with_context(
                             }
                         } else {
                             return Err(anyhow!(
-                                "Got function {function_name:?} at {:#?}, but expected one of \
-                                 available functions: {:#?}",
-                                compilation_context.path,
+                                "expected one of available functions {:#?}, found function \
+                                 {function_name:?} at {:#?}",
                                 compilation_context
                                     .available_functions
                                     .inner
                                     .keys()
-                                    .collect::<Vec<_>>()
+                                    .collect::<Vec<_>>(),
+                                compilation_context.path,
                             ));
                         }
                     }
