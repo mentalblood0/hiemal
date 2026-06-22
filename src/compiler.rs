@@ -31,7 +31,7 @@ impl CompilationContext {
     }
 }
 
-fn assert_equal(
+fn assert_contains(
     got_type: &Type,
     expected_type: &Type,
     compilation_context: &CompilationContext,
@@ -41,7 +41,7 @@ fn assert_equal(
         Ok(())
     } else {
         match (got_type, expected_type) {
-            (Type::Array(got_element_type), Type::Array(expected_element_type)) => assert_equal(
+            (Type::Array(got_element_type), Type::Array(expected_element_type)) => assert_contains(
                 got_element_type,
                 expected_element_type,
                 compilation_context,
@@ -49,7 +49,7 @@ fn assert_equal(
             ),
             (Type::Array(got_element_type), Type::Tuple(expected_elements_types)) => {
                 for expected_element_type in expected_elements_types {
-                    assert_equal(
+                    assert_contains(
                         got_element_type,
                         expected_element_type,
                         compilation_context,
@@ -60,7 +60,7 @@ fn assert_equal(
             }
             (Type::Tuple(got_elements_types), Type::Array(expected_element_type)) => {
                 for got_element_type in got_elements_types {
-                    assert_equal(
+                    assert_contains(
                         got_element_type,
                         expected_element_type,
                         compilation_context,
@@ -72,7 +72,7 @@ fn assert_equal(
             (Type::Object(got_inner_types), Type::Object(expected_inner_types)) => {
                 for (expected_value_key, expected_value_type) in expected_inner_types {
                     if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
-                        assert_equal(
+                        assert_contains(
                             got_value_type,
                             expected_value_type,
                             compilation_context,
@@ -134,7 +134,7 @@ fn assert_equal(
                     for one_of_got_types in got_union_types {
                         let mut found = false;
                         for one_of_expected_types in expected_union_types {
-                            if assert_equal(
+                            if assert_contains(
                                 one_of_got_types,
                                 one_of_expected_types,
                                 compilation_context,
@@ -155,7 +155,7 @@ fn assert_equal(
             }
             (Type::Union(got_union_types), expected_type) => {
                 for one_of_got_types in got_union_types {
-                    assert_equal(
+                    assert_contains(
                         one_of_got_types,
                         expected_type,
                         compilation_context,
@@ -167,7 +167,7 @@ fn assert_equal(
             (got_type, Type::Union(expected_union_types)) => {
                 if !expected_union_types.contains(expected_type) {
                     for one_of_expected_types in expected_union_types {
-                        if assert_equal(
+                        if assert_contains(
                             got_type,
                             one_of_expected_types,
                             compilation_context,
@@ -238,10 +238,16 @@ fn process_from_at_program_path_part(
                     (Program::Object(object), PathSegment::ObjectKey(object_key)) => {
                         result = object.get(object_key).unwrap().clone();
                     }
-                    (Program::Value(Value::Tuple(array)), PathSegment::ArrayIndex(array_index)) => {
+                    (
+                        Program::Value(Some(Value::Tuple(array))),
+                        PathSegment::ArrayIndex(array_index),
+                    ) => {
                         result = Program::Value(array.inner.get(*array_index).unwrap().clone());
                     }
-                    (Program::Value(Value::Object(object)), PathSegment::ObjectKey(object_key)) => {
+                    (
+                        Program::Value(Some(Value::Object(object))),
+                        PathSegment::ObjectKey(object_key),
+                    ) => {
                         result = Program::Value(object.inner.get(object_key).unwrap().clone());
                     }
                     (
@@ -534,7 +540,7 @@ fn compile_with_context(
             )?;
             result_external_constants_name_clustered_indices
                 .append(&mut compiled_if.external_constants_name_clustered_indices);
-            assert_equal(
+            assert_contains(
                 &compiled_if.r#type,
                 &Type::Bool,
                 &if_compilation_context,
@@ -750,7 +756,7 @@ fn compile_with_context(
                     global_compilation_context,
                 )?;
                 let expected_type = Type::Array(Box::new(Type::Number));
-                assert_equal(
+                assert_contains(
                     &compiled_argument.r#type,
                     &expected_type,
                     &compilation_context,
@@ -785,7 +791,7 @@ fn compile_with_context(
                     global_compilation_context,
                 )?;
                 let expected_type = Type::Array(Box::new(Type::Any));
-                assert_equal(
+                assert_contains(
                     &compiled_argument.r#type,
                     &expected_type,
                     &compilation_context,
@@ -838,10 +844,10 @@ fn compile_with_context(
                     global_compilation_context,
                 )?;
                 let expected_type = Type::String;
-                assert_equal(
+                assert_contains(
                     &compiled_argument.r#type,
                     &expected_type,
-                    &compilation_context,
+                    &argument_compilation_context,
                     global_compilation_context,
                 )?;
                 NodeAndMetadata {
@@ -879,7 +885,7 @@ fn compile_with_context(
                 global_compilation_context,
             )?;
             let mut result_cases = Vec::new();
-            let mut result_types = BTreeSet::new();
+            let mut result_types = BTreeSet::from_iter([Type::Null]);
             let mut result_external_constants_name_clustered_indices =
                 compiled_match.external_constants_name_clustered_indices;
             let mut case_is_pure = true;
@@ -933,7 +939,7 @@ fn compile_with_context(
             }
             match result_cases.len() {
                 0 => compile_with_context(
-                    &Program::Value(Value::Null),
+                    &Program::Value(None),
                     compilation_context,
                     global_compilation_context,
                 )?,
@@ -942,7 +948,7 @@ fn compile_with_context(
                         let case = result_cases.into_iter().next().unwrap();
                         NodeAndMetadata {
                             node: case.node,
-                            r#type: case.r#type,
+                            r#type: Type::from(result_types),
                             external_constants_name_clustered_indices:
                                 result_external_constants_name_clustered_indices,
                             is_pure: case_is_pure,
@@ -1193,7 +1199,7 @@ fn compile_with_context(
             }
         }
         Program::Value(value) => NodeAndMetadata {
-            r#type: value.r#type(),
+            r#type: Value::r#type(value),
             external_constants_name_clustered_indices: BTreeSet::new(),
             node: Node {
                 content: Content::Value(unsafe { std::mem::transmute(value.clone()) }),

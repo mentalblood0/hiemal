@@ -32,7 +32,7 @@ where
 }
 
 #[repr(u8)]
-#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Default, Hash)]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Value {
     #[serde(deserialize_with = "deserialize_rational")]
@@ -43,10 +43,14 @@ pub enum Value {
     )]
     String(ropey::Rope),
     Bool(bool),
-    #[default]
-    Null,
-    Tuple(Vector<Value>),
-    Object(Map<String, Value>),
+    Tuple(Vector<Option<Value>>),
+    Object(Map<String, Option<Value>>),
+}
+
+impl Default for Value {
+    fn default() -> Self {
+        Value::Bool(false)
+    }
 }
 
 pub fn deserialize_rational<'de, D>(deserializer: D) -> Result<Rational, D::Error>
@@ -135,54 +139,56 @@ impl Value {
         }
     }
 
-    pub fn as_array(&self) -> Option<&Vector<Value>> {
+    pub fn as_array(&self) -> Option<&Vector<Option<Value>>> {
         match self {
             Value::Tuple(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_array_mut(&mut self) -> Option<&mut Vector<Value>> {
+    pub fn as_array_mut(&mut self) -> Option<&mut Vector<Option<Value>>> {
         match self {
             Value::Tuple(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_object(&self) -> Option<&Map<String, Value>> {
+    pub fn as_object(&self) -> Option<&Map<String, Option<Value>>> {
         match self {
             Value::Object(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_object_mut(&mut self) -> Option<&mut Map<String, Value>> {
+    pub fn as_object_mut(&mut self) -> Option<&mut Map<String, Option<Value>>> {
         match self {
             Value::Object(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn r#type(&self) -> Type {
-        match self {
-            Value::Number(_) => Type::Number,
-            Value::String(_) => Type::String,
-            Value::Bool(_) => Type::Bool,
-            Value::Null => Type::Null,
-            Value::Tuple(array) => {
-                let elements_types = BTreeSet::from_iter(array.inner.iter().map(Value::r#type));
-                Type::Array(Box::new(match elements_types.len() {
-                    0 => Type::Any,
-                    1 => elements_types.into_iter().next().unwrap(),
-                    _ => Type::Union(elements_types),
-                }))
-            }
-            Value::Object(object) => Type::Object(BTreeMap::from_iter(
-                object
-                    .inner
-                    .iter()
-                    .map(|(key, value)| (key.clone(), value.r#type())),
-            )),
+    pub fn r#type(value_option: &Option<Value>) -> Type {
+        match value_option {
+            Some(value) => match value {
+                Value::Number(_) => Type::Number,
+                Value::String(_) => Type::String,
+                Value::Bool(_) => Type::Bool,
+                Value::Tuple(array) => {
+                    let elements_types = BTreeSet::from_iter(array.inner.iter().map(Value::r#type));
+                    Type::Array(Box::new(match elements_types.len() {
+                        0 => Type::Any,
+                        1 => elements_types.into_iter().next().unwrap(),
+                        _ => Type::Union(elements_types),
+                    }))
+                }
+                Value::Object(object) => Type::Object(BTreeMap::from_iter(
+                    object
+                        .inner
+                        .iter()
+                        .map(|(key, value)| (key.clone(), Value::r#type(value))),
+                )),
+            },
+            None => Type::Null,
         }
     }
 }

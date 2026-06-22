@@ -237,20 +237,37 @@ mod tests {
     #[test]
     fn test_match() {
         let intermediate_representation = compile(
-            &serde_json::from_value(json!({
-                "match": {"from": [1, "string"], "at": [0]},
+            &serde_json::from_value(json!([{
+                "match": {"parse yaml": "0x1A"},
                 "cases": [
                     ["number", "it's a number"],
                     ["string", "it's a string"]
                 ]
-            }))
+            }, {
+                "match": {"parse yaml": "[]"},
+                "cases": [
+                    ["number", "it's a number"],
+                    ["string", "it's a string"]
+                ]
+            }]))
             .unwrap(),
         )
         .unwrap();
         let computer = Computer::default();
         assert_eq!(
             computer.compute(&intermediate_representation).unwrap(),
-            serde_json::from_value(json!("it's a number")).unwrap()
+            serde_json::from_value(json!(["it's a number", null])).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_null() {
+        let intermediate_representation =
+            compile(&serde_json::from_value(json!(null)).unwrap()).unwrap();
+        let computer = Computer::default();
+        assert_eq!(
+            computer.compute(&intermediate_representation).unwrap(),
+            serde_json::from_value(json!(null)).unwrap()
         );
     }
 }

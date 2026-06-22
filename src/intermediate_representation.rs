@@ -12,7 +12,7 @@ use crate::{
 
 #[serde_as]
 #[repr(u8)]
-#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Default, Hash)]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Hash)]
 pub enum Value {
     Number(#[serde_as(as = "DisplayFromStr")] Rational),
 
@@ -24,10 +24,8 @@ pub enum Value {
         ropey::Rope,
     ),
     Bool(bool),
-    #[default]
-    Null,
-    Tuple(Vector<Value>),
-    Object(Map<String, Value>),
+    Tuple(Vector<Option<Value>>),
+    Object(Map<String, Option<Value>>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,7 +75,7 @@ pub enum Content {
         cases: Vec<Case>,
     },
     Object(BTreeMap<String, Node>),
-    Value(Value),
+    Value(Option<Value>),
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]

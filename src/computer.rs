@@ -18,12 +18,12 @@ use crate::{
 
 #[derive(Default)]
 struct GlobalComputationContext {
-    functions_results_cache: BTreeMap<u128, Value>,
+    functions_results_cache: BTreeMap<u128, Option<Value>>,
 }
 
 #[derive(Clone, Debug)]
 struct ComputationContext {
-    constants: Vector<Value>,
+    constants: Vector<Option<Value>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -35,14 +35,14 @@ impl Computer {
     pub fn compute(
         &self,
         intermediate_representation: &IntermediateRepresentation,
-    ) -> Result<Value> {
+    ) -> Result<Option<Value>> {
         self.compute_node(
             &intermediate_representation.root,
             intermediate_representation,
             &ComputationContext {
                 constants: Vector {
                     inner: rpds::VectorSync::from_iter(
-                        std::iter::repeat(Value::Null)
+                        std::iter::repeat(None)
                             .take(intermediate_representation.unique_constants_names_count),
                     ),
                 },
@@ -58,11 +58,11 @@ impl Computer {
         intermediate_representation: &IntermediateRepresentation,
         computation_context: &ComputationContext,
         global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
-    ) -> Result<Value>
+    ) -> Result<Option<Value>>
     where
         N: Iterator<Item = &'a Node>,
     {
-        let mut result = vec![Value::Null; nodes_count];
+        let mut result = vec![None; nodes_count];
         let complex_elements = nodes_iterator
             .enumerate()
             .filter(|(element_index, element)| match &element.content {
@@ -73,7 +73,7 @@ impl Computer {
                 _ => true,
             })
             .collect::<Vec<_>>();
-        Ok(Value::Tuple(Vector {
+        Ok(Some(Value::Tuple(Vector {
             inner: rpds::VectorSync::from_iter(
                 match complex_elements.len() {
                     0 => result,
@@ -109,7 +109,7 @@ impl Computer {
                 }
                 .into_iter(),
             ),
-        }))
+        })))
     }
 
     fn compute_node(
@@ -118,7 +118,7 @@ impl Computer {
         intermediate_representation: &IntermediateRepresentation,
         computation_context: &ComputationContext,
         global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
-    ) -> Result<Value> {
+    ) -> Result<Option<Value>> {
         match &node.content {
             Content::Tuple(tuple) => self.compute_nodes(
                 tuple.iter(),
@@ -153,6 +153,7 @@ impl Computer {
                         &computation_context,
                         global_computation_context,
                     )?
+                    .unwrap()
                     .as_bool()
                     .unwrap()
                 {
@@ -180,34 +181,36 @@ impl Computer {
                 path,
                 embedded_function,
             } => match &**embedded_function {
-                EmbeddedFunction::Sum(argument) => Ok(Value::Number(
+                EmbeddedFunction::Sum(argument) => Ok(Some(Value::Number(
                     self.compute_node(
                         argument,
                         intermediate_representation,
                         computation_context,
                         global_computation_context,
                     )?
+                    .unwrap()
                     .as_array()
                     .unwrap()
                     .inner
                     .iter()
                     .fold(Rational::ZERO, |accumulator, current| {
-                        accumulator + current.as_number().unwrap()
+                        accumulator + current.as_ref().unwrap().as_number().unwrap()
                     }),
-                )),
-                EmbeddedFunction::IsSorted(argument) => Ok(Value::Bool(
+                ))),
+                EmbeddedFunction::IsSorted(argument) => Ok(Some(Value::Bool(
                     self.compute_node(
                         argument,
                         intermediate_representation,
                         computation_context,
                         global_computation_context,
                     )?
+                    .unwrap()
                     .as_array()
                     .unwrap()
                     .inner
                     .iter()
                     .is_sorted(),
-                )),
+                ))),
                 EmbeddedFunction::StandardInput => {
                     let mut result = String::new();
                     std::io::stdin()
@@ -215,23 +218,26 @@ impl Computer {
                         .with_context(|| {
                             format!("can not compute embedded function at path {:#?}", path)
                         })?;
-                    Ok(Value::String(ropey::Rope::from(result)))
+                    Ok(Some(Value::String(ropey::Rope::from(result))))
                 }
-                EmbeddedFunction::ParseYaml(argument) => Ok(serde_saphyr::from_str::<Value>(
-                    &self
-                        .compute_node(
-                            argument,
-                            intermediate_representation,
-                            computation_context,
-                            global_computation_context,
-                        )?
-                        .as_string()
-                        .unwrap()
-                        .to_string(),
-                )
-                .with_context(|| {
-                    format!("can not compute embedded function at path {:#?}", path)
-                })?),
+                EmbeddedFunction::ParseYaml(argument) => Ok(Some(
+                    serde_saphyr::from_str::<Value>(
+                        &self
+                            .compute_node(
+                                argument,
+                                intermediate_representation,
+                                computation_context,
+                                global_computation_context,
+                            )?
+                            .unwrap()
+                            .as_string()
+                            .unwrap()
+                            .to_string(),
+                    )
+                    .with_context(|| {
+                        format!("can not compute embedded function at path {:#?}", path)
+                    })?,
+                )),
             },
             Content::UserFunctionCall { arguments, body } => {
                 let mut result_computation_context = computation_context.clone();
@@ -303,6 +309,7 @@ impl Computer {
                         ValuePathSegment::ArrayIndex(array_index) => {
                             result = std::mem::take(
                                 result
+                                    .unwrap()
                                     .as_array_mut()
                                     .unwrap()
                                     .inner
@@ -313,6 +320,7 @@ impl Computer {
                         ValuePathSegment::ObjectKey(object_key) => {
                             result = std::mem::take(
                                 result
+                                    .unwrap()
                                     .as_object_mut()
                                     .unwrap()
                                     .inner
@@ -331,7 +339,7 @@ impl Computer {
                     computation_context,
                     global_computation_context,
                 )?;
-                let match_type = computed_match.r#type();
+                let match_type = Value::r#type(&computed_match);
                 for case in cases {
                     if case.r#type.contains(&match_type) {
                         let mut case_computation_context = computation_context.clone();
@@ -345,7 +353,7 @@ impl Computer {
                         );
                     }
                 }
-                panic!();
+                Ok(None)
             }
             Content::Object(object) => {
                 let mut result = Map::default();
@@ -360,7 +368,7 @@ impl Computer {
                         )?,
                     );
                 }
-                Ok(Value::Object(result))
+                Ok(Some(Value::Object(result)))
             }
             Content::Value(value) => Ok(unsafe { std::mem::transmute(value.clone()) }),
         }

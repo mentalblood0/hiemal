@@ -32,7 +32,7 @@ pub enum Program {
         cases: Vec<(Type, Program)>,
     },
     Object(BTreeMap<String, Program>),
-    Value(Value),
+    Value(Option<Value>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
@@ -70,7 +70,7 @@ pub enum AtSegment {
 
 impl Default for Program {
     fn default() -> Self {
-        Self::Value(Value::Null)
+        Self::Value(None)
     }
 }
 
