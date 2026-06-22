@@ -10,21 +10,9 @@ use crate::{
         self, ConstantDefinition, Content, IntermediateRepresentation, Node, UserFunction,
     },
     program::{AtSegment, EmbeddedFunction, From, Path, PathSegment, Program},
+    r#type::Type,
     value::Value,
 };
-
-#[repr(u8)]
-#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
-pub enum Type {
-    Number,
-    String,
-    Bool,
-    Null,
-    Array(Box<Type>),
-    Object(BTreeMap<String, Type>),
-    Union(BTreeSet<Type>),
-    Unknown(usize),
-}
 
 #[derive(Clone, Default)]
 struct CompilationContext {
@@ -41,57 +29,6 @@ impl CompilationContext {
             self.path,
         )
     }
-}
-
-fn get_value_type(value: &Value, compilation_context: CompilationContext) -> Result<Type> {
-    Ok(match value {
-        Value::Number(_) => Type::Number,
-        Value::String(_) => Type::String,
-        Value::Bool(_) => Type::Bool,
-        Value::Null => Type::Null,
-        Value::Array(array) => {
-            let mut previous_element_type_option = None;
-            for (element_index, element) in array.inner.iter().enumerate() {
-                let mut current_element_compilation_context = compilation_context.clone();
-                current_element_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::ArrayIndex(element_index)]);
-                let current_element_type =
-                    get_value_type(element, current_element_compilation_context.clone())?;
-                if let Some(ref element_type) = previous_element_type_option {
-                    if &current_element_type != element_type {
-                        return Err(current_element_compilation_context
-                            .error(&current_element_type, element_type));
-                    }
-                } else {
-                    previous_element_type_option = Some(current_element_type);
-                }
-            }
-            if let Some(element_type) = previous_element_type_option {
-                element_type
-            } else {
-                return Err(anyhow!(
-                    "Expected non-empty array at {:#?}",
-                    compilation_context.path
-                ));
-            }
-        }
-        Value::Object(object) => {
-            let mut result_inner_types = BTreeMap::new();
-            for (object_key, object_value) in object.inner.iter() {
-                let mut current_object_value_compilation_context = compilation_context.clone();
-                current_object_value_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::ObjectKey(object_key.clone())]);
-                let current_object_value_type =
-                    get_value_type(object_value, current_object_value_compilation_context)?;
-                result_inner_types.insert(object_key.clone(), current_object_value_type);
-            }
-            Type::Object(result_inner_types)
-        }
-    })
 }
 
 fn assert_equal(
@@ -1073,7 +1010,7 @@ fn compile_with_context(
             }
         }
         Program::Value(value) => NodeAndMetadata {
-            r#type: get_value_type(value, compilation_context.clone())?,
+            r#type: value.r#type(),
             external_constants_name_clustered_indices: BTreeSet::new(),
             node: Node {
                 content: Content::Value(unsafe { std::mem::transmute(value.clone()) }),

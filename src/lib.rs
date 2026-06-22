@@ -5,6 +5,7 @@ pub mod default_argument_name;
 pub mod includes_cache;
 pub mod intermediate_representation;
 pub mod program;
+pub mod r#type;
 pub mod value;
 
 #[cfg(test)]

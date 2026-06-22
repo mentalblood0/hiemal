@@ -1,14 +1,19 @@
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    str::FromStr,
+};
+
 use anyhow::Result;
 use dashu::{Decimal, Rational};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Unexpected, Visitor},
 };
-use std::str::FromStr;
 
 use crate::{
     containers::{Map, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
+    r#type::Type,
 };
 
 pub fn serialize_rope<S>(rope: &ropey::Rope, serializer: S) -> Result<S::Ok, S::Error>
@@ -155,6 +160,29 @@ impl Value {
         match self {
             Value::Object(result) => Some(result),
             _ => None,
+        }
+    }
+
+    pub fn r#type(&self) -> Type {
+        match self {
+            Value::Number(_) => Type::Number,
+            Value::String(_) => Type::String,
+            Value::Bool(_) => Type::Bool,
+            Value::Null => Type::Null,
+            Value::Array(array) => {
+                let elements_types = BTreeSet::from_iter(array.inner.iter().map(Value::r#type));
+                Type::Array(Box::new(match elements_types.len() {
+                    0 => Type::Any,
+                    1 => elements_types.into_iter().next().unwrap(),
+                    _ => Type::Union(elements_types),
+                }))
+            }
+            Value::Object(object) => Type::Object(BTreeMap::from_iter(
+                object
+                    .inner
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.r#type())),
+            )),
         }
     }
 }
