@@ -15,6 +15,8 @@ pub enum Type {
     Null,
     #[serde(rename = "array")]
     Array(Box<Type>),
+    #[serde(rename = "tuple")]
+    Tuple(Vec<Type>),
     #[serde(rename = "object")]
     Object(BTreeMap<String, Type>),
     #[serde(rename = "union")]

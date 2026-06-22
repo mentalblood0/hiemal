@@ -25,7 +25,7 @@ struct CompilationContext {
 impl CompilationContext {
     fn error(&self, got_type: &Type, expected_type: &Type) -> Error {
         anyhow!(
-            "Got {got_type:#?} but expected {expected_type:#?} at {:#?}",
+            "expected {expected_type:#?}, found {got_type:#?} at {:#?}",
             self.path,
         )
     }
@@ -37,7 +37,7 @@ fn assert_equal(
     compilation_context: &CompilationContext,
     global_compilation_context: &mut GlobalCompilationContext,
 ) -> Result<()> {
-    if got_type == expected_type {
+    if expected_type == &Type::Any || got_type == expected_type {
         Ok(())
     } else {
         match (got_type, expected_type) {
@@ -47,6 +47,28 @@ fn assert_equal(
                 compilation_context,
                 global_compilation_context,
             ),
+            (Type::Array(got_element_type), Type::Tuple(expected_elements_types)) => {
+                for expected_element_type in expected_elements_types {
+                    assert_equal(
+                        got_element_type,
+                        expected_element_type,
+                        compilation_context,
+                        global_compilation_context,
+                    )?
+                }
+                Ok(())
+            }
+            (Type::Tuple(got_elements_types), Type::Array(expected_element_type)) => {
+                for got_element_type in got_elements_types {
+                    assert_equal(
+                        got_element_type,
+                        expected_element_type,
+                        compilation_context,
+                        global_compilation_context,
+                    )?
+                }
+                Ok(())
+            }
             (Type::Object(got_inner_types), Type::Object(expected_inner_types)) => {
                 for (expected_value_key, expected_value_type) in expected_inner_types {
                     if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
@@ -210,13 +232,13 @@ fn process_from_at_program_path_part(
         match current_path_segment {
             AtSegment::ProgramPathSegment(program_path_segment) => {
                 match (result, program_path_segment) {
-                    (Program::Array(array), PathSegment::ArrayIndex(array_index)) => {
-                        result = array.get(*array_index).unwrap().clone();
+                    (Program::Tuple(tuple), PathSegment::ArrayIndex(tuple_index)) => {
+                        result = tuple.get(*tuple_index).unwrap().clone();
                     }
                     (Program::Object(object), PathSegment::ObjectKey(object_key)) => {
                         result = object.get(object_key).unwrap().clone();
                     }
-                    (Program::Value(Value::Array(array)), PathSegment::ArrayIndex(array_index)) => {
+                    (Program::Value(Value::Tuple(array)), PathSegment::ArrayIndex(array_index)) => {
                         result = Program::Value(array.inner.get(*array_index).unwrap().clone());
                     }
                     (Program::Value(Value::Object(object)), PathSegment::ObjectKey(object_key)) => {
@@ -359,18 +381,18 @@ fn compile_with_context(
     global_compilation_context: &mut GlobalCompilationContext,
 ) -> Result<NodeAndMetadata> {
     Ok(match program {
-        Program::Array(array) => {
-            if array.is_empty() {
+        Program::Tuple(tuple) => {
+            if tuple.is_empty() {
                 return Err(anyhow!(
-                    "Expected non-empty array at {:#?}",
+                    "Expected non-empty tuple at {:#?}",
                     compilation_context.path
                 ));
             }
-            let mut result_content = Vec::with_capacity(array.len());
+            let mut result_content = Vec::with_capacity(tuple.len());
             let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-            let mut result_union_types = BTreeSet::new();
+            let mut result_elements_types = Vec::with_capacity(tuple.len());
             let mut result_is_pure = true;
-            for (element_index, element) in array.iter().enumerate() {
+            for (element_index, element) in tuple.iter().enumerate() {
                 let mut element_compilation_context = compilation_context.clone();
                 element_compilation_context
                     .path
@@ -384,15 +406,15 @@ fn compile_with_context(
                 result_content.push(compiled_element.node);
                 result_external_constants_name_clustered_indices
                     .append(&mut compiled_element.external_constants_name_clustered_indices);
-                result_union_types.insert(compiled_element.r#type.clone());
+                result_elements_types.push(compiled_element.r#type.clone());
                 result_is_pure &= compiled_element.is_pure;
             }
             NodeAndMetadata {
-                r#type: Type::Array(Box::new(Type::from(result_union_types))),
+                r#type: Type::Tuple(result_elements_types),
                 external_constants_name_clustered_indices:
                     result_external_constants_name_clustered_indices,
                 node: Node {
-                    content: Content::Array(result_content),
+                    content: Content::Tuple(result_content),
                 },
                 is_pure: result_is_pure,
             }
@@ -515,7 +537,7 @@ fn compile_with_context(
             assert_equal(
                 &compiled_if.r#type,
                 &Type::Bool,
-                &compilation_context,
+                &if_compilation_context,
                 global_compilation_context,
             )?;
             let mut then_compilation_context = compilation_context.clone();
@@ -537,14 +559,10 @@ fn compile_with_context(
             result_external_constants_name_clustered_indices
                 .append(&mut compiled_else.external_constants_name_clustered_indices);
             NodeAndMetadata {
-                r#type: if compiled_then.r#type == compiled_else.r#type {
-                    compiled_then.r#type
-                } else {
-                    Type::Union(BTreeSet::from_iter([
-                        compiled_then.r#type,
-                        compiled_else.r#type,
-                    ]))
-                },
+                r#type: Type::from(BTreeSet::from_iter([
+                    compiled_then.r#type,
+                    compiled_else.r#type,
+                ])),
                 external_constants_name_clustered_indices:
                     result_external_constants_name_clustered_indices,
                 node: Node {
@@ -650,6 +668,23 @@ fn compile_with_context(
                             );
                             current_type = *element_type;
                         }
+                        (Type::Tuple(elements_types), AtSegment::ValueArrayIndex(tuple_index)) => {
+                            if *tuple_index >= elements_types.len() {
+                                return Err(anyhow!(
+                                    "expected tuple with at least {} elements, found tuple with \
+                                     only {} elements at {:#?}",
+                                    tuple_index + 1,
+                                    elements_types.len(),
+                                    value_path_segment_compilation_context.path
+                                ));
+                            }
+                            static_value_path_segments.push(
+                                intermediate_representation::ValuePathSegment::ArrayIndex(
+                                    *tuple_index,
+                                ),
+                            );
+                            current_type = elements_types[*tuple_index].clone();
+                        }
                         (Type::Array(_), path_segment) => {
                             return Err(anyhow!(
                                 "expected value array index, found {path_segment:#?} at {:#?}",
@@ -749,13 +784,13 @@ fn compile_with_context(
                     argument_compilation_context.clone(),
                     global_compilation_context,
                 )?;
-                if let Type::Array(_) = compiled_argument.r#type {
-                } else {
-                    return Err(anyhow!(
-                        "Got {:?} but expected Array",
-                        compiled_argument.r#type,
-                    ));
-                }
+                let expected_type = Type::Array(Box::new(Type::Any));
+                assert_equal(
+                    &compiled_argument.r#type,
+                    &expected_type,
+                    &compilation_context,
+                    global_compilation_context,
+                )?;
                 NodeAndMetadata {
                     r#type: Type::Bool,
                     external_constants_name_clustered_indices: compiled_argument

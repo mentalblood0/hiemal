@@ -26,7 +26,7 @@ pub enum Value {
     Bool(bool),
     #[default]
     Null,
-    Array(Vector<Value>),
+    Tuple(Vector<Value>),
     Object(Map<String, Value>),
 }
 
@@ -46,7 +46,7 @@ pub struct Node {
 #[repr(u8)]
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
 pub enum Content {
-    Array(Vec<Node>),
+    Tuple(Vec<Node>),
     Scope {
         constants: Vec<ConstantDefinition>,
         compute: Box<Node>,

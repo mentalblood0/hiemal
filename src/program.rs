@@ -9,7 +9,7 @@ use crate::{containers::Vector, r#type::Type, value::Value};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Program {
-    Array(Vec<Program>),
+    Tuple(Vec<Program>),
     Scope {
         #[serde(default)]
         functions: BTreeMap<String, Program>,

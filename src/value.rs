@@ -45,7 +45,7 @@ pub enum Value {
     Bool(bool),
     #[default]
     Null,
-    Array(Vector<Value>),
+    Tuple(Vector<Value>),
     Object(Map<String, Value>),
 }
 
@@ -137,14 +137,14 @@ impl Value {
 
     pub fn as_array(&self) -> Option<&Vector<Value>> {
         match self {
-            Value::Array(result) => Some(result),
+            Value::Tuple(result) => Some(result),
             _ => None,
         }
     }
 
     pub fn as_array_mut(&mut self) -> Option<&mut Vector<Value>> {
         match self {
-            Value::Array(result) => Some(result),
+            Value::Tuple(result) => Some(result),
             _ => None,
         }
     }
@@ -169,7 +169,7 @@ impl Value {
             Value::String(_) => Type::String,
             Value::Bool(_) => Type::Bool,
             Value::Null => Type::Null,
-            Value::Array(array) => {
+            Value::Tuple(array) => {
                 let elements_types = BTreeSet::from_iter(array.inner.iter().map(Value::r#type));
                 Type::Array(Box::new(match elements_types.len() {
                     0 => Type::Any,

@@ -73,7 +73,7 @@ impl Computer {
                 _ => true,
             })
             .collect::<Vec<_>>();
-        Ok(Value::Array(Vector {
+        Ok(Value::Tuple(Vector {
             inner: rpds::VectorSync::from_iter(
                 match complex_elements.len() {
                     0 => result,
@@ -120,9 +120,9 @@ impl Computer {
         global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
     ) -> Result<Value> {
         match &node.content {
-            Content::Array(array) => self.compute_nodes(
-                array.iter(),
-                array.len(),
+            Content::Tuple(tuple) => self.compute_nodes(
+                tuple.iter(),
+                tuple.len(),
                 intermediate_representation,
                 computation_context,
                 global_computation_context,
