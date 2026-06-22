@@ -353,7 +353,7 @@ impl Computer {
                         );
                     }
                 }
-                Ok(None)
+                panic!()
             }
             Content::Object(object) => {
                 let mut result = Map::default();

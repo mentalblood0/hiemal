@@ -885,10 +885,11 @@ fn compile_with_context(
                 global_compilation_context,
             )?;
             let mut result_cases = Vec::new();
-            let mut result_types = BTreeSet::from_iter([Type::Null]);
+            let mut result_types = BTreeSet::new();
             let mut result_external_constants_name_clustered_indices =
                 compiled_match.external_constants_name_clustered_indices;
             let mut case_is_pure = true;
+            let mut covered_types = BTreeSet::new();
             for (refined_match_type, case) in cases {
                 if compiled_match.r#type.contains(&refined_match_type) {
                     let mut case_compilation_context = compilation_context.clone();
@@ -935,7 +936,15 @@ fn compile_with_context(
                     result_external_constants_name_clustered_indices
                         .append(&mut compiled_case.external_constants_name_clustered_indices);
                     case_is_pure &= compiled_case.is_pure;
+                    covered_types.insert(refined_match_type.clone());
                 }
+            }
+            let covered = Type::from(covered_types);
+            if covered != Type::Any {
+                return Err(anyhow!(
+                    "expected coverage for {:#?}, found coverage only for {covered:#?}",
+                    Type::Any,
+                ));
             }
             match result_cases.len() {
                 0 => compile_with_context(

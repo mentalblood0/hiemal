@@ -28,10 +28,14 @@ pub enum Type {
 
 impl From<BTreeSet<Type>> for Type {
     fn from(union_types: BTreeSet<Type>) -> Self {
-        match union_types.len() {
-            0 => Self::Null,
-            1 => union_types.into_iter().next().unwrap(),
-            _ => Self::Union(union_types),
+        if union_types.contains(&Type::Any) {
+            Type::Any
+        } else {
+            match union_types.len() {
+                0 => Self::Null,
+                1 => union_types.into_iter().next().unwrap(),
+                _ => Self::Union(union_types),
+            }
         }
     }
 }

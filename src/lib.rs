@@ -241,13 +241,15 @@ mod tests {
                 "match": {"parse yaml": "0x1A"},
                 "cases": [
                     ["number", "it's a number"],
-                    ["string", "it's a string"]
+                    ["string", "it's a string"],
+                    ["any", "it's something else"]
                 ]
             }, {
                 "match": {"parse yaml": "[]"},
                 "cases": [
                     ["number", "it's a number"],
-                    ["string", "it's a string"]
+                    ["string", "it's a string"],
+                    ["any", null]
                 ]
             }]))
             .unwrap(),
