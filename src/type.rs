@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, Ord, Eq, Hash, PartialEq)]
 pub enum Type {
     #[serde(rename = "number")]
     Number,
@@ -33,5 +33,50 @@ impl From<BTreeSet<Type>> for Type {
             1 => union_types.into_iter().next().unwrap(),
             _ => Self::Union(union_types),
         }
+    }
+}
+
+impl Type {
+    pub fn contains(&self, other: &Self) -> bool {
+        if self == other {
+            true
+        } else {
+            match (self, other) {
+                (Self::Union(self_union_types), Self::Union(other_union_types)) => {
+                    for other_union_type in other_union_types {
+                        let mut found = false;
+                        for self_union_type in self_union_types {
+                            if self_union_type == other_union_type {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if !found {
+                            return false;
+                        }
+                    }
+                    true
+                }
+                (Self::Union(self_union_types), other_type) => {
+                    for self_union_type in self_union_types {
+                        if self_union_type == other_type {
+                            return true;
+                        }
+                    }
+                    false
+                }
+                (self_type, Self::Union(other_union_types)) => {
+                    other_union_types.len() == 1
+                        && Some(self_type) == other_union_types.iter().next()
+                }
+                (Self::Any, _) => true,
+                (_, Self::Any) => false,
+                _ => false,
+            }
+        }
+    }
+
+    pub fn strongest<'a>(&'a self, other: &'a Self) -> &'a Self {
+        if self.contains(other) { other } else { self }
     }
 }

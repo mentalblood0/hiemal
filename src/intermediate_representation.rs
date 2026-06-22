@@ -43,6 +43,13 @@ pub struct Node {
     pub content: Content,
 }
 
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+pub struct Case {
+    pub r#type: Type,
+    pub node: Node,
+    pub match_constant_definition: ConstantDefinition,
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
 pub enum Content {
@@ -67,7 +74,7 @@ pub enum Content {
     },
     Match {
         r#match: Box<Node>,
-        cases: BTreeMap<Type, Node>,
+        cases: Vec<Case>,
     },
     Object(BTreeMap<String, Node>),
     Value(Value),
@@ -85,6 +92,8 @@ pub struct Branching {
 pub enum EmbeddedFunction {
     Sum(Node),
     IsSorted(Node),
+    StandardInput,
+    ParseYaml(Node),
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]

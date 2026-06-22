@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
 use std::hash::Hash;
 use std::sync::Arc;
+use std::{collections::BTreeMap, io::Read};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use dashu::Rational;
 use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
@@ -172,10 +172,12 @@ impl Computer {
                 }
             }
             Content::Constant(constant_name_clustered_index) => {
-                Ok(computation_context.constants.inner[*constant_name_clustered_index].clone())
+                let result =
+                    computation_context.constants.inner[*constant_name_clustered_index].clone();
+                Ok(result)
             }
             Content::EmbeddedFunctionCall {
-                path: _,
+                path,
                 embedded_function,
             } => match &**embedded_function {
                 EmbeddedFunction::Sum(argument) => Ok(Value::Number(
@@ -206,6 +208,30 @@ impl Computer {
                     .iter()
                     .is_sorted(),
                 )),
+                EmbeddedFunction::StandardInput => {
+                    let mut result = String::new();
+                    std::io::stdin()
+                        .read_to_string(&mut result)
+                        .with_context(|| {
+                            format!("can not compute embedded function at path {:#?}", path)
+                        })?;
+                    Ok(Value::String(ropey::Rope::from(result)))
+                }
+                EmbeddedFunction::ParseYaml(argument) => Ok(serde_saphyr::from_str::<Value>(
+                    &self
+                        .compute_node(
+                            argument,
+                            intermediate_representation,
+                            computation_context,
+                            global_computation_context,
+                        )?
+                        .as_string()
+                        .unwrap()
+                        .to_string(),
+                )
+                .with_context(|| {
+                    format!("can not compute embedded function at path {:#?}", path)
+                })?),
             },
             Content::UserFunctionCall { arguments, body } => {
                 let mut result_computation_context = computation_context.clone();
@@ -298,23 +324,29 @@ impl Computer {
                 }
                 Ok(result)
             }
-            Content::Match { r#match, cases } => self.compute_node(
-                cases
-                    .get(
-                        &self
-                            .compute_node(
-                                r#match,
-                                intermediate_representation,
-                                computation_context,
-                                global_computation_context,
-                            )?
-                            .r#type(),
-                    )
-                    .unwrap(),
-                intermediate_representation,
-                computation_context,
-                global_computation_context,
-            ),
+            Content::Match { r#match, cases } => {
+                let computed_match = self.compute_node(
+                    r#match,
+                    intermediate_representation,
+                    computation_context,
+                    global_computation_context,
+                )?;
+                let match_type = computed_match.r#type();
+                for case in cases {
+                    if case.r#type.contains(&match_type) {
+                        let mut case_computation_context = computation_context.clone();
+                        case_computation_context.constants.inner
+                            [case.match_constant_definition.name_clustered_index] = computed_match;
+                        return self.compute_node(
+                            &case.node,
+                            intermediate_representation,
+                            &case_computation_context,
+                            global_computation_context,
+                        );
+                    }
+                }
+                panic!();
+            }
             Content::Object(object) => {
                 let mut result = Map::default();
                 for (key, value) in object {

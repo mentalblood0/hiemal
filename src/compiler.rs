@@ -7,7 +7,7 @@ use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     includes_cache::IncludesCache,
     intermediate_representation::{
-        self, ConstantDefinition, Content, IntermediateRepresentation, Node, UserFunction,
+        self, Case, ConstantDefinition, Content, IntermediateRepresentation, Node, UserFunction,
     },
     program::{AtSegment, EmbeddedFunction, From, Path, PathSegment, Program},
     r#type::Type,
@@ -37,7 +37,7 @@ fn assert_equal(
     compilation_context: &CompilationContext,
     global_compilation_context: &mut GlobalCompilationContext,
 ) -> Result<()> {
-    if expected_type == &Type::Any || got_type == expected_type {
+    if expected_type == &Type::Any || expected_type.contains(got_type) {
         Ok(())
     } else {
         match (got_type, expected_type) {
@@ -808,6 +808,64 @@ fn compile_with_context(
                     is_pure: true,
                 }
             }
+            EmbeddedFunction::StandardInput => NodeAndMetadata {
+                r#type: Type::String,
+                external_constants_name_clustered_indices: BTreeSet::new(),
+                node: Node {
+                    content: Content::EmbeddedFunctionCall {
+                        path: Some(Path(
+                            compilation_context
+                                .path
+                                .0
+                                .extended([PathSegment::StandardInput]),
+                        )),
+                        embedded_function: Box::new(
+                            intermediate_representation::EmbeddedFunction::StandardInput,
+                        ),
+                    },
+                },
+                is_pure: false,
+            },
+            EmbeddedFunction::ParseYaml(argument) => {
+                let mut argument_compilation_context = compilation_context.clone();
+                argument_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::ParseYaml]);
+                let compiled_argument = compile_with_context(
+                    &argument,
+                    argument_compilation_context.clone(),
+                    global_compilation_context,
+                )?;
+                let expected_type = Type::String;
+                assert_equal(
+                    &compiled_argument.r#type,
+                    &expected_type,
+                    &compilation_context,
+                    global_compilation_context,
+                )?;
+                NodeAndMetadata {
+                    r#type: Type::Any,
+                    external_constants_name_clustered_indices: compiled_argument
+                        .external_constants_name_clustered_indices,
+                    node: Node {
+                        content: Content::EmbeddedFunctionCall {
+                            path: Some(Path(
+                                compilation_context
+                                    .path
+                                    .0
+                                    .extended([PathSegment::ParseYaml]),
+                            )),
+                            embedded_function: Box::new(
+                                intermediate_representation::EmbeddedFunction::ParseYaml(
+                                    compiled_argument.node,
+                                ),
+                            ),
+                        },
+                    },
+                    is_pure: true,
+                }
+            }
         },
         Program::Match { r#match, cases } => {
             let mut match_compilation_context = compilation_context.clone();
@@ -820,30 +878,54 @@ fn compile_with_context(
                 match_compilation_context,
                 global_compilation_context,
             )?;
-            let got_union_types = if let Type::Union(union_types) = compiled_match.r#type {
-                union_types
-            } else {
-                BTreeSet::from_iter([compiled_match.r#type])
-            };
-            let mut result_cases = BTreeMap::new();
+            let mut result_cases = Vec::new();
             let mut result_types = BTreeSet::new();
             let mut result_external_constants_name_clustered_indices =
                 compiled_match.external_constants_name_clustered_indices;
             let mut case_is_pure = true;
-            for (expected_type, case) in cases {
-                if got_union_types.contains(expected_type) {
+            for (refined_match_type, case) in cases {
+                if compiled_match.r#type.contains(&refined_match_type) {
                     let mut case_compilation_context = compilation_context.clone();
-                    case_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::Cases, PathSegment::Case(expected_type.clone())]);
+                    let match_constant_definition = ConstantDefinition {
+                        index: global_compilation_context.constants.len(),
+                        name_clustered_index: if let Some(constant_name_clustered_index) =
+                            global_compilation_context
+                                .constants_names_to_name_clustered_constants_indices
+                                .get(DEFAULT_ARGUMENT_NAME)
+                        {
+                            *constant_name_clustered_index
+                        } else {
+                            let result = global_compilation_context
+                                .constants_names_to_name_clustered_constants_indices
+                                .len();
+                            global_compilation_context
+                                .constants_names_to_name_clustered_constants_indices
+                                .insert(DEFAULT_ARGUMENT_NAME.to_string(), result);
+                            result
+                        },
+                    };
+                    global_compilation_context
+                        .constants
+                        .push((refined_match_type.clone(), compiled_match.node.clone()));
+                    case_compilation_context.available_constants.extend([(
+                        DEFAULT_ARGUMENT_NAME.to_string(),
+                        match_constant_definition.index,
+                    )]);
+                    case_compilation_context.path.0.extend([
+                        PathSegment::Cases,
+                        PathSegment::Case(refined_match_type.clone()),
+                    ]);
                     let mut compiled_case = compile_with_context(
                         case,
                         case_compilation_context,
                         global_compilation_context,
                     )?;
-                    result_cases.insert(expected_type.clone(), compiled_case.node);
-                    result_types.insert(compiled_case.r#type);
+                    result_cases.push(Case {
+                        r#type: refined_match_type.clone(),
+                        node: compiled_case.node,
+                        match_constant_definition,
+                    });
+                    result_types.insert(compiled_case.r#type.clone());
                     result_external_constants_name_clustered_indices
                         .append(&mut compiled_case.external_constants_name_clustered_indices);
                     case_is_pure &= compiled_case.is_pure;
@@ -857,10 +939,10 @@ fn compile_with_context(
                 )?,
                 1 => {
                     if compiled_match.is_pure {
-                        let (result_type, result_case) = result_cases.into_iter().next().unwrap();
+                        let case = result_cases.into_iter().next().unwrap();
                         NodeAndMetadata {
-                            node: result_case,
-                            r#type: result_type,
+                            node: case.node,
+                            r#type: case.r#type,
                             external_constants_name_clustered_indices:
                                 result_external_constants_name_clustered_indices,
                             is_pure: case_is_pure,
@@ -887,7 +969,6 @@ fn compile_with_context(
             }
         }
         Program::Object(object) => {
-            let mut is_pure = true;
             match object.len() {
                 0 => {
                     return Ok(NodeAndMetadata {
@@ -896,7 +977,7 @@ fn compile_with_context(
                         node: Node {
                             content: Content::Object(BTreeMap::new()),
                         },
-                        is_pure,
+                        is_pure: true,
                     });
                 }
                 1 => {
@@ -907,6 +988,7 @@ fn compile_with_context(
                             .inner
                             .get(function_name)
                         {
+                            let mut arguments_is_pure = true;
                             let mut body_compilation_context = compilation_context.clone();
                             body_compilation_context
                                 .path
@@ -978,7 +1060,7 @@ fn compile_with_context(
                                     constant_definition.index,
                                 )]);
                                 new_constants_definitions.push(constant_definition);
-                                is_pure &= compiled_constant.is_pure;
+                                arguments_is_pure &= compiled_constant.is_pure;
                                 global_compilation_context
                                     .constants
                                     .push((compiled_constant.r#type, compiled_constant.node));
@@ -1001,7 +1083,7 @@ fn compile_with_context(
                                             body: *function_index,
                                         },
                                     },
-                                    is_pure: true,
+                                    is_pure: arguments_is_pure,
                                 });
                             } else {
                                 body_compilation_context
@@ -1012,7 +1094,7 @@ fn compile_with_context(
                                 global_compilation_context.user_functions.push((
                                     Vec::new(),
                                     ProgramOrNode::Program(function_body.clone()),
-                                    is_pure,
+                                    arguments_is_pure,
                                 ));
                                 global_compilation_context
                                     .user_function_to_index_and_type_option
@@ -1025,7 +1107,6 @@ fn compile_with_context(
                                     body_compilation_context,
                                     global_compilation_context,
                                 )?;
-                                is_pure &= compiled_function.is_pure;
                                 global_compilation_context
                                     .user_function_to_index_and_type_option
                                     .get_mut(function_body)
@@ -1045,7 +1126,7 @@ fn compile_with_context(
                                             .cloned(),
                                     ),
                                     ProgramOrNode::Node(compiled_function.node.clone()),
-                                    is_pure,
+                                    arguments_is_pure && compiled_function.is_pure,
                                 );
                                 result_external_constants_name_clustered_indices.append(
                                     &mut compiled_function
@@ -1061,7 +1142,7 @@ fn compile_with_context(
                                             body: function_index,
                                         },
                                     },
-                                    is_pure,
+                                    is_pure: arguments_is_pure && compiled_function.is_pure,
                                 });
                             }
                         } else {
@@ -1083,6 +1164,7 @@ fn compile_with_context(
             let mut result_inner_types = BTreeMap::new();
             let mut result_content = BTreeMap::new();
             let mut result_external_constants_name_clustered_indices = BTreeSet::new();
+            let mut is_pure = true;
             for (object_key, object_value) in object.iter() {
                 let mut object_value_compilation_context = compilation_context.clone();
                 object_value_compilation_context

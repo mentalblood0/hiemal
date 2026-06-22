@@ -81,6 +81,10 @@ pub enum EmbeddedFunction {
     Sum(Program),
     #[serde(rename = "is sorted")]
     IsSorted(Program),
+    #[serde(rename = "standard input")]
+    StandardInput,
+    #[serde(rename = "parse yaml")]
+    ParseYaml(Program),
 }
 
 #[repr(u8)]
@@ -121,6 +125,10 @@ pub enum PathSegment {
     Sum,
     #[serde(rename = "is sorted")]
     IsSorted,
+    #[serde(rename = "standard input")]
+    StandardInput,
+    #[serde(rename = "parse yaml")]
+    ParseYaml,
     #[serde(rename = "user function call")]
     UserFunctionCall(String),
     #[serde(rename = "object key")]
