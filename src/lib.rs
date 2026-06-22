@@ -251,6 +251,20 @@ mod tests {
                     ["string", "it's a string"],
                     ["any", null]
                 ]
+            },{
+                "match": {
+                    "match": {"parse yaml": "[]"},
+                    "cases": [
+                        ["number", "_"],
+                        ["string", "_"],
+                        ["any", null]
+                    ]
+                },
+                "cases": [
+                    ["number", "it's a number"],
+                    ["string", "it's a string"],
+                    ["null", "it's something else"]
+                ]
             }]))
             .unwrap(),
         )
@@ -258,7 +272,7 @@ mod tests {
         let computer = Computer::default();
         assert_eq!(
             computer.compute(&intermediate_representation).unwrap(),
-            serde_json::from_value(json!(["it's a number", null])).unwrap()
+            serde_json::from_value(json!(["it's a number", null, "it's something else"])).unwrap()
         );
     }
 

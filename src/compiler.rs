@@ -940,10 +940,10 @@ fn compile_with_context(
                 }
             }
             let covered = Type::from(covered_types);
-            if covered != Type::Any {
+            if !covered.contains(&compiled_match.r#type) {
                 return Err(anyhow!(
                     "expected coverage for {:#?}, found coverage only for {covered:#?}",
-                    Type::Any,
+                    compiled_match.r#type,
                 ));
             }
             match result_cases.len() {
