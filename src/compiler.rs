@@ -1126,7 +1126,7 @@ fn compile_with_context(
                                             .cloned(),
                                     ),
                                     ProgramOrNode::Node(compiled_function.node.clone()),
-                                    arguments_is_pure && compiled_function.is_pure,
+                                    compiled_function.is_pure,
                                 );
                                 result_external_constants_name_clustered_indices.append(
                                     &mut compiled_function
