@@ -41,9 +41,16 @@ pub struct Node {
     pub content: Content,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+pub enum Condition {
+    Type(Type),
+    Value(Node),
+}
+
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
 pub struct Case {
-    pub r#type: Type,
+    pub condition: Condition,
     pub node: Node,
     pub match_constant_definition: ConstantDefinition,
 }

@@ -29,7 +29,7 @@ pub enum Program {
     EmbeddedFunction(Box<EmbeddedFunction>),
     Match {
         r#match: Box<Program>,
-        cases: Vec<(Type, Program)>,
+        cases: Vec<(Condition, Program)>,
     },
     Object(BTreeMap<String, Program>),
     Value(Option<Value>),
@@ -39,8 +39,15 @@ pub enum Program {
 pub struct Branching {
     pub r#if: Program,
     pub then: Program,
-    #[serde(default)]
     pub r#else: Program,
+}
+
+#[repr(u8)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[serde(untagged)]
+pub enum Condition {
+    Type(Type),
+    Value(Program),
 }
 
 #[repr(u8)]
@@ -101,7 +108,7 @@ pub enum PathSegment {
     #[serde(rename = "cases")]
     Cases,
     #[serde(rename = "case")]
-    Case(Type),
+    Case(Condition),
     #[serde(rename = "compute")]
     #[default]
     Compute,

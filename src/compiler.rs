@@ -9,7 +9,7 @@ use crate::{
     intermediate_representation::{
         self, Case, ConstantDefinition, Content, IntermediateRepresentation, Node, UserFunction,
     },
-    program::{AtSegment, EmbeddedFunction, From, Path, PathSegment, Program},
+    program::{AtSegment, Condition, EmbeddedFunction, From, Path, PathSegment, Program},
     r#type::Type,
     value::Value,
 };
@@ -890,53 +890,121 @@ fn compile_with_context(
                 compiled_match.external_constants_name_clustered_indices;
             let mut case_is_pure = true;
             let mut covered_types = BTreeSet::new();
-            for (refined_match_type, case) in cases {
-                if compiled_match.r#type.contains(&refined_match_type) {
-                    let mut case_compilation_context = compilation_context.clone();
-                    let match_constant_definition = ConstantDefinition {
-                        index: global_compilation_context.constants.len(),
-                        name_clustered_index: if let Some(constant_name_clustered_index) =
-                            global_compilation_context
-                                .constants_names_to_name_clustered_constants_indices
-                                .get(DEFAULT_ARGUMENT_NAME)
-                        {
-                            *constant_name_clustered_index
-                        } else {
-                            let result = global_compilation_context
-                                .constants_names_to_name_clustered_constants_indices
-                                .len();
-                            global_compilation_context
-                                .constants_names_to_name_clustered_constants_indices
-                                .insert(DEFAULT_ARGUMENT_NAME.to_string(), result);
-                            result
-                        },
-                    };
-                    global_compilation_context
-                        .constants
-                        .push((refined_match_type.clone(), compiled_match.node.clone()));
-                    case_compilation_context.available_constants.extend([(
-                        DEFAULT_ARGUMENT_NAME.to_string(),
-                        match_constant_definition.index,
-                    )]);
-                    case_compilation_context.path.0.extend([
-                        PathSegment::Cases,
-                        PathSegment::Case(refined_match_type.clone()),
-                    ]);
-                    let mut compiled_case = compile_with_context(
-                        case,
-                        case_compilation_context,
-                        global_compilation_context,
-                    )?;
-                    result_cases.push(Case {
-                        r#type: refined_match_type.clone(),
-                        node: compiled_case.node,
-                        match_constant_definition,
-                    });
-                    result_types.insert(compiled_case.r#type.clone());
-                    result_external_constants_name_clustered_indices
-                        .append(&mut compiled_case.external_constants_name_clustered_indices);
-                    case_is_pure &= compiled_case.is_pure;
-                    covered_types.insert(refined_match_type.clone());
+            for (case_condition, case) in cases {
+                let mut case_compilation_context = compilation_context.clone();
+                case_compilation_context.path.0.extend([
+                    PathSegment::Cases,
+                    PathSegment::Case(case_condition.clone()),
+                ]);
+                match case_condition {
+                    Condition::Type(refined_match_type) => {
+                        if !compiled_match.r#type.contains(&refined_match_type) {
+                            continue;
+                        }
+                        let match_constant_definition = ConstantDefinition {
+                            index: global_compilation_context.constants.len(),
+                            name_clustered_index: if let Some(constant_name_clustered_index) =
+                                global_compilation_context
+                                    .constants_names_to_name_clustered_constants_indices
+                                    .get(DEFAULT_ARGUMENT_NAME)
+                            {
+                                *constant_name_clustered_index
+                            } else {
+                                let result = global_compilation_context
+                                    .constants_names_to_name_clustered_constants_indices
+                                    .len();
+                                global_compilation_context
+                                    .constants_names_to_name_clustered_constants_indices
+                                    .insert(DEFAULT_ARGUMENT_NAME.to_string(), result);
+                                result
+                            },
+                        };
+                        global_compilation_context
+                            .constants
+                            .push((refined_match_type.clone(), compiled_match.node.clone()));
+                        case_compilation_context.available_constants.extend([(
+                            DEFAULT_ARGUMENT_NAME.to_string(),
+                            match_constant_definition.index,
+                        )]);
+                        let mut compiled_case = compile_with_context(
+                            case,
+                            case_compilation_context,
+                            global_compilation_context,
+                        )?;
+                        result_types.insert(compiled_case.r#type.clone());
+                        result_external_constants_name_clustered_indices
+                            .append(&mut compiled_case.external_constants_name_clustered_indices);
+                        covered_types.insert(refined_match_type.clone());
+
+                        case_is_pure &= compiled_case.is_pure;
+                        result_cases.push(Case {
+                            condition: intermediate_representation::Condition::Type(
+                                refined_match_type.clone(),
+                            ),
+                            node: compiled_case.node,
+                            match_constant_definition,
+                        });
+                    }
+                    Condition::Value(condition) => {
+                        let compiled_condition = compile_with_context(
+                            condition,
+                            case_compilation_context,
+                            global_compilation_context,
+                        )?;
+                        let refined_match_type = compiled_condition.r#type;
+                        if !compiled_match.r#type.contains(&refined_match_type) {
+                            continue;
+                        }
+
+                        let mut case_compilation_context = compilation_context.clone();
+                        let match_constant_definition = ConstantDefinition {
+                            index: global_compilation_context.constants.len(),
+                            name_clustered_index: if let Some(constant_name_clustered_index) =
+                                global_compilation_context
+                                    .constants_names_to_name_clustered_constants_indices
+                                    .get(DEFAULT_ARGUMENT_NAME)
+                            {
+                                *constant_name_clustered_index
+                            } else {
+                                let result = global_compilation_context
+                                    .constants_names_to_name_clustered_constants_indices
+                                    .len();
+                                global_compilation_context
+                                    .constants_names_to_name_clustered_constants_indices
+                                    .insert(DEFAULT_ARGUMENT_NAME.to_string(), result);
+                                result
+                            },
+                        };
+                        global_compilation_context
+                            .constants
+                            .push((refined_match_type.clone(), compiled_match.node.clone()));
+                        case_compilation_context.available_constants.extend([(
+                            DEFAULT_ARGUMENT_NAME.to_string(),
+                            match_constant_definition.index,
+                        )]);
+                        case_compilation_context.path.0.extend([
+                            PathSegment::Cases,
+                            PathSegment::Case(case_condition.clone()),
+                        ]);
+                        let mut compiled_case = compile_with_context(
+                            case,
+                            case_compilation_context,
+                            global_compilation_context,
+                        )?;
+                        result_types.insert(compiled_case.r#type.clone());
+                        result_external_constants_name_clustered_indices
+                            .append(&mut compiled_case.external_constants_name_clustered_indices);
+                        covered_types.insert(refined_match_type.clone());
+
+                        case_is_pure &= compiled_condition.is_pure && compiled_case.is_pure;
+                        result_cases.push(Case {
+                            condition: intermediate_representation::Condition::Value(
+                                compiled_condition.node,
+                            ),
+                            node: compiled_case.node,
+                            match_constant_definition,
+                        });
+                    }
                 }
             }
             let covered = Type::from(covered_types);

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     containers::{Map, Vector},
     intermediate_representation::{
-        Content, EmbeddedFunction, IntermediateRepresentation, Node, ValuePathSegment,
+        Condition, Content, EmbeddedFunction, IntermediateRepresentation, Node, ValuePathSegment,
     },
     value::Value,
 };
@@ -341,16 +341,41 @@ impl Computer {
                 )?;
                 let match_type = Value::r#type(&computed_match);
                 for case in cases {
-                    if case.r#type.contains(&match_type) {
-                        let mut case_computation_context = computation_context.clone();
-                        case_computation_context.constants.inner
-                            [case.match_constant_definition.name_clustered_index] = computed_match;
-                        return self.compute_node(
-                            &case.node,
-                            intermediate_representation,
-                            &case_computation_context,
-                            global_computation_context,
-                        );
+                    match &case.condition {
+                        Condition::Type(expected_type) => {
+                            if expected_type.contains(&match_type) {
+                                let mut case_computation_context = computation_context.clone();
+                                case_computation_context.constants.inner
+                                    [case.match_constant_definition.name_clustered_index] =
+                                    computed_match;
+                                return self.compute_node(
+                                    &case.node,
+                                    intermediate_representation,
+                                    &case_computation_context,
+                                    global_computation_context,
+                                );
+                            }
+                        }
+                        Condition::Value(expected_value_node) => {
+                            let computed_expected_value = self.compute_node(
+                                &expected_value_node,
+                                intermediate_representation,
+                                computation_context,
+                                global_computation_context,
+                            )?;
+                            if computed_expected_value == computed_match {
+                                let mut case_computation_context = computation_context.clone();
+                                case_computation_context.constants.inner
+                                    [case.match_constant_definition.name_clustered_index] =
+                                    computed_match;
+                                return self.compute_node(
+                                    &case.node,
+                                    intermediate_representation,
+                                    &case_computation_context,
+                                    global_computation_context,
+                                );
+                            }
+                        }
                     }
                 }
                 panic!()

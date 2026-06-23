@@ -15,10 +15,20 @@ mod tests {
 
     use crate::{compiler::compile, computer::Computer};
 
+    fn assert_compute_result(program: serde_json::Value, computed_result: serde_json::Value) {
+        let intermediate_representation =
+            compile(&serde_json::from_value(program).unwrap()).unwrap();
+        let computer = Computer::default();
+        assert_eq!(
+            computer.compute(&intermediate_representation).unwrap(),
+            serde_json::from_value(computed_result).unwrap()
+        );
+    }
+
     #[test]
     fn test_numbers() {
-        compile(
-            &serde_json::from_value(json!([
+        assert_compute_result(
+            json!([
                 1234,
                 1234.1234,
                 "1234",
@@ -26,16 +36,23 @@ mod tests {
                 "12345678901234567890123456789012345678901234567890123456789012345678901234567890",
                 "12345678901234567890123456789012345678901234567890123456789012345678901234567.890",
                 "12345678901234567890123456789012345678901234567890123456789012345678901234567/890",
-            ]))
-            .unwrap(),
+            ]),
+            json!([
+                1234,
+                1234.1234,
+                "1234",
+                "1234.1234",
+                "12345678901234567890123456789012345678901234567890123456789012345678901234567890",
+                "12345678901234567890123456789012345678901234567890123456789012345678901234567.890",
+                "12345678901234567890123456789012345678901234567890123456789012345678901234567/890",
+            ]),
         )
-        .unwrap();
     }
 
     #[test]
     fn test_recursive_normal() {
-        let intermediate_representation = compile(
-            &serde_json::from_value(json!({
+        assert_compute_result(
+            json!({
                 "functions": {
                   "fibonacci:": {
                       "if": {
@@ -70,21 +87,15 @@ mod tests {
                 "compute": {
                   "fibonacci:": 10
                 }
-            }))
-            .unwrap(),
-        )
-        .unwrap();
-        let computer = Computer::default();
-        assert_eq!(
-            computer.compute(&intermediate_representation).unwrap(),
-            serde_json::from_value(json!("55")).unwrap()
+            }),
+            json!(55),
         );
     }
 
     #[test]
     fn test_recursive_big() {
-        let intermediate_representation = compile(
-            &serde_json::from_value(json!({
+        assert_compute_result(
+            json!({
                 "functions": {
                   "fibonacci_1:": {
                       "if": {
@@ -182,21 +193,15 @@ mod tests {
                   {"fibonacci_2:": 10},
                   {"fibonacci_3:": 10},
                 ]
-            }))
-            .unwrap(),
-        )
-        .unwrap();
-        let computer = Computer::default();
-        assert_eq!(
-            computer.compute(&intermediate_representation).unwrap(),
-            serde_json::from_value(json!([55, 55, 55])).unwrap()
+            }),
+            json!([55, 55, 55]),
         );
     }
 
     #[test]
     fn test_includes() {
-        let intermediate_representation = compile(
-            &serde_json::from_value(json!([{
+        assert_compute_result(
+            json!([{
                 "functions": {
                     "fibonacci:": {"from": "examples/fibonacci.yml", "at": ["functions", {"object key": "fibonacci:"}]}
                 },
@@ -205,53 +210,65 @@ mod tests {
                 }
             }, {
                 "from": "examples/fibonacci.yml", "at": ["compute", {"object key": "fibonacci:"}]
-            }])).unwrap(),
-        )
-        .unwrap();
-        let computer = Computer::default();
-        assert_eq!(
-            computer.compute(&intermediate_representation).unwrap(),
-            serde_json::from_value(json!(["55", "10"])).unwrap()
+            }]),
+            json!([55, 10]),
         );
     }
 
     #[test]
     fn test_heterogenous_array() {
-        compile(&serde_json::from_value(json!([1, "string", ["array"], {"object": 4}])).unwrap())
-            .unwrap();
+        assert_compute_result(
+            json!([1, "string", ["array"], {"object": 4}]),
+            json!([1, "string", ["array"], {"object": 4}]),
+        );
     }
 
     #[test]
     fn test_heterogenous_branching() {
-        compile(
-            &serde_json::from_value(json!({
+        assert_compute_result(
+            json!({
                 "if": true,
                 "then": 1,
                 "else": "string"
-            }))
-            .unwrap(),
-        )
-        .unwrap();
+            }),
+            json!(1),
+        );
     }
 
     #[test]
-    fn test_match() {
-        let intermediate_representation = compile(
-            &serde_json::from_value(json!([{
+    fn test_match_by_type_refined_branch() {
+        assert_compute_result(
+            json!({
                 "match": {"parse yaml": "0x1A"},
                 "cases": [
-                    ["number", "it's a number"],
+                    ["number", true],
                     ["string", "it's a string"],
                     ["any", "it's something else"]
                 ]
-            }, {
+            }),
+            json!(true),
+        );
+    }
+
+    #[test]
+    fn test_match_by_type_any_branch() {
+        assert_compute_result(
+            json!({
                 "match": {"parse yaml": "[]"},
                 "cases": [
                     ["number", "it's a number"],
                     ["string", "it's a string"],
-                    ["any", null]
+                    ["any", true]
                 ]
-            },{
+            }),
+            json!(true),
+        );
+    }
+
+    #[test]
+    fn test_match_by_type_without_any_branch() {
+        assert_compute_result(
+            json!({
                 "match": {
                     "match": {"parse yaml": "[]"},
                     "cases": [
@@ -263,27 +280,31 @@ mod tests {
                 "cases": [
                     ["number", "it's a number"],
                     ["string", "it's a string"],
-                    ["null", "it's something else"]
+                    ["null", true]
                 ]
-            }]))
-            .unwrap(),
-        )
-        .unwrap();
-        let computer = Computer::default();
-        assert_eq!(
-            computer.compute(&intermediate_representation).unwrap(),
-            serde_json::from_value(json!(["it's a number", null, "it's something else"])).unwrap()
+            }),
+            json!(true),
+        );
+    }
+
+    #[test]
+    fn test_match_by_value_without_any_branch() {
+        assert_compute_result(
+            json!({
+                "match": {"parse yaml": "[1, 2, 3]"},
+                "cases": [
+                    ["number", "it's a number"],
+                    ["string", "it's a string"],
+                    [[1, {"sum": [1, 1]}, 3], true],
+                    ["any", "it's something else"]
+                ]
+            }),
+            json!(true),
         );
     }
 
     #[test]
     fn test_null() {
-        let intermediate_representation =
-            compile(&serde_json::from_value(json!(null)).unwrap()).unwrap();
-        let computer = Computer::default();
-        assert_eq!(
-            computer.compute(&intermediate_representation).unwrap(),
-            serde_json::from_value(json!(null)).unwrap()
-        );
+        assert_compute_result(json!(null), json!(null));
     }
 }
