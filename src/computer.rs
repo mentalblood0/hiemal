@@ -145,33 +145,6 @@ impl Computer {
                     global_computation_context,
                 )
             }
-            Content::Branching(branching) => {
-                if self
-                    .compute_node(
-                        &branching.r#if,
-                        intermediate_representation,
-                        &computation_context,
-                        global_computation_context,
-                    )?
-                    .unwrap()
-                    .as_bool()
-                    .unwrap()
-                {
-                    self.compute_node(
-                        &branching.then,
-                        intermediate_representation,
-                        &computation_context,
-                        global_computation_context,
-                    )
-                } else {
-                    self.compute_node(
-                        &branching.r#else,
-                        intermediate_representation,
-                        &computation_context,
-                        global_computation_context,
-                    )
-                }
-            }
             Content::Constant(constant_name_clustered_index) => {
                 let result =
                     computation_context.constants.inner[*constant_name_clustered_index].clone();

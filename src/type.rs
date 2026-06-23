@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use crate::value::Value;
+
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, Ord, Eq, Hash, PartialEq)]
 pub enum Type {
@@ -23,14 +25,27 @@ pub enum Type {
     Union(BTreeSet<Type>),
     #[serde(rename = "any")]
     Any,
+    #[serde(rename = "literal")]
+    Literal(Option<Value>),
     Unknown(usize),
 }
 
 impl From<BTreeSet<Type>> for Type {
-    fn from(union_types: BTreeSet<Type>) -> Self {
+    fn from(mut union_types: BTreeSet<Type>) -> Self {
         if union_types.contains(&Type::Any) {
             Type::Any
         } else {
+            if union_types.contains(&Self::Literal(Some(Value::Bool(true))))
+                && union_types.contains(&Self::Literal(Some(Value::Bool(false))))
+            {
+                union_types.remove(&Self::Literal(Some(Value::Bool(true))));
+                union_types.remove(&Self::Literal(Some(Value::Bool(false))));
+                union_types.insert(Self::Bool);
+            }
+            if union_types.contains(&Self::Literal(None)) {
+                union_types.remove(&Self::Literal(None));
+                union_types.insert(Self::Null);
+            }
             match union_types.len() {
                 0 => Self::Null,
                 1 => union_types.into_iter().next().unwrap(),
@@ -75,6 +90,12 @@ impl Type {
                 }
                 (Self::Any, _) => true,
                 (_, Self::Any) => false,
+                (Self::Literal(self_value), Self::Literal(other_value)) => {
+                    self_value == other_value
+                }
+                (self_type, Self::Literal(other_value)) => {
+                    self_type.contains(&Value::r#type(other_value))
+                }
                 _ => false,
             }
         }

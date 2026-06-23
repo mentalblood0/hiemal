@@ -182,6 +182,12 @@ fn assert_contains(
                 }
                 Ok(())
             }
+            (Type::Literal(got_value), expected_type) => assert_contains(
+                &Value::r#type(got_value),
+                expected_type,
+                compilation_context,
+                global_compilation_context,
+            ),
             _ => Err(compilation_context.error(got_type, expected_type)),
         }
     }
@@ -310,15 +316,6 @@ fn process_from_at_program_path_part(
                         PathSegment::Compute,
                     ) => {
                         result = *compute.clone();
-                    }
-                    (Program::Branching(branching_clause), PathSegment::If) => {
-                        result = branching_clause.r#if.clone();
-                    }
-                    (Program::Branching(branching_clause), PathSegment::Then) => {
-                        result = branching_clause.then.clone();
-                    }
-                    (Program::Branching(branching_clause), PathSegment::Else) => {
-                        result = branching_clause.r#else.clone();
                     }
                     _ => {
                         return Err(anyhow!(
@@ -527,58 +524,6 @@ fn compile_with_context(
                     },
                 },
                 is_pure: result_is_pure,
-            }
-        }
-        Program::Branching(branching_clause) => {
-            let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-            let mut if_compilation_context = compilation_context.clone();
-            if_compilation_context.path.0.extend([PathSegment::If]);
-            let mut compiled_if = compile_with_context(
-                &branching_clause.r#if,
-                if_compilation_context.clone(),
-                global_compilation_context,
-            )?;
-            result_external_constants_name_clustered_indices
-                .append(&mut compiled_if.external_constants_name_clustered_indices);
-            assert_contains(
-                &compiled_if.r#type,
-                &Type::Bool,
-                &if_compilation_context,
-                global_compilation_context,
-            )?;
-            let mut then_compilation_context = compilation_context.clone();
-            then_compilation_context.path.0.extend([PathSegment::Then]);
-            let mut compiled_then = compile_with_context(
-                &branching_clause.then,
-                then_compilation_context,
-                global_compilation_context,
-            )?;
-            result_external_constants_name_clustered_indices
-                .append(&mut compiled_then.external_constants_name_clustered_indices);
-            let mut else_compilation_context = compilation_context.clone();
-            else_compilation_context.path.0.extend([PathSegment::Else]);
-            let mut compiled_else = compile_with_context(
-                &branching_clause.r#else,
-                else_compilation_context.clone(),
-                global_compilation_context,
-            )?;
-            result_external_constants_name_clustered_indices
-                .append(&mut compiled_else.external_constants_name_clustered_indices);
-            NodeAndMetadata {
-                r#type: Type::from(BTreeSet::from_iter([
-                    compiled_then.r#type,
-                    compiled_else.r#type,
-                ])),
-                external_constants_name_clustered_indices:
-                    result_external_constants_name_clustered_indices,
-                node: Node {
-                    content: Content::Branching(Box::new(intermediate_representation::Branching {
-                        r#if: compiled_if.node,
-                        then: compiled_then.node,
-                        r#else: compiled_else.node,
-                    })),
-                },
-                is_pure: compiled_if.is_pure | compiled_then.is_pure | compiled_else.is_pure,
             }
         }
         Program::Constant {
@@ -873,7 +818,11 @@ fn compile_with_context(
                 }
             }
         },
-        Program::Match { r#match, cases } => {
+        Program::Match {
+            r#match,
+            r#as,
+            cases,
+        } => {
             let mut match_compilation_context = compilation_context.clone();
             match_compilation_context
                 .path
@@ -906,7 +855,7 @@ fn compile_with_context(
                             name_clustered_index: if let Some(constant_name_clustered_index) =
                                 global_compilation_context
                                     .constants_names_to_name_clustered_constants_indices
-                                    .get(DEFAULT_ARGUMENT_NAME)
+                                    .get(r#as)
                             {
                                 *constant_name_clustered_index
                             } else {
@@ -915,17 +864,16 @@ fn compile_with_context(
                                     .len();
                                 global_compilation_context
                                     .constants_names_to_name_clustered_constants_indices
-                                    .insert(DEFAULT_ARGUMENT_NAME.to_string(), result);
+                                    .insert(r#as.clone(), result);
                                 result
                             },
                         };
                         global_compilation_context
                             .constants
                             .push((refined_match_type.clone(), compiled_match.node.clone()));
-                        case_compilation_context.available_constants.extend([(
-                            DEFAULT_ARGUMENT_NAME.to_string(),
-                            match_constant_definition.index,
-                        )]);
+                        case_compilation_context
+                            .available_constants
+                            .extend([(r#as.clone(), match_constant_definition.index)]);
                         let mut compiled_case = compile_with_context(
                             case,
                             case_compilation_context,
@@ -962,7 +910,7 @@ fn compile_with_context(
                             name_clustered_index: if let Some(constant_name_clustered_index) =
                                 global_compilation_context
                                     .constants_names_to_name_clustered_constants_indices
-                                    .get(DEFAULT_ARGUMENT_NAME)
+                                    .get(r#as)
                             {
                                 *constant_name_clustered_index
                             } else {
@@ -971,17 +919,16 @@ fn compile_with_context(
                                     .len();
                                 global_compilation_context
                                     .constants_names_to_name_clustered_constants_indices
-                                    .insert(DEFAULT_ARGUMENT_NAME.to_string(), result);
+                                    .insert(r#as.clone(), result);
                                 result
                             },
                         };
                         global_compilation_context
                             .constants
                             .push((refined_match_type.clone(), compiled_match.node.clone()));
-                        case_compilation_context.available_constants.extend([(
-                            DEFAULT_ARGUMENT_NAME.to_string(),
-                            match_constant_definition.index,
-                        )]);
+                        case_compilation_context
+                            .available_constants
+                            .extend([(r#as.clone(), match_constant_definition.index)]);
                         case_compilation_context.path.0.extend([
                             PathSegment::Cases,
                             PathSegment::Case(case_condition.clone()),
@@ -1010,8 +957,9 @@ fn compile_with_context(
             let covered = Type::from(covered_types);
             if !covered.contains(&compiled_match.r#type) {
                 return Err(anyhow!(
-                    "expected coverage for {:#?}, found coverage only for {covered:#?}",
+                    "expected coverage for {:#?}, found coverage only for {covered:#?} at {:#?}",
                     compiled_match.r#type,
+                    compilation_context.path
                 ));
             }
             match result_cases.len() {
@@ -1276,7 +1224,7 @@ fn compile_with_context(
             }
         }
         Program::Value(value) => NodeAndMetadata {
-            r#type: Value::r#type(value),
+            r#type: Type::Literal(value.clone()),
             external_constants_name_clustered_indices: BTreeSet::new(),
             node: Node {
                 content: Content::Value(unsafe { std::mem::transmute(value.clone()) }),

@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{containers::Vector, r#type::Type, value::Value};
+use crate::{
+    containers::Vector, default_argument_name::DEFAULT_ARGUMENT_NAME, r#type::Type, value::Value,
+};
 
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
@@ -17,7 +19,6 @@ pub enum Program {
         constants: BTreeMap<String, Program>,
         compute: Box<Program>,
     },
-    Branching(Box<Branching>),
     Constant {
         constant: String,
     },
@@ -29,17 +30,16 @@ pub enum Program {
     EmbeddedFunction(Box<EmbeddedFunction>),
     Match {
         r#match: Box<Program>,
+        #[serde(default = "default_match_as")]
+        r#as: String,
         cases: Vec<(Condition, Program)>,
     },
     Object(BTreeMap<String, Program>),
     Value(Option<Value>),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
-pub struct Branching {
-    pub r#if: Program,
-    pub then: Program,
-    pub r#else: Program,
+pub fn default_match_as() -> String {
+    DEFAULT_ARGUMENT_NAME.to_string()
 }
 
 #[repr(u8)]

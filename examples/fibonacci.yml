@@ -1,13 +1,16 @@
 functions:
   fibonacci::
-    if:
+    match:
       is sorted: [_, 1]
-    then: _
-    else:
-      sum:
-        - fibonacci::
-            sum: [_, -1]
-        - fibonacci::
-            sum: [_, -2]
+    as: matched
+    cases:
+      - - true
+        - _
+      - - false
+        - sum:
+            - fibonacci::
+                sum: [_, -1]
+            - fibonacci::
+                sum: [_, -2]
 compute:
   fibonacci:: 10

@@ -63,7 +63,6 @@ pub enum Content {
         constants: Vec<ConstantDefinition>,
         compute: Box<Node>,
     },
-    Branching(Box<Branching>),
     Constant(usize),
     EmbeddedFunctionCall {
         path: Option<Path>,
@@ -83,13 +82,6 @@ pub enum Content {
     },
     Object(BTreeMap<String, Node>),
     Value(Option<Value>),
-}
-
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
-pub struct Branching {
-    pub r#if: Node,
-    pub then: Node,
-    pub r#else: Node,
 }
 
 #[repr(u8)]

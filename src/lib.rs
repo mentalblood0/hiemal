@@ -55,33 +55,34 @@ mod tests {
             json!({
                 "functions": {
                   "fibonacci:": {
-                      "if": {
-                        "is sorted": [
-                          "_",
-                          1
-                        ]
-                      },
-                      "then": "_",
-                      "else": {
-                          "sum": [
-                            {
-                              "fibonacci:": {
-                                "sum": [
-                                  "_",
-                                  -1
-                                ]
+                      "match": { "is sorted": ["_", 1] },
+                      "as": "matched",
+                      "cases": [
+                          [true, "_"],
+                          [
+                              false,
+                              {
+                                  "sum": [
+                                    {
+                                      "fibonacci:": {
+                                        "sum": [
+                                          "_",
+                                          -1
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "fibonacci:": {
+                                        "sum": [
+                                          "_",
+                                          -2
+                                        ]
+                                      }
+                                    }
+                                  ]
                               }
-                            },
-                            {
-                              "fibonacci:": {
-                                "sum": [
-                                  "_",
-                                  -2
-                                ]
-                              }
-                            }
                           ]
-                      }
+                      ]
                   }
                 },
                 "compute": {
@@ -98,95 +99,96 @@ mod tests {
             json!({
                 "functions": {
                   "fibonacci_1:": {
-                      "if": {
-                        "is sorted": [
-                          "_",
-                          1
-                        ]
-                      },
-                      "then": "_",
-                      "else": {
-                          "sum": [
-                            {
-                              "fibonacci_2:": {
-                                "sum": [
-                                  "_",
-                                  -1
-                                ]
+                      "match": { "is sorted": ["_", 1] },
+                      "as": "matched",
+                      "cases": [
+                          [true, "_"],
+                          [
+                              false,
+                              {
+                                  "sum": [
+                                    {
+                                      "fibonacci_2:": {
+                                        "sum": [
+                                          "_",
+                                          -1
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "fibonacci_3:": {
+                                        "sum": [
+                                          "_",
+                                          -2
+                                        ]
+                                      }
+                                    }
+                                  ]
                               }
-                            },
-                            0,
-                            {
-                              "fibonacci_3:": {
-                                "sum": [
-                                  "_",
-                                  -2
-                                ]
-                              }
-                            }
                           ]
-                      }
+                      ]
                   },
                   "fibonacci_2:": {
-                      "if": {
-                        "is sorted": [
-                          "_",
-                          1
-                        ]
-                      },
-                      "then": "_",
-                      "else": {
-                          "sum": [
-                            {
-                              "fibonacci_1:": {
-                                "sum": [
-                                  "_",
-                                  -1
-                                ]
+                      "match": { "is sorted": ["_", 1] },
+                      "as": "matched",
+                      "cases": [
+                          [true, "_"],
+                          [
+                              false,
+                              {
+                                  "sum": [
+                                    {
+                                      "fibonacci_1:": {
+                                        "sum": [
+                                          "_",
+                                          -1
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "fibonacci_3:": {
+                                        "sum": [
+                                          "_",
+                                          -2
+                                        ]
+                                      }
+                                    }
+                                  ]
                               }
-                            },
-                            0,
-                            {
-                              "fibonacci_3:": {
-                                "sum": [
-                                  "_",
-                                  -2
-                                ]
-                              }
-                            }
                           ]
-                    }
+                      ]
                   },
                   "fibonacci_3:": {
-                      "if": {
-                        "is sorted": [
-                          "_",
-                          1
-                        ]
-                      },
-                      "then": "_",
-                      "else": {
-                          "sum": [
-                            {
-                              "fibonacci_1:": {
-                                "sum": [
-                                  "_",
-                                  -1
-                                ]
+                      "match": { "is sorted": ["_", 1] },
+                      "as": "matched",
+                      "cases": [
+                          [true, "_"],
+                          [
+                              false,
+                              {
+                                  "sum": [
+                                    {
+                                      "fibonacci_1:": {
+                                        "sum": [
+                                          "_",
+                                          -1
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "fibonacci_2:": {
+                                        "sum": [
+                                          "_",
+                                          -2
+                                        ]
+                                      }
+                                    }
+                                  ]
                               }
-                            },
-                            0,
-                            {
-                              "fibonacci_2:": {
-                                "sum": [
-                                  "_",
-                                  -2
-                                ]
-                              }
-                            }
                           ]
-                    }
+                      ]
                   }
+
                 },
                 "compute": [
                   {"fibonacci_1:": 10},
@@ -227,9 +229,11 @@ mod tests {
     fn test_heterogenous_branching() {
         assert_compute_result(
             json!({
-                "if": true,
-                "then": 1,
-                "else": "string"
+                "match": {"is sorted": [1, 2, 3]},
+                "cases": [
+                    [true, 1],
+                    [false, "string"]
+                ]
             }),
             json!(1),
         );
@@ -288,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn test_match_by_value_without_any_branch() {
+    fn test_match_by_value() {
         assert_compute_result(
             json!({
                 "match": {"parse yaml": "[1, 2, 3]"},
