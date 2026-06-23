@@ -850,30 +850,36 @@ fn compile_with_context(
                         if !compiled_match.r#type.contains(&refined_match_type) {
                             continue;
                         }
-                        let match_constant_definition = ConstantDefinition {
-                            index: global_compilation_context.constants.len(),
-                            name_clustered_index: if let Some(constant_name_clustered_index) =
-                                global_compilation_context
-                                    .constants_names_to_name_clustered_constants_indices
-                                    .get(r#as)
-                            {
-                                *constant_name_clustered_index
-                            } else {
-                                let result = global_compilation_context
-                                    .constants_names_to_name_clustered_constants_indices
-                                    .len();
-                                global_compilation_context
-                                    .constants_names_to_name_clustered_constants_indices
-                                    .insert(r#as.clone(), result);
-                                result
-                            },
+                        let match_constant_definition = if let Some(match_constant_name) = r#as {
+                            let match_constant_definition = ConstantDefinition {
+                                index: global_compilation_context.constants.len(),
+                                name_clustered_index: if let Some(constant_name_clustered_index) =
+                                    global_compilation_context
+                                        .constants_names_to_name_clustered_constants_indices
+                                        .get(match_constant_name)
+                                {
+                                    *constant_name_clustered_index
+                                } else {
+                                    let result = global_compilation_context
+                                        .constants_names_to_name_clustered_constants_indices
+                                        .len();
+                                    global_compilation_context
+                                        .constants_names_to_name_clustered_constants_indices
+                                        .insert(match_constant_name.clone(), result);
+                                    result
+                                },
+                            };
+                            global_compilation_context
+                                .constants
+                                .push((refined_match_type.clone(), compiled_match.node.clone()));
+                            case_compilation_context.available_constants.extend([(
+                                match_constant_name.clone(),
+                                match_constant_definition.index,
+                            )]);
+                            Some(match_constant_definition)
+                        } else {
+                            None
                         };
-                        global_compilation_context
-                            .constants
-                            .push((refined_match_type.clone(), compiled_match.node.clone()));
-                        case_compilation_context
-                            .available_constants
-                            .extend([(r#as.clone(), match_constant_definition.index)]);
                         let mut compiled_case = compile_with_context(
                             case,
                             case_compilation_context,
@@ -890,7 +896,7 @@ fn compile_with_context(
                                 refined_match_type.clone(),
                             ),
                             node: compiled_case.node,
-                            match_constant_definition,
+                            match_constant_definition_option: match_constant_definition,
                         });
                     }
                     Condition::Value(condition) => {
@@ -903,32 +909,37 @@ fn compile_with_context(
                         if !compiled_match.r#type.contains(&refined_match_type) {
                             continue;
                         }
-
                         let mut case_compilation_context = compilation_context.clone();
-                        let match_constant_definition = ConstantDefinition {
-                            index: global_compilation_context.constants.len(),
-                            name_clustered_index: if let Some(constant_name_clustered_index) =
-                                global_compilation_context
-                                    .constants_names_to_name_clustered_constants_indices
-                                    .get(r#as)
-                            {
-                                *constant_name_clustered_index
-                            } else {
-                                let result = global_compilation_context
-                                    .constants_names_to_name_clustered_constants_indices
-                                    .len();
-                                global_compilation_context
-                                    .constants_names_to_name_clustered_constants_indices
-                                    .insert(r#as.clone(), result);
-                                result
-                            },
+                        let match_constant_definition = if let Some(match_constant_name) = r#as {
+                            let match_constant_definition = ConstantDefinition {
+                                index: global_compilation_context.constants.len(),
+                                name_clustered_index: if let Some(constant_name_clustered_index) =
+                                    global_compilation_context
+                                        .constants_names_to_name_clustered_constants_indices
+                                        .get(match_constant_name)
+                                {
+                                    *constant_name_clustered_index
+                                } else {
+                                    let result = global_compilation_context
+                                        .constants_names_to_name_clustered_constants_indices
+                                        .len();
+                                    global_compilation_context
+                                        .constants_names_to_name_clustered_constants_indices
+                                        .insert(match_constant_name.clone(), result);
+                                    result
+                                },
+                            };
+                            global_compilation_context
+                                .constants
+                                .push((refined_match_type.clone(), compiled_match.node.clone()));
+                            case_compilation_context.available_constants.extend([(
+                                match_constant_name.clone(),
+                                match_constant_definition.index,
+                            )]);
+                            Some(match_constant_definition)
+                        } else {
+                            None
                         };
-                        global_compilation_context
-                            .constants
-                            .push((refined_match_type.clone(), compiled_match.node.clone()));
-                        case_compilation_context
-                            .available_constants
-                            .extend([(r#as.clone(), match_constant_definition.index)]);
                         case_compilation_context.path.0.extend([
                             PathSegment::Cases,
                             PathSegment::Case(case_condition.clone()),
@@ -949,7 +960,7 @@ fn compile_with_context(
                                 compiled_condition.node,
                             ),
                             node: compiled_case.node,
-                            match_constant_definition,
+                            match_constant_definition_option: match_constant_definition,
                         });
                     }
                 }

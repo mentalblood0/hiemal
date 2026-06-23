@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{
-    containers::Vector, default_argument_name::DEFAULT_ARGUMENT_NAME, r#type::Type, value::Value,
-};
+use crate::{containers::Vector, r#type::Type, value::Value};
 
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
@@ -31,15 +29,15 @@ pub enum Program {
     Match {
         r#match: Box<Program>,
         #[serde(default = "default_match_as")]
-        r#as: String,
+        r#as: Option<String>,
         cases: Vec<(Condition, Program)>,
     },
     Object(BTreeMap<String, Program>),
     Value(Option<Value>),
 }
 
-pub fn default_match_as() -> String {
-    DEFAULT_ARGUMENT_NAME.to_string()
+pub fn default_match_as() -> Option<String> {
+    None
 }
 
 #[repr(u8)]

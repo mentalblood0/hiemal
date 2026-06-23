@@ -56,7 +56,6 @@ mod tests {
                 "functions": {
                   "fibonacci:": {
                       "match": { "is sorted": ["_", 1] },
-                      "as": "matched",
                       "cases": [
                           [true, "_"],
                           [
@@ -100,7 +99,6 @@ mod tests {
                 "functions": {
                   "fibonacci_1:": {
                       "match": { "is sorted": ["_", 1] },
-                      "as": "matched",
                       "cases": [
                           [true, "_"],
                           [
@@ -130,7 +128,6 @@ mod tests {
                   },
                   "fibonacci_2:": {
                       "match": { "is sorted": ["_", 1] },
-                      "as": "matched",
                       "cases": [
                           [true, "_"],
                           [
@@ -160,7 +157,6 @@ mod tests {
                   },
                   "fibonacci_3:": {
                       "match": { "is sorted": ["_", 1] },
-                      "as": "matched",
                       "cases": [
                           [true, "_"],
                           [
@@ -275,6 +271,7 @@ mod tests {
             json!({
                 "match": {
                     "match": {"parse yaml": "[]"},
+                    "as": "_",
                     "cases": [
                         ["number", "_"],
                         ["string", "_"],

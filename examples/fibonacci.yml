@@ -2,7 +2,6 @@ functions:
   fibonacci::
     match:
       is sorted: [_, 1]
-    as: matched
     cases:
       - - true
         - _

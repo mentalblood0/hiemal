@@ -317,16 +317,27 @@ impl Computer {
                     match &case.condition {
                         Condition::Type(expected_type) => {
                             if expected_type.contains(&match_type) {
-                                let mut case_computation_context = computation_context.clone();
-                                case_computation_context.constants.inner
-                                    [case.match_constant_definition.name_clustered_index] =
-                                    computed_match;
-                                return self.compute_node(
-                                    &case.node,
-                                    intermediate_representation,
-                                    &case_computation_context,
-                                    global_computation_context,
-                                );
+                                if let Some(ref match_constant_definition) =
+                                    case.match_constant_definition_option
+                                {
+                                    let mut case_computation_context = computation_context.clone();
+                                    case_computation_context.constants.inner
+                                        [match_constant_definition.name_clustered_index] =
+                                        computed_match;
+                                    return self.compute_node(
+                                        &case.node,
+                                        intermediate_representation,
+                                        &case_computation_context,
+                                        global_computation_context,
+                                    );
+                                } else {
+                                    return self.compute_node(
+                                        &case.node,
+                                        intermediate_representation,
+                                        computation_context,
+                                        global_computation_context,
+                                    );
+                                }
                             }
                         }
                         Condition::Value(expected_value_node) => {
@@ -337,16 +348,27 @@ impl Computer {
                                 global_computation_context,
                             )?;
                             if computed_expected_value == computed_match {
-                                let mut case_computation_context = computation_context.clone();
-                                case_computation_context.constants.inner
-                                    [case.match_constant_definition.name_clustered_index] =
-                                    computed_match;
-                                return self.compute_node(
-                                    &case.node,
-                                    intermediate_representation,
-                                    &case_computation_context,
-                                    global_computation_context,
-                                );
+                                if let Some(ref match_constant_definition) =
+                                    case.match_constant_definition_option
+                                {
+                                    let mut case_computation_context = computation_context.clone();
+                                    case_computation_context.constants.inner
+                                        [match_constant_definition.name_clustered_index] =
+                                        computed_match;
+                                    return self.compute_node(
+                                        &case.node,
+                                        intermediate_representation,
+                                        &case_computation_context,
+                                        global_computation_context,
+                                    );
+                                } else {
+                                    return self.compute_node(
+                                        &case.node,
+                                        intermediate_representation,
+                                        computation_context,
+                                        global_computation_context,
+                                    );
+                                }
                             }
                         }
                     }

@@ -52,7 +52,7 @@ pub enum Condition {
 pub struct Case {
     pub condition: Condition,
     pub node: Node,
-    pub match_constant_definition: ConstantDefinition,
+    pub match_constant_definition_option: Option<ConstantDefinition>,
 }
 
 #[repr(u8)]
