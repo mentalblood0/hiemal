@@ -1,9 +1,0 @@
-functions:
-  factorial:
-    product:
-      sequence:
-        from: 1
-        to: _
-        step: 1
-compute:
-  factorial: 5

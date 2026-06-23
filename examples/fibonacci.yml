@@ -3,8 +3,7 @@ functions:
     match:
       is sorted: [_, 1]
     cases:
-      - - true
-        - _
+      - [true, _]
       - - false
         - sum:
             - fibonacci::

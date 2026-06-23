@@ -1,18 +1,20 @@
 functions:
   fibonacci::
-    if:
+    match:
       is sorted: [_, 1]
-    then: _
-    else:
-      sum:
-        - fibonacci::
-            sum: [_, -1]
-        - fibonacci::
-            sum: [_, -2]
+    cases:
+      - [true, _]
+      - - false
+        - sum:
+            - fibonacci::
+                sum: [_, -1]
+            - fibonacci::
+                sum: [_, -2]
 compute:
   fibonacci::
     match:
       parse yaml: standard input
+    as: _
     cases:
       - - number
         - _

@@ -1,10 +1,9 @@
 - functions:
-    factorial:
-      include:
-        [examples/factorial.yml, with, functions, { object key: factorial }]
+    fibonacci::
+      from: examples/fibonacci.yml
+      at: [functions, { object key: "fibonacci:" }]
   compute:
-    factorial: 5
-- include:
-    [
-      https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml,
-    ]
+    fibonacci:: 10
+- from: examples/fibonacci.yml
+  at: [compute, { object key: "fibonacci:" }]
+  
