@@ -823,7 +823,6 @@ fn compile_with_context(
             r#as,
             cases,
         } => {
-            dbg!(&r#match);
             let mut match_compilation_context = compilation_context.clone();
             match_compilation_context
                 .path
@@ -841,7 +840,6 @@ fn compile_with_context(
             let mut case_is_pure = true;
             let mut covered_types = BTreeSet::new();
             for (case_condition, case) in cases {
-                dbg!(&case_condition);
                 let mut case_compilation_context = compilation_context.clone();
                 case_compilation_context.path.0.extend([
                     PathSegment::Cases,
@@ -849,9 +847,13 @@ fn compile_with_context(
                 ]);
                 match case_condition {
                     Condition::Type(refined_match_type) => {
-                        if !compiled_match.r#type.contains(&refined_match_type) {
+                        if compiled_match
+                            .r#type
+                            .intersection(refined_match_type)
+                            .is_none()
+                        {
                             continue;
-                        }
+                        };
                         let match_constant_definition = if let Some(match_constant_name) = r#as {
                             let match_constant_definition = ConstantDefinition {
                                 index: global_compilation_context.constants.len(),
@@ -890,7 +892,6 @@ fn compile_with_context(
                         result_types.insert(compiled_case.r#type.clone());
                         result_external_constants_name_clustered_indices
                             .append(&mut compiled_case.external_constants_name_clustered_indices);
-                        dbg!(&refined_match_type);
                         covered_types.insert(refined_match_type.clone());
 
                         case_is_pure &= compiled_case.is_pure;
@@ -909,9 +910,13 @@ fn compile_with_context(
                             global_compilation_context,
                         )?;
                         let refined_match_type = compiled_condition.r#type;
-                        if !compiled_match.r#type.contains(&refined_match_type) {
+                        if compiled_match
+                            .r#type
+                            .intersection(&refined_match_type)
+                            .is_none()
+                        {
                             continue;
-                        }
+                        };
                         let mut case_compilation_context = compilation_context.clone();
                         let match_constant_definition = if let Some(match_constant_name) = r#as {
                             let match_constant_definition = ConstantDefinition {
@@ -955,8 +960,7 @@ fn compile_with_context(
                         result_types.insert(compiled_case.r#type.clone());
                         result_external_constants_name_clustered_indices
                             .append(&mut compiled_case.external_constants_name_clustered_indices);
-                        dbg!(&refined_match_type);
-                        covered_types.insert(refined_match_type.clone());
+                        covered_types.insert(refined_match_type);
 
                         case_is_pure &= compiled_condition.is_pure && compiled_case.is_pure;
                         result_cases.push(Case {

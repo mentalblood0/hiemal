@@ -61,6 +61,8 @@ impl Type {
             true
         } else {
             match (self, other) {
+                (Type::Any, _) => true,
+                (_, Type::Any) => false,
                 (Type::Union(self_union_types), Type::Union(other_union_types)) => {
                     self_union_types.is_superset(other_union_types)
                 }
@@ -71,8 +73,6 @@ impl Type {
                     other_union_types.len() == 1
                         && Some(self_type) == other_union_types.iter().next()
                 }
-                (Type::Any, _) => true,
-                (_, Type::Any) => false,
                 (Type::Literal(self_value), Type::Literal(other_value)) => {
                     self_value == other_value
                 }
@@ -89,8 +89,7 @@ impl Type {
             Some(self.clone())
         } else {
             match (self, other) {
-                // {literal: {bool: true}}, number
-                // bool, string
+                (Type::Any, other_type) | (other_type, Type::Any) => Some(other_type.clone()),
                 (Type::Union(self_union_types), Type::Union(other_union_types)) => {
                     let result = self_union_types
                         .intersection(other_union_types)
@@ -102,25 +101,20 @@ impl Type {
                         Some(Type::from(result))
                     }
                 }
-                (Type::Union(self_union_types), other_type) => {
-                    if self_union_types.contains(other_type) {
+                (Type::Union(union_types), other_type) | (other_type, Type::Union(union_types)) => {
+                    if union_types.contains(other_type) {
                         Some(other_type.clone())
                     } else {
                         None
                     }
                 }
-                (self_type, Type::Union(other_union_types)) => {
-                    if other_union_types.len() == 1
-                        && Some(self_type) == other_union_types.iter().next()
-                    {
-                        Some(self_type.clone())
-                    } else {
-                        None
-                    }
+                (Type::Literal(Some(Value::Bool(bool_value))), Type::Bool)
+                | (Type::Bool, Type::Literal(Some(Value::Bool(bool_value)))) => {
+                    Some(Type::Literal(Some(Value::Bool(*bool_value))))
                 }
-                (Type::Any, other_type) => Some(other_type.clone()),
-                (self_type, Type::Any) => Some(self_type.clone()),
-                (Type::Literal(Value::Bool(_)), other_type) => self.clone()
+                (Type::Literal(None), Type::Null) | (Type::Null, Type::Literal(None)) => {
+                    Some(Type::Null)
+                }
                 _ => None,
             }
         }
