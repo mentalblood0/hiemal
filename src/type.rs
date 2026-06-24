@@ -31,69 +31,52 @@ pub enum Type {
 }
 
 impl From<BTreeSet<Type>> for Type {
-    fn from(mut union_types: BTreeSet<Type>) -> Self {
+    fn from(mut union_types: BTreeSet<Type>) -> Type {
         if union_types.contains(&Type::Any) {
             Type::Any
         } else {
-            if union_types.contains(&Self::Literal(Some(Value::Bool(true))))
-                && union_types.contains(&Self::Literal(Some(Value::Bool(false))))
+            if union_types.contains(&Type::Literal(Some(Value::Bool(true))))
+                && union_types.contains(&Type::Literal(Some(Value::Bool(false))))
             {
-                union_types.remove(&Self::Literal(Some(Value::Bool(true))));
-                union_types.remove(&Self::Literal(Some(Value::Bool(false))));
-                union_types.insert(Self::Bool);
+                union_types.remove(&Type::Literal(Some(Value::Bool(true))));
+                union_types.remove(&Type::Literal(Some(Value::Bool(false))));
+                union_types.insert(Type::Bool);
             }
-            if union_types.contains(&Self::Literal(None)) {
-                union_types.remove(&Self::Literal(None));
-                union_types.insert(Self::Null);
+            if union_types.contains(&Type::Literal(None)) {
+                union_types.remove(&Type::Literal(None));
+                union_types.insert(Type::Null);
             }
             match union_types.len() {
-                0 => Self::Null,
+                0 => Type::Null,
                 1 => union_types.into_iter().next().unwrap(),
-                _ => Self::Union(union_types),
+                _ => Type::Union(union_types),
             }
         }
     }
 }
 
 impl Type {
-    pub fn contains(&self, other: &Self) -> bool {
+    pub fn contains(&self, other: &Type) -> bool {
         if self == other {
             true
         } else {
             match (self, other) {
-                (Self::Union(self_union_types), Self::Union(other_union_types)) => {
-                    for other_union_type in other_union_types {
-                        let mut found = false;
-                        for self_union_type in self_union_types {
-                            if self_union_type == other_union_type {
-                                found = true;
-                                break;
-                            }
-                        }
-                        if !found {
-                            return false;
-                        }
-                    }
-                    true
+                (Type::Union(self_union_types), Type::Union(other_union_types)) => {
+                    self_union_types.is_superset(other_union_types)
                 }
-                (Self::Union(self_union_types), other_type) => {
-                    for self_union_type in self_union_types {
-                        if self_union_type == other_type {
-                            return true;
-                        }
-                    }
-                    false
+                (Type::Union(self_union_types), other_type) => {
+                    self_union_types.contains(other_type)
                 }
-                (self_type, Self::Union(other_union_types)) => {
+                (self_type, Type::Union(other_union_types)) => {
                     other_union_types.len() == 1
                         && Some(self_type) == other_union_types.iter().next()
                 }
-                (Self::Any, _) => true,
-                (_, Self::Any) => false,
-                (Self::Literal(self_value), Self::Literal(other_value)) => {
+                (Type::Any, _) => true,
+                (_, Type::Any) => false,
+                (Type::Literal(self_value), Type::Literal(other_value)) => {
                     self_value == other_value
                 }
-                (self_type, Self::Literal(other_value)) => {
+                (self_type, Type::Literal(other_value)) => {
                     self_type.contains(&Value::r#type(other_value))
                 }
                 _ => false,
@@ -101,7 +84,45 @@ impl Type {
         }
     }
 
-    pub fn strongest<'a>(&'a self, other: &'a Self) -> &'a Self {
-        if self.contains(other) { other } else { self }
+    pub fn intersection(&self, other: &Type) -> Option<Type> {
+        if self == other {
+            Some(self.clone())
+        } else {
+            match (self, other) {
+                // {literal: {bool: true}}, number
+                // bool, string
+                (Type::Union(self_union_types), Type::Union(other_union_types)) => {
+                    let result = self_union_types
+                        .intersection(other_union_types)
+                        .cloned()
+                        .collect::<BTreeSet<_>>();
+                    if result.is_empty() {
+                        None
+                    } else {
+                        Some(Type::from(result))
+                    }
+                }
+                (Type::Union(self_union_types), other_type) => {
+                    if self_union_types.contains(other_type) {
+                        Some(other_type.clone())
+                    } else {
+                        None
+                    }
+                }
+                (self_type, Type::Union(other_union_types)) => {
+                    if other_union_types.len() == 1
+                        && Some(self_type) == other_union_types.iter().next()
+                    {
+                        Some(self_type.clone())
+                    } else {
+                        None
+                    }
+                }
+                (Type::Any, other_type) => Some(other_type.clone()),
+                (self_type, Type::Any) => Some(self_type.clone()),
+                (Type::Literal(Value::Bool(_)), other_type) => self.clone()
+                _ => None,
+            }
+        }
     }
 }

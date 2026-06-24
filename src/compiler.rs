@@ -823,6 +823,7 @@ fn compile_with_context(
             r#as,
             cases,
         } => {
+            dbg!(&r#match);
             let mut match_compilation_context = compilation_context.clone();
             match_compilation_context
                 .path
@@ -840,6 +841,7 @@ fn compile_with_context(
             let mut case_is_pure = true;
             let mut covered_types = BTreeSet::new();
             for (case_condition, case) in cases {
+                dbg!(&case_condition);
                 let mut case_compilation_context = compilation_context.clone();
                 case_compilation_context.path.0.extend([
                     PathSegment::Cases,
@@ -888,6 +890,7 @@ fn compile_with_context(
                         result_types.insert(compiled_case.r#type.clone());
                         result_external_constants_name_clustered_indices
                             .append(&mut compiled_case.external_constants_name_clustered_indices);
+                        dbg!(&refined_match_type);
                         covered_types.insert(refined_match_type.clone());
 
                         case_is_pure &= compiled_case.is_pure;
@@ -952,6 +955,7 @@ fn compile_with_context(
                         result_types.insert(compiled_case.r#type.clone());
                         result_external_constants_name_clustered_indices
                             .append(&mut compiled_case.external_constants_name_clustered_indices);
+                        dbg!(&refined_match_type);
                         covered_types.insert(refined_match_type.clone());
 
                         case_is_pure &= compiled_condition.is_pure && compiled_case.is_pure;
