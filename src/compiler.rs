@@ -889,7 +889,7 @@ fn compile_with_context(
                             case_compilation_context,
                             global_compilation_context,
                         )?;
-                        result_types.insert(compiled_case.r#type.clone());
+                        result_types.insert(compiled_case.r#type);
                         result_external_constants_name_clustered_indices
                             .append(&mut compiled_case.external_constants_name_clustered_indices);
                         covered_types.insert(refined_match_type.clone());
@@ -957,7 +957,7 @@ fn compile_with_context(
                             case_compilation_context,
                             global_compilation_context,
                         )?;
-                        result_types.insert(compiled_case.r#type.clone());
+                        result_types.insert(compiled_case.r#type);
                         result_external_constants_name_clustered_indices
                             .append(&mut compiled_case.external_constants_name_clustered_indices);
                         covered_types.insert(refined_match_type);

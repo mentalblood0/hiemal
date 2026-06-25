@@ -46,6 +46,29 @@ impl From<BTreeSet<Type>> for Type {
                 union_types.remove(&Type::Literal(None));
                 union_types.insert(Type::Null);
             }
+            let non_literal_union_types = union_types
+                .iter()
+                .filter(|r#type| {
+                    if let Type::Literal(_) = r#type {
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            union_types = union_types
+                .into_iter()
+                .filter(|r#type| {
+                    if let Type::Literal(type_value) = r#type
+                        && non_literal_union_types.contains(&Value::r#type(type_value))
+                    {
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .collect::<BTreeSet<_>>();
             match union_types.len() {
                 0 => Type::Null,
                 1 => union_types.into_iter().next().unwrap(),
@@ -79,6 +102,14 @@ impl Type {
                 (self_type, Type::Literal(other_value)) => {
                     self_type.contains(&Value::r#type(other_value))
                 }
+                (Type::Array(self_array_element_type), Type::Tuple(other_tuple_elements_types)) => {
+                    for tuple_element_type in other_tuple_elements_types {
+                        if *tuple_element_type != **self_array_element_type {
+                            return false;
+                        }
+                    }
+                    true
+                }
                 _ => false,
             }
         }
@@ -108,12 +139,53 @@ impl Type {
                         None
                     }
                 }
-                (Type::Literal(Some(Value::Bool(bool_value))), Type::Bool)
-                | (Type::Bool, Type::Literal(Some(Value::Bool(bool_value)))) => {
-                    Some(Type::Literal(Some(Value::Bool(*bool_value))))
+                (Type::Literal(type_value), other_type)
+                | (other_type, Type::Literal(type_value)) => {
+                    if &Value::r#type(type_value) == other_type {
+                        Some(Type::Literal(type_value.clone()))
+                    } else {
+                        None
+                    }
                 }
-                (Type::Literal(None), Type::Null) | (Type::Null, Type::Literal(None)) => {
-                    Some(Type::Null)
+                (Type::Array(self_array_element_type), Type::Array(other_array_element_type)) => {
+                    if let Some(element_types_intersection) =
+                        self_array_element_type.intersection(other_array_element_type)
+                    {
+                        Some(Type::Array(Box::new(element_types_intersection)))
+                    } else {
+                        None
+                    }
+                }
+                (
+                    Type::Tuple(self_tuple_elements_types),
+                    Type::Tuple(other_tuple_elements_types),
+                ) => {
+                    if self_tuple_elements_types.len() != other_tuple_elements_types.len() {
+                        None
+                    } else {
+                        let mut result_tuple_types =
+                            Vec::with_capacity(self_tuple_elements_types.len());
+                        for element_index in 0..self_tuple_elements_types.len() {
+                            if let Some(elements_types_intersection) = self_tuple_elements_types
+                                [element_index]
+                                .intersection(&other_tuple_elements_types[element_index])
+                            {
+                                result_tuple_types.push(elements_types_intersection);
+                            } else {
+                                return None;
+                            }
+                        }
+                        Some(Type::Tuple(result_tuple_types))
+                    }
+                }
+                (Type::Array(array_element_type), Type::Tuple(tuple_elements_types))
+                | (Type::Tuple(tuple_elements_types), Type::Array(array_element_type)) => {
+                    for tuple_element_type in tuple_elements_types {
+                        if *tuple_element_type != **array_element_type {
+                            return None;
+                        }
+                    }
+                    Some(Type::Tuple(tuple_elements_types.clone()))
                 }
                 _ => None,
             }
