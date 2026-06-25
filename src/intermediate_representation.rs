@@ -80,6 +80,7 @@ pub enum Content {
         r#match: Box<Node>,
         cases: Vec<Case>,
     },
+    Map(MapThroughConstantsDefinitionsAndNodes),
     Object(BTreeMap<String, Node>),
     Value(Option<Value>),
 }
@@ -104,6 +105,12 @@ pub struct UserFunction {
 pub struct ConstantDefinition {
     pub name_clustered_index: usize,
     pub index: usize,
+}
+
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+pub enum MapThroughConstantsDefinitionsAndNodes {
+    Array((ConstantDefinition, Box<Node>)),
+    Tuple(Vec<(ConstantDefinition, Node)>),
 }
 
 #[repr(u8)]

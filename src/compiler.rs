@@ -7,7 +7,8 @@ use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     includes_cache::IncludesCache,
     intermediate_representation::{
-        self, Case, ConstantDefinition, Content, IntermediateRepresentation, Node, UserFunction,
+        self, Case, ConstantDefinition, Content, IntermediateRepresentation,
+        MapThroughConstantsDefinitionsAndNodes, Node, UserFunction,
     },
     program::{AtSegment, Condition, EmbeddedFunction, From, Path, PathSegment, Program},
     r#type::Type,
@@ -223,7 +224,7 @@ struct GlobalCompilationContext {
     user_function_node_to_index_and_type_option: BTreeMap<Node, (usize, Type)>,
     user_functions: Vec<(Vec<usize>, ProgramOrNode, bool)>,
     constants_names_to_name_clustered_constants_indices: BTreeMap<String, usize>,
-    constants: Vec<(Type, Node)>,
+    constants: Vec<Type>,
     includes_cache: IncludesCache,
 }
 
@@ -378,6 +379,37 @@ pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
     })
 }
 
+fn define_constant(
+    name: String,
+    r#type: Type,
+    compilation_context: &mut CompilationContext,
+    global_compilation_context: &mut GlobalCompilationContext,
+) -> ConstantDefinition {
+    let result = ConstantDefinition {
+        index: global_compilation_context.constants.len(),
+        name_clustered_index: if let Some(constant_name_clustered_index) =
+            global_compilation_context
+                .constants_names_to_name_clustered_constants_indices
+                .get(&name)
+        {
+            *constant_name_clustered_index
+        } else {
+            let result = global_compilation_context
+                .constants_names_to_name_clustered_constants_indices
+                .len();
+            global_compilation_context
+                .constants_names_to_name_clustered_constants_indices
+                .insert(name.clone(), result);
+            result
+        },
+    };
+    global_compilation_context.constants.push(r#type);
+    compilation_context
+        .available_constants
+        .extend([(name, result.index)]);
+    result
+}
+
 fn compile_with_context(
     program: &Program,
     compilation_context: CompilationContext,
@@ -455,32 +487,14 @@ fn compile_with_context(
                 );
                 result_external_constants_name_clustered_indices
                     .append(&mut compiled_constant.external_constants_name_clustered_indices);
-                let constant_definition = ConstantDefinition {
-                    index: global_compilation_context.constants.len(),
-                    name_clustered_index: if let Some(constant_name_clustered_index) =
-                        global_compilation_context
-                            .constants_names_to_name_clustered_constants_indices
-                            .get(constant_name)
-                    {
-                        *constant_name_clustered_index
-                    } else {
-                        let result = global_compilation_context
-                            .constants_names_to_name_clustered_constants_indices
-                            .len();
-                        global_compilation_context
-                            .constants_names_to_name_clustered_constants_indices
-                            .insert(constant_name.clone(), result);
-                        result
-                    },
-                };
-                compute_compilation_context
-                    .available_constants
-                    .extend([(constant_name.clone(), constant_definition.index)]);
+                let constant_definition = define_constant(
+                    constant_name.clone(),
+                    compiled_constant.r#type,
+                    &mut compute_compilation_context,
+                    global_compilation_context,
+                );
                 new_constants_definitions.push(constant_definition);
                 result_is_pure &= compiled_constant.is_pure;
-                global_compilation_context
-                    .constants
-                    .push((compiled_constant.r#type, compiled_constant.node));
             }
             for (function_name, function_body) in functions.iter() {
                 if !function_name.ends_with(":") {
@@ -534,8 +548,7 @@ fn compile_with_context(
                 .inner
                 .get(constant_name)
             {
-                let (constant_type, _) =
-                    global_compilation_context.constants[*constant_index].clone();
+                let constant_type = global_compilation_context.constants[*constant_index].clone();
                 let name_clustered_constant_index = *global_compilation_context
                     .constants_names_to_name_clustered_constants_indices
                     .get(constant_name)
@@ -855,31 +868,12 @@ fn compile_with_context(
                             continue;
                         };
                         let match_constant_definition = if let Some(match_constant_name) = r#as {
-                            let match_constant_definition = ConstantDefinition {
-                                index: global_compilation_context.constants.len(),
-                                name_clustered_index: if let Some(constant_name_clustered_index) =
-                                    global_compilation_context
-                                        .constants_names_to_name_clustered_constants_indices
-                                        .get(match_constant_name)
-                                {
-                                    *constant_name_clustered_index
-                                } else {
-                                    let result = global_compilation_context
-                                        .constants_names_to_name_clustered_constants_indices
-                                        .len();
-                                    global_compilation_context
-                                        .constants_names_to_name_clustered_constants_indices
-                                        .insert(match_constant_name.clone(), result);
-                                    result
-                                },
-                            };
-                            global_compilation_context
-                                .constants
-                                .push((refined_match_type.clone(), compiled_match.node.clone()));
-                            case_compilation_context.available_constants.extend([(
+                            let match_constant_definition = define_constant(
                                 match_constant_name.clone(),
-                                match_constant_definition.index,
-                            )]);
+                                refined_match_type.clone(),
+                                &mut case_compilation_context,
+                                global_compilation_context,
+                            );
                             Some(match_constant_definition)
                         } else {
                             None
@@ -919,31 +913,12 @@ fn compile_with_context(
                         };
                         let mut case_compilation_context = compilation_context.clone();
                         let match_constant_definition = if let Some(match_constant_name) = r#as {
-                            let match_constant_definition = ConstantDefinition {
-                                index: global_compilation_context.constants.len(),
-                                name_clustered_index: if let Some(constant_name_clustered_index) =
-                                    global_compilation_context
-                                        .constants_names_to_name_clustered_constants_indices
-                                        .get(match_constant_name)
-                                {
-                                    *constant_name_clustered_index
-                                } else {
-                                    let result = global_compilation_context
-                                        .constants_names_to_name_clustered_constants_indices
-                                        .len();
-                                    global_compilation_context
-                                        .constants_names_to_name_clustered_constants_indices
-                                        .insert(match_constant_name.clone(), result);
-                                    result
-                                },
-                            };
-                            global_compilation_context
-                                .constants
-                                .push((refined_match_type.clone(), compiled_match.node.clone()));
-                            case_compilation_context.available_constants.extend([(
+                            let match_constant_definition = define_constant(
                                 match_constant_name.clone(),
-                                match_constant_definition.index,
-                            )]);
+                                refined_match_type.clone(),
+                                &mut case_compilation_context,
+                                global_compilation_context,
+                            );
                             Some(match_constant_definition)
                         } else {
                             None
@@ -1018,6 +993,98 @@ fn compile_with_context(
                 },
             }
         }
+        Program::Map { map, r#as, through } => {
+            let map_compilation_context = compilation_context.clone();
+            map_compilation_context.path.0.extend([PathSegment::Map]);
+            let compiled_map =
+                compile_with_context(map, map_compilation_context, global_compilation_context)?;
+            let mut result_external_constants_name_clustered_indices =
+                compiled_map.external_constants_name_clustered_indices;
+            let mut is_pure = true;
+            match compiled_map.r#type {
+                Type::Tuple(map_tuple_elements_types) => {
+                    let mut map_through_constants_definitions_and_nodes =
+                        Vec::with_capacity(map_tuple_elements_types.len());
+                    let mut result_union_types = BTreeSet::new();
+                    for (element_index, element_type) in map_tuple_elements_types.iter().enumerate()
+                    {
+                        let mut through_compilation_context = compilation_context.clone();
+                        through_compilation_context
+                            .path
+                            .0
+                            .extend([PathSegment::Through(element_type.clone())]);
+                        let element_constant_definition = define_constant(
+                            r#as.clone(),
+                            element_type.clone(),
+                            &mut through_compilation_context,
+                            global_compilation_context,
+                        );
+                        let compiled_through = compile_with_context(
+                            through,
+                            through_compilation_context,
+                            global_compilation_context,
+                        )?;
+                        result_external_constants_name_clustered_indices
+                            .extend(compiled_through.external_constants_name_clustered_indices);
+                        is_pure &= compiled_through.is_pure;
+                        result_union_types.insert(compiled_through.r#type);
+                        map_through_constants_definitions_and_nodes
+                            .push((element_constant_definition, compiled_through.node));
+                    }
+                    NodeAndMetadata {
+                        node: Node {
+                            content: Content::Map(MapThroughConstantsDefinitionsAndNodes::Tuple(
+                                map_through_constants_definitions_and_nodes,
+                            )),
+                        },
+                        r#type: Type::from(result_union_types),
+                        external_constants_name_clustered_indices:
+                            result_external_constants_name_clustered_indices,
+                        is_pure,
+                    }
+                }
+                Type::Array(map_array_element_type) => {
+                    let mut through_compilation_context = compilation_context.clone();
+                    through_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::Through(*map_array_element_type.clone())]);
+                    let element_constant_definition = define_constant(
+                        r#as.clone(),
+                        *map_array_element_type.clone(),
+                        &mut through_compilation_context,
+                        global_compilation_context,
+                    );
+                    let compiled_through = compile_with_context(
+                        through,
+                        through_compilation_context,
+                        global_compilation_context,
+                    )?;
+                    result_external_constants_name_clustered_indices
+                        .extend(compiled_through.external_constants_name_clustered_indices);
+                    is_pure &= compiled_through.is_pure;
+                    NodeAndMetadata {
+                        node: Node {
+                            content: Content::Map(MapThroughConstantsDefinitionsAndNodes::Array((
+                                element_constant_definition,
+                                Box::new(compiled_through.node),
+                            ))),
+                        },
+                        r#type: compiled_through.r#type,
+                        external_constants_name_clustered_indices:
+                            result_external_constants_name_clustered_indices,
+                        is_pure,
+                    }
+                }
+                _ => {
+                    return Err(anyhow!(
+                        "expected tuple or array, found {:#?} at {:#?}",
+                        compiled_map.r#type,
+                        map_compilation_context.path
+                    ));
+                }
+            }
+        }
         Program::Object(object) => {
             match object.len() {
                 0 => {
@@ -1086,34 +1153,15 @@ fn compile_with_context(
                                     &mut compiled_constant
                                         .external_constants_name_clustered_indices,
                                 );
-                                let constant_definition = ConstantDefinition {
-                                    index: global_compilation_context.constants.len(),
-                                    name_clustered_index: if let Some(
-                                        constant_name_clustered_index,
-                                    ) = global_compilation_context
-                                        .constants_names_to_name_clustered_constants_indices
-                                        .get(function_argument_name)
-                                    {
-                                        *constant_name_clustered_index
-                                    } else {
-                                        let result = global_compilation_context
-                                            .constants_names_to_name_clustered_constants_indices
-                                            .len();
-                                        global_compilation_context
-                                            .constants_names_to_name_clustered_constants_indices
-                                            .insert(function_argument_name.to_string(), result);
-                                        result
-                                    },
-                                };
-                                body_compilation_context.available_constants.extend([(
+                                let constant_definition = define_constant(
                                     function_argument_name.to_string(),
-                                    constant_definition.index,
-                                )]);
+                                    compiled_constant.r#type,
+                                    compiled_constant.node,
+                                    &mut body_compilation_context,
+                                    global_compilation_context,
+                                );
                                 new_constants_definitions.push(constant_definition);
                                 arguments_is_pure &= compiled_constant.is_pure;
-                                global_compilation_context
-                                    .constants
-                                    .push((compiled_constant.r#type, compiled_constant.node));
                             }
                             if compilation_context
                                 .entered_user_functions
