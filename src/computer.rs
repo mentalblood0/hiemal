@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use dashu::Rational;
 use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
+use rpds::RedBlackTreeMapSync;
 use serde::{Deserialize, Serialize};
 
 use crate::intermediate_representation::MapThroughs;
@@ -59,7 +60,7 @@ impl Computer {
         nodes_count: usize,
         intermediate_representation: &IntermediateRepresentation,
         global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
-    ) -> Result<Option<Value>>
+    ) -> Result<Vec<Option<Value>>>
     where
         N: Iterator<Item = (&'a Node, Cow<'a, ComputationContext>)>,
     {
@@ -74,43 +75,38 @@ impl Computer {
                 _ => true,
             })
             .collect::<Vec<_>>();
-        Ok(Some(Value::Tuple(Vector {
-            inner: rpds::VectorSync::from_iter(
-                match complex_elements.len() {
-                    0 => result,
-                    1 => {
-                        let (element_index, (node, computation_context)) =
-                            complex_elements.into_iter().next().unwrap();
-                        result[element_index] = self.compute_node(
+        Ok(match complex_elements.len() {
+            0 => result,
+            1 => {
+                let (element_index, (node, computation_context)) =
+                    complex_elements.into_iter().next().unwrap();
+                result[element_index] = self.compute_node(
+                    node,
+                    intermediate_representation,
+                    &computation_context,
+                    global_computation_context,
+                )?;
+                result
+            }
+            2.. => {
+                let result_mutex = Mutex::new(result);
+                complex_elements
+                    .into_par_iter()
+                    .try_for_each(|(element_index, (node, computation_context))| {
+                        self.compute_node(
                             node,
                             intermediate_representation,
                             &computation_context,
                             global_computation_context,
-                        )?;
-                        result
-                    }
-                    2.. => {
-                        let result_mutex = Mutex::new(result);
-                        complex_elements
-                            .into_par_iter()
-                            .try_for_each(|(element_index, (node, computation_context))| {
-                                self.compute_node(
-                                    node,
-                                    intermediate_representation,
-                                    &computation_context,
-                                    global_computation_context,
-                                )
-                                .and_then(|result| {
-                                    result_mutex.lock()[element_index] = result;
-                                    Ok(())
-                                })
-                            })
-                            .and_then(|_| Ok(result_mutex.into_inner()))?
-                    }
-                }
-                .into_iter(),
-            ),
-        })))
+                        )
+                        .and_then(|result| {
+                            result_mutex.lock()[element_index] = result;
+                            Ok(())
+                        })
+                    })
+                    .and_then(|_| Ok(result_mutex.into_inner()))?
+            }
+        })
     }
 
     fn compute_node(
@@ -121,14 +117,18 @@ impl Computer {
         global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
     ) -> Result<Option<Value>> {
         match &node.content {
-            Content::Tuple(tuple) => self.compute_nodes(
-                tuple
-                    .iter()
-                    .map(|node| (node, Cow::Borrowed(computation_context))),
-                tuple.len(),
-                intermediate_representation,
-                global_computation_context,
-            ),
+            Content::Tuple(tuple) => Ok(Some(Value::Tuple(Vector {
+                inner: rpds::VectorSync::from_iter(
+                    self.compute_nodes(
+                        tuple
+                            .iter()
+                            .map(|node| (node, Cow::Borrowed(computation_context))),
+                        tuple.len(),
+                        intermediate_representation,
+                        global_computation_context,
+                    )?,
+                ),
+            }))),
             Content::Scope { constants, compute } => {
                 let mut result_computation_context = computation_context.clone();
                 for constant_definition in constants {
@@ -148,9 +148,7 @@ impl Computer {
                 )
             }
             Content::Constant(constant_name_clustered_index) => {
-                let result =
-                    computation_context.constants.inner[*constant_name_clustered_index].clone();
-                Ok(result)
+                Ok(computation_context.constants.inner[*constant_name_clustered_index].clone())
             }
             Content::EmbeddedFunctionCall {
                 path,
@@ -411,52 +409,56 @@ impl Computer {
                 )?;
                 let computed_map_array = computed_map.as_ref().unwrap().as_tuple().unwrap();
                 match elements {
-                    MapThroughs::Array(map_through) => self.compute_nodes(
-                        computed_map_array.inner.iter().map(|element_value| {
-                            let mut element_computation_context = computation_context.clone();
-                            element_computation_context.constants.inner
-                                [map_through.map_constant_name_clustered_index] =
-                                element_value.clone();
-                            (&map_through.node, Cow::Owned(element_computation_context))
-                        }),
-                        computed_map_array.inner.len(),
-                        intermediate_representation,
-                        global_computation_context,
-                    ),
-                    MapThroughs::Tuple(map_throughs) => self.compute_nodes(
-                        computed_map_array.inner.iter().enumerate().map(
-                            |(element_index, element_value)| {
+                    MapThroughs::Array(map_through) => Ok(Some(Value::Tuple(Vector {
+                        inner: rpds::VectorSync::from_iter(self.compute_nodes(
+                            computed_map_array.inner.iter().map(|element_value| {
                                 let mut element_computation_context = computation_context.clone();
-                                element_computation_context.constants.inner[map_throughs
-                                    [element_index]
-                                    .map_constant_name_clustered_index] = element_value.clone();
-                                (
-                                    &map_throughs[element_index].node,
-                                    Cow::Owned(element_computation_context),
-                                )
-                            },
-                        ),
-                        computed_map_array.inner.len(),
-                        intermediate_representation,
-                        global_computation_context,
-                    ),
+                                element_computation_context.constants.inner
+                                    [map_through.map_constant_name_clustered_index] =
+                                    element_value.clone();
+                                (&map_through.node, Cow::Owned(element_computation_context))
+                            }),
+                            computed_map_array.inner.len(),
+                            intermediate_representation,
+                            global_computation_context,
+                        )?),
+                    }))),
+                    MapThroughs::Tuple(map_throughs) => Ok(Some(Value::Tuple(Vector {
+                        inner: rpds::VectorSync::from_iter(self.compute_nodes(
+                            computed_map_array.inner.iter().enumerate().map(
+                                |(element_index, element_value)| {
+                                    let mut element_computation_context =
+                                        computation_context.clone();
+                                    element_computation_context.constants.inner[map_throughs
+                                        [element_index]
+                                        .map_constant_name_clustered_index] = element_value.clone();
+                                    (
+                                        &map_throughs[element_index].node,
+                                        Cow::Owned(element_computation_context),
+                                    )
+                                },
+                            ),
+                            computed_map_array.inner.len(),
+                            intermediate_representation,
+                            global_computation_context,
+                        )?),
+                    }))),
                 }
             }
-            Content::Object(object) => {
-                let mut result = Map::default();
-                for (key, value) in object {
-                    result.inner.insert_mut(
-                        key.clone(),
-                        self.compute_node(
-                            &value,
+            Content::Object(object) => Ok(Some(Value::Object(Map {
+                inner: RedBlackTreeMapSync::from_iter(
+                    object.keys().cloned().zip(
+                        self.compute_nodes(
+                            object
+                                .values()
+                                .map(|value| (value, Cow::Borrowed(computation_context))),
+                            object.len(),
                             intermediate_representation,
-                            &computation_context,
                             global_computation_context,
                         )?,
-                    );
-                }
-                Ok(Some(Value::Object(result)))
-            }
+                    ),
+                ),
+            }))),
             Content::Value(value) => Ok(unsafe { std::mem::transmute(value.clone()) }),
         }
     }
