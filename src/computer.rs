@@ -67,13 +67,21 @@ impl Computer {
         let mut result = vec![None; nodes_count];
         let complex_elements = nodes_and_computation_contexts_iterator
             .enumerate()
-            .filter(|(element_index, (node, _))| match &node.content {
-                Content::Value(value) => {
-                    result[*element_index] = unsafe { std::mem::transmute(value.clone()) };
-                    false
-                }
-                _ => true,
-            })
+            .filter(
+                |(element_index, (node, computation_context))| match &node.content {
+                    Content::Value(value) => {
+                        result[*element_index] = unsafe { std::mem::transmute(value.clone()) };
+                        false
+                    }
+                    Content::Constant(constant_name_clustered_index) => {
+                        result[*element_index] = computation_context.constants.inner
+                            [*constant_name_clustered_index]
+                            .clone();
+                        false
+                    }
+                    _ => true,
+                },
+            )
             .collect::<Vec<_>>();
         Ok(match complex_elements.len() {
             0 => result,
