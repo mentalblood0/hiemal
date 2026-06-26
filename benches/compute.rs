@@ -12,33 +12,33 @@ fn benchmarks(bencher_context: &mut Criterion) {
             let program = serde_json::from_value::<Program>(json!({
                 "functions": {
                   "fibonacci:": {
-                      "if": {
-                        "is sorted": [
-                          "_",
-                          1
-                        ]
-                      },
-                      "then": "_",
-                      "else": {
-                          "sum": [
-                            {
-                              "fibonacci:": {
-                                "sum": [
-                                  "_",
-                                  -1
-                                ]
+                      "match": { "is sorted": ["_", 1] },
+                      "cases": [
+                          [true, "_"],
+                          [
+                              false,
+                              {
+                                  "sum": [
+                                    {
+                                      "fibonacci:": {
+                                        "sum": [
+                                          "_",
+                                          -1
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "fibonacci:": {
+                                        "sum": [
+                                          "_",
+                                          -2
+                                        ]
+                                      }
+                                    }
+                                  ]
                               }
-                            },
-                            {
-                              "fibonacci:": {
-                                "sum": [
-                                  "_",
-                                  -2
-                                ]
-                              }
-                            }
                           ]
-                      }
+                      ]
                   }
                 },
                 "compute": {
