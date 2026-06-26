@@ -113,18 +113,32 @@ compute:
         compute:
           fibonacci:: 10
       expected: 55
-  test from at:
+  test from at function:
     assert equal::
       found:
-        - functions:
-            fibonacci::
-              from: examples/fibonacci.yml
-              at: [functions, { object key: "fibonacci:" }]
-          compute:
-            fibonacci:: 10
-        - from: examples/fibonacci.yml
-          at: [compute, { object key: "fibonacci:" }]
-      expected: [55, 10]
+        functions:
+          fibonacci::
+            from: examples/fibonacci.yml
+            at: [functions, { object key: "fibonacci:" }]
+        compute:
+          fibonacci:: 10
+      expected: 55
+  test from at compute:
+    assert equal::
+      found:
+        from: examples/fibonacci.yml
+        at: [compute, { object key: "fibonacci:" }]
+      expected: 10
+  test from at default argument:
+    assert equal::
+      found:
+        functions:
+          f::
+            from: _
+            at: [1]
+        compute:
+          f:: [1, 2]
+      expected: 2
   test heterogenous branching:
     assert equal::
       found:

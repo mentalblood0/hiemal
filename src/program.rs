@@ -71,6 +71,7 @@ pub enum DefaultArgument {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum From {
+    DefaultArgument(DefaultArgument),
     Url(Url),
     File(std::path::PathBuf),
     Program(Box<Program>),

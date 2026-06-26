@@ -5,7 +5,7 @@ use std::io::Write;
 use anyhow::{Context, Result, anyhow};
 use glob::glob;
 
-use crate::{program::From, program::Program};
+use crate::program::{DefaultArgument, From, Program};
 
 pub struct IncludesCache {
     pub directory: std::path::PathBuf,
@@ -75,6 +75,7 @@ impl IncludesCache {
 
     pub fn get(&mut self, from: &From) -> Result<Program> {
         match from {
+            From::DefaultArgument(_) => Ok(Program::DefaultArgument(DefaultArgument::Underline)),
             From::Url(url) => {
                 match std::path::Path::new(url.path())
                     .extension()
