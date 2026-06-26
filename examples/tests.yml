@@ -8,6 +8,22 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test map:
+    assert equal::
+      found:
+        map: [1, "string", [1, 2, 3]]
+        through:
+          match: _
+          as: matched
+          cases:
+            - [number, it's a number]
+            - [string, it's a string]
+            - - { array: number }
+              - map: { constant: matched }
+                as: element from matched
+                through:
+                  sum: [{ constant: element from matched }, 1]
+      expected: [it's a number, it's a string, [2, 3, 4]]
   test numbers:
     assert equal::
       found:
@@ -143,14 +159,3 @@ compute:
           - [[1, { sum: [1, 1] }, 3], true]
           - [any, it's something else]
       expected: true
-  test map:
-    assert equal::
-      found:
-        map: [1, "string", [1, 2, 3]]
-        through:
-          match: _
-          cases:
-            - [number, it's a number]
-            - [string, it's a string]
-            - [{ array: number }, it's an array]
-      expected: [it's a number, it's a string, it's an array]

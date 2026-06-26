@@ -161,7 +161,7 @@ impl Computer {
                         global_computation_context,
                     )?
                     .unwrap()
-                    .as_array()
+                    .as_tuple()
                     .unwrap()
                     .inner
                     .iter()
@@ -177,7 +177,7 @@ impl Computer {
                         global_computation_context,
                     )?
                     .unwrap()
-                    .as_array()
+                    .as_tuple()
                     .unwrap()
                     .inner
                     .iter()
@@ -379,7 +379,7 @@ impl Computer {
                     computation_context,
                     global_computation_context,
                 )?;
-                let computed_map_array = computed_map.as_ref().unwrap().as_array().unwrap();
+                let computed_map_array = computed_map.as_ref().unwrap().as_tuple().unwrap();
                 match elements {
                     MapThroughs::Array(map_through) => self.compute_nodes(
                         computed_map_array.inner.iter().map(|element_value| {

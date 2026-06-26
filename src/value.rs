@@ -139,7 +139,7 @@ impl Value {
         }
     }
 
-    pub fn as_array(&self) -> Option<&Vector<Option<Value>>> {
+    pub fn as_tuple(&self) -> Option<&Vector<Option<Value>>> {
         match self {
             Value::Tuple(result) => Some(result),
             _ => None,

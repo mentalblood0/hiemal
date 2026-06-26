@@ -387,7 +387,11 @@ fn define_constant(
     global_compilation_context: &mut GlobalCompilationContext,
 ) -> ConstantDefinition {
     let result = ConstantDefinition {
-        index: global_compilation_context.constants.len(),
+        index: {
+            let result = global_compilation_context.constants.len();
+            global_compilation_context.constants.push(r#type);
+            result
+        },
         name_clustered_index: if let Some(constant_name_clustered_index) =
             global_compilation_context
                 .constants_names_to_name_clustered_constants_indices
@@ -404,7 +408,6 @@ fn define_constant(
             result
         },
     };
-    global_compilation_context.constants.push(r#type);
     compilation_context
         .available_constants
         .extend([(name, result.index)]);
@@ -907,7 +910,7 @@ fn compile_with_context(
                     Condition::Value(condition) => {
                         let compiled_condition = compile_with_context(
                             condition,
-                            case_compilation_context,
+                            case_compilation_context.clone(),
                             global_compilation_context,
                         )?;
                         let refined_match_type = compiled_condition.r#type;
@@ -918,7 +921,6 @@ fn compile_with_context(
                         {
                             continue;
                         };
-                        let mut case_compilation_context = compilation_context.clone();
                         let match_constant_name_clustered_index_option =
                             if let Some(match_constant_name) = r#as {
                                 Some(
@@ -933,10 +935,6 @@ fn compile_with_context(
                             } else {
                                 None
                             };
-                        case_compilation_context.path.0.extend([
-                            PathSegment::Cases,
-                            PathSegment::Case(case_condition.clone()),
-                        ]);
                         let mut compiled_case = compile_with_context(
                             case,
                             case_compilation_context,
@@ -972,23 +970,6 @@ fn compile_with_context(
                     compilation_context,
                     global_compilation_context,
                 )?,
-                1 => {
-                    if compiled_match.is_pure {
-                        let case = result_cases.into_iter().next().unwrap();
-                        NodeAndMetadata {
-                            node: case.node,
-                            r#type: Type::from(result_types),
-                            external_constants_name_clustered_indices:
-                                result_external_constants_name_clustered_indices,
-                            is_pure: case_is_pure,
-                        }
-                    } else {
-                        return Err(anyhow!(
-                            "expected pure match body or multiple valid cases at {:#?}",
-                            compilation_context.path
-                        ));
-                    }
-                }
                 _ => NodeAndMetadata {
                     node: Node {
                         content: Content::Match {
