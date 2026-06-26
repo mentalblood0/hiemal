@@ -119,7 +119,7 @@ pub struct UserFunction {
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
 pub struct ConstantDefinition {
     pub name_clustered_index: usize,
-    pub node: Box<Node>,
+    pub node: Node,
 }
 
 #[repr(u8)]

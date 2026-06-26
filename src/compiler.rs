@@ -499,7 +499,7 @@ fn compile_with_context(
                 );
                 new_constants.push(intermediate_representation::ConstantDefinition {
                     name_clustered_index: constant_definition.name_clustered_index,
-                    node: Box::new(compiled_constant.node),
+                    node: compiled_constant.node,
                 });
                 result_is_pure &= compiled_constant.is_pure;
             }
@@ -1217,7 +1217,7 @@ fn compile_with_context(
                                     intermediate_representation::ConstantDefinition {
                                         name_clustered_index: constant_definition
                                             .name_clustered_index,
-                                        node: Box::new(compiled_constant.node),
+                                        node: compiled_constant.node,
                                     },
                                 );
                                 arguments_is_pure &= compiled_constant.is_pure;

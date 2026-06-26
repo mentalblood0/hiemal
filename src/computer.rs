@@ -131,14 +131,23 @@ impl Computer {
             }))),
             Content::Scope { constants, compute } => {
                 let mut result_computation_context = computation_context.clone();
-                for constant_definition in constants {
-                    result_computation_context.constants.inner
-                        [constant_definition.name_clustered_index] = self.compute_node(
-                        &constant_definition.node,
+                for (constant_name_clustered_index, computed_constant) in constants
+                    .iter()
+                    .map(|constant_definition| constant_definition.name_clustered_index)
+                    .zip(self.compute_nodes(
+                        constants.iter().map(|constant_definition| {
+                            (
+                                &constant_definition.node,
+                                Cow::Borrowed(computation_context),
+                            )
+                        }),
+                        constants.len(),
                         intermediate_representation,
-                        &computation_context,
                         global_computation_context,
-                    )?;
+                    )?)
+                {
+                    result_computation_context.constants.inner[constant_name_clustered_index] =
+                        computed_constant;
                 }
                 self.compute_node(
                     &compute,
@@ -237,15 +246,23 @@ impl Computer {
             },
             Content::UserFunctionCall { arguments, body } => {
                 let mut result_computation_context = computation_context.clone();
-                for constant_definition in arguments {
-                    let new_constant_value = self.compute_node(
-                        &constant_definition.node,
+                for (constant_name_clustered_index, computed_constant) in arguments
+                    .iter()
+                    .map(|constant_definition| constant_definition.name_clustered_index)
+                    .zip(self.compute_nodes(
+                        arguments.iter().map(|constant_definition| {
+                            (
+                                &constant_definition.node,
+                                Cow::Borrowed(computation_context),
+                            )
+                        }),
+                        arguments.len(),
                         intermediate_representation,
-                        &computation_context,
                         global_computation_context,
-                    )?;
-                    result_computation_context.constants.inner
-                        [constant_definition.name_clustered_index] = new_constant_value;
+                    )?)
+                {
+                    result_computation_context.constants.inner[constant_name_clustered_index] =
+                        computed_constant;
                 }
                 let user_function = &intermediate_representation.user_functions[*body];
                 if self.user_functions_caching && user_function.is_pure {
