@@ -210,6 +210,29 @@ impl Computer {
                         format!("can not compute embedded function at path {:#?}", path)
                     })?,
                 )),
+                EmbeddedFunction::KeyValuePairs(argument) => Ok(Some(Value::Tuple(Vector {
+                    inner: rpds::VectorSync::from_iter(
+                        self.compute_node(
+                            argument,
+                            intermediate_representation,
+                            computation_context,
+                            global_computation_context,
+                        )?
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .inner
+                        .iter()
+                        .map(|(key, value)| {
+                            Some(Value::Tuple(Vector {
+                                inner: rpds::VectorSync::from_iter([
+                                    Some(Value::String(ropey::Rope::from_str(key))),
+                                    value.clone(),
+                                ]),
+                            }))
+                        }),
+                    ),
+                }))),
             },
             Content::UserFunctionCall { arguments, body } => {
                 let mut result_computation_context = computation_context.clone();

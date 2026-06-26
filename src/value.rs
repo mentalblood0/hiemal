@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    str::FromStr,
-};
+use std::{collections::BTreeMap, str::FromStr};
 
 use anyhow::Result;
 use dashu::{Decimal, Rational};
@@ -173,14 +170,7 @@ impl Value {
                 Value::Number(_) => Type::Number,
                 Value::String(_) => Type::String,
                 Value::Bool(_) => Type::Bool,
-                Value::Tuple(array) => {
-                    let elements_types = BTreeSet::from_iter(array.inner.iter().map(Value::r#type));
-                    Type::Array(Box::new(match elements_types.len() {
-                        0 => Type::Any,
-                        1 => elements_types.into_iter().next().unwrap(),
-                        _ => Type::Union(elements_types),
-                    }))
-                }
+                Value::Tuple(tuple) => Type::Tuple(tuple.inner.iter().map(Value::r#type).collect()),
                 Value::Object(object) => Type::Object(BTreeMap::from_iter(
                     object
                         .inner

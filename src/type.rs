@@ -102,12 +102,25 @@ impl Type {
                 (self_type, Type::Literal(other_value)) => {
                     self_type.contains(&Value::r#type(other_value))
                 }
-                (Type::Array(self_array_element_type), Type::Tuple(other_tuple_elements_types)) => {
-                    for tuple_element_type in other_tuple_elements_types {
-                        if tuple_element_type
-                            .intersection(self_array_element_type)
-                            .is_none()
+                (
+                    Type::Tuple(self_tuple_elements_types),
+                    Type::Tuple(other_tuple_elements_types),
+                ) => {
+                    if self_tuple_elements_types.len() != other_tuple_elements_types.len() {
+                        return false;
+                    }
+                    for element_index in 0..self_tuple_elements_types.len() {
+                        if !self_tuple_elements_types[element_index]
+                            .contains(&other_tuple_elements_types[element_index])
                         {
+                            return false;
+                        }
+                    }
+                    true
+                }
+                (Type::Array(self_array_element_type), Type::Tuple(other_tuple_elements_types)) => {
+                    for other_tuple_element_type in other_tuple_elements_types {
+                        if !self_array_element_type.contains(other_tuple_element_type) {
                             return false;
                         }
                     }

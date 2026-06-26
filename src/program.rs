@@ -102,6 +102,8 @@ pub enum EmbeddedFunction {
     StandardInput,
     #[serde(rename = "parse yaml")]
     ParseYaml(Program),
+    #[serde(rename = "key-value pairs")]
+    KeyValuePairs(Program),
 }
 
 #[repr(u8)]
@@ -150,6 +152,8 @@ pub enum PathSegment {
     StandardInput,
     #[serde(rename = "parse yaml")]
     ParseYaml,
+    #[serde(rename = "items")]
+    KeyValuePairs,
     #[serde(rename = "user function call")]
     UserFunctionCall(String),
     #[serde(rename = "object key")]

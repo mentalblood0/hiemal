@@ -106,6 +106,7 @@ pub enum EmbeddedFunction {
     IsSorted(Node),
     StandardInput,
     ParseYaml(Node),
+    KeyValuePairs(Node),
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]

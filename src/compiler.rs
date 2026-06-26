@@ -622,7 +622,7 @@ fn compile_with_context(
                         PathSegment::At,
                         PathSegment::ArrayIndex(value_path_segment_index),
                     ]);
-                    match (current_type, value_path_segment) {
+                    match (&current_type, value_path_segment) {
                         (_, AtSegment::ProgramPathSegment(_)) => {
                             return Err(anyhow!(
                                 "expected value path segment: array index or object key, found \
@@ -637,7 +637,7 @@ fn compile_with_context(
                                     *array_index,
                                 ),
                             );
-                            current_type = *element_type;
+                            current_type = *element_type.clone();
                         }
                         (Type::Tuple(elements_types), AtSegment::ValueArrayIndex(tuple_index)) => {
                             if *tuple_index >= elements_types.len() {
@@ -689,7 +689,8 @@ fn compile_with_context(
                         }
                         (_, path_segment) => {
                             return Err(anyhow!(
-                                "expected end of path, found {path_segment:#?} at {:#?}",
+                                "expected end of path when current type is {current_type:#?}, \
+                                 found {path_segment:#?} at {:#?}",
                                 value_path_segment_compilation_context.path
                             ));
                         }
@@ -741,7 +742,7 @@ fn compile_with_context(
                             ),
                         },
                     },
-                    is_pure: true,
+                    is_pure: compiled_argument.is_pure,
                 }
             }
             EmbeddedFunction::IsSorted(argument) => {
@@ -776,7 +777,7 @@ fn compile_with_context(
                             ),
                         },
                     },
-                    is_pure: true,
+                    is_pure: compiled_argument.is_pure,
                 }
             }
             EmbeddedFunction::StandardInput => NodeAndMetadata {
@@ -795,7 +796,7 @@ fn compile_with_context(
                         ),
                     },
                 },
-                is_pure: false,
+                is_pure: true,
             },
             EmbeddedFunction::ParseYaml(argument) => {
                 let mut argument_compilation_context = compilation_context.clone();
@@ -834,7 +835,55 @@ fn compile_with_context(
                             ),
                         },
                     },
-                    is_pure: true,
+                    is_pure: compiled_argument.is_pure,
+                }
+            }
+            EmbeddedFunction::KeyValuePairs(argument) => {
+                let mut argument_compilation_context = compilation_context.clone();
+                argument_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::KeyValuePairs]);
+                let compiled_argument = compile_with_context(
+                    &argument,
+                    argument_compilation_context.clone(),
+                    global_compilation_context,
+                )?;
+                if let Type::Object(argument_object_values_types) = compiled_argument.r#type {
+                    NodeAndMetadata {
+                        r#type: Type::Tuple(
+                            argument_object_values_types
+                                .iter()
+                                .map(|(key, value)| {
+                                    Type::Tuple(vec![
+                                        Type::Literal(Some(Value::String(ropey::Rope::from(
+                                            key.clone(),
+                                        )))),
+                                        value.clone(),
+                                    ])
+                                })
+                                .collect(),
+                        ),
+                        external_constants_name_clustered_indices: compiled_argument
+                            .external_constants_name_clustered_indices,
+                        node: Node {
+                            content: Content::EmbeddedFunctionCall {
+                                path: None,
+                                embedded_function: Box::new(
+                                    intermediate_representation::EmbeddedFunction::KeyValuePairs(
+                                        compiled_argument.node,
+                                    ),
+                                ),
+                            },
+                        },
+                        is_pure: compiled_argument.is_pure,
+                    }
+                } else {
+                    return Err(anyhow!(
+                        "expected object, found {:#?} at {:#?}",
+                        compiled_argument.r#type,
+                        compilation_context.path
+                    ));
                 }
             }
         },
