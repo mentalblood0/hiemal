@@ -327,7 +327,11 @@ impl Computer {
                 }
                 Ok(result)
             }
-            Content::Match { r#match, cases } => {
+            Content::Match {
+                r#match,
+                cases,
+                match_constant_name_clustered_index_option,
+            } => {
                 let computed_match = self.compute_node(
                     r#match,
                     intermediate_representation,
@@ -339,8 +343,8 @@ impl Computer {
                     match &case.condition {
                         Condition::Type(expected_type) => {
                             if expected_type.contains(&match_type) {
-                                if let Some(ref match_constant_name_clustered_index) =
-                                    case.match_constant_name_clustered_index_option
+                                if let Some(match_constant_name_clustered_index) =
+                                    match_constant_name_clustered_index_option
                                 {
                                     let mut case_computation_context = computation_context.clone();
                                     case_computation_context.constants.inner
@@ -369,8 +373,8 @@ impl Computer {
                                 global_computation_context,
                             )?;
                             if computed_expected_value == computed_match {
-                                if let Some(ref match_constant_name_clustered_index) =
-                                    case.match_constant_name_clustered_index_option
+                                if let Some(match_constant_name_clustered_index) =
+                                    match_constant_name_clustered_index_option
                                 {
                                     let mut case_computation_context = computation_context.clone();
                                     case_computation_context.constants.inner

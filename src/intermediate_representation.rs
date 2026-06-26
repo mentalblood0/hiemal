@@ -51,7 +51,6 @@ pub enum Condition {
 pub struct Case {
     pub condition: Condition,
     pub node: Node,
-    pub match_constant_name_clustered_index_option: Option<usize>,
 }
 
 #[repr(u8)]
@@ -78,6 +77,7 @@ pub enum Content {
     Match {
         r#match: Box<Node>,
         cases: Vec<Case>,
+        match_constant_name_clustered_index_option: Option<usize>,
     },
     Map {
         map: Box<Node>,

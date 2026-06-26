@@ -12,8 +12,7 @@ compute:
     assert equal::
       found:
         map:
-          key-value pairs:
-            { "first": 1, "second": "string", "third": [1, 2, 3] }
+          key-value pairs: { first: 1, second: string, third: [1, 2, 3] }
         through:
           match: _
           as: matched
@@ -29,7 +28,7 @@ compute:
   test map tuple and array:
     assert equal::
       found:
-        map: [1, "string", [1, 2, 3]]
+        map: [1, string, [1, 2, 3]]
         through:
           match: _
           as: matched

@@ -908,6 +908,23 @@ fn compile_with_context(
                 compiled_match.external_constants_name_clustered_indices;
             let mut case_is_pure = true;
             let mut covered_types = BTreeSet::new();
+            let match_constant_name_clustered_index_option = if let Some(match_constant_name) = r#as
+            {
+                Some(
+                    if let Some(result) = global_compilation_context
+                        .constants_names_to_name_clustered_constants_indices
+                        .get(match_constant_name)
+                    {
+                        *result
+                    } else {
+                        global_compilation_context
+                            .constants_names_to_name_clustered_constants_indices
+                            .len()
+                    },
+                )
+            } else {
+                None
+            };
             for (case_condition, case) in cases {
                 let mut case_compilation_context = compilation_context.clone();
                 case_compilation_context.path.0.extend([
@@ -923,20 +940,14 @@ fn compile_with_context(
                         {
                             continue;
                         };
-                        let match_constant_name_clustered_index_option =
-                            if let Some(match_constant_name) = r#as {
-                                Some(
-                                    define_constant(
-                                        match_constant_name.clone(),
-                                        refined_match_type.clone(),
-                                        &mut case_compilation_context,
-                                        global_compilation_context,
-                                    )
-                                    .name_clustered_index,
-                                )
-                            } else {
-                                None
-                            };
+                        if let Some(match_constant_name) = r#as {
+                            define_constant(
+                                match_constant_name.clone(),
+                                refined_match_type.clone(),
+                                &mut case_compilation_context,
+                                global_compilation_context,
+                            );
+                        };
                         let mut compiled_case = compile_with_context(
                             case,
                             case_compilation_context,
@@ -953,7 +964,6 @@ fn compile_with_context(
                                 refined_match_type.clone(),
                             ),
                             node: compiled_case.node,
-                            match_constant_name_clustered_index_option,
                         });
                     }
                     Condition::Value(condition) => {
@@ -970,20 +980,14 @@ fn compile_with_context(
                         {
                             continue;
                         };
-                        let match_constant_name_clustered_index_option =
-                            if let Some(match_constant_name) = r#as {
-                                Some(
-                                    define_constant(
-                                        match_constant_name.clone(),
-                                        refined_match_type.clone(),
-                                        &mut case_compilation_context,
-                                        global_compilation_context,
-                                    )
-                                    .name_clustered_index,
-                                )
-                            } else {
-                                None
-                            };
+                        if let Some(match_constant_name) = r#as {
+                            define_constant(
+                                match_constant_name.clone(),
+                                refined_match_type.clone(),
+                                &mut case_compilation_context,
+                                global_compilation_context,
+                            );
+                        }
                         let mut compiled_case = compile_with_context(
                             case,
                             case_compilation_context,
@@ -1000,7 +1004,6 @@ fn compile_with_context(
                                 compiled_condition.node,
                             ),
                             node: compiled_case.node,
-                            match_constant_name_clustered_index_option,
                         });
                     }
                 }
@@ -1024,6 +1027,7 @@ fn compile_with_context(
                         content: Content::Match {
                             r#match: Box::new(compiled_match.node),
                             cases: result_cases,
+                            match_constant_name_clustered_index_option,
                         },
                     },
                     r#type: Type::from(result_types),
