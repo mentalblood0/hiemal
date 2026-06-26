@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::hash::Hash;
 use std::sync::Arc;
 use std::{collections::BTreeMap, io::Read};
@@ -60,7 +61,7 @@ impl Computer {
         global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
     ) -> Result<Option<Value>>
     where
-        N: Iterator<Item = (&'a Node, ComputationContext)>,
+        N: Iterator<Item = (&'a Node, Cow<'a, ComputationContext>)>,
     {
         let mut result = vec![None; nodes_count];
         let complex_elements = nodes_and_computation_contexts_iterator
@@ -121,7 +122,9 @@ impl Computer {
     ) -> Result<Option<Value>> {
         match &node.content {
             Content::Tuple(tuple) => self.compute_nodes(
-                tuple.iter().map(|node| (node, computation_context.clone())),
+                tuple
+                    .iter()
+                    .map(|node| (node, Cow::Borrowed(computation_context))),
                 tuple.len(),
                 intermediate_representation,
                 global_computation_context,
@@ -414,7 +417,7 @@ impl Computer {
                             element_computation_context.constants.inner
                                 [map_through.map_constant_name_clustered_index] =
                                 element_value.clone();
-                            (&map_through.node, element_computation_context)
+                            (&map_through.node, Cow::Owned(element_computation_context))
                         }),
                         computed_map_array.inner.len(),
                         intermediate_representation,
@@ -429,7 +432,7 @@ impl Computer {
                                     .map_constant_name_clustered_index] = element_value.clone();
                                 (
                                     &map_throughs[element_index].node,
-                                    element_computation_context,
+                                    Cow::Owned(element_computation_context),
                                 )
                             },
                         ),
