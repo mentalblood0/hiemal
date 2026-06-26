@@ -7,8 +7,8 @@ use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     includes_cache::IncludesCache,
     intermediate_representation::{
-        self, Case, ConstantDefinition, Content, IntermediateRepresentation,
-        MapThroughConstantsDefinitionsAndNodes, Node, UserFunction,
+        self, Case, Content, IntermediateRepresentation, MapThrough, MapThroughs, Node,
+        UserFunction,
     },
     program::{AtSegment, Condition, EmbeddedFunction, From, Path, PathSegment, Program},
     r#type::Type,
@@ -30,6 +30,12 @@ impl CompilationContext {
             self.path,
         )
     }
+}
+
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq)]
+pub struct ConstantDefinition {
+    pub name_clustered_index: usize,
+    pub index: usize,
 }
 
 fn assert_contains(
@@ -368,11 +374,6 @@ pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
                 },
             )
             .collect(),
-        constants: global_compilation_context
-            .constants
-            .into_iter()
-            .map(|constant| constant.1)
-            .collect(),
         unique_constants_names_count: global_compilation_context
             .constants_names_to_name_clustered_constants_indices
             .len(),
@@ -464,7 +465,7 @@ fn compile_with_context(
                 .path
                 .0
                 .extend([PathSegment::Compute]);
-            let mut new_constants_definitions = Vec::with_capacity(constants.len());
+            let mut new_constants = Vec::with_capacity(constants.len());
             let mut result_external_constants_name_clustered_indices = BTreeSet::new();
             let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
             let mut result_is_pure = true;
@@ -493,7 +494,10 @@ fn compile_with_context(
                     &mut compute_compilation_context,
                     global_compilation_context,
                 );
-                new_constants_definitions.push(constant_definition);
+                new_constants.push(intermediate_representation::ConstantDefinition {
+                    name_clustered_index: constant_definition.name_clustered_index,
+                    node: Box::new(compiled_constant.node),
+                });
                 result_is_pure &= compiled_constant.is_pure;
             }
             for (function_name, function_body) in functions.iter() {
@@ -533,7 +537,7 @@ fn compile_with_context(
                     result_external_constants_name_clustered_indices,
                 node: Node {
                     content: Content::Scope {
-                        constants: new_constants_definitions,
+                        constants: new_constants,
                         compute: Box::new(compiled_compute.node),
                     },
                 },
@@ -867,17 +871,20 @@ fn compile_with_context(
                         {
                             continue;
                         };
-                        let match_constant_definition = if let Some(match_constant_name) = r#as {
-                            let match_constant_definition = define_constant(
-                                match_constant_name.clone(),
-                                refined_match_type.clone(),
-                                &mut case_compilation_context,
-                                global_compilation_context,
-                            );
-                            Some(match_constant_definition)
-                        } else {
-                            None
-                        };
+                        let match_constant_name_clustered_index_option =
+                            if let Some(match_constant_name) = r#as {
+                                Some(
+                                    define_constant(
+                                        match_constant_name.clone(),
+                                        refined_match_type.clone(),
+                                        &mut case_compilation_context,
+                                        global_compilation_context,
+                                    )
+                                    .name_clustered_index,
+                                )
+                            } else {
+                                None
+                            };
                         let mut compiled_case = compile_with_context(
                             case,
                             case_compilation_context,
@@ -894,7 +901,7 @@ fn compile_with_context(
                                 refined_match_type.clone(),
                             ),
                             node: compiled_case.node,
-                            match_constant_definition_option: match_constant_definition,
+                            match_constant_name_clustered_index_option,
                         });
                     }
                     Condition::Value(condition) => {
@@ -912,17 +919,20 @@ fn compile_with_context(
                             continue;
                         };
                         let mut case_compilation_context = compilation_context.clone();
-                        let match_constant_definition = if let Some(match_constant_name) = r#as {
-                            let match_constant_definition = define_constant(
-                                match_constant_name.clone(),
-                                refined_match_type.clone(),
-                                &mut case_compilation_context,
-                                global_compilation_context,
-                            );
-                            Some(match_constant_definition)
-                        } else {
-                            None
-                        };
+                        let match_constant_name_clustered_index_option =
+                            if let Some(match_constant_name) = r#as {
+                                Some(
+                                    define_constant(
+                                        match_constant_name.clone(),
+                                        refined_match_type.clone(),
+                                        &mut case_compilation_context,
+                                        global_compilation_context,
+                                    )
+                                    .name_clustered_index,
+                                )
+                            } else {
+                                None
+                            };
                         case_compilation_context.path.0.extend([
                             PathSegment::Cases,
                             PathSegment::Case(case_condition.clone()),
@@ -943,7 +953,7 @@ fn compile_with_context(
                                 compiled_condition.node,
                             ),
                             node: compiled_case.node,
-                            match_constant_definition_option: match_constant_definition,
+                            match_constant_name_clustered_index_option,
                         });
                     }
                 }
@@ -994,26 +1004,28 @@ fn compile_with_context(
             }
         }
         Program::Map { map, r#as, through } => {
-            let map_compilation_context = compilation_context.clone();
+            let mut map_compilation_context = compilation_context.clone();
             map_compilation_context.path.0.extend([PathSegment::Map]);
-            let compiled_map =
-                compile_with_context(map, map_compilation_context, global_compilation_context)?;
+            let compiled_map = compile_with_context(
+                map,
+                map_compilation_context.clone(),
+                global_compilation_context,
+            )?;
             let mut result_external_constants_name_clustered_indices =
                 compiled_map.external_constants_name_clustered_indices;
             let mut is_pure = true;
             match compiled_map.r#type {
                 Type::Tuple(map_tuple_elements_types) => {
-                    let mut map_through_constants_definitions_and_nodes =
+                    let mut result_elements = Vec::with_capacity(map_tuple_elements_types.len());
+                    let mut result_elements_types =
                         Vec::with_capacity(map_tuple_elements_types.len());
-                    let mut result_union_types = BTreeSet::new();
-                    for (element_index, element_type) in map_tuple_elements_types.iter().enumerate()
-                    {
+                    for element_type in map_tuple_elements_types {
                         let mut through_compilation_context = compilation_context.clone();
                         through_compilation_context
                             .path
                             .0
                             .extend([PathSegment::Through(element_type.clone())]);
-                        let element_constant_definition = define_constant(
+                        let map_constant_definition = define_constant(
                             r#as.clone(),
                             element_type.clone(),
                             &mut through_compilation_context,
@@ -1027,17 +1039,21 @@ fn compile_with_context(
                         result_external_constants_name_clustered_indices
                             .extend(compiled_through.external_constants_name_clustered_indices);
                         is_pure &= compiled_through.is_pure;
-                        result_union_types.insert(compiled_through.r#type);
-                        map_through_constants_definitions_and_nodes
-                            .push((element_constant_definition, compiled_through.node));
+                        result_elements_types.push(compiled_through.r#type);
+                        result_elements.push(MapThrough {
+                            map_constant_name_clustered_index: map_constant_definition
+                                .name_clustered_index,
+                            node: compiled_through.node,
+                        });
                     }
                     NodeAndMetadata {
                         node: Node {
-                            content: Content::Map(MapThroughConstantsDefinitionsAndNodes::Tuple(
-                                map_through_constants_definitions_and_nodes,
-                            )),
+                            content: Content::Map {
+                                map: Box::new(compiled_map.node),
+                                elements: MapThroughs::Tuple(result_elements),
+                            },
                         },
-                        r#type: Type::from(result_union_types),
+                        r#type: Type::Tuple(result_elements_types),
                         external_constants_name_clustered_indices:
                             result_external_constants_name_clustered_indices,
                         is_pure,
@@ -1049,7 +1065,7 @@ fn compile_with_context(
                         .path
                         .0
                         .extend([PathSegment::Through(*map_array_element_type.clone())]);
-                    let element_constant_definition = define_constant(
+                    let map_constant_definition = define_constant(
                         r#as.clone(),
                         *map_array_element_type.clone(),
                         &mut through_compilation_context,
@@ -1065,12 +1081,16 @@ fn compile_with_context(
                     is_pure &= compiled_through.is_pure;
                     NodeAndMetadata {
                         node: Node {
-                            content: Content::Map(MapThroughConstantsDefinitionsAndNodes::Array((
-                                element_constant_definition,
-                                Box::new(compiled_through.node),
-                            ))),
+                            content: Content::Map {
+                                map: Box::new(compiled_map.node),
+                                elements: MapThroughs::Array(Box::new(MapThrough {
+                                    map_constant_name_clustered_index: map_constant_definition
+                                        .name_clustered_index,
+                                    node: compiled_through.node,
+                                })),
+                            },
                         },
-                        r#type: compiled_through.r#type,
+                        r#type: Type::Array(Box::new(compiled_through.r#type)),
                         external_constants_name_clustered_indices:
                             result_external_constants_name_clustered_indices,
                         is_pure,
@@ -1156,11 +1176,16 @@ fn compile_with_context(
                                 let constant_definition = define_constant(
                                     function_argument_name.to_string(),
                                     compiled_constant.r#type,
-                                    compiled_constant.node,
                                     &mut body_compilation_context,
                                     global_compilation_context,
                                 );
-                                new_constants_definitions.push(constant_definition);
+                                new_constants_definitions.push(
+                                    intermediate_representation::ConstantDefinition {
+                                        name_clustered_index: constant_definition
+                                            .name_clustered_index,
+                                        node: Box::new(compiled_constant.node),
+                                    },
+                                );
                                 arguments_is_pure &= compiled_constant.is_pure;
                             }
                             if compilation_context

@@ -8,6 +8,7 @@ use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::intermediate_representation::MapThroughs;
 use crate::{
     containers::{Map, Vector},
     intermediate_representation::{
@@ -53,19 +54,18 @@ impl Computer {
 
     fn compute_nodes<'a, N>(
         &self,
-        nodes_iterator: N,
+        nodes_and_computation_contexts_iterator: N,
         nodes_count: usize,
         intermediate_representation: &IntermediateRepresentation,
-        computation_context: &ComputationContext,
         global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
     ) -> Result<Option<Value>>
     where
-        N: Iterator<Item = &'a Node>,
+        N: Iterator<Item = (&'a Node, ComputationContext)>,
     {
         let mut result = vec![None; nodes_count];
-        let complex_elements = nodes_iterator
+        let complex_elements = nodes_and_computation_contexts_iterator
             .enumerate()
-            .filter(|(element_index, element)| match &element.content {
+            .filter(|(element_index, (node, _))| match &node.content {
                 Content::Value(value) => {
                     result[*element_index] = unsafe { std::mem::transmute(value.clone()) };
                     false
@@ -78,12 +78,12 @@ impl Computer {
                 match complex_elements.len() {
                     0 => result,
                     1 => {
-                        let (element_index, element_node) =
+                        let (element_index, (node, computation_context)) =
                             complex_elements.into_iter().next().unwrap();
                         result[element_index] = self.compute_node(
-                            &element_node,
+                            node,
                             intermediate_representation,
-                            computation_context,
+                            &computation_context,
                             global_computation_context,
                         )?;
                         result
@@ -92,11 +92,11 @@ impl Computer {
                         let result_mutex = Mutex::new(result);
                         complex_elements
                             .into_par_iter()
-                            .try_for_each(|(element_index, element_node)| {
+                            .try_for_each(|(element_index, (node, computation_context))| {
                                 self.compute_node(
-                                    &element_node,
+                                    node,
                                     intermediate_representation,
-                                    computation_context,
+                                    &computation_context,
                                     global_computation_context,
                                 )
                                 .and_then(|result| {
@@ -121,10 +121,9 @@ impl Computer {
     ) -> Result<Option<Value>> {
         match &node.content {
             Content::Tuple(tuple) => self.compute_nodes(
-                tuple.iter(),
+                tuple.iter().map(|node| (node, computation_context.clone())),
                 tuple.len(),
                 intermediate_representation,
-                computation_context,
                 global_computation_context,
             ),
             Content::Scope { constants, compute } => {
@@ -132,7 +131,7 @@ impl Computer {
                 for constant_definition in constants {
                     result_computation_context.constants.inner
                         [constant_definition.name_clustered_index] = self.compute_node(
-                        &intermediate_representation.constants[constant_definition.index],
+                        &constant_definition.node,
                         intermediate_representation,
                         &computation_context,
                         global_computation_context,
@@ -216,7 +215,7 @@ impl Computer {
                 let mut result_computation_context = computation_context.clone();
                 for constant_definition in arguments {
                     let new_constant_value = self.compute_node(
-                        &intermediate_representation.constants[constant_definition.index],
+                        &constant_definition.node,
                         intermediate_representation,
                         &computation_context,
                         global_computation_context,
@@ -317,13 +316,12 @@ impl Computer {
                     match &case.condition {
                         Condition::Type(expected_type) => {
                             if expected_type.contains(&match_type) {
-                                if let Some(ref match_constant_definition) =
-                                    case.match_constant_definition_option
+                                if let Some(ref match_constant_name_clustered_index) =
+                                    case.match_constant_name_clustered_index_option
                                 {
                                     let mut case_computation_context = computation_context.clone();
                                     case_computation_context.constants.inner
-                                        [match_constant_definition.name_clustered_index] =
-                                        computed_match;
+                                        [*match_constant_name_clustered_index] = computed_match;
                                     return self.compute_node(
                                         &case.node,
                                         intermediate_representation,
@@ -348,13 +346,12 @@ impl Computer {
                                 global_computation_context,
                             )?;
                             if computed_expected_value == computed_match {
-                                if let Some(ref match_constant_definition) =
-                                    case.match_constant_definition_option
+                                if let Some(ref match_constant_name_clustered_index) =
+                                    case.match_constant_name_clustered_index_option
                                 {
                                     let mut case_computation_context = computation_context.clone();
                                     case_computation_context.constants.inner
-                                        [match_constant_definition.name_clustered_index] =
-                                        computed_match;
+                                        [*match_constant_name_clustered_index] = computed_match;
                                     return self.compute_node(
                                         &case.node,
                                         intermediate_representation,
@@ -374,6 +371,46 @@ impl Computer {
                     }
                 }
                 panic!()
+            }
+            Content::Map { map, elements } => {
+                let computed_map = self.compute_node(
+                    &map,
+                    intermediate_representation,
+                    computation_context,
+                    global_computation_context,
+                )?;
+                let computed_map_array = computed_map.as_ref().unwrap().as_array().unwrap();
+                match elements {
+                    MapThroughs::Array(map_through) => self.compute_nodes(
+                        computed_map_array.inner.iter().map(|element_value| {
+                            let mut element_computation_context = computation_context.clone();
+                            element_computation_context.constants.inner
+                                [map_through.map_constant_name_clustered_index] =
+                                element_value.clone();
+                            (&map_through.node, element_computation_context)
+                        }),
+                        computed_map_array.inner.len(),
+                        intermediate_representation,
+                        global_computation_context,
+                    ),
+                    MapThroughs::Tuple(map_throughs) => self.compute_nodes(
+                        computed_map_array.inner.iter().enumerate().map(
+                            |(element_index, element_value)| {
+                                let mut element_computation_context = computation_context.clone();
+                                element_computation_context.constants.inner[map_throughs
+                                    [element_index]
+                                    .map_constant_name_clustered_index] = element_value.clone();
+                                (
+                                    &map_throughs[element_index].node,
+                                    element_computation_context,
+                                )
+                            },
+                        ),
+                        computed_map_array.inner.len(),
+                        intermediate_representation,
+                        global_computation_context,
+                    ),
+                }
             }
             Content::Object(object) => {
                 let mut result = Map::default();

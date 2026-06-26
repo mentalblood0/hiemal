@@ -32,7 +32,6 @@ pub enum Value {
 pub struct IntermediateRepresentation {
     pub root: Node,
     pub user_functions: Vec<UserFunction>,
-    pub constants: Vec<Node>,
     pub unique_constants_names_count: usize,
 }
 
@@ -52,7 +51,7 @@ pub enum Condition {
 pub struct Case {
     pub condition: Condition,
     pub node: Node,
-    pub match_constant_definition_option: Option<ConstantDefinition>,
+    pub match_constant_name_clustered_index_option: Option<usize>,
 }
 
 #[repr(u8)]
@@ -80,9 +79,24 @@ pub enum Content {
         r#match: Box<Node>,
         cases: Vec<Case>,
     },
-    Map(MapThroughConstantsDefinitionsAndNodes),
+    Map {
+        map: Box<Node>,
+        elements: MapThroughs,
+    },
     Object(BTreeMap<String, Node>),
     Value(Option<Value>),
+}
+
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+pub struct MapThrough {
+    pub map_constant_name_clustered_index: usize,
+    pub node: Node,
+}
+
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+pub enum MapThroughs {
+    Array(Box<MapThrough>),
+    Tuple(Vec<MapThrough>),
 }
 
 #[repr(u8)]
@@ -104,13 +118,7 @@ pub struct UserFunction {
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
 pub struct ConstantDefinition {
     pub name_clustered_index: usize,
-    pub index: usize,
-}
-
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
-pub enum MapThroughConstantsDefinitionsAndNodes {
-    Array((ConstantDefinition, Box<Node>)),
-    Tuple(Vec<(ConstantDefinition, Node)>),
+    pub node: Box<Node>,
 }
 
 #[repr(u8)]

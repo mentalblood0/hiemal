@@ -104,7 +104,10 @@ impl Type {
                 }
                 (Type::Array(self_array_element_type), Type::Tuple(other_tuple_elements_types)) => {
                     for tuple_element_type in other_tuple_elements_types {
-                        if *tuple_element_type != **self_array_element_type {
+                        if tuple_element_type
+                            .intersection(self_array_element_type)
+                            .is_none()
+                        {
                             return false;
                         }
                     }
@@ -135,6 +138,13 @@ impl Type {
                 (Type::Union(union_types), other_type) | (other_type, Type::Union(union_types)) => {
                     if union_types.contains(other_type) {
                         Some(other_type.clone())
+                    } else {
+                        None
+                    }
+                }
+                (Type::Literal(self_type_value), Type::Literal(other_type_value)) => {
+                    if self_type_value == other_type_value {
+                        Some(self.clone())
                     } else {
                         None
                     }
@@ -180,8 +190,14 @@ impl Type {
                 }
                 (Type::Array(array_element_type), Type::Tuple(tuple_elements_types))
                 | (Type::Tuple(tuple_elements_types), Type::Array(array_element_type)) => {
+                    let mut result_tuple_elements_types =
+                        Vec::with_capacity(tuple_elements_types.len());
                     for tuple_element_type in tuple_elements_types {
-                        if *tuple_element_type != **array_element_type {
+                        if let Some(result_tuple_element_type) =
+                            tuple_element_type.intersection(array_element_type)
+                        {
+                            result_tuple_elements_types.push(result_tuple_element_type)
+                        } else {
                             return None;
                         }
                     }
