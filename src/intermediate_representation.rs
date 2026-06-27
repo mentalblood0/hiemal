@@ -15,7 +15,6 @@ use crate::{
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Hash)]
 pub enum Value {
     Number(#[serde_as(as = "DisplayFromStr")] Rational),
-
     String(
         #[serde(
             deserialize_with = "crate::value::deserialize_rope",

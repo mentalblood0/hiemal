@@ -1,4 +1,4 @@
-use std::hash::Hash;
+use std::{hash::Hash, io::BufReader};
 
 use anyhow::{Context, Result};
 use gxhash::GxHasher;
@@ -18,11 +18,13 @@ fn main() -> Result<()> {
             .unwrap()
             .join("hiemal")
             .join(format!("{program_hash:x}.bin"));
-        let intermediate_representation = if let Ok(cached_intermediate_representation_bytes) =
-            std::fs::read(&cached_intermediate_representation_path)
+        let intermediate_representation = if let Ok(cached_intermediate_representation_file) =
+            std::fs::File::open(&cached_intermediate_representation_path)
         {
-            bincode::serde::decode_from_slice(
-                &cached_intermediate_representation_bytes,
+            bincode::serde::decode_from_std_read(
+                &mut lz4_flex::frame::FrameDecoder::new(&mut BufReader::new(
+                    cached_intermediate_representation_file,
+                )),
                 bincode::config::standard(),
             )
             .with_context(|| {
@@ -31,21 +33,29 @@ fn main() -> Result<()> {
                      {cached_intermediate_representation_path:?}"
                 )
             })?
-            .0
         } else {
             let result = compile(&program)?;
             std::fs::create_dir_all(cached_intermediate_representation_path.parent().unwrap())?;
-            bincode::serde::encode_into_std_write(
-                &result,
-                &mut std::fs::OpenOptions::new()
+            let mut encoder = lz4_flex::frame::FrameEncoder::new(
+                std::fs::OpenOptions::new()
                     .create(true)
                     .write(true)
                     .open(&cached_intermediate_representation_path)?,
+            );
+            bincode::serde::encode_into_std_write(
+                &result,
+                &mut encoder,
                 bincode::config::standard(),
             )
             .with_context(|| {
                 format!(
                     "Can not encode intermediate representation to \
+                     {cached_intermediate_representation_path:?}"
+                )
+            })?;
+            encoder.finish().with_context(|| {
+                format!(
+                    "Can not finish compress-write of intermediate representation to \
                      {cached_intermediate_representation_path:?}"
                 )
             })?;
