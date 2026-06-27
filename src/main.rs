@@ -34,6 +34,7 @@ fn main() -> Result<()> {
             .0
         } else {
             let result = compile(&program)?;
+            std::fs::create_dir_all(cached_intermediate_representation_path.parent().unwrap())?;
             bincode::serde::encode_into_std_write(
                 &result,
                 &mut std::fs::OpenOptions::new()

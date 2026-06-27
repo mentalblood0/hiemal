@@ -425,7 +425,11 @@ impl Computer {
                 }
                 panic!()
             }
-            Content::Map { map, elements } => {
+            Content::Map {
+                map,
+                throughs,
+                map_constant_name_clustered_index,
+            } => {
                 let computed_map = self.compute_node(
                     &map,
                     intermediate_representation,
@@ -433,32 +437,34 @@ impl Computer {
                     global_computation_context,
                 )?;
                 let computed_map_array = computed_map.as_ref().unwrap().as_tuple().unwrap();
-                match elements {
-                    MapThroughs::Array(map_through) => Ok(Some(Value::Tuple(Vector {
+                match throughs {
+                    MapThroughs::Array(node) => Ok(Some(Value::Tuple(Vector {
                         inner: rpds::VectorSync::from_iter(self.compute_nodes(
                             computed_map_array.inner.iter().map(|element_value| {
                                 let mut element_computation_context = computation_context.clone();
                                 element_computation_context.constants.inner
-                                    [map_through.map_constant_name_clustered_index] =
-                                    element_value.clone();
-                                (&map_through.node, Cow::Owned(element_computation_context))
+                                    [*map_constant_name_clustered_index] = element_value.clone();
+                                (&**node, Cow::Owned(element_computation_context))
                             }),
                             computed_map_array.inner.len(),
                             intermediate_representation,
                             global_computation_context,
                         )?),
                     }))),
-                    MapThroughs::Tuple(map_throughs) => Ok(Some(Value::Tuple(Vector {
+                    MapThroughs::Tuple {
+                        elements_nodes_indexes,
+                        nodes,
+                    } => Ok(Some(Value::Tuple(Vector {
                         inner: rpds::VectorSync::from_iter(self.compute_nodes(
                             computed_map_array.inner.iter().enumerate().map(
                                 |(element_index, element_value)| {
                                     let mut element_computation_context =
                                         computation_context.clone();
-                                    element_computation_context.constants.inner[map_throughs
-                                        [element_index]
-                                        .map_constant_name_clustered_index] = element_value.clone();
+                                    element_computation_context.constants.inner
+                                        [*map_constant_name_clustered_index] =
+                                        element_value.clone();
                                     (
-                                        &map_throughs[element_index].node,
+                                        &nodes[elements_nodes_indexes[element_index]],
                                         Cow::Owned(element_computation_context),
                                     )
                                 },

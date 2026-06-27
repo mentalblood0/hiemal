@@ -7,8 +7,7 @@ use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     includes_cache::IncludesCache,
     intermediate_representation::{
-        self, Case, Content, IntermediateRepresentation, MapThrough, MapThroughs, Node,
-        UserFunction,
+        self, Case, Content, IntermediateRepresentation, MapThroughs, Node, UserFunction,
     },
     program::{AtSegment, Condition, EmbeddedFunction, From, Path, PathSegment, Program},
     r#type::Type,
@@ -1048,43 +1047,74 @@ fn compile_with_context(
             let mut result_external_constants_name_clustered_indices =
                 compiled_map.external_constants_name_clustered_indices;
             let mut is_pure = true;
+            let map_constant_name_clustered_index = if let Some(result) = global_compilation_context
+                .constants_names_to_name_clustered_constants_indices
+                .get(r#as)
+            {
+                *result
+            } else {
+                global_compilation_context
+                    .constants_names_to_name_clustered_constants_indices
+                    .len()
+            };
             match compiled_map.r#type {
                 Type::Tuple(map_tuple_elements_types) => {
-                    let mut result_elements = Vec::with_capacity(map_tuple_elements_types.len());
                     let mut result_elements_types =
                         Vec::with_capacity(map_tuple_elements_types.len());
+                    let mut result_elements_nodes_indexes =
+                        Vec::with_capacity(map_tuple_elements_types.len());
+                    let mut compiled_throughs: Vec<NodeAndMetadata> = Vec::new();
+                    let mut element_type_to_compiled_through_index: BTreeMap<Type, usize> =
+                        BTreeMap::new();
                     for element_type in map_tuple_elements_types {
-                        let mut through_compilation_context = compilation_context.clone();
-                        through_compilation_context
-                            .path
-                            .0
-                            .extend([PathSegment::Through(element_type.clone())]);
-                        let map_constant_definition = define_constant(
-                            r#as.clone(),
-                            element_type.clone(),
-                            &mut through_compilation_context,
-                            global_compilation_context,
-                        );
-                        let compiled_through = compile_with_context(
-                            through,
-                            through_compilation_context,
-                            global_compilation_context,
-                        )?;
-                        result_external_constants_name_clustered_indices
-                            .extend(compiled_through.external_constants_name_clustered_indices);
-                        is_pure &= compiled_through.is_pure;
-                        result_elements_types.push(compiled_through.r#type);
-                        result_elements.push(MapThrough {
-                            map_constant_name_clustered_index: map_constant_definition
-                                .name_clustered_index,
-                            node: compiled_through.node,
-                        });
+                        if let Some(element_through_index) =
+                            element_type_to_compiled_through_index.get(&element_type)
+                        {
+                            result_elements_types
+                                .push(compiled_throughs[*element_through_index].r#type.clone());
+                            result_elements_nodes_indexes.push(*element_through_index);
+                        } else {
+                            let mut through_compilation_context = compilation_context.clone();
+                            through_compilation_context
+                                .path
+                                .0
+                                .extend([PathSegment::Through(element_type.clone())]);
+                            define_constant(
+                                r#as.clone(),
+                                element_type.clone(),
+                                &mut through_compilation_context,
+                                global_compilation_context,
+                            );
+                            let compiled_through = compile_with_context(
+                                through,
+                                through_compilation_context,
+                                global_compilation_context,
+                            )?;
+                            result_external_constants_name_clustered_indices.extend(
+                                compiled_through
+                                    .external_constants_name_clustered_indices
+                                    .clone(),
+                            );
+                            is_pure &= compiled_through.is_pure;
+                            result_elements_types.push(compiled_through.r#type.clone());
+                            element_type_to_compiled_through_index
+                                .insert(element_type, compiled_throughs.len());
+                            result_elements_nodes_indexes.push(compiled_throughs.len());
+                            compiled_throughs.push(compiled_through);
+                        }
                     }
                     NodeAndMetadata {
                         node: Node {
                             content: Content::Map {
                                 map: Box::new(compiled_map.node),
-                                elements: MapThroughs::Tuple(result_elements),
+                                throughs: MapThroughs::Tuple {
+                                    elements_nodes_indexes: result_elements_nodes_indexes,
+                                    nodes: compiled_throughs
+                                        .into_iter()
+                                        .map(|compiled_through| compiled_through.node)
+                                        .collect(),
+                                },
+                                map_constant_name_clustered_index,
                             },
                         },
                         r#type: Type::Tuple(result_elements_types),
@@ -1099,7 +1129,7 @@ fn compile_with_context(
                         .path
                         .0
                         .extend([PathSegment::Through(*map_array_element_type.clone())]);
-                    let map_constant_definition = define_constant(
+                    define_constant(
                         r#as.clone(),
                         *map_array_element_type.clone(),
                         &mut through_compilation_context,
@@ -1117,11 +1147,8 @@ fn compile_with_context(
                         node: Node {
                             content: Content::Map {
                                 map: Box::new(compiled_map.node),
-                                elements: MapThroughs::Array(Box::new(MapThrough {
-                                    map_constant_name_clustered_index: map_constant_definition
-                                        .name_clustered_index,
-                                    node: compiled_through.node,
-                                })),
+                                throughs: MapThroughs::Array(Box::new(compiled_through.node)),
+                                map_constant_name_clustered_index,
                             },
                         },
                         r#type: Type::Array(Box::new(compiled_through.r#type)),

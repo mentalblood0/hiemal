@@ -81,22 +81,20 @@ pub enum Content {
     },
     Map {
         map: Box<Node>,
-        elements: MapThroughs,
+        throughs: MapThroughs,
+        map_constant_name_clustered_index: usize,
     },
     Object(BTreeMap<String, Node>),
     Value(Option<Value>),
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
-pub struct MapThrough {
-    pub map_constant_name_clustered_index: usize,
-    pub node: Node,
-}
-
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
 pub enum MapThroughs {
-    Array(Box<MapThrough>),
-    Tuple(Vec<MapThrough>),
+    Array(Box<Node>),
+    Tuple {
+        elements_nodes_indexes: Vec<usize>,
+        nodes: Vec<Node>,
+    },
 }
 
 #[repr(u8)]
