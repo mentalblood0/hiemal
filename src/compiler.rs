@@ -215,7 +215,7 @@ impl ProgramOrNode {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 struct NodeAndMetadata {
     node: Node,
     r#type: Type,
@@ -1063,7 +1063,8 @@ fn compile_with_context(
                         Vec::with_capacity(map_tuple_elements_types.len());
                     let mut result_elements_nodes_indexes =
                         Vec::with_capacity(map_tuple_elements_types.len());
-                    let mut compiled_throughs: Vec<NodeAndMetadata> = Vec::new();
+                    let mut compiled_throughs: indexmap::IndexSet<NodeAndMetadata> =
+                        indexmap::IndexSet::new();
                     let mut element_type_to_compiled_through_index: BTreeMap<Type, usize> =
                         BTreeMap::new();
                     for element_type in map_tuple_elements_types {
@@ -1097,10 +1098,17 @@ fn compile_with_context(
                             );
                             is_pure &= compiled_through.is_pure;
                             result_elements_types.push(compiled_through.r#type.clone());
+                            let compiled_through_index = if let Some(compiled_through_index) =
+                                compiled_throughs.get_index_of(&compiled_through)
+                            {
+                                compiled_through_index
+                            } else {
+                                compiled_throughs.insert(compiled_through);
+                                compiled_throughs.len() - 1
+                            };
                             element_type_to_compiled_through_index
-                                .insert(element_type, compiled_throughs.len());
-                            result_elements_nodes_indexes.push(compiled_throughs.len());
-                            compiled_throughs.push(compiled_through);
+                                .insert(element_type, compiled_through_index);
+                            result_elements_nodes_indexes.push(compiled_through_index);
                         }
                     }
                     NodeAndMetadata {

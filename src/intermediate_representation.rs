@@ -27,33 +27,33 @@ pub enum Value {
     Object(Map<String, Option<Value>>),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct IntermediateRepresentation {
     pub root: Node,
     pub user_functions: Vec<UserFunction>,
     pub unique_constants_names_count: usize,
 }
 
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct Node {
     pub content: Content,
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum Condition {
     Type(Type),
     Value(Node),
 }
 
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct Case {
     pub condition: Condition,
     pub node: Node,
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum Content {
     Tuple(Vec<Node>),
     Scope {
@@ -87,7 +87,7 @@ pub enum Content {
     Value(Option<Value>),
 }
 
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum MapThroughs {
     Array(Box<Node>),
     Tuple {
@@ -97,7 +97,7 @@ pub enum MapThroughs {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum EmbeddedFunction {
     Sum(Node),
     IsSorted(Node),
@@ -106,21 +106,21 @@ pub enum EmbeddedFunction {
     KeyValuePairs(Node),
 }
 
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct UserFunction {
     pub external_constants_name_clustered_indices: Vec<usize>,
     pub node: Node,
     pub is_pure: bool,
 }
 
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct ConstantDefinition {
     pub name_clustered_index: usize,
     pub node: Node,
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum ValuePathSegment {
     ArrayIndex(usize),
     ObjectKey(String),

@@ -26,6 +26,7 @@ gxhash = "3.5.0"
 bincode = { version = "2.0", features = ["derive", "serde"] }
 serde_with = "3.21.0"
 lz4_flex = "0.13.1"
+indexmap = "2.14.0"
 
 [dev-dependencies]
 pretty_assertions = "1.4"

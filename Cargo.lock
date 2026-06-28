@@ -656,6 +656,7 @@ dependencies = [
  "dirs",
  "glob",
  "gxhash",
+ "indexmap 2.14.0",
  "lz4_flex",
  "parking_lot",
  "pretty_assertions",
