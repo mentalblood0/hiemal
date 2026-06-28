@@ -1091,18 +1091,18 @@ fn compile_with_context(
                                 through_compilation_context,
                                 global_compilation_context,
                             )?;
-                            result_external_constants_name_clustered_indices.extend(
-                                compiled_through
-                                    .external_constants_name_clustered_indices
-                                    .clone(),
-                            );
-                            is_pure &= compiled_through.is_pure;
                             result_elements_types.push(compiled_through.r#type.clone());
                             let compiled_through_index = if let Some(compiled_through_index) =
                                 compiled_throughs.get_index_of(&compiled_through)
                             {
                                 compiled_through_index
                             } else {
+                                result_external_constants_name_clustered_indices.extend(
+                                    compiled_through
+                                        .external_constants_name_clustered_indices
+                                        .clone(),
+                                );
+                                is_pure &= compiled_through.is_pure;
                                 compiled_throughs.insert(compiled_through);
                                 compiled_throughs.len() - 1
                             };
