@@ -78,7 +78,21 @@ impl From<BTreeSet<Type>> for Type {
     }
 }
 
-impl Type {
+impl<'a> Type {
+    pub fn as_tuple_mut(&'a mut self) -> Option<&'a mut Vec<Type>> {
+        match self {
+            Type::Tuple(result) => Some(result),
+            _ => None,
+        }
+    }
+
+    pub fn as_union_mut(&'a mut self) -> Option<&'a mut BTreeSet<Type>> {
+        match self {
+            Type::Union(result) => Some(result),
+            _ => None,
+        }
+    }
+
     pub fn contains(&self, other: &Type) -> bool {
         if self == other {
             true

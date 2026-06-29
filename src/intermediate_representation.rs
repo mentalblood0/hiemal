@@ -111,6 +111,7 @@ pub enum EmbeddedFunction {
     StandardInput,
     ParseYaml(Node),
     KeyValuePairs(Node),
+    Flatten(Node),
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

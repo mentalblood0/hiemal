@@ -132,6 +132,8 @@ pub enum EmbeddedFunction {
     ParseYaml(Program),
     #[serde(rename = "key-value pairs")]
     KeyValuePairs(Program),
+    #[serde(rename = "flatten")]
+    Flatten(Program),
 }
 
 #[repr(u8)]
@@ -188,6 +190,8 @@ pub enum PathSegment {
     ParseYaml,
     #[serde(rename = "key-value pairs")]
     KeyValuePairs,
+    #[serde(rename = "flatten")]
+    Flatten,
     #[serde(rename = "user function call")]
     UserFunctionCall(String),
     #[serde(rename = "object key")]

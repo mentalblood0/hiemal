@@ -870,36 +870,126 @@ impl Compiler {
                         .weakest_from_union()
                     {
                         NodeAndMetadata {
-                        r#type: Type::Tuple(
-                            argument_object_values_types
-                                .iter()
-                                .map(|(key, value)| {
-                                    Type::Tuple(vec![
-                                        Type::Literal(Some(Value::String(ropey::Rope::from(
-                                            key.clone(),
-                                        )))),
-                                        value.clone(),
-                                    ])
-                                })
-                                .collect(),
-                        ),
-                        external_constants_name_clustered_indices: compiled_argument
-                            .external_constants_name_clustered_indices,
-                        node: Node {
-                            content: Content::EmbeddedFunctionCall {
-                                path: None,
-                                embedded_function: Box::new(
-                                    intermediate_representation::EmbeddedFunction::KeyValuePairs(
-                                        compiled_argument.node,
-                                    ),
+                                r#type: Type::Tuple(
+                                    argument_object_values_types
+                                        .iter()
+                                        .map(|(key, value)| {
+                                            Type::Tuple(vec![
+                                                Type::Literal(Some(Value::String(ropey::Rope::from(
+                                                    key.clone(),
+                                                )))),
+                                                value.clone(),
+                                            ])
+                                        })
+                                        .collect(),
                                 ),
-                            },
-                        },
-                        is_pure: compiled_argument.is_pure,
-                    }
+                                external_constants_name_clustered_indices: compiled_argument
+                                    .external_constants_name_clustered_indices,
+                                node: Node {
+                                    content: Content::EmbeddedFunctionCall {
+                                        path: None,
+                                        embedded_function: Box::new(
+                                            intermediate_representation::EmbeddedFunction::KeyValuePairs(
+                                                compiled_argument.node,
+                                            ),
+                                        ),
+                                    },
+                                },
+                                is_pure: compiled_argument.is_pure,
+                            }
                     } else {
                         return Err(anyhow!(
                             "expected object, found {:#?} at {:#?}",
+                            compiled_argument.r#type,
+                            compilation_context.path
+                        ));
+                    }
+                }
+                EmbeddedFunction::Flatten(argument) => {
+                    let mut argument_compilation_context = compilation_context.clone();
+                    argument_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::KeyValuePairs]);
+                    let compiled_argument = self.compile_with_context(
+                        &argument,
+                        argument_compilation_context.clone(),
+                        global_compilation_context,
+                    )?;
+                    if let Type::Tuple(argument_tuple_types) = compiled_argument
+                        .r#type
+                        .clone()
+                        .unliteral()
+                        .weakest_from_union()
+                    {
+                        let mut result_type = Type::Tuple(vec![]);
+                        for (argument_tuple_type_index, argument_tuple_type) in
+                            argument_tuple_types.iter().enumerate()
+                        {
+                            match argument_tuple_type.clone().unliteral().weakest_from_union() {
+                                Type::Tuple(argument_element_tuple_types) => match &mut result_type
+                                {
+                                    Type::Tuple(result_tuple_types) => {
+                                        result_tuple_types.extend(argument_element_tuple_types)
+                                    }
+                                    Type::Array(result_array_type) => {
+                                        for argument_element_tuple_type in
+                                            argument_element_tuple_types
+                                        {
+                                            match argument_element_tuple_type {
+                                                Type::Union(argument_element_tuple_union_types) => {
+                                                    result_array_type
+                                                        .as_union_mut()
+                                                        .unwrap()
+                                                        .append(
+                                                            &mut argument_element_tuple_union_types
+                                                                .clone(),
+                                                        )
+                                                }
+                                                _ => {
+                                                    result_array_type
+                                                        .as_union_mut()
+                                                        .unwrap()
+                                                        .insert(
+                                                            argument_element_tuple_type.clone(),
+                                                        );
+                                                }
+                                            };
+                                        }
+                                    }
+                                    _ => panic!(),
+                                },
+                                unexpected_type => {
+                                    return Err(anyhow!(
+                                        "expected array or tuple, got {:#?} at {:#?}",
+                                        unexpected_type,
+                                        Path(compilation_context.path.0.extended([
+                                            PathSegment::Flatten,
+                                            PathSegment::ArrayIndex(argument_tuple_type_index)
+                                        ]))
+                                    ));
+                                }
+                            }
+                        }
+                        NodeAndMetadata {
+                            r#type: result_type,
+                            external_constants_name_clustered_indices: compiled_argument
+                                .external_constants_name_clustered_indices,
+                            node: Node {
+                                content: Content::EmbeddedFunctionCall {
+                                    path: None,
+                                    embedded_function: Box::new(
+                                        intermediate_representation::EmbeddedFunction::Flatten(
+                                            compiled_argument.node,
+                                        ),
+                                    ),
+                                },
+                            },
+                            is_pure: compiled_argument.is_pure,
+                        }
+                    } else {
+                        return Err(anyhow!(
+                            "expected array or tuple of arrays or tuples, found {:#?} at {:#?}",
                             compiled_argument.r#type,
                             compilation_context.path
                         ));

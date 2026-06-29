@@ -251,6 +251,34 @@ impl Computer {
                         }),
                     ),
                 }))),
+                EmbeddedFunction::Flatten(argument) => Ok(Some(Value::Tuple({
+                    let mut result = Vector::default();
+                    let computed_argument = self.compute_node(
+                        argument,
+                        intermediate_representation,
+                        computation_context,
+                        global_computation_context,
+                    )?;
+                    for element in computed_argument
+                        .unwrap()
+                        .as_tuple()
+                        .unwrap()
+                        .inner
+                        .into_iter()
+                    {
+                        result.extend(
+                            element
+                                .to_owned()
+                                .unwrap()
+                                .as_tuple()
+                                .unwrap()
+                                .inner
+                                .iter()
+                                .cloned(),
+                        );
+                    }
+                    result
+                }))),
             },
             Content::UserFunctionCall { arguments, body } => {
                 let mut result_computation_context = computation_context.clone();
