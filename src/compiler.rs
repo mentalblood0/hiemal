@@ -863,7 +863,12 @@ impl Compiler {
                         argument_compilation_context.clone(),
                         global_compilation_context,
                     )?;
-                    if let Type::Object(argument_object_values_types) = compiled_argument.r#type {
+                    if let Type::Object(argument_object_values_types) = compiled_argument
+                        .r#type
+                        .clone()
+                        .unliteral()
+                        .weakest_from_union()
+                    {
                         NodeAndMetadata {
                         r#type: Type::Tuple(
                             argument_object_values_types
@@ -1076,19 +1081,7 @@ impl Compiler {
                         .constants_names_to_name_clustered_constants_indices
                         .len()
                 };
-                let map_type = match &compiled_map.r#type {
-                    Type::Union(compiled_map_union_types) => {
-                        let mut result = compiled_map_union_types.iter().next().unwrap().clone();
-                        for compiled_map_union_type in compiled_map_union_types.iter().skip(1) {
-                            if compiled_map_union_type.contains(&result) {
-                                result = compiled_map_union_type.clone();
-                            }
-                        }
-                        result
-                    }
-                    r#type => r#type.clone(),
-                };
-                match map_type {
+                match compiled_map.r#type.clone().unliteral().weakest_from_union() {
                     Type::Tuple(map_tuple_elements_types) => {
                         let mut result_elements_types =
                             Vec::with_capacity(map_tuple_elements_types.len());
@@ -1258,19 +1251,12 @@ impl Compiler {
                         .len()
                         + 1
                 };
-                let fold_type = match &compiled_fold.r#type {
-                    Type::Union(compiled_fold_union_types) => {
-                        let mut result = compiled_fold_union_types.iter().next().unwrap().clone();
-                        for compiled_fold_union_type in compiled_fold_union_types.iter().skip(1) {
-                            if compiled_fold_union_type.contains(&result) {
-                                result = compiled_fold_union_type.clone();
-                            }
-                        }
-                        result
-                    }
-                    r#type => r#type.clone(),
-                };
-                match fold_type {
+                match compiled_fold
+                    .r#type
+                    .clone()
+                    .unliteral()
+                    .weakest_from_union()
+                {
                     Type::Tuple(fold_tuple_elements_types) => {
                         let mut result_type = compiled_starting_with.r#type;
                         let mut result_throughs_nodes_indexes =

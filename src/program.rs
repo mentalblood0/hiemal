@@ -186,7 +186,7 @@ pub enum PathSegment {
     StandardInput,
     #[serde(rename = "parse yaml")]
     ParseYaml,
-    #[serde(rename = "items")]
+    #[serde(rename = "key-value pairs")]
     KeyValuePairs,
     #[serde(rename = "user function call")]
     UserFunctionCall(String),

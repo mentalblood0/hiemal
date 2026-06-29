@@ -227,4 +227,19 @@ impl Type {
             }
         }
     }
+
+    pub fn weakest_from_union(&self) -> Type {
+        match self {
+            Type::Union(union_types) => {
+                let mut result = union_types.iter().next().unwrap().clone();
+                for union_type in union_types.iter().skip(1) {
+                    if union_type.contains(&result) {
+                        result = union_type.clone();
+                    }
+                }
+                result
+            }
+            r#type => r#type.clone(),
+        }
+    }
 }
