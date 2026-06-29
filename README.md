@@ -2,13 +2,12 @@
 
 [![tests](https://github.com/mentalblood0/hiemal/actions/workflows/tests.yml/badge.svg)](https://github.com/mentalblood0/hiemal/actions/workflows/tests.yml)
 
-Programming language which uses deserialization of abstract syntax tree as parsing
-
-- functional
-- infers and statically checks types
-- effectively a configuration files preprocessor
-
-Command line utility supports `YAML` and `JSON` through `serde`, yet library is fully format-agnostic as works with deserialized structures
+- no own syntax, parsing is deserialization
+- static type checking without annotations
+- tuples, union types, heterogenous fold
+- match clause exhaustiveness checking
+- strings, arrays/tuples and maps are immutable
+- numbers are arbitrary size rational
 
 ## Installation
 
@@ -21,209 +20,184 @@ cargo install --git https://github.com/mentalblood0/hiemal
 ## Usage
 
 ```bash
-hiemal examples/factorial.json
+hiemal examples/fibonacci.yml
 hiemal https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/fibonacci.yml
 hiemal examples/include.yml
 ```
-
-### Basic types
-
-#### strings
-
-Immutable with cheap slices thanks to [ropey](https://github.com/cessen/ropey)
-
-#### numbers
-
-Arbitrary size and full precision thanks to [dashu](https://github.com/cmpute/dashu), e.g. `1`, `2.3`, `"4"`, `"5.6"`, `"7/9"`
-
-#### booleans
-
-#### null
-
-#### objects
-
-Immutable thanks to [rpds](https://github.com/orium/rpds)
-
-Keys are strings
-
-#### arrays
-
-Immutable thanks to [rpds](https://github.com/orium/rpds)
-
-Homogeneous, e.g. elements of array must be of the same type
 
 ### Embedded functions
 
 ```yaml
 - sum: [1, 2, 3]
-- product: [1, 2, 3]
-- len: abc
-- size: [1, 2, 3]
 - is sorted: [1, 2, 3]
-- are equal: [1, 2, 3]
-- are equal: [a, a, a]
-- are equal: [[1, 2], [1, 2], [1, 2]]
-- concat: [ab, cd, efg]
-- slice:
-    source: abcd
-    from: 1
-    to: 3
-- sequence:
-    from: 1
-    to: 9
-    step: 2
+- key-value pairs: {a: 1, b: 2, c: 3}
 ```
-
-Embedding new functions is quite easy, see [here](src/embedded_functions.rs)
 
 ### Clauses
 
-#### include
+#### from at
 
 ```yaml
-- with:
-    functions:
-      factorial:
-        include: [examples/factorial.yml, with, functions, { object key: factorial }]
-  compute:
-    factorial: 5
-- include: [https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/factorial.yml]
+functions:
+  fibonacci::
+    from: examples/fibonacci.yml
+    at: [functions, { object key: "fibonacci:" }]
+compute:
+  fibonacci:: 10
+```
+
+```yaml
+from:
+  a: [1, 2, { b: 3 }]
+at: [a, 2, b]
 ```
 
 #### constant
 
 ```yaml
-constant: x
-```
-
-Gets value of already defined constant with given name
-
-There is also shortcut to get constant with name "_", which is default for one-argument function calls:
-
-```yaml
-_
-```
-
-#### with functions constants compute
-
-```yaml
-with:
-  functions: # may be omitted
-    factorial:
-      product:
-        sequence:
-          from: 1
-          to: _
-          step: 1
-  constants: # may be omitted
-    x:
-      sum: [2, 3]
+constants:
+  c: 1
 compute:
-  factorial:
-    constant: x
+  {constant: c}
 ```
-
-`_` is where defined function argument will be located if it is not object
-
-If function argument is object with more then one key, it will be 'destructured' and it's key-value pairs will be treated as constants names and compute bodies:
 
 ```yaml
-with:
-  functions:
-    f:
-      sum:
-        - constant: x
-        - constant: y
-        - constant: z
-        - 4
-  constants:
-    z: 3
-  compute:
-    f:
-      x: 1
-      y: 2
+constants:
+  c: 1
+compute:
+  _
 ```
 
-Function is computed when and each time it is needed in `COMPUTE`
+#### functions constants compute
 
-Constant is computed once before `COMPUTE`
+```yaml
+functions:
+  fibonacci::
+    match:
+      is sorted: [_, 1]
+    cases:
+      - [true, _]
+      - - false
+        - sum:
+            - fibonacci::
+                sum: [_, -1]
+            - fibonacci::
+                sum: [_, -2]
+compute:
+  fibonacci:: 10
+```
 
-Both functions and constants become available only in `COMPUTE`
+```yaml
+functions:
+  f::
+    sum:
+      - constant: a
+      - constant: b
+      - constant: c
+      - 4
+constants:
+  c: 3
+compute:
+  f::
+    a: 1
+    b: 2
+```
+
+#### match cases
+
+```yaml
+match: { parse yaml: "0x1A" }
+cases:
+  - [number, true]
+  - [string, it's a string]
+  - [any, it's something else]
+```
+
+```yaml
+match: { is sorted: [1, 2, 3] }
+cases:
+  - [true, 1]
+  - [false, string]
+```
+
+```yaml
+match:
+  match: { parse yaml: "[]" }
+  as: _
+  cases:
+    - [number, _]
+    - [string, _]
+    - [any, null]
+cases:
+  - [number, it's a number]
+  - [string, it's a string]
+  - ["null", true]
+```
+
+```yaml
+match: { parse yaml: "[1, 2, 3]" }
+cases:
+  - [number, it's a number]
+  - [string, it's a string]
+  - [[1, { sum: [1, 1] }, 3], true]
+  - [any, it's something else]
+```
 
 #### map as through
 
 ```yaml
-map: [1, 2, 3]
-as: x # may be omitted, defaulting to "_"
+map: [1, string, 2, [1, 2, 3]]
 through:
-  product:
-    - constant: x
-    - 2
+  match: _
+  as: matched
+  cases:
+    - [number, it's a number]
+    - [string, it's a string]
+    - - { array: number }
+      - map: { constant: matched }
+        as: element from matched
+        through:
+          sum: [{ constant: element from matched }, 1]
 ```
 
-#### filter as through
-
 ```yaml
-filter: [1, 2, 3]
-as: x # may be omitted, defaulting to "_"
+map:
+  key-value pairs: { first: 1, second: string, third: [1, 2, 3] }
 through:
-  is sorted:
-    - constant: x
-    - 2
+  match: _
+  as: matched
+  cases:
+    - [{ tuple: [string, number] }, it's a number]
+    - [{ tuple: [string, string] }, it's a string]
+    - - { tuple: [string, { array: number }] }
+      - map: { from: { constant: matched }, at: [1] }
+        as: element from matched
+        through:
+          sum: [{ constant: element from matched }, 1]
 ```
 
 #### fold as starting with accumulating in through
 
 ```yaml
 fold: [1, 2, 3]
-as: cur # may be omitted, defaulting to "current"
 starting with: 0
-accumulating in: acc # may be omitted, defaulting to "accumulator"
 through:
-  sum:
-    - constant: acc
-    - product:
-      - constant: curr
-      - constant: curr
+  sum: [{ constant: accumulator }, { constant: current }]
 ```
-
-#### if then else
 
 ```yaml
-if:
-  is sorted:
-    [1, 3, 2]
-then: 1
-else: 2
+sum:
+  - fold: [1, 2, "string", 3, 4]
+    as: current
+    starting with: 0
+    accumulating in: accumulator
+    through:
+      match: { constant: current }
+      cases:
+        - [number, sum: [{ constant: accumulator }, { constant: current }]]
+        - [string, 0]
+  - 1
 ```
-
-#### from at
-
-```yaml
-from: {key: [a, b]}
-at: [key, 1]
-```
-
-#### try or with error
-
-```yaml
-try:
-  from: [a, b]
-  at: [2]
-or:
-  constant: err
-with error: err # may be omitted, defaulting to "error"
-```
-
-### Composability
-
-Every value of some type `T` can be replaced with expression which computes to value of type `T`
-
-### No metaprogramming
-
-Because with it static type-checking would become nearly impossible
-
-Computation done in one pass
 
 ## Name
 

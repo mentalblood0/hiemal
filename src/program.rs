@@ -40,8 +40,32 @@ pub enum Program {
         r#as: String,
         through: Box<Program>,
     },
+    Fold {
+        fold: Box<Program>,
+        #[serde(default = "default_fold_as")]
+        r#as: String,
+        #[serde(default = "default_starting_with")]
+        #[serde(rename = "starting with")]
+        starting_with: Box<Program>,
+        #[serde(default = "default_accumulating_in")]
+        #[serde(rename = "accumulating in")]
+        accumulating_in: String,
+        through: Box<Program>,
+    },
     Object(BTreeMap<String, Program>),
     Value(Option<Value>),
+}
+
+pub fn default_fold_as() -> String {
+    "current".to_string()
+}
+
+pub fn default_accumulating_in() -> String {
+    "accumulator".to_string()
+}
+
+pub fn default_starting_with() -> Box<Program> {
+    Box::new(Program::Value(None))
 }
 
 pub fn default_match_as() -> Option<String> {
@@ -120,6 +144,10 @@ pub enum PathSegment {
     Match,
     #[serde(rename = "map")]
     Map,
+    #[serde(rename = "fold")]
+    Fold,
+    #[serde(rename = "starting from")]
+    StartingWith,
     #[serde(rename = "through")]
     Through(Type),
     #[serde(rename = "cases")]

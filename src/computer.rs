@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use rpds::RedBlackTreeMapSync;
 use serde::{Deserialize, Serialize};
 
-use crate::intermediate_representation::MapThroughs;
+use crate::intermediate_representation::Throughs;
 use crate::{
     containers::{Map, Vector},
     intermediate_representation::{
@@ -438,34 +438,34 @@ impl Computer {
                 )?;
                 let computed_map_array = computed_map.as_ref().unwrap().as_tuple().unwrap();
                 match throughs {
-                    MapThroughs::Array(node) => Ok(Some(Value::Tuple(Vector {
+                    Throughs::Array(node) => Ok(Some(Value::Tuple(Vector {
                         inner: rpds::VectorSync::from_iter(self.compute_nodes(
                             computed_map_array.inner.iter().map(|element_value| {
-                                let mut element_computation_context = computation_context.clone();
-                                element_computation_context.constants.inner
+                                let mut through_computation_context = computation_context.clone();
+                                through_computation_context.constants.inner
                                     [*map_constant_name_clustered_index] = element_value.clone();
-                                (&**node, Cow::Owned(element_computation_context))
+                                (&**node, Cow::Owned(through_computation_context))
                             }),
                             computed_map_array.inner.len(),
                             intermediate_representation,
                             global_computation_context,
                         )?),
                     }))),
-                    MapThroughs::Tuple {
-                        elements_nodes_indexes,
+                    Throughs::Tuple {
+                        nodes_indexes,
                         nodes,
                     } => Ok(Some(Value::Tuple(Vector {
                         inner: rpds::VectorSync::from_iter(self.compute_nodes(
                             computed_map_array.inner.iter().enumerate().map(
                                 |(element_index, element_value)| {
-                                    let mut element_computation_context =
+                                    let mut through_computation_context =
                                         computation_context.clone();
-                                    element_computation_context.constants.inner
+                                    through_computation_context.constants.inner
                                         [*map_constant_name_clustered_index] =
                                         element_value.clone();
                                     (
-                                        &nodes[elements_nodes_indexes[element_index]],
-                                        Cow::Owned(element_computation_context),
+                                        &nodes[nodes_indexes[element_index]],
+                                        Cow::Owned(through_computation_context),
                                     )
                                 },
                             ),
@@ -475,6 +475,64 @@ impl Computer {
                         )?),
                     }))),
                 }
+            }
+            Content::Fold {
+                fold,
+                fold_constant_name_clustered_index,
+                starting_with,
+                accumulating_in_constant_name_clustered_index,
+                throughs,
+            } => {
+                let computed_fold = self.compute_node(
+                    &fold,
+                    intermediate_representation,
+                    computation_context,
+                    global_computation_context,
+                )?;
+                let computed_fold_array = computed_fold.as_ref().unwrap().as_tuple().unwrap();
+                let mut result = self.compute_node(
+                    &starting_with,
+                    intermediate_representation,
+                    computation_context,
+                    global_computation_context,
+                )?;
+                match throughs {
+                    Throughs::Array(through_node) => {
+                        for element in computed_fold_array.inner.iter() {
+                            let mut through_computation_context = computation_context.clone();
+                            through_computation_context.constants.inner
+                                [*fold_constant_name_clustered_index] = element.clone();
+                            through_computation_context.constants.inner
+                                [*accumulating_in_constant_name_clustered_index] = result.clone();
+                            result = self.compute_node(
+                                through_node,
+                                intermediate_representation,
+                                &through_computation_context,
+                                global_computation_context,
+                            )?;
+                        }
+                    }
+                    Throughs::Tuple {
+                        nodes_indexes,
+                        nodes,
+                    } => {
+                        for (element_index, element) in computed_fold_array.inner.iter().enumerate()
+                        {
+                            let mut through_computation_context = computation_context.clone();
+                            through_computation_context.constants.inner
+                                [*fold_constant_name_clustered_index] = element.clone();
+                            through_computation_context.constants.inner
+                                [*accumulating_in_constant_name_clustered_index] = result.clone();
+                            result = self.compute_node(
+                                &nodes[nodes_indexes[element_index]],
+                                intermediate_representation,
+                                &through_computation_context,
+                                global_computation_context,
+                            )?;
+                        }
+                    }
+                }
+                Ok(result)
             }
             Content::Object(object) => Ok(Some(Value::Object(Map {
                 inner: RedBlackTreeMapSync::from_iter(

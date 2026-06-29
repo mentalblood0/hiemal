@@ -8,6 +8,32 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test fold complex:
+    assert equal::
+      found:
+        sum:
+          - fold: [1, 2, "string", 3, 4]
+            as: current
+            starting with: 0
+            accumulating in: accumulator
+            through:
+              match: { constant: current }
+              cases:
+                - [
+                    number,
+                    sum: [{ constant: accumulator }, { constant: current }],
+                  ]
+                - [string, 0]
+          - 1
+      expected: 8
+  test fold simple:
+    assert equal::
+      found:
+        fold: [1, 2, 3]
+        starting with: 0
+        through:
+          sum: [{ constant: accumulator }, { constant: current }]
+      expected: 6
   test map object:
     assert equal::
       found:
@@ -113,6 +139,30 @@ compute:
         compute:
           fibonacci:: 10
       expected: 55
+  test compound context:
+    assert equal::
+      found:
+        functions:
+          f::
+            sum:
+              - constant: a
+              - constant: b
+              - constant: c
+              - 4
+        constants:
+          c: 3
+        compute:
+          f::
+            a: 1
+            b: 2
+      expected: 10
+  test from at value:
+    assert equal::
+      found:
+        from:
+          a: [1, 2, { b: 3 }]
+        at: [a, 2, b]
+      expected: 3
   test from at function:
     assert equal::
       found:
