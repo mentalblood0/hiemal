@@ -52,6 +52,9 @@ pub enum Program {
         accumulating_in: String,
         through: Box<Program>,
     },
+    Metaprogram {
+        metaprogram: Box<Program>,
+    },
     Object(BTreeMap<String, Program>),
     Value(Option<Value>),
 }
@@ -146,6 +149,8 @@ pub enum PathSegment {
     Map,
     #[serde(rename = "fold")]
     Fold,
+    #[serde(rename = "metaprogram")]
+    Metaprogram,
     #[serde(rename = "starting from")]
     StartingWith,
     #[serde(rename = "through")]

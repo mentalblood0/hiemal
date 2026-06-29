@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::{Error, Result, anyhow};
+use anyhow::{Context, Error, Result, anyhow};
 
 use crate::{
+    computer::Computer,
     containers::{Map, Set},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     includes_cache::IncludesCache,
@@ -350,501 +351,520 @@ fn process_from_at_program_path_part(
     ))
 }
 
-pub fn compile(program: &Program) -> Result<IntermediateRepresentation> {
-    let mut global_compilation_context = GlobalCompilationContext::default();
-    let result_root = compile_with_context(
-        program,
-        CompilationContext::default(),
-        &mut global_compilation_context,
-    )?
-    .node;
-    Ok(IntermediateRepresentation {
-        root: result_root,
-        user_functions: global_compilation_context
-            .user_functions
-            .into_iter()
-            .map(
-                |(external_constants_name_clustered_indices, program_or_node, is_pure)| {
-                    UserFunction {
-                        external_constants_name_clustered_indices,
-                        node: program_or_node.as_node().unwrap().clone(),
-                        is_pure,
-                    }
-                },
-            )
-            .collect(),
-        unique_constants_names_count: global_compilation_context
-            .constants_names_to_name_clustered_constants_indices
-            .len(),
-    })
+#[derive(Default, Clone)]
+pub struct Compiler {
+    pub metaprograms_computer: Computer,
 }
 
-fn define_constant(
-    name: String,
-    r#type: Type,
-    compilation_context: &mut CompilationContext,
-    global_compilation_context: &mut GlobalCompilationContext,
-) -> ConstantDefinition {
-    let result = ConstantDefinition {
-        index: {
-            let result = global_compilation_context.constants.len();
-            global_compilation_context.constants.push(r#type);
-            result
-        },
-        name_clustered_index: if let Some(constant_name_clustered_index) =
-            global_compilation_context
+impl Compiler {
+    pub fn compile(&self, program: &Program) -> Result<IntermediateRepresentation> {
+        let mut global_compilation_context = GlobalCompilationContext::default();
+        let result_root = self
+            .compile_with_context(
+                program,
+                CompilationContext::default(),
+                &mut global_compilation_context,
+            )?
+            .node;
+        Ok(IntermediateRepresentation {
+            root: result_root,
+            user_functions: global_compilation_context
+                .user_functions
+                .into_iter()
+                .map(
+                    |(external_constants_name_clustered_indices, program_or_node, is_pure)| {
+                        UserFunction {
+                            external_constants_name_clustered_indices,
+                            node: program_or_node.as_node().unwrap().clone(),
+                            is_pure,
+                        }
+                    },
+                )
+                .collect(),
+            unique_constants_names_count: global_compilation_context
                 .constants_names_to_name_clustered_constants_indices
-                .get(&name)
-        {
-            *constant_name_clustered_index
-        } else {
-            let result = global_compilation_context
-                .constants_names_to_name_clustered_constants_indices
-                .len();
-            global_compilation_context
-                .constants_names_to_name_clustered_constants_indices
-                .insert(name.clone(), result);
-            result
-        },
-    };
-    compilation_context
-        .available_constants
-        .extend([(name, result.index)]);
-    result
-}
+                .len(),
+        })
+    }
 
-fn compile_with_context(
-    program: &Program,
-    compilation_context: CompilationContext,
-    global_compilation_context: &mut GlobalCompilationContext,
-) -> Result<NodeAndMetadata> {
-    Ok(match program {
-        Program::Tuple(tuple) => {
-            if tuple.is_empty() {
-                return Err(anyhow!(
-                    "Expected non-empty tuple at {:#?}",
-                    compilation_context.path
-                ));
-            }
-            let mut result_content = Vec::with_capacity(tuple.len());
-            let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-            let mut result_elements_types = Vec::with_capacity(tuple.len());
-            let mut result_is_pure = true;
-            for (element_index, element) in tuple.iter().enumerate() {
-                let mut element_compilation_context = compilation_context.clone();
-                element_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::ArrayIndex(element_index)]);
-                let mut compiled_element = compile_with_context(
-                    element,
-                    element_compilation_context.clone(),
-                    global_compilation_context,
-                )?;
-                result_content.push(compiled_element.node);
-                result_external_constants_name_clustered_indices
-                    .append(&mut compiled_element.external_constants_name_clustered_indices);
-                result_elements_types.push(compiled_element.r#type.clone());
-                result_is_pure &= compiled_element.is_pure;
-            }
-            NodeAndMetadata {
-                r#type: Type::Tuple(result_elements_types),
-                external_constants_name_clustered_indices:
-                    result_external_constants_name_clustered_indices,
-                node: Node {
-                    content: Content::Tuple(result_content),
-                },
-                is_pure: result_is_pure,
-            }
-        }
-        Program::Scope {
-            functions,
-            constants,
-            compute,
-        } => {
-            let mut compute_compilation_context = compilation_context.clone();
-            compute_compilation_context
-                .path
-                .0
-                .extend([PathSegment::Compute]);
-            let mut new_constants = Vec::with_capacity(constants.len());
-            let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-            let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
-            let mut result_is_pure = true;
-            for (constant_name, constant_compute_body) in constants.iter() {
-                let mut constant_compilation_context = compilation_context.clone();
-                constant_compilation_context.path.0.extend([
-                    PathSegment::Constants,
-                    PathSegment::Constant(constant_name.clone()),
-                ]);
-                let mut compiled_constant = compile_with_context(
-                    constant_compute_body,
-                    constant_compilation_context,
-                    global_compilation_context,
-                )?;
-                result_external_constants_name_clustered_indices
-                    .append(&mut compiled_constant.external_constants_name_clustered_indices);
-                let constant_definition = define_constant(
-                    constant_name.clone(),
-                    compiled_constant.r#type,
-                    &mut compute_compilation_context,
-                    global_compilation_context,
-                );
-                constants_name_clustered_indices.push(constant_definition.name_clustered_index);
-                new_constants.push(intermediate_representation::ConstantDefinition {
-                    name_clustered_index: constant_definition.name_clustered_index,
-                    node: compiled_constant.node,
-                });
-                result_is_pure &= compiled_constant.is_pure;
-            }
-            for (function_name, function_body) in functions.iter() {
-                if !function_name.ends_with(":") {
-                    let mut function_compilation_context = compilation_context.clone();
-                    function_compilation_context.path.0.extend([
-                        PathSegment::Functions,
-                        PathSegment::Function(function_name.clone()),
-                    ]);
+    fn define_constant(
+        &self,
+        name: String,
+        r#type: Type,
+        compilation_context: &mut CompilationContext,
+        global_compilation_context: &mut GlobalCompilationContext,
+    ) -> ConstantDefinition {
+        let result = ConstantDefinition {
+            index: {
+                let result = global_compilation_context.constants.len();
+                global_compilation_context.constants.push(r#type);
+                result
+            },
+            name_clustered_index: if let Some(constant_name_clustered_index) =
+                global_compilation_context
+                    .constants_names_to_name_clustered_constants_indices
+                    .get(&name)
+            {
+                *constant_name_clustered_index
+            } else {
+                let result = global_compilation_context
+                    .constants_names_to_name_clustered_constants_indices
+                    .len();
+                global_compilation_context
+                    .constants_names_to_name_clustered_constants_indices
+                    .insert(name.clone(), result);
+                result
+            },
+        };
+        compilation_context
+            .available_constants
+            .extend([(name, result.index)]);
+        result
+    }
+
+    fn compile_with_context(
+        &self,
+        program: &Program,
+        compilation_context: CompilationContext,
+        global_compilation_context: &mut GlobalCompilationContext,
+    ) -> Result<NodeAndMetadata> {
+        Ok(match program {
+            Program::Tuple(tuple) => {
+                if tuple.is_empty() {
                     return Err(anyhow!(
-                        "expected function named {:?}, found function named {function_name:?} at \
-                         {:#?}",
-                        format!("{function_name}:"),
-                        function_compilation_context.path
+                        "Expected non-empty tuple at {:#?}",
+                        compilation_context.path
                     ));
                 }
-                compute_compilation_context
-                    .available_functions
-                    .extend([(function_name.clone(), function_body.clone())]);
+                let mut result_content = Vec::with_capacity(tuple.len());
+                let mut result_external_constants_name_clustered_indices = BTreeSet::new();
+                let mut result_elements_types = Vec::with_capacity(tuple.len());
+                let mut result_is_pure = true;
+                for (element_index, element) in tuple.iter().enumerate() {
+                    let mut element_compilation_context = compilation_context.clone();
+                    element_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::ArrayIndex(element_index)]);
+                    let mut compiled_element = self.compile_with_context(
+                        element,
+                        element_compilation_context.clone(),
+                        global_compilation_context,
+                    )?;
+                    result_content.push(compiled_element.node);
+                    result_external_constants_name_clustered_indices
+                        .append(&mut compiled_element.external_constants_name_clustered_indices);
+                    result_elements_types.push(compiled_element.r#type.clone());
+                    result_is_pure &= compiled_element.is_pure;
+                }
+                NodeAndMetadata {
+                    r#type: Type::Tuple(result_elements_types),
+                    external_constants_name_clustered_indices:
+                        result_external_constants_name_clustered_indices,
+                    node: Node {
+                        content: Content::Tuple(result_content),
+                    },
+                    is_pure: result_is_pure,
+                }
             }
-            let mut compiled_compute = compile_with_context(
+            Program::Scope {
+                functions,
+                constants,
                 compute,
-                compute_compilation_context,
-                global_compilation_context,
-            )?;
-            for constant_name_clustered_index in constants_name_clustered_indices {
-                compiled_compute
-                    .external_constants_name_clustered_indices
-                    .remove(&constant_name_clustered_index);
-            }
-            result_external_constants_name_clustered_indices
-                .append(&mut compiled_compute.external_constants_name_clustered_indices);
-            result_is_pure &= compiled_compute.is_pure;
-            NodeAndMetadata {
-                r#type: compiled_compute.r#type,
-                external_constants_name_clustered_indices:
-                    result_external_constants_name_clustered_indices,
-                node: Node {
-                    content: Content::Scope {
-                        constants: new_constants,
-                        compute: Box::new(compiled_compute.node),
-                    },
-                },
-                is_pure: result_is_pure,
-            }
-        }
-        Program::Constant {
-            constant: constant_name,
-        } => {
-            if let Some(constant_index) = compilation_context
-                .available_constants
-                .inner
-                .get(constant_name)
-            {
-                let constant_type = global_compilation_context.constants[*constant_index].clone();
-                let name_clustered_constant_index = *global_compilation_context
-                    .constants_names_to_name_clustered_constants_indices
-                    .get(constant_name)
-                    .unwrap();
-                NodeAndMetadata {
-                    r#type: constant_type,
-                    external_constants_name_clustered_indices: BTreeSet::from_iter([
-                        name_clustered_constant_index,
-                    ]),
-                    node: Node {
-                        content: Content::Constant(name_clustered_constant_index),
-                    },
-                    is_pure: true,
-                }
-            } else {
-                return Err(anyhow!(
-                    "expected one of available constants {:#?}, found {constant_name:?} at {:#?}",
-                    compilation_context
-                        .available_constants
-                        .inner
-                        .keys()
-                        .collect::<Vec<_>>(),
-                    compilation_context.path,
-                ));
-            }
-        }
-        Program::DefaultArgument(_) => compile_with_context(
-            &Program::Constant {
-                constant: DEFAULT_ARGUMENT_NAME.to_string(),
-            },
-            compilation_context,
-            global_compilation_context,
-        )?,
-        Program::FromAt { from, at } => {
-            let (extracted_from, first_non_program_path_segment_index_option) =
-                process_from_at_program_path_part(
-                    from,
-                    at,
-                    &mut global_compilation_context.includes_cache,
-                )?;
-            let mut from_program_compilation_context = compilation_context.clone();
-            from_program_compilation_context
-                .path
-                .0
-                .extend([PathSegment::From]);
-            let compiled_extracted_from = compile_with_context(
-                &extracted_from,
-                from_program_compilation_context,
-                global_compilation_context,
-            )?;
-            let external_constants_name_clustered_indices =
-                compiled_extracted_from.external_constants_name_clustered_indices;
-            let mut static_value_path_segments = Vec::new();
-            let mut current_type = compiled_extracted_from.r#type;
-            if let Some(first_non_program_path_segment_index) =
-                first_non_program_path_segment_index_option
-            {
-                for (value_path_segment_shifted_index, value_path_segment) in at.iter().enumerate()
-                {
-                    let value_path_segment_index =
-                        value_path_segment_shifted_index + first_non_program_path_segment_index;
-                    let mut value_path_segment_compilation_context = compilation_context.clone();
-                    value_path_segment_compilation_context.path.0.extend([
-                        PathSegment::At,
-                        PathSegment::ArrayIndex(value_path_segment_index),
+            } => {
+                let mut compute_compilation_context = compilation_context.clone();
+                compute_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::Compute]);
+                let mut new_constants = Vec::with_capacity(constants.len());
+                let mut result_external_constants_name_clustered_indices = BTreeSet::new();
+                let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
+                let mut result_is_pure = true;
+                for (constant_name, constant_compute_body) in constants.iter() {
+                    let mut constant_compilation_context = compilation_context.clone();
+                    constant_compilation_context.path.0.extend([
+                        PathSegment::Constants,
+                        PathSegment::Constant(constant_name.clone()),
                     ]);
-                    match (&current_type, value_path_segment) {
-                        (_, AtSegment::ProgramPathSegment(_)) => {
-                            return Err(anyhow!(
-                                "expected value path segment: array index or object key, found \
-                                 {:#?} at {:#?}",
-                                value_path_segment,
-                                value_path_segment_compilation_context.path
-                            ));
-                        }
-                        (Type::Array(element_type), AtSegment::ValueArrayIndex(array_index)) => {
-                            static_value_path_segments.push(
-                                intermediate_representation::ValuePathSegment::ArrayIndex(
-                                    *array_index,
-                                ),
-                            );
-                            current_type = *element_type.clone();
-                        }
-                        (Type::Tuple(elements_types), AtSegment::ValueArrayIndex(tuple_index)) => {
-                            if *tuple_index >= elements_types.len() {
+                    let mut compiled_constant = self.compile_with_context(
+                        constant_compute_body,
+                        constant_compilation_context,
+                        global_compilation_context,
+                    )?;
+                    result_external_constants_name_clustered_indices
+                        .append(&mut compiled_constant.external_constants_name_clustered_indices);
+                    let constant_definition = self.define_constant(
+                        constant_name.clone(),
+                        compiled_constant.r#type,
+                        &mut compute_compilation_context,
+                        global_compilation_context,
+                    );
+                    constants_name_clustered_indices.push(constant_definition.name_clustered_index);
+                    new_constants.push(intermediate_representation::ConstantDefinition {
+                        name_clustered_index: constant_definition.name_clustered_index,
+                        node: compiled_constant.node,
+                    });
+                    result_is_pure &= compiled_constant.is_pure;
+                }
+                for (function_name, function_body) in functions.iter() {
+                    if !function_name.ends_with(":") {
+                        let mut function_compilation_context = compilation_context.clone();
+                        function_compilation_context.path.0.extend([
+                            PathSegment::Functions,
+                            PathSegment::Function(function_name.clone()),
+                        ]);
+                        return Err(anyhow!(
+                            "expected function named {:?}, found function named {function_name:?} \
+                             at {:#?}",
+                            format!("{function_name}:"),
+                            function_compilation_context.path
+                        ));
+                    }
+                    compute_compilation_context
+                        .available_functions
+                        .extend([(function_name.clone(), function_body.clone())]);
+                }
+                let mut compiled_compute = self.compile_with_context(
+                    compute,
+                    compute_compilation_context,
+                    global_compilation_context,
+                )?;
+                for constant_name_clustered_index in constants_name_clustered_indices {
+                    compiled_compute
+                        .external_constants_name_clustered_indices
+                        .remove(&constant_name_clustered_index);
+                }
+                result_external_constants_name_clustered_indices
+                    .append(&mut compiled_compute.external_constants_name_clustered_indices);
+                result_is_pure &= compiled_compute.is_pure;
+                NodeAndMetadata {
+                    r#type: compiled_compute.r#type,
+                    external_constants_name_clustered_indices:
+                        result_external_constants_name_clustered_indices,
+                    node: Node {
+                        content: Content::Scope {
+                            constants: new_constants,
+                            compute: Box::new(compiled_compute.node),
+                        },
+                    },
+                    is_pure: result_is_pure,
+                }
+            }
+            Program::Constant {
+                constant: constant_name,
+            } => {
+                if let Some(constant_index) = compilation_context
+                    .available_constants
+                    .inner
+                    .get(constant_name)
+                {
+                    let constant_type =
+                        global_compilation_context.constants[*constant_index].clone();
+                    let name_clustered_constant_index = *global_compilation_context
+                        .constants_names_to_name_clustered_constants_indices
+                        .get(constant_name)
+                        .unwrap();
+                    NodeAndMetadata {
+                        r#type: constant_type,
+                        external_constants_name_clustered_indices: BTreeSet::from_iter([
+                            name_clustered_constant_index,
+                        ]),
+                        node: Node {
+                            content: Content::Constant(name_clustered_constant_index),
+                        },
+                        is_pure: true,
+                    }
+                } else {
+                    return Err(anyhow!(
+                        "expected one of available constants {:#?}, found {constant_name:?} at \
+                         {:#?}",
+                        compilation_context
+                            .available_constants
+                            .inner
+                            .keys()
+                            .collect::<Vec<_>>(),
+                        compilation_context.path,
+                    ));
+                }
+            }
+            Program::DefaultArgument(_) => self.compile_with_context(
+                &Program::Constant {
+                    constant: DEFAULT_ARGUMENT_NAME.to_string(),
+                },
+                compilation_context,
+                global_compilation_context,
+            )?,
+            Program::FromAt { from, at } => {
+                let (extracted_from, first_non_program_path_segment_index_option) =
+                    process_from_at_program_path_part(
+                        from,
+                        at,
+                        &mut global_compilation_context.includes_cache,
+                    )?;
+                let mut from_program_compilation_context = compilation_context.clone();
+                from_program_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::From]);
+                let compiled_extracted_from = self.compile_with_context(
+                    &extracted_from,
+                    from_program_compilation_context,
+                    global_compilation_context,
+                )?;
+                let external_constants_name_clustered_indices =
+                    compiled_extracted_from.external_constants_name_clustered_indices;
+                let mut static_value_path_segments = Vec::new();
+                let mut current_type = compiled_extracted_from.r#type;
+                if let Some(first_non_program_path_segment_index) =
+                    first_non_program_path_segment_index_option
+                {
+                    for (value_path_segment_shifted_index, value_path_segment) in
+                        at.iter().enumerate()
+                    {
+                        let value_path_segment_index =
+                            value_path_segment_shifted_index + first_non_program_path_segment_index;
+                        let mut value_path_segment_compilation_context =
+                            compilation_context.clone();
+                        value_path_segment_compilation_context.path.0.extend([
+                            PathSegment::At,
+                            PathSegment::ArrayIndex(value_path_segment_index),
+                        ]);
+                        match (&current_type, value_path_segment) {
+                            (_, AtSegment::ProgramPathSegment(_)) => {
                                 return Err(anyhow!(
-                                    "expected tuple with at least {} elements, found tuple with \
-                                     only {} elements at {:#?}",
-                                    tuple_index + 1,
-                                    elements_types.len(),
+                                    "expected value path segment: array index or object key, \
+                                     found {:#?} at {:#?}",
+                                    value_path_segment,
                                     value_path_segment_compilation_context.path
                                 ));
                             }
-                            static_value_path_segments.push(
-                                intermediate_representation::ValuePathSegment::ArrayIndex(
-                                    *tuple_index,
-                                ),
-                            );
-                            current_type = elements_types[*tuple_index].clone();
-                        }
-                        (Type::Array(_), path_segment) => {
-                            return Err(anyhow!(
-                                "expected value array index, found {path_segment:#?} at {:#?}",
-                                value_path_segment_compilation_context.path
-                            ));
-                        }
-                        (
-                            Type::Object(object_inner_types),
-                            AtSegment::ValueObjectKey(object_key),
-                        ) => {
-                            static_value_path_segments.push(
-                                intermediate_representation::ValuePathSegment::ObjectKey(
-                                    object_key.clone(),
-                                ),
-                            );
-                            if let Some(inner_type) = object_inner_types.get(object_key) {
-                                current_type = inner_type.clone();
-                            } else {
+                            (
+                                Type::Array(element_type),
+                                AtSegment::ValueArrayIndex(array_index),
+                            ) => {
+                                static_value_path_segments.push(
+                                    intermediate_representation::ValuePathSegment::ArrayIndex(
+                                        *array_index,
+                                    ),
+                                );
+                                current_type = *element_type.clone();
+                            }
+                            (
+                                Type::Tuple(elements_types),
+                                AtSegment::ValueArrayIndex(tuple_index),
+                            ) => {
+                                if *tuple_index >= elements_types.len() {
+                                    return Err(anyhow!(
+                                        "expected tuple with at least {} elements, found tuple \
+                                         with only {} elements at {:#?}",
+                                        tuple_index + 1,
+                                        elements_types.len(),
+                                        value_path_segment_compilation_context.path
+                                    ));
+                                }
+                                static_value_path_segments.push(
+                                    intermediate_representation::ValuePathSegment::ArrayIndex(
+                                        *tuple_index,
+                                    ),
+                                );
+                                current_type = elements_types[*tuple_index].clone();
+                            }
+                            (Type::Array(_), path_segment) => {
                                 return Err(anyhow!(
-                                    "expected object with key {object_key:?}, found \
-                                     {object_inner_types:?} at {:#?}",
+                                    "expected value array index, found {path_segment:#?} at {:#?}",
                                     value_path_segment_compilation_context.path
                                 ));
                             }
-                        }
-                        (Type::Object(_), path_segment) => {
-                            return Err(anyhow!(
-                                "expected object key, found {path_segment:#?} at {:#?}",
-                                value_path_segment_compilation_context.path
-                            ));
-                        }
-                        (_, path_segment) => {
-                            return Err(anyhow!(
-                                "expected end of path when current type is {current_type:#?}, \
-                                 found {path_segment:#?} at {:#?}",
-                                value_path_segment_compilation_context.path
-                            ));
-                        }
-                    };
+                            (
+                                Type::Object(object_inner_types),
+                                AtSegment::ValueObjectKey(object_key),
+                            ) => {
+                                static_value_path_segments.push(
+                                    intermediate_representation::ValuePathSegment::ObjectKey(
+                                        object_key.clone(),
+                                    ),
+                                );
+                                if let Some(inner_type) = object_inner_types.get(object_key) {
+                                    current_type = inner_type.clone();
+                                } else {
+                                    return Err(anyhow!(
+                                        "expected object with key {object_key:?}, found \
+                                         {object_inner_types:?} at {:#?}",
+                                        value_path_segment_compilation_context.path
+                                    ));
+                                }
+                            }
+                            (Type::Object(_), path_segment) => {
+                                return Err(anyhow!(
+                                    "expected object key, found {path_segment:#?} at {:#?}",
+                                    value_path_segment_compilation_context.path
+                                ));
+                            }
+                            (_, path_segment) => {
+                                return Err(anyhow!(
+                                    "expected end of path when current type is {current_type:#?}, \
+                                     found {path_segment:#?} at {:#?}",
+                                    value_path_segment_compilation_context.path
+                                ));
+                            }
+                        };
+                    }
                 }
-            }
-            NodeAndMetadata {
-                node: Node {
-                    content: Content::FromAt {
-                        from: Box::new(compiled_extracted_from.node),
-                        value_path_segments: static_value_path_segments,
-                    },
-                },
-                r#type: current_type,
-                external_constants_name_clustered_indices,
-                is_pure: compiled_extracted_from.is_pure,
-            }
-        }
-        Program::EmbeddedFunction(embedded_function) => match &**embedded_function {
-            EmbeddedFunction::Sum(argument) => {
-                let mut argument_compilation_context = compilation_context.clone();
-                argument_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::Sum]);
-                let compiled_argument = compile_with_context(
-                    &argument,
-                    argument_compilation_context.clone(),
-                    global_compilation_context,
-                )?;
-                let expected_type = Type::Array(Box::new(Type::Number));
-                assert_contains(
-                    &compiled_argument.r#type,
-                    &expected_type,
-                    &compilation_context,
-                    global_compilation_context,
-                )?;
                 NodeAndMetadata {
-                    r#type: Type::Number,
-                    external_constants_name_clustered_indices: compiled_argument
-                        .external_constants_name_clustered_indices,
                     node: Node {
-                        content: Content::EmbeddedFunctionCall {
-                            path: None,
-                            embedded_function: Box::new(
-                                intermediate_representation::EmbeddedFunction::Sum(
-                                    compiled_argument.node,
-                                ),
-                            ),
+                        content: Content::FromAt {
+                            from: Box::new(compiled_extracted_from.node),
+                            value_path_segments: static_value_path_segments,
                         },
                     },
-                    is_pure: compiled_argument.is_pure,
+                    r#type: current_type,
+                    external_constants_name_clustered_indices,
+                    is_pure: compiled_extracted_from.is_pure,
                 }
             }
-            EmbeddedFunction::IsSorted(argument) => {
-                let mut argument_compilation_context = compilation_context.clone();
-                argument_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::IsSorted]);
-                let compiled_argument = compile_with_context(
-                    &argument,
-                    argument_compilation_context.clone(),
-                    global_compilation_context,
-                )?;
-                let expected_type = Type::Array(Box::new(Type::Any));
-                assert_contains(
-                    &compiled_argument.r#type,
-                    &expected_type,
-                    &compilation_context,
-                    global_compilation_context,
-                )?;
-                NodeAndMetadata {
-                    r#type: Type::Bool,
-                    external_constants_name_clustered_indices: compiled_argument
-                        .external_constants_name_clustered_indices,
-                    node: Node {
-                        content: Content::EmbeddedFunctionCall {
-                            path: None,
-                            embedded_function: Box::new(
-                                intermediate_representation::EmbeddedFunction::IsSorted(
-                                    compiled_argument.node,
+            Program::EmbeddedFunction(embedded_function) => match &**embedded_function {
+                EmbeddedFunction::Sum(argument) => {
+                    let mut argument_compilation_context = compilation_context.clone();
+                    argument_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::Sum]);
+                    let compiled_argument = self.compile_with_context(
+                        &argument,
+                        argument_compilation_context.clone(),
+                        global_compilation_context,
+                    )?;
+                    let expected_type = Type::Array(Box::new(Type::Number));
+                    assert_contains(
+                        &compiled_argument.r#type,
+                        &expected_type,
+                        &compilation_context,
+                        global_compilation_context,
+                    )?;
+                    NodeAndMetadata {
+                        r#type: Type::Number,
+                        external_constants_name_clustered_indices: compiled_argument
+                            .external_constants_name_clustered_indices,
+                        node: Node {
+                            content: Content::EmbeddedFunctionCall {
+                                path: None,
+                                embedded_function: Box::new(
+                                    intermediate_representation::EmbeddedFunction::Sum(
+                                        compiled_argument.node,
+                                    ),
                                 ),
-                            ),
+                            },
                         },
-                    },
-                    is_pure: compiled_argument.is_pure,
+                        is_pure: compiled_argument.is_pure,
+                    }
                 }
-            }
-            EmbeddedFunction::StandardInput => NodeAndMetadata {
-                r#type: Type::String,
-                external_constants_name_clustered_indices: BTreeSet::new(),
-                node: Node {
-                    content: Content::EmbeddedFunctionCall {
-                        path: Some(Path(
-                            compilation_context
-                                .path
-                                .0
-                                .extended([PathSegment::StandardInput]),
-                        )),
-                        embedded_function: Box::new(
-                            intermediate_representation::EmbeddedFunction::StandardInput,
-                        ),
-                    },
-                },
-                is_pure: true,
-            },
-            EmbeddedFunction::ParseYaml(argument) => {
-                let mut argument_compilation_context = compilation_context.clone();
-                argument_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::ParseYaml]);
-                let compiled_argument = compile_with_context(
-                    &argument,
-                    argument_compilation_context.clone(),
-                    global_compilation_context,
-                )?;
-                let expected_type = Type::String;
-                assert_contains(
-                    &compiled_argument.r#type,
-                    &expected_type,
-                    &argument_compilation_context,
-                    global_compilation_context,
-                )?;
-                NodeAndMetadata {
-                    r#type: Type::Any,
-                    external_constants_name_clustered_indices: compiled_argument
-                        .external_constants_name_clustered_indices,
+                EmbeddedFunction::IsSorted(argument) => {
+                    let mut argument_compilation_context = compilation_context.clone();
+                    argument_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::IsSorted]);
+                    let compiled_argument = self.compile_with_context(
+                        &argument,
+                        argument_compilation_context.clone(),
+                        global_compilation_context,
+                    )?;
+                    let expected_type = Type::Array(Box::new(Type::Any));
+                    assert_contains(
+                        &compiled_argument.r#type,
+                        &expected_type,
+                        &compilation_context,
+                        global_compilation_context,
+                    )?;
+                    NodeAndMetadata {
+                        r#type: Type::Bool,
+                        external_constants_name_clustered_indices: compiled_argument
+                            .external_constants_name_clustered_indices,
+                        node: Node {
+                            content: Content::EmbeddedFunctionCall {
+                                path: None,
+                                embedded_function: Box::new(
+                                    intermediate_representation::EmbeddedFunction::IsSorted(
+                                        compiled_argument.node,
+                                    ),
+                                ),
+                            },
+                        },
+                        is_pure: compiled_argument.is_pure,
+                    }
+                }
+                EmbeddedFunction::StandardInput => NodeAndMetadata {
+                    r#type: Type::String,
+                    external_constants_name_clustered_indices: BTreeSet::new(),
                     node: Node {
                         content: Content::EmbeddedFunctionCall {
                             path: Some(Path(
                                 compilation_context
                                     .path
                                     .0
-                                    .extended([PathSegment::ParseYaml]),
+                                    .extended([PathSegment::StandardInput]),
                             )),
                             embedded_function: Box::new(
-                                intermediate_representation::EmbeddedFunction::ParseYaml(
-                                    compiled_argument.node,
-                                ),
+                                intermediate_representation::EmbeddedFunction::StandardInput,
                             ),
                         },
                     },
-                    is_pure: compiled_argument.is_pure,
-                }
-            }
-            EmbeddedFunction::KeyValuePairs(argument) => {
-                let mut argument_compilation_context = compilation_context.clone();
-                argument_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::KeyValuePairs]);
-                let compiled_argument = compile_with_context(
-                    &argument,
-                    argument_compilation_context.clone(),
-                    global_compilation_context,
-                )?;
-                if let Type::Object(argument_object_values_types) = compiled_argument.r#type {
+                    is_pure: true,
+                },
+                EmbeddedFunction::ParseYaml(argument) => {
+                    let mut argument_compilation_context = compilation_context.clone();
+                    argument_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::ParseYaml]);
+                    let compiled_argument = self.compile_with_context(
+                        &argument,
+                        argument_compilation_context.clone(),
+                        global_compilation_context,
+                    )?;
+                    let expected_type = Type::String;
+                    assert_contains(
+                        &compiled_argument.r#type,
+                        &expected_type,
+                        &argument_compilation_context,
+                        global_compilation_context,
+                    )?;
                     NodeAndMetadata {
+                        r#type: Type::Any,
+                        external_constants_name_clustered_indices: compiled_argument
+                            .external_constants_name_clustered_indices,
+                        node: Node {
+                            content: Content::EmbeddedFunctionCall {
+                                path: Some(Path(
+                                    compilation_context
+                                        .path
+                                        .0
+                                        .extended([PathSegment::ParseYaml]),
+                                )),
+                                embedded_function: Box::new(
+                                    intermediate_representation::EmbeddedFunction::ParseYaml(
+                                        compiled_argument.node,
+                                    ),
+                                ),
+                            },
+                        },
+                        is_pure: compiled_argument.is_pure,
+                    }
+                }
+                EmbeddedFunction::KeyValuePairs(argument) => {
+                    let mut argument_compilation_context = compilation_context.clone();
+                    argument_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::KeyValuePairs]);
+                    let compiled_argument = self.compile_with_context(
+                        &argument,
+                        argument_compilation_context.clone(),
+                        global_compilation_context,
+                    )?;
+                    if let Type::Object(argument_object_values_types) = compiled_argument.r#type {
+                        NodeAndMetadata {
                         r#type: Type::Tuple(
                             argument_object_values_types
                                 .iter()
@@ -872,738 +892,776 @@ fn compile_with_context(
                         },
                         is_pure: compiled_argument.is_pure,
                     }
-                } else {
+                    } else {
+                        return Err(anyhow!(
+                            "expected object, found {:#?} at {:#?}",
+                            compiled_argument.r#type,
+                            compilation_context.path
+                        ));
+                    }
+                }
+            },
+            Program::Match {
+                r#match,
+                r#as,
+                cases,
+            } => {
+                let mut match_compilation_context = compilation_context.clone();
+                match_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::Match]);
+                let compiled_match = self.compile_with_context(
+                    r#match,
+                    match_compilation_context,
+                    global_compilation_context,
+                )?;
+                let mut result_cases = Vec::new();
+                let mut result_types = BTreeSet::new();
+                let mut result_external_constants_name_clustered_indices =
+                    compiled_match.external_constants_name_clustered_indices;
+                let mut case_is_pure = true;
+                let mut covered_types = BTreeSet::new();
+                let match_constant_name_clustered_index_option =
+                    if let Some(match_constant_name) = r#as {
+                        Some(
+                            if let Some(result) = global_compilation_context
+                                .constants_names_to_name_clustered_constants_indices
+                                .get(match_constant_name)
+                            {
+                                *result
+                            } else {
+                                global_compilation_context
+                                    .constants_names_to_name_clustered_constants_indices
+                                    .len()
+                            },
+                        )
+                    } else {
+                        None
+                    };
+                for (case_condition, case) in cases {
+                    let mut case_compilation_context = compilation_context.clone();
+                    case_compilation_context.path.0.extend([
+                        PathSegment::Cases,
+                        PathSegment::Case(case_condition.clone()),
+                    ]);
+                    match case_condition {
+                        Condition::Type(refined_match_type) => {
+                            if compiled_match
+                                .r#type
+                                .intersection(refined_match_type)
+                                .is_none()
+                            {
+                                continue;
+                            };
+                            if let Some(match_constant_name) = r#as {
+                                self.define_constant(
+                                    match_constant_name.clone(),
+                                    refined_match_type.clone(),
+                                    &mut case_compilation_context,
+                                    global_compilation_context,
+                                );
+                            };
+                            let mut compiled_case = self.compile_with_context(
+                                case,
+                                case_compilation_context,
+                                global_compilation_context,
+                            )?;
+                            result_types.insert(compiled_case.r#type);
+                            result_external_constants_name_clustered_indices.append(
+                                &mut compiled_case.external_constants_name_clustered_indices,
+                            );
+                            covered_types.insert(refined_match_type.clone());
+
+                            case_is_pure &= compiled_case.is_pure;
+                            result_cases.push(Case {
+                                condition: intermediate_representation::Condition::Type(
+                                    refined_match_type.clone(),
+                                ),
+                                node: compiled_case.node,
+                            });
+                        }
+                        Condition::Value(condition) => {
+                            let compiled_condition = self.compile_with_context(
+                                condition,
+                                case_compilation_context.clone(),
+                                global_compilation_context,
+                            )?;
+                            let refined_match_type = compiled_condition.r#type;
+                            if compiled_match
+                                .r#type
+                                .intersection(&refined_match_type)
+                                .is_none()
+                            {
+                                continue;
+                            };
+                            if let Some(match_constant_name) = r#as {
+                                self.define_constant(
+                                    match_constant_name.clone(),
+                                    refined_match_type.clone(),
+                                    &mut case_compilation_context,
+                                    global_compilation_context,
+                                );
+                            }
+                            let mut compiled_case = self.compile_with_context(
+                                case,
+                                case_compilation_context,
+                                global_compilation_context,
+                            )?;
+                            result_types.insert(compiled_case.r#type);
+                            result_external_constants_name_clustered_indices.append(
+                                &mut compiled_case.external_constants_name_clustered_indices,
+                            );
+                            covered_types.insert(refined_match_type);
+
+                            case_is_pure &= compiled_condition.is_pure && compiled_case.is_pure;
+                            result_cases.push(Case {
+                                condition: intermediate_representation::Condition::Value(
+                                    compiled_condition.node,
+                                ),
+                                node: compiled_case.node,
+                            });
+                        }
+                    }
+                }
+                let covered = Type::from(covered_types);
+                if !covered.contains(&compiled_match.r#type) {
                     return Err(anyhow!(
-                        "expected object, found {:#?} at {:#?}",
-                        compiled_argument.r#type,
+                        "expected coverage for {:#?}, found coverage only for {covered:#?} at \
+                         {:#?}",
+                        compiled_match.r#type,
                         compilation_context.path
                     ));
                 }
-            }
-        },
-        Program::Match {
-            r#match,
-            r#as,
-            cases,
-        } => {
-            let mut match_compilation_context = compilation_context.clone();
-            match_compilation_context
-                .path
-                .0
-                .extend([PathSegment::Match]);
-            let compiled_match = compile_with_context(
-                r#match,
-                match_compilation_context,
-                global_compilation_context,
-            )?;
-            let mut result_cases = Vec::new();
-            let mut result_types = BTreeSet::new();
-            let mut result_external_constants_name_clustered_indices =
-                compiled_match.external_constants_name_clustered_indices;
-            let mut case_is_pure = true;
-            let mut covered_types = BTreeSet::new();
-            let match_constant_name_clustered_index_option = if let Some(match_constant_name) = r#as
-            {
-                Some(
-                    if let Some(result) = global_compilation_context
-                        .constants_names_to_name_clustered_constants_indices
-                        .get(match_constant_name)
-                    {
-                        *result
-                    } else {
-                        global_compilation_context
-                            .constants_names_to_name_clustered_constants_indices
-                            .len()
+                match result_cases.len() {
+                    0 => self.compile_with_context(
+                        &Program::Value(None),
+                        compilation_context,
+                        global_compilation_context,
+                    )?,
+                    _ => NodeAndMetadata {
+                        node: Node {
+                            content: Content::Match {
+                                r#match: Box::new(compiled_match.node),
+                                cases: result_cases,
+                                match_constant_name_clustered_index_option,
+                            },
+                        },
+                        r#type: Type::from(result_types),
+                        external_constants_name_clustered_indices:
+                            result_external_constants_name_clustered_indices,
+                        is_pure: compiled_match.is_pure && case_is_pure,
                     },
-                )
-            } else {
-                None
-            };
-            for (case_condition, case) in cases {
-                let mut case_compilation_context = compilation_context.clone();
-                case_compilation_context.path.0.extend([
-                    PathSegment::Cases,
-                    PathSegment::Case(case_condition.clone()),
-                ]);
-                match case_condition {
-                    Condition::Type(refined_match_type) => {
-                        if compiled_match
-                            .r#type
-                            .intersection(refined_match_type)
-                            .is_none()
-                        {
-                            continue;
-                        };
-                        if let Some(match_constant_name) = r#as {
-                            define_constant(
-                                match_constant_name.clone(),
-                                refined_match_type.clone(),
-                                &mut case_compilation_context,
-                                global_compilation_context,
-                            );
-                        };
-                        let mut compiled_case = compile_with_context(
-                            case,
-                            case_compilation_context,
-                            global_compilation_context,
-                        )?;
-                        result_types.insert(compiled_case.r#type);
-                        result_external_constants_name_clustered_indices
-                            .append(&mut compiled_case.external_constants_name_clustered_indices);
-                        covered_types.insert(refined_match_type.clone());
-
-                        case_is_pure &= compiled_case.is_pure;
-                        result_cases.push(Case {
-                            condition: intermediate_representation::Condition::Type(
-                                refined_match_type.clone(),
-                            ),
-                            node: compiled_case.node,
-                        });
-                    }
-                    Condition::Value(condition) => {
-                        let compiled_condition = compile_with_context(
-                            condition,
-                            case_compilation_context.clone(),
-                            global_compilation_context,
-                        )?;
-                        let refined_match_type = compiled_condition.r#type;
-                        if compiled_match
-                            .r#type
-                            .intersection(&refined_match_type)
-                            .is_none()
-                        {
-                            continue;
-                        };
-                        if let Some(match_constant_name) = r#as {
-                            define_constant(
-                                match_constant_name.clone(),
-                                refined_match_type.clone(),
-                                &mut case_compilation_context,
-                                global_compilation_context,
-                            );
-                        }
-                        let mut compiled_case = compile_with_context(
-                            case,
-                            case_compilation_context,
-                            global_compilation_context,
-                        )?;
-                        result_types.insert(compiled_case.r#type);
-                        result_external_constants_name_clustered_indices
-                            .append(&mut compiled_case.external_constants_name_clustered_indices);
-                        covered_types.insert(refined_match_type);
-
-                        case_is_pure &= compiled_condition.is_pure && compiled_case.is_pure;
-                        result_cases.push(Case {
-                            condition: intermediate_representation::Condition::Value(
-                                compiled_condition.node,
-                            ),
-                            node: compiled_case.node,
-                        });
-                    }
                 }
             }
-            let covered = Type::from(covered_types);
-            if !covered.contains(&compiled_match.r#type) {
-                return Err(anyhow!(
-                    "expected coverage for {:#?}, found coverage only for {covered:#?} at {:#?}",
-                    compiled_match.r#type,
-                    compilation_context.path
-                ));
-            }
-            match result_cases.len() {
-                0 => compile_with_context(
-                    &Program::Value(None),
-                    compilation_context,
+            Program::Map { map, r#as, through } => {
+                let mut map_compilation_context = compilation_context.clone();
+                map_compilation_context.path.0.extend([PathSegment::Map]);
+                let compiled_map = self.compile_with_context(
+                    map,
+                    map_compilation_context.clone(),
                     global_compilation_context,
-                )?,
-                _ => NodeAndMetadata {
-                    node: Node {
-                        content: Content::Match {
-                            r#match: Box::new(compiled_match.node),
-                            cases: result_cases,
-                            match_constant_name_clustered_index_option,
-                        },
-                    },
-                    r#type: Type::from(result_types),
-                    external_constants_name_clustered_indices:
-                        result_external_constants_name_clustered_indices,
-                    is_pure: compiled_match.is_pure && case_is_pure,
-                },
-            }
-        }
-        Program::Map { map, r#as, through } => {
-            let mut map_compilation_context = compilation_context.clone();
-            map_compilation_context.path.0.extend([PathSegment::Map]);
-            let compiled_map = compile_with_context(
-                map,
-                map_compilation_context.clone(),
-                global_compilation_context,
-            )?;
-            let mut result_external_constants_name_clustered_indices =
-                compiled_map.external_constants_name_clustered_indices;
-            let mut is_pure = compiled_map.is_pure;
-            let map_constant_name_clustered_index = if let Some(result) = global_compilation_context
-                .constants_names_to_name_clustered_constants_indices
-                .get(r#as)
-            {
-                *result
-            } else {
-                global_compilation_context
-                    .constants_names_to_name_clustered_constants_indices
-                    .len()
-            };
-            let map_type = match &compiled_map.r#type {
-                Type::Union(compiled_map_union_types) => {
-                    let mut result = compiled_map_union_types.iter().next().unwrap().clone();
-                    for compiled_map_union_type in compiled_map_union_types.iter().skip(1) {
-                        if compiled_map_union_type.contains(&result) {
-                            result = compiled_map_union_type.clone();
-                        }
-                    }
-                    result
-                }
-                r#type => r#type.clone(),
-            };
-            match map_type {
-                Type::Tuple(map_tuple_elements_types) => {
-                    let mut result_elements_types =
-                        Vec::with_capacity(map_tuple_elements_types.len());
-                    let mut result_throughs_nodes_indexes =
-                        Vec::with_capacity(map_tuple_elements_types.len());
-                    let mut compiled_throughs: indexmap::IndexSet<NodeAndMetadata> =
-                        indexmap::IndexSet::new();
-                    let mut element_type_to_compiled_through_index: BTreeMap<Type, usize> =
-                        BTreeMap::new();
-                    for element_type in map_tuple_elements_types {
-                        if let Some(element_through_index) =
-                            element_type_to_compiled_through_index.get(&element_type)
-                        {
-                            result_elements_types
-                                .push(compiled_throughs[*element_through_index].r#type.clone());
-                            result_throughs_nodes_indexes.push(*element_through_index);
-                        } else {
-                            let mut through_compilation_context = compilation_context.clone();
-                            through_compilation_context
-                                .path
-                                .0
-                                .extend([PathSegment::Through(element_type.clone())]);
-                            define_constant(
-                                r#as.clone(),
-                                element_type.clone(),
-                                &mut through_compilation_context,
-                                global_compilation_context,
-                            );
-                            let compiled_through = compile_with_context(
-                                through,
-                                through_compilation_context,
-                                global_compilation_context,
-                            )?;
-                            result_elements_types.push(compiled_through.r#type.clone());
-                            let compiled_through_index = if let Some(compiled_through_index) =
-                                compiled_throughs.get_index_of(&compiled_through)
-                            {
-                                compiled_through_index
-                            } else {
-                                result_external_constants_name_clustered_indices.extend(
-                                    compiled_through
-                                        .external_constants_name_clustered_indices
-                                        .clone(),
-                                );
-                                is_pure &= compiled_through.is_pure;
-                                compiled_throughs.insert(compiled_through);
-                                compiled_throughs.len() - 1
-                            };
-                            element_type_to_compiled_through_index
-                                .insert(element_type, compiled_through_index);
-                            result_throughs_nodes_indexes.push(compiled_through_index);
-                        }
-                    }
-                    NodeAndMetadata {
-                        node: Node {
-                            content: Content::Map {
-                                map: Box::new(compiled_map.node),
-                                throughs: Throughs::Tuple {
-                                    nodes_indexes: result_throughs_nodes_indexes,
-                                    nodes: compiled_throughs
-                                        .into_iter()
-                                        .map(|compiled_through| compiled_through.node)
-                                        .collect(),
-                                },
-                                map_constant_name_clustered_index,
-                            },
-                        },
-                        r#type: Type::Tuple(result_elements_types),
-                        external_constants_name_clustered_indices:
-                            result_external_constants_name_clustered_indices,
-                        is_pure,
-                    }
-                }
-                Type::Array(map_array_element_type) => {
-                    let mut through_compilation_context = compilation_context.clone();
-                    through_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::Through(*map_array_element_type.clone())]);
-                    define_constant(
-                        r#as.clone(),
-                        *map_array_element_type.clone(),
-                        &mut through_compilation_context,
-                        global_compilation_context,
-                    );
-                    let compiled_through = compile_with_context(
-                        through,
-                        through_compilation_context,
-                        global_compilation_context,
-                    )?;
-                    result_external_constants_name_clustered_indices
-                        .extend(compiled_through.external_constants_name_clustered_indices);
-                    is_pure &= compiled_through.is_pure;
-                    NodeAndMetadata {
-                        node: Node {
-                            content: Content::Map {
-                                map: Box::new(compiled_map.node),
-                                throughs: Throughs::Array(Box::new(compiled_through.node)),
-                                map_constant_name_clustered_index,
-                            },
-                        },
-                        r#type: Type::Array(Box::new(compiled_through.r#type)),
-                        external_constants_name_clustered_indices:
-                            result_external_constants_name_clustered_indices,
-                        is_pure,
-                    }
-                }
-                _ => {
-                    return Err(anyhow!(
-                        "expected tuple or array, found {:#?} at {:#?}",
-                        compiled_map.r#type,
-                        map_compilation_context.path
-                    ));
-                }
-            }
-        }
-        Program::Fold {
-            fold,
-            r#as,
-            starting_with,
-            accumulating_in,
-            through,
-        } => {
-            let mut fold_compilation_context = compilation_context.clone();
-            fold_compilation_context.path.0.extend([PathSegment::Fold]);
-            let compiled_fold = compile_with_context(
-                fold,
-                fold_compilation_context.clone(),
-                global_compilation_context,
-            )?;
-            let mut result_external_constants_name_clustered_indices =
-                compiled_fold.external_constants_name_clustered_indices;
-            let mut is_pure = compiled_fold.is_pure;
-            let mut starting_with_compilation_context = compilation_context.clone();
-            starting_with_compilation_context
-                .path
-                .0
-                .extend([PathSegment::StartingWith]);
-            let compiled_starting_with = compile_with_context(
-                starting_with,
-                starting_with_compilation_context,
-                global_compilation_context,
-            )?;
-            result_external_constants_name_clustered_indices
-                .extend(compiled_starting_with.external_constants_name_clustered_indices);
-            is_pure &= compiled_starting_with.is_pure;
-            let fold_constant_name_clustered_index = if let Some(result) =
-                global_compilation_context
-                    .constants_names_to_name_clustered_constants_indices
-                    .get(r#as)
-            {
-                *result
-            } else {
-                global_compilation_context
-                    .constants_names_to_name_clustered_constants_indices
-                    .len()
-            };
-            let accumulating_in_constant_name_clustered_index = if let Some(result) =
-                global_compilation_context
-                    .constants_names_to_name_clustered_constants_indices
-                    .get(accumulating_in)
-            {
-                *result
-            } else {
-                global_compilation_context
-                    .constants_names_to_name_clustered_constants_indices
-                    .len()
-                    + 1
-            };
-            let fold_type = match &compiled_fold.r#type {
-                Type::Union(compiled_fold_union_types) => {
-                    let mut result = compiled_fold_union_types.iter().next().unwrap().clone();
-                    for compiled_fold_union_type in compiled_fold_union_types.iter().skip(1) {
-                        if compiled_fold_union_type.contains(&result) {
-                            result = compiled_fold_union_type.clone();
-                        }
-                    }
-                    result
-                }
-                r#type => r#type.clone(),
-            };
-            match fold_type {
-                Type::Tuple(fold_tuple_elements_types) => {
-                    let mut result_type = compiled_starting_with.r#type;
-                    let mut result_throughs_nodes_indexes =
-                        Vec::with_capacity(fold_tuple_elements_types.len());
-                    let mut compiled_throughs: indexmap::IndexSet<NodeAndMetadata> =
-                        indexmap::IndexSet::new();
-                    let mut current_type_and_accumulating_in_type_to_compiled_through_index: BTreeMap<(Type, Type), usize> =
-                        BTreeMap::new();
-                    for current_type in fold_tuple_elements_types {
-                        if let Some(element_through_index) =
-                            current_type_and_accumulating_in_type_to_compiled_through_index
-                                .get(&(current_type.clone(), result_type.clone()))
-                        {
-                            result_type = compiled_throughs[*element_through_index].r#type.clone();
-                            result_throughs_nodes_indexes.push(*element_through_index);
-                        } else {
-                            let mut through_compilation_context = compilation_context.clone();
-                            through_compilation_context
-                                .path
-                                .0
-                                .extend([PathSegment::Through(current_type.clone())]);
-                            define_constant(
-                                r#as.clone(),
-                                current_type.clone(),
-                                &mut through_compilation_context,
-                                global_compilation_context,
-                            );
-                            define_constant(
-                                accumulating_in.clone(),
-                                result_type.clone(),
-                                &mut through_compilation_context,
-                                global_compilation_context,
-                            );
-                            let compiled_through = compile_with_context(
-                                through,
-                                through_compilation_context,
-                                global_compilation_context,
-                            )?;
-                            result_type = compiled_through.r#type.clone();
-                            let compiled_through_index = if let Some(compiled_through_index) =
-                                compiled_throughs.get_index_of(&compiled_through)
-                            {
-                                compiled_through_index
-                            } else {
-                                result_external_constants_name_clustered_indices.extend(
-                                    compiled_through
-                                        .external_constants_name_clustered_indices
-                                        .clone(),
-                                );
-                                is_pure &= compiled_through.is_pure;
-                                compiled_throughs.insert(compiled_through);
-                                compiled_throughs.len() - 1
-                            };
-                            current_type_and_accumulating_in_type_to_compiled_through_index.insert(
-                                (current_type, result_type.clone()),
-                                compiled_through_index,
-                            );
-                            result_throughs_nodes_indexes.push(compiled_through_index);
-                        }
-                    }
-                    NodeAndMetadata {
-                        node: Node {
-                            content: Content::Fold {
-                                fold: Box::new(compiled_fold.node),
-                                fold_constant_name_clustered_index,
-                                starting_with: Box::new(compiled_starting_with.node),
-                                accumulating_in_constant_name_clustered_index,
-                                throughs: Throughs::Tuple {
-                                    nodes_indexes: result_throughs_nodes_indexes,
-                                    nodes: compiled_throughs
-                                        .into_iter()
-                                        .map(|compiled_through| compiled_through.node)
-                                        .collect(),
-                                },
-                            },
-                        },
-                        r#type: result_type,
-                        external_constants_name_clustered_indices:
-                            result_external_constants_name_clustered_indices,
-                        is_pure,
-                    }
-                }
-                Type::Array(fold_array_element_type) => {
-                    let mut through_compilation_context = compilation_context.clone();
-                    through_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::Through(*fold_array_element_type.clone())]);
-                    let starting_with_type = compiled_starting_with.r#type.unliteral();
-                    define_constant(
-                        r#as.clone(),
-                        *fold_array_element_type.clone(),
-                        &mut through_compilation_context,
-                        global_compilation_context,
-                    );
-                    define_constant(
-                        accumulating_in.clone(),
-                        starting_with_type.clone(),
-                        &mut through_compilation_context,
-                        global_compilation_context,
-                    );
-                    let compiled_through = compile_with_context(
-                        through,
-                        through_compilation_context.clone(),
-                        global_compilation_context,
-                    )?;
-                    assert_contains(
-                        &compiled_through.r#type,
-                        &starting_with_type,
-                        &through_compilation_context,
-                        global_compilation_context,
-                    )?;
-                    result_external_constants_name_clustered_indices
-                        .extend(compiled_through.external_constants_name_clustered_indices);
-                    is_pure &= compiled_through.is_pure;
-                    NodeAndMetadata {
-                        node: Node {
-                            content: Content::Fold {
-                                fold: Box::new(compiled_fold.node),
-                                fold_constant_name_clustered_index,
-                                starting_with: Box::new(compiled_starting_with.node),
-                                accumulating_in_constant_name_clustered_index,
-                                throughs: Throughs::Array(Box::new(compiled_through.node)),
-                            },
-                        },
-                        r#type: compiled_through.r#type,
-                        external_constants_name_clustered_indices:
-                            result_external_constants_name_clustered_indices,
-                        is_pure,
-                    }
-                }
-                _ => {
-                    return Err(anyhow!(
-                        "expected tuple or array, found {:#?} at {:#?}",
-                        compiled_fold.r#type,
-                        fold_compilation_context.path
-                    ));
-                }
-            }
-        }
-        Program::Object(object) => {
-            match object.len() {
-                0 => {
-                    return Ok(NodeAndMetadata {
-                        r#type: Type::Object(BTreeMap::new()),
-                        external_constants_name_clustered_indices: BTreeSet::new(),
-                        node: Node {
-                            content: Content::Object(BTreeMap::new()),
-                        },
-                        is_pure: true,
-                    });
-                }
-                1 => {
-                    let (function_name, function_argument) = object.iter().next().unwrap();
-                    if function_name.ends_with(":") {
-                        if let Some(function_body) = compilation_context
-                            .available_functions
-                            .inner
-                            .get(function_name)
-                        {
-                            let mut arguments_is_pure = true;
-                            let mut body_compilation_context = compilation_context.clone();
-                            body_compilation_context
-                                .path
-                                .0
-                                .extend([PathSegment::UserFunctionCall(function_name.clone())]);
-                            let arguments_iterator = match function_argument {
-                                Program::Object(function_arguments) => {
-                                    let arguments_iterator: Box<
-                                        dyn Iterator<Item = (&str, &Program)>,
-                                    > = if function_arguments.len() > 1 {
-                                        Box::new(
-                                            function_arguments
-                                                .iter()
-                                                .map(|(key, value)| (key.as_str(), value)),
-                                        )
-                                    } else {
-                                        Box::new(
-                                            [(DEFAULT_ARGUMENT_NAME, function_argument)]
-                                                .into_iter(),
-                                        )
-                                    };
-                                    arguments_iterator
-                                }
-                                _ => Box::new(
-                                    [(DEFAULT_ARGUMENT_NAME, function_argument)].into_iter(),
-                                ),
-                            };
-                            let mut new_constants_definitions = Vec::new();
-                            let mut result_external_constants_name_clustered_indices =
-                                BTreeSet::new();
-                            for (function_argument_name, function_argument_body) in
-                                arguments_iterator
-                            {
-                                let mut argument_compilation_context = compilation_context.clone();
-                                argument_compilation_context.path.0.extend([
-                                    PathSegment::UserFunctionCall(function_name.clone()),
-                                    PathSegment::Argument(function_argument_name.to_string()),
-                                ]);
-                                let mut compiled_constant = compile_with_context(
-                                    &function_argument_body,
-                                    argument_compilation_context,
-                                    global_compilation_context,
-                                )?;
-                                result_external_constants_name_clustered_indices.append(
-                                    &mut compiled_constant
-                                        .external_constants_name_clustered_indices,
-                                );
-                                let constant_definition = define_constant(
-                                    function_argument_name.to_string(),
-                                    compiled_constant.r#type,
-                                    &mut body_compilation_context,
-                                    global_compilation_context,
-                                );
-                                new_constants_definitions.push(
-                                    intermediate_representation::ConstantDefinition {
-                                        name_clustered_index: constant_definition
-                                            .name_clustered_index,
-                                        node: compiled_constant.node,
-                                    },
-                                );
-                                arguments_is_pure &= compiled_constant.is_pure;
+                )?;
+                let mut result_external_constants_name_clustered_indices =
+                    compiled_map.external_constants_name_clustered_indices;
+                let mut is_pure = compiled_map.is_pure;
+                let map_constant_name_clustered_index = if let Some(result) =
+                    global_compilation_context
+                        .constants_names_to_name_clustered_constants_indices
+                        .get(r#as)
+                {
+                    *result
+                } else {
+                    global_compilation_context
+                        .constants_names_to_name_clustered_constants_indices
+                        .len()
+                };
+                let map_type = match &compiled_map.r#type {
+                    Type::Union(compiled_map_union_types) => {
+                        let mut result = compiled_map_union_types.iter().next().unwrap().clone();
+                        for compiled_map_union_type in compiled_map_union_types.iter().skip(1) {
+                            if compiled_map_union_type.contains(&result) {
+                                result = compiled_map_union_type.clone();
                             }
-                            if compilation_context
-                                .entered_user_functions
-                                .inner
-                                .contains(function_body)
+                        }
+                        result
+                    }
+                    r#type => r#type.clone(),
+                };
+                match map_type {
+                    Type::Tuple(map_tuple_elements_types) => {
+                        let mut result_elements_types =
+                            Vec::with_capacity(map_tuple_elements_types.len());
+                        let mut result_throughs_nodes_indexes =
+                            Vec::with_capacity(map_tuple_elements_types.len());
+                        let mut compiled_throughs: indexmap::IndexSet<NodeAndMetadata> =
+                            indexmap::IndexSet::new();
+                        let mut element_type_to_compiled_through_index: BTreeMap<Type, usize> =
+                            BTreeMap::new();
+                        for element_type in map_tuple_elements_types {
+                            if let Some(element_through_index) =
+                                element_type_to_compiled_through_index.get(&element_type)
                             {
-                                let (function_index, function_type) = global_compilation_context
-                                    .user_function_to_index_and_type_option
-                                    .get(function_body)
-                                    .unwrap();
-                                return Ok(NodeAndMetadata {
-                                    r#type: function_type.clone(),
-                                    external_constants_name_clustered_indices: BTreeSet::new(),
-                                    node: Node {
-                                        content: Content::UserFunctionCall {
-                                            arguments: new_constants_definitions,
-                                            body: *function_index,
-                                        },
-                                    },
-                                    is_pure: arguments_is_pure,
-                                });
+                                result_elements_types
+                                    .push(compiled_throughs[*element_through_index].r#type.clone());
+                                result_throughs_nodes_indexes.push(*element_through_index);
                             } else {
-                                body_compilation_context
-                                    .entered_user_functions
-                                    .extend([function_body.clone()]);
-                                let function_index =
-                                    global_compilation_context.user_functions.len();
-                                global_compilation_context.user_functions.push((
-                                    Vec::new(),
-                                    ProgramOrNode::Program(function_body.clone()),
-                                    arguments_is_pure,
-                                ));
-                                global_compilation_context
-                                    .user_function_to_index_and_type_option
-                                    .insert(
-                                        function_body.clone(),
-                                        (function_index, Type::Unknown(function_index)),
-                                    );
-                                let mut compiled_function = compile_with_context(
-                                    function_body,
-                                    body_compilation_context,
+                                let mut through_compilation_context = compilation_context.clone();
+                                through_compilation_context
+                                    .path
+                                    .0
+                                    .extend([PathSegment::Through(element_type.clone())]);
+                                self.define_constant(
+                                    r#as.clone(),
+                                    element_type.clone(),
+                                    &mut through_compilation_context,
+                                    global_compilation_context,
+                                );
+                                let compiled_through = self.compile_with_context(
+                                    through,
+                                    through_compilation_context,
                                     global_compilation_context,
                                 )?;
-                                global_compilation_context
-                                    .user_function_to_index_and_type_option
-                                    .get_mut(function_body)
-                                    .unwrap()
-                                    .1 = compiled_function.r#type.clone();
-                                global_compilation_context
-                                    .user_function_node_to_index_and_type_option
-                                    .insert(
-                                        compiled_function.node.clone(),
-                                        (function_index, compiled_function.r#type.clone()),
-                                    );
-                                global_compilation_context.user_functions[function_index] = (
-                                    Vec::from_iter(
-                                        compiled_function
+                                result_elements_types.push(compiled_through.r#type.clone());
+                                let compiled_through_index = if let Some(compiled_through_index) =
+                                    compiled_throughs.get_index_of(&compiled_through)
+                                {
+                                    compiled_through_index
+                                } else {
+                                    result_external_constants_name_clustered_indices.extend(
+                                        compiled_through
                                             .external_constants_name_clustered_indices
-                                            .iter()
-                                            .cloned(),
-                                    ),
-                                    ProgramOrNode::Node(compiled_function.node.clone()),
-                                    compiled_function.is_pure,
-                                );
-                                result_external_constants_name_clustered_indices.append(
-                                    &mut compiled_function
-                                        .external_constants_name_clustered_indices,
-                                );
-                                return Ok(NodeAndMetadata {
-                                    r#type: compiled_function.r#type,
-                                    external_constants_name_clustered_indices:
-                                        result_external_constants_name_clustered_indices.clone(),
-                                    node: Node {
-                                        content: Content::UserFunctionCall {
-                                            arguments: new_constants_definitions,
-                                            body: function_index,
-                                        },
-                                    },
-                                    is_pure: arguments_is_pure && compiled_function.is_pure,
-                                });
+                                            .clone(),
+                                    );
+                                    is_pure &= compiled_through.is_pure;
+                                    compiled_throughs.insert(compiled_through);
+                                    compiled_throughs.len() - 1
+                                };
+                                element_type_to_compiled_through_index
+                                    .insert(element_type, compiled_through_index);
+                                result_throughs_nodes_indexes.push(compiled_through_index);
                             }
-                        } else {
-                            return Err(anyhow!(
-                                "expected one of available functions {:#?}, found function \
-                                 {function_name:?} at {:#?}",
-                                compilation_context
-                                    .available_functions
-                                    .inner
-                                    .keys()
-                                    .collect::<Vec<_>>(),
-                                compilation_context.path,
-                            ));
+                        }
+                        NodeAndMetadata {
+                            node: Node {
+                                content: Content::Map {
+                                    map: Box::new(compiled_map.node),
+                                    throughs: Throughs::Tuple {
+                                        nodes_indexes: result_throughs_nodes_indexes,
+                                        nodes: compiled_throughs
+                                            .into_iter()
+                                            .map(|compiled_through| compiled_through.node)
+                                            .collect(),
+                                    },
+                                    map_constant_name_clustered_index,
+                                },
+                            },
+                            r#type: Type::Tuple(result_elements_types),
+                            external_constants_name_clustered_indices:
+                                result_external_constants_name_clustered_indices,
+                            is_pure,
                         }
                     }
+                    Type::Array(map_array_element_type) => {
+                        let mut through_compilation_context = compilation_context.clone();
+                        through_compilation_context
+                            .path
+                            .0
+                            .extend([PathSegment::Through(*map_array_element_type.clone())]);
+                        self.define_constant(
+                            r#as.clone(),
+                            *map_array_element_type.clone(),
+                            &mut through_compilation_context,
+                            global_compilation_context,
+                        );
+                        let compiled_through = self.compile_with_context(
+                            through,
+                            through_compilation_context,
+                            global_compilation_context,
+                        )?;
+                        result_external_constants_name_clustered_indices
+                            .extend(compiled_through.external_constants_name_clustered_indices);
+                        is_pure &= compiled_through.is_pure;
+                        NodeAndMetadata {
+                            node: Node {
+                                content: Content::Map {
+                                    map: Box::new(compiled_map.node),
+                                    throughs: Throughs::Array(Box::new(compiled_through.node)),
+                                    map_constant_name_clustered_index,
+                                },
+                            },
+                            r#type: Type::Array(Box::new(compiled_through.r#type)),
+                            external_constants_name_clustered_indices:
+                                result_external_constants_name_clustered_indices,
+                            is_pure,
+                        }
+                    }
+                    _ => {
+                        return Err(anyhow!(
+                            "expected tuple or array, found {:#?} at {:#?}",
+                            compiled_map.r#type,
+                            map_compilation_context.path
+                        ));
+                    }
                 }
-                2.. => {}
-            };
-            let mut result_inner_types = BTreeMap::new();
-            let mut result_content = BTreeMap::new();
-            let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-            let mut is_pure = true;
-            for (object_key, object_value) in object.iter() {
-                let mut object_value_compilation_context = compilation_context.clone();
-                object_value_compilation_context
+            }
+            Program::Fold {
+                fold,
+                r#as,
+                starting_with,
+                accumulating_in,
+                through,
+            } => {
+                let mut fold_compilation_context = compilation_context.clone();
+                fold_compilation_context.path.0.extend([PathSegment::Fold]);
+                let compiled_fold = self.compile_with_context(
+                    fold,
+                    fold_compilation_context.clone(),
+                    global_compilation_context,
+                )?;
+                let mut result_external_constants_name_clustered_indices =
+                    compiled_fold.external_constants_name_clustered_indices;
+                let mut is_pure = compiled_fold.is_pure;
+                let mut starting_with_compilation_context = compilation_context.clone();
+                starting_with_compilation_context
                     .path
                     .0
-                    .extend([PathSegment::ObjectKey(object_key.clone())]);
-                let mut compiled_object_value = compile_with_context(
-                    object_value,
-                    object_value_compilation_context,
+                    .extend([PathSegment::StartingWith]);
+                let compiled_starting_with = self.compile_with_context(
+                    starting_with,
+                    starting_with_compilation_context,
                     global_compilation_context,
                 )?;
                 result_external_constants_name_clustered_indices
-                    .append(&mut compiled_object_value.external_constants_name_clustered_indices);
-                result_content.insert(object_key.clone(), compiled_object_value.node);
-                result_inner_types.insert(object_key.clone(), compiled_object_value.r#type);
-                is_pure &= compiled_object_value.is_pure;
+                    .extend(compiled_starting_with.external_constants_name_clustered_indices);
+                is_pure &= compiled_starting_with.is_pure;
+                let fold_constant_name_clustered_index = if let Some(result) =
+                    global_compilation_context
+                        .constants_names_to_name_clustered_constants_indices
+                        .get(r#as)
+                {
+                    *result
+                } else {
+                    global_compilation_context
+                        .constants_names_to_name_clustered_constants_indices
+                        .len()
+                };
+                let accumulating_in_constant_name_clustered_index = if let Some(result) =
+                    global_compilation_context
+                        .constants_names_to_name_clustered_constants_indices
+                        .get(accumulating_in)
+                {
+                    *result
+                } else {
+                    global_compilation_context
+                        .constants_names_to_name_clustered_constants_indices
+                        .len()
+                        + 1
+                };
+                let fold_type = match &compiled_fold.r#type {
+                    Type::Union(compiled_fold_union_types) => {
+                        let mut result = compiled_fold_union_types.iter().next().unwrap().clone();
+                        for compiled_fold_union_type in compiled_fold_union_types.iter().skip(1) {
+                            if compiled_fold_union_type.contains(&result) {
+                                result = compiled_fold_union_type.clone();
+                            }
+                        }
+                        result
+                    }
+                    r#type => r#type.clone(),
+                };
+                match fold_type {
+                    Type::Tuple(fold_tuple_elements_types) => {
+                        let mut result_type = compiled_starting_with.r#type;
+                        let mut result_throughs_nodes_indexes =
+                            Vec::with_capacity(fold_tuple_elements_types.len());
+                        let mut compiled_throughs: indexmap::IndexSet<NodeAndMetadata> =
+                            indexmap::IndexSet::new();
+                        let mut current_type_and_accumulating_in_type_to_compiled_through_index: BTreeMap<(Type, Type), usize> =
+                        BTreeMap::new();
+                        for current_type in fold_tuple_elements_types {
+                            if let Some(element_through_index) =
+                                current_type_and_accumulating_in_type_to_compiled_through_index
+                                    .get(&(current_type.clone(), result_type.clone()))
+                            {
+                                result_type =
+                                    compiled_throughs[*element_through_index].r#type.clone();
+                                result_throughs_nodes_indexes.push(*element_through_index);
+                            } else {
+                                let mut through_compilation_context = compilation_context.clone();
+                                through_compilation_context
+                                    .path
+                                    .0
+                                    .extend([PathSegment::Through(current_type.clone())]);
+                                self.define_constant(
+                                    r#as.clone(),
+                                    current_type.clone(),
+                                    &mut through_compilation_context,
+                                    global_compilation_context,
+                                );
+                                self.define_constant(
+                                    accumulating_in.clone(),
+                                    result_type.clone(),
+                                    &mut through_compilation_context,
+                                    global_compilation_context,
+                                );
+                                let compiled_through = self.compile_with_context(
+                                    through,
+                                    through_compilation_context,
+                                    global_compilation_context,
+                                )?;
+                                result_type = compiled_through.r#type.clone();
+                                let compiled_through_index = if let Some(compiled_through_index) =
+                                    compiled_throughs.get_index_of(&compiled_through)
+                                {
+                                    compiled_through_index
+                                } else {
+                                    result_external_constants_name_clustered_indices.extend(
+                                        compiled_through
+                                            .external_constants_name_clustered_indices
+                                            .clone(),
+                                    );
+                                    is_pure &= compiled_through.is_pure;
+                                    compiled_throughs.insert(compiled_through);
+                                    compiled_throughs.len() - 1
+                                };
+                                current_type_and_accumulating_in_type_to_compiled_through_index
+                                    .insert(
+                                        (current_type, result_type.clone()),
+                                        compiled_through_index,
+                                    );
+                                result_throughs_nodes_indexes.push(compiled_through_index);
+                            }
+                        }
+                        NodeAndMetadata {
+                            node: Node {
+                                content: Content::Fold {
+                                    fold: Box::new(compiled_fold.node),
+                                    fold_constant_name_clustered_index,
+                                    starting_with: Box::new(compiled_starting_with.node),
+                                    accumulating_in_constant_name_clustered_index,
+                                    throughs: Throughs::Tuple {
+                                        nodes_indexes: result_throughs_nodes_indexes,
+                                        nodes: compiled_throughs
+                                            .into_iter()
+                                            .map(|compiled_through| compiled_through.node)
+                                            .collect(),
+                                    },
+                                },
+                            },
+                            r#type: result_type,
+                            external_constants_name_clustered_indices:
+                                result_external_constants_name_clustered_indices,
+                            is_pure,
+                        }
+                    }
+                    Type::Array(fold_array_element_type) => {
+                        let mut through_compilation_context = compilation_context.clone();
+                        through_compilation_context
+                            .path
+                            .0
+                            .extend([PathSegment::Through(*fold_array_element_type.clone())]);
+                        let starting_with_type = compiled_starting_with.r#type.unliteral();
+                        self.define_constant(
+                            r#as.clone(),
+                            *fold_array_element_type.clone(),
+                            &mut through_compilation_context,
+                            global_compilation_context,
+                        );
+                        self.define_constant(
+                            accumulating_in.clone(),
+                            starting_with_type.clone(),
+                            &mut through_compilation_context,
+                            global_compilation_context,
+                        );
+                        let compiled_through = self.compile_with_context(
+                            through,
+                            through_compilation_context.clone(),
+                            global_compilation_context,
+                        )?;
+                        assert_contains(
+                            &compiled_through.r#type,
+                            &starting_with_type,
+                            &through_compilation_context,
+                            global_compilation_context,
+                        )?;
+                        result_external_constants_name_clustered_indices
+                            .extend(compiled_through.external_constants_name_clustered_indices);
+                        is_pure &= compiled_through.is_pure;
+                        NodeAndMetadata {
+                            node: Node {
+                                content: Content::Fold {
+                                    fold: Box::new(compiled_fold.node),
+                                    fold_constant_name_clustered_index,
+                                    starting_with: Box::new(compiled_starting_with.node),
+                                    accumulating_in_constant_name_clustered_index,
+                                    throughs: Throughs::Array(Box::new(compiled_through.node)),
+                                },
+                            },
+                            r#type: compiled_through.r#type,
+                            external_constants_name_clustered_indices:
+                                result_external_constants_name_clustered_indices,
+                            is_pure,
+                        }
+                    }
+                    _ => {
+                        return Err(anyhow!(
+                            "expected tuple or array, found {:#?} at {:#?}",
+                            compiled_fold.r#type,
+                            fold_compilation_context.path
+                        ));
+                    }
+                }
             }
-            NodeAndMetadata {
-                r#type: Type::Object(result_inner_types),
-                external_constants_name_clustered_indices:
-                    result_external_constants_name_clustered_indices,
+            Program::Metaprogram { metaprogram } => {
+                let mut metaprogram_compilation_context = compilation_context.clone();
+                metaprogram_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::Metaprogram]);
+                let compiled_metaprogram = self.compile(metaprogram).with_context(|| {
+                    format!(
+                        "expected valid metaprogram at {:#?}",
+                        metaprogram_compilation_context.path
+                    )
+                })?;
+                self.compile_with_context(
+                    &serde_saphyr::from_str(&serde_saphyr::to_string(
+                        &self
+                            .metaprograms_computer
+                            .compute(&compiled_metaprogram)
+                            .with_context(|| {
+                                format!(
+                                    "expected to succesfully compute metaprogram at {:#?}",
+                                    metaprogram_compilation_context.path
+                                )
+                            })?,
+                    )?)?,
+                    metaprogram_compilation_context,
+                    global_compilation_context,
+                )?
+            }
+            Program::Object(object) => {
+                match object.len() {
+                    0 => {
+                        return Ok(NodeAndMetadata {
+                            r#type: Type::Object(BTreeMap::new()),
+                            external_constants_name_clustered_indices: BTreeSet::new(),
+                            node: Node {
+                                content: Content::Object(BTreeMap::new()),
+                            },
+                            is_pure: true,
+                        });
+                    }
+                    1 => {
+                        let (function_name, function_argument) = object.iter().next().unwrap();
+                        if function_name.ends_with(":") {
+                            if let Some(function_body) = compilation_context
+                                .available_functions
+                                .inner
+                                .get(function_name)
+                            {
+                                let mut arguments_is_pure = true;
+                                let mut body_compilation_context = compilation_context.clone();
+                                body_compilation_context
+                                    .path
+                                    .0
+                                    .extend([PathSegment::UserFunctionCall(function_name.clone())]);
+                                let arguments_iterator = match function_argument {
+                                    Program::Object(function_arguments) => {
+                                        let arguments_iterator: Box<
+                                            dyn Iterator<Item = (&str, &Program)>,
+                                        > = if function_arguments.len() > 1 {
+                                            Box::new(
+                                                function_arguments
+                                                    .iter()
+                                                    .map(|(key, value)| (key.as_str(), value)),
+                                            )
+                                        } else {
+                                            Box::new(
+                                                [(DEFAULT_ARGUMENT_NAME, function_argument)]
+                                                    .into_iter(),
+                                            )
+                                        };
+                                        arguments_iterator
+                                    }
+                                    _ => Box::new(
+                                        [(DEFAULT_ARGUMENT_NAME, function_argument)].into_iter(),
+                                    ),
+                                };
+                                let mut new_constants_definitions = Vec::new();
+                                let mut result_external_constants_name_clustered_indices =
+                                    BTreeSet::new();
+                                for (function_argument_name, function_argument_body) in
+                                    arguments_iterator
+                                {
+                                    let mut argument_compilation_context =
+                                        compilation_context.clone();
+                                    argument_compilation_context.path.0.extend([
+                                        PathSegment::UserFunctionCall(function_name.clone()),
+                                        PathSegment::Argument(function_argument_name.to_string()),
+                                    ]);
+                                    let mut compiled_constant = self.compile_with_context(
+                                        &function_argument_body,
+                                        argument_compilation_context,
+                                        global_compilation_context,
+                                    )?;
+                                    result_external_constants_name_clustered_indices.append(
+                                        &mut compiled_constant
+                                            .external_constants_name_clustered_indices,
+                                    );
+                                    let constant_definition = self.define_constant(
+                                        function_argument_name.to_string(),
+                                        compiled_constant.r#type,
+                                        &mut body_compilation_context,
+                                        global_compilation_context,
+                                    );
+                                    new_constants_definitions.push(
+                                        intermediate_representation::ConstantDefinition {
+                                            name_clustered_index: constant_definition
+                                                .name_clustered_index,
+                                            node: compiled_constant.node,
+                                        },
+                                    );
+                                    arguments_is_pure &= compiled_constant.is_pure;
+                                }
+                                if compilation_context
+                                    .entered_user_functions
+                                    .inner
+                                    .contains(function_body)
+                                {
+                                    let (function_index, function_type) =
+                                        global_compilation_context
+                                            .user_function_to_index_and_type_option
+                                            .get(function_body)
+                                            .unwrap();
+                                    return Ok(NodeAndMetadata {
+                                        r#type: function_type.clone(),
+                                        external_constants_name_clustered_indices: BTreeSet::new(),
+                                        node: Node {
+                                            content: Content::UserFunctionCall {
+                                                arguments: new_constants_definitions,
+                                                body: *function_index,
+                                            },
+                                        },
+                                        is_pure: arguments_is_pure,
+                                    });
+                                } else {
+                                    body_compilation_context
+                                        .entered_user_functions
+                                        .extend([function_body.clone()]);
+                                    let function_index =
+                                        global_compilation_context.user_functions.len();
+                                    global_compilation_context.user_functions.push((
+                                        Vec::new(),
+                                        ProgramOrNode::Program(function_body.clone()),
+                                        arguments_is_pure,
+                                    ));
+                                    global_compilation_context
+                                        .user_function_to_index_and_type_option
+                                        .insert(
+                                            function_body.clone(),
+                                            (function_index, Type::Unknown(function_index)),
+                                        );
+                                    let mut compiled_function = self.compile_with_context(
+                                        function_body,
+                                        body_compilation_context,
+                                        global_compilation_context,
+                                    )?;
+                                    global_compilation_context
+                                        .user_function_to_index_and_type_option
+                                        .get_mut(function_body)
+                                        .unwrap()
+                                        .1 = compiled_function.r#type.clone();
+                                    global_compilation_context
+                                        .user_function_node_to_index_and_type_option
+                                        .insert(
+                                            compiled_function.node.clone(),
+                                            (function_index, compiled_function.r#type.clone()),
+                                        );
+                                    global_compilation_context.user_functions[function_index] = (
+                                        Vec::from_iter(
+                                            compiled_function
+                                                .external_constants_name_clustered_indices
+                                                .iter()
+                                                .cloned(),
+                                        ),
+                                        ProgramOrNode::Node(compiled_function.node.clone()),
+                                        compiled_function.is_pure,
+                                    );
+                                    result_external_constants_name_clustered_indices.append(
+                                        &mut compiled_function
+                                            .external_constants_name_clustered_indices,
+                                    );
+                                    return Ok(NodeAndMetadata {
+                                        r#type: compiled_function.r#type,
+                                        external_constants_name_clustered_indices:
+                                            result_external_constants_name_clustered_indices.clone(),
+                                        node: Node {
+                                            content: Content::UserFunctionCall {
+                                                arguments: new_constants_definitions,
+                                                body: function_index,
+                                            },
+                                        },
+                                        is_pure: arguments_is_pure && compiled_function.is_pure,
+                                    });
+                                }
+                            } else {
+                                return Err(anyhow!(
+                                    "expected one of available functions {:#?}, found function \
+                                     {function_name:?} at {:#?}",
+                                    compilation_context
+                                        .available_functions
+                                        .inner
+                                        .keys()
+                                        .collect::<Vec<_>>(),
+                                    compilation_context.path,
+                                ));
+                            }
+                        }
+                    }
+                    2.. => {}
+                };
+                let mut result_inner_types = BTreeMap::new();
+                let mut result_content = BTreeMap::new();
+                let mut result_external_constants_name_clustered_indices = BTreeSet::new();
+                let mut is_pure = true;
+                for (object_key, object_value) in object.iter() {
+                    let mut object_value_compilation_context = compilation_context.clone();
+                    object_value_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::ObjectKey(object_key.clone())]);
+                    let mut compiled_object_value = self.compile_with_context(
+                        object_value,
+                        object_value_compilation_context,
+                        global_compilation_context,
+                    )?;
+                    result_external_constants_name_clustered_indices.append(
+                        &mut compiled_object_value.external_constants_name_clustered_indices,
+                    );
+                    result_content.insert(object_key.clone(), compiled_object_value.node);
+                    result_inner_types.insert(object_key.clone(), compiled_object_value.r#type);
+                    is_pure &= compiled_object_value.is_pure;
+                }
+                NodeAndMetadata {
+                    r#type: Type::Object(result_inner_types),
+                    external_constants_name_clustered_indices:
+                        result_external_constants_name_clustered_indices,
+                    node: Node {
+                        content: Content::Object(result_content),
+                    },
+                    is_pure,
+                }
+            }
+            Program::Value(value) => NodeAndMetadata {
+                r#type: Type::Literal(value.clone()),
+                external_constants_name_clustered_indices: BTreeSet::new(),
                 node: Node {
-                    content: Content::Object(result_content),
+                    content: Content::Value(unsafe { std::mem::transmute(value.clone()) }),
                 },
-                is_pure,
-            }
-        }
-        Program::Value(value) => NodeAndMetadata {
-            r#type: Type::Literal(value.clone()),
-            external_constants_name_clustered_indices: BTreeSet::new(),
-            node: Node {
-                content: Content::Value(unsafe { std::mem::transmute(value.clone()) }),
+                is_pure: true,
             },
-            is_pure: true,
-        },
-    })
+        })
+    }
 }

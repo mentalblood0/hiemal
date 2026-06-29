@@ -3,9 +3,12 @@ use std::{hash::Hash, io::BufReader};
 use anyhow::{Context, Result};
 use gxhash::GxHasher;
 
-use hiemal::{compiler::compile, computer::Computer, includes_cache::IncludesCache, program::From};
+use hiemal::{
+    compiler::Compiler, computer::Computer, includes_cache::IncludesCache, program::From,
+};
 
 fn main() -> Result<()> {
+    let computer = Computer::default();
     if let Some(target) = std::env::args().nth(1) {
         let include_from = serde_json::from_value::<From>(serde_json::Value::String(target))?;
         let program = IncludesCache::default().get(&include_from)?;
@@ -34,7 +37,10 @@ fn main() -> Result<()> {
                 )
             })?
         } else {
-            let result = compile(&program)?;
+            let compiler = Compiler {
+                metaprograms_computer: computer.clone(),
+            };
+            let result = compiler.compile(&program)?;
             std::fs::create_dir_all(cached_intermediate_representation_path.parent().unwrap())?;
             let mut encoder = lz4_flex::frame::FrameEncoder::new(
                 std::fs::OpenOptions::new()
@@ -63,7 +69,7 @@ fn main() -> Result<()> {
         };
         serde_saphyr::to_io_writer(
             &mut std::io::stdout(),
-            &Computer::default()
+            &computer
                 .compute(&intermediate_representation)
                 .context("Can not compute program")?,
         )

@@ -24,9 +24,9 @@ compute:
           match: { constant: current }
           as: matched
           cases:
-            - [number, { constant: matched }]
+            - [number, sum: [{ constant: accumulator }, { constant: matched }]]
             - [string, 0]
-      expected: 4
+      expected: 7
   test fold heterogenous tuple:
     assert equal::
       found:
