@@ -1052,7 +1052,19 @@ fn compile_with_context(
                     .constants_names_to_name_clustered_constants_indices
                     .len()
             };
-            match compiled_map.r#type {
+            let map_type = match &compiled_map.r#type {
+                Type::Union(compiled_map_union_types) => {
+                    let mut result = compiled_map_union_types.iter().next().unwrap().clone();
+                    for compiled_map_union_type in compiled_map_union_types.iter().skip(1) {
+                        if compiled_map_union_type.contains(&result) {
+                            result = compiled_map_union_type.clone();
+                        }
+                    }
+                    result
+                }
+                r#type => r#type.clone(),
+            };
+            match map_type {
                 Type::Tuple(map_tuple_elements_types) => {
                     let mut result_elements_types =
                         Vec::with_capacity(map_tuple_elements_types.len());
@@ -1222,7 +1234,19 @@ fn compile_with_context(
                     .len()
                     + 1
             };
-            match compiled_fold.r#type {
+            let fold_type = match &compiled_fold.r#type {
+                Type::Union(compiled_fold_union_types) => {
+                    let mut result = compiled_fold_union_types.iter().next().unwrap().clone();
+                    for compiled_fold_union_type in compiled_fold_union_types.iter().skip(1) {
+                        if compiled_fold_union_type.contains(&result) {
+                            result = compiled_fold_union_type.clone();
+                        }
+                    }
+                    result
+                }
+                r#type => r#type.clone(),
+            };
+            match fold_type {
                 Type::Tuple(fold_tuple_elements_types) => {
                     let mut result_type = compiled_starting_with.r#type;
                     let mut result_throughs_nodes_indexes =
@@ -1311,6 +1335,7 @@ fn compile_with_context(
                         .path
                         .0
                         .extend([PathSegment::Through(*fold_array_element_type.clone())]);
+                    let starting_with_type = compiled_starting_with.r#type.unliteral();
                     define_constant(
                         r#as.clone(),
                         *fold_array_element_type.clone(),
@@ -1319,7 +1344,7 @@ fn compile_with_context(
                     );
                     define_constant(
                         accumulating_in.clone(),
-                        compiled_starting_with.r#type.clone(),
+                        starting_with_type.clone(),
                         &mut through_compilation_context,
                         global_compilation_context,
                     );
@@ -1330,7 +1355,7 @@ fn compile_with_context(
                     )?;
                     assert_contains(
                         &compiled_through.r#type,
-                        &compiled_starting_with.r#type,
+                        &starting_with_type,
                         &through_compilation_context,
                         global_compilation_context,
                     )?;

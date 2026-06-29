@@ -131,6 +131,13 @@ impl Type {
         }
     }
 
+    pub fn unliteral(self) -> Type {
+        match self {
+            Type::Literal(type_value) => Value::r#type(&type_value),
+            _ => self,
+        }
+    }
+
     pub fn intersection(&self, other: &Type) -> Option<Type> {
         if self == other {
             Some(self.clone())
