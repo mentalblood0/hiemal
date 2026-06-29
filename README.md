@@ -20,8 +20,8 @@ cargo install --git https://github.com/mentalblood0/hiemal
 ## Usage
 
 ```bash
-hiemal examples/fibonacci.yml
-hiemal https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/fibonacci.yml
+hiemal https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/tests.yml
+hiemal examples/fibonacci_from_standard_input.yml
 hiemal examples/include.yml
 ```
 
