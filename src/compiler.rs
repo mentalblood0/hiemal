@@ -1087,6 +1087,10 @@ impl Compiler {
                                 .r#type
                                 .intersection(&refined_match_type)
                                 .is_none()
+                                && compiled_match
+                                    .r#type
+                                    .intersection(&refined_match_type.clone().unliteral())
+                                    .is_none()
                             {
                                 continue;
                             };

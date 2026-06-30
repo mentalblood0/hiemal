@@ -8,6 +8,14 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test heterogenous branching:
+    assert equal::
+      found:
+        match: { is sorted: [1, 2, 3] }
+        cases:
+          - [true, 1]
+          - [false, string]
+      expected: 1
   test flatten tuple complex:
     assert equal::
       found:
@@ -218,14 +226,6 @@ compute:
         compute:
           f:: [1, 2]
       expected: 2
-  test heterogenous branching:
-    assert equal::
-      found:
-        match: { is sorted: [1, 2, 3] }
-        cases:
-          - [true, 1]
-          - [false, string]
-      expected: 1
   test match by type refined branch:
     assert equal::
       found:
@@ -269,3 +269,25 @@ compute:
           - [[1, { sum: [1, 1] }, 3], true]
           - [any, it's something else]
       expected: true
+  # # test repeat:
+  # #   assert equal::
+  # #     found:
+  # #       functions:
+  # #         push back::
+  # #           flatten: [{ constant: list }, [{ constant: value }]]
+  # #         repeat::
+  # #           match: { constant: amount }
+  # #           cases:
+  # #             - [1, [{ constant: value }]]
+  # #             - - any
+  # #               - push back::
+  # #                   list:
+  # #                     repeat::
+  # #                       value: { constant: value }
+  # #                       amount: { sum: [{ constant: amount }, -1] }
+  # #                   value: { constant: value }
+  # #       compute:
+  # #         repeat::
+  # #           value: [1, 2]
+  # #           amount: 3
+  # #     expected: [[1, 2], [1, 2], [1, 2]]
