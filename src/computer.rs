@@ -26,7 +26,7 @@ struct GlobalComputationContext {
 
 #[derive(Clone, Debug)]
 struct ComputationContext {
-    constants: Vector<Option<Value>>,
+    constants: rpds::VectorSync<Option<Value>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -43,12 +43,10 @@ impl Computer {
             &intermediate_representation.root,
             intermediate_representation,
             &ComputationContext {
-                constants: Vector {
-                    inner: rpds::VectorSync::from_iter(
-                        std::iter::repeat(None)
-                            .take(intermediate_representation.unique_constants_names_count),
-                    ),
-                },
+                constants: rpds::VectorSync::from_iter(
+                    std::iter::repeat(None)
+                        .take(intermediate_representation.unique_constants_names_count),
+                ),
             },
             &Arc::new(RwLock::new(GlobalComputationContext::default())),
         )
@@ -74,9 +72,8 @@ impl Computer {
                         false
                     }
                     Content::Constant(constant_name_clustered_index) => {
-                        result[*element_index] = computation_context.constants.inner
-                            [*constant_name_clustered_index]
-                            .clone();
+                        result[*element_index] =
+                            computation_context.constants[*constant_name_clustered_index].clone();
                         false
                     }
                     _ => true,
@@ -126,7 +123,7 @@ impl Computer {
     ) -> Result<Option<Value>> {
         match &node.content {
             Content::Tuple(tuple) => Ok(Some(Value::Tuple(Vector {
-                inner: rpds::VectorSync::from_iter(
+                inner: im_lists::list::SharedList::from_iter(
                     self.compute_nodes(
                         tuple
                             .iter()
@@ -154,7 +151,7 @@ impl Computer {
                         global_computation_context,
                     )?)
                 {
-                    result_computation_context.constants.inner[constant_name_clustered_index] =
+                    result_computation_context.constants[constant_name_clustered_index] =
                         computed_constant;
                 }
                 self.compute_node(
@@ -165,7 +162,7 @@ impl Computer {
                 )
             }
             Content::Constant(constant_name_clustered_index) => {
-                Ok(computation_context.constants.inner[*constant_name_clustered_index].clone())
+                Ok(computation_context.constants[*constant_name_clustered_index].clone())
             }
             Content::EmbeddedFunctionCall {
                 path,
@@ -229,7 +226,7 @@ impl Computer {
                     })?,
                 )),
                 EmbeddedFunction::KeyValuePairs(argument) => Ok(Some(Value::Tuple(Vector {
-                    inner: rpds::VectorSync::from_iter(
+                    inner: im_lists::list::SharedList::from_iter(
                         self.compute_node(
                             argument,
                             intermediate_representation,
@@ -243,7 +240,7 @@ impl Computer {
                         .iter()
                         .map(|(key, value)| {
                             Some(Value::Tuple(Vector {
-                                inner: rpds::VectorSync::from_iter([
+                                inner: im_lists::list::SharedList::from_iter([
                                     Some(Value::String(ropey::Rope::from_str(key))),
                                     value.clone(),
                                 ]),
@@ -252,32 +249,24 @@ impl Computer {
                     ),
                 }))),
                 EmbeddedFunction::Flatten(argument) => Ok(Some(Value::Tuple({
-                    let mut result = Vector::default();
-                    let computed_argument = self.compute_node(
-                        argument,
-                        intermediate_representation,
-                        computation_context,
-                        global_computation_context,
-                    )?;
-                    for element in computed_argument
-                        .unwrap()
-                        .as_tuple()
-                        .unwrap()
-                        .inner
-                        .into_iter()
-                    {
-                        result.extend(
-                            element
-                                .to_owned()
-                                .unwrap()
-                                .as_tuple()
-                                .unwrap()
-                                .inner
-                                .iter()
-                                .cloned(),
-                        );
+                    Vector {
+                        inner: im_lists::list::SharedList::from_iter(
+                            self.compute_node(
+                                argument,
+                                intermediate_representation,
+                                computation_context,
+                                global_computation_context,
+                            )?
+                            .unwrap()
+                            .as_tuple()
+                            .unwrap()
+                            .inner
+                            .to_owned()
+                            .into_iter()
+                            .map(|list| list.unwrap().as_tuple_mut().unwrap().inner.to_owned())
+                            .flatten(),
+                        ),
                     }
-                    result
                 }))),
             },
             Content::UserFunctionCall { arguments, body } => {
@@ -297,7 +286,7 @@ impl Computer {
                         global_computation_context,
                     )?)
                 {
-                    result_computation_context.constants.inner[constant_name_clustered_index] =
+                    result_computation_context.constants[constant_name_clustered_index] =
                         computed_constant;
                 }
                 let user_function = &intermediate_representation.user_functions[*body];
@@ -307,7 +296,7 @@ impl Computer {
                         for constant_name_clustered_index in
                             &user_function.external_constants_name_clustered_indices
                         {
-                            let constant_value = &result_computation_context.constants.inner
+                            let constant_value = &result_computation_context.constants
                                 [*constant_name_clustered_index];
                             constant_value.hash(&mut hasher);
                         }
@@ -357,13 +346,14 @@ impl Computer {
                     match path_segment {
                         ValuePathSegment::ArrayIndex(array_index) => {
                             result = std::mem::take(
-                                result
+                                &mut result
                                     .unwrap()
-                                    .as_array_mut()
+                                    .as_tuple_mut()
                                     .unwrap()
                                     .inner
-                                    .get_mut(*array_index)
-                                    .unwrap(),
+                                    .get(*array_index)
+                                    .unwrap()
+                                    .to_owned(),
                             )
                         }
                         ValuePathSegment::ObjectKey(object_key) => {
@@ -401,7 +391,7 @@ impl Computer {
                                     match_constant_name_clustered_index_option
                                 {
                                     let mut case_computation_context = computation_context.clone();
-                                    case_computation_context.constants.inner
+                                    case_computation_context.constants
                                         [*match_constant_name_clustered_index] = computed_match;
                                     return self.compute_node(
                                         &case.node,
@@ -431,7 +421,7 @@ impl Computer {
                                     match_constant_name_clustered_index_option
                                 {
                                     let mut case_computation_context = computation_context.clone();
-                                    case_computation_context.constants.inner
+                                    case_computation_context.constants
                                         [*match_constant_name_clustered_index] = computed_match;
                                     return self.compute_node(
                                         &case.node,
@@ -467,10 +457,10 @@ impl Computer {
                 let computed_map_array = computed_map.as_ref().unwrap().as_tuple().unwrap();
                 match throughs {
                     Throughs::Array(node) => Ok(Some(Value::Tuple(Vector {
-                        inner: rpds::VectorSync::from_iter(self.compute_nodes(
+                        inner: im_lists::list::SharedList::from_iter(self.compute_nodes(
                             computed_map_array.inner.iter().map(|element_value| {
                                 let mut through_computation_context = computation_context.clone();
-                                through_computation_context.constants.inner
+                                through_computation_context.constants
                                     [*map_constant_name_clustered_index] = element_value.clone();
                                 (&**node, Cow::Owned(through_computation_context))
                             }),
@@ -483,12 +473,12 @@ impl Computer {
                         nodes_indexes,
                         nodes,
                     } => Ok(Some(Value::Tuple(Vector {
-                        inner: rpds::VectorSync::from_iter(self.compute_nodes(
+                        inner: im_lists::list::SharedList::from_iter(self.compute_nodes(
                             computed_map_array.inner.iter().enumerate().map(
                                 |(element_index, element_value)| {
                                     let mut through_computation_context =
                                         computation_context.clone();
-                                    through_computation_context.constants.inner
+                                    through_computation_context.constants
                                         [*map_constant_name_clustered_index] =
                                         element_value.clone();
                                     (
@@ -528,9 +518,9 @@ impl Computer {
                     Throughs::Array(through_node) => {
                         for element in computed_fold_array.inner.iter() {
                             let mut through_computation_context = computation_context.clone();
-                            through_computation_context.constants.inner
+                            through_computation_context.constants
                                 [*fold_constant_name_clustered_index] = element.clone();
-                            through_computation_context.constants.inner
+                            through_computation_context.constants
                                 [*accumulating_in_constant_name_clustered_index] = result.clone();
                             result = self.compute_node(
                                 through_node,
@@ -547,9 +537,9 @@ impl Computer {
                         for (element_index, element) in computed_fold_array.inner.iter().enumerate()
                         {
                             let mut through_computation_context = computation_context.clone();
-                            through_computation_context.constants.inner
+                            through_computation_context.constants
                                 [*fold_constant_name_clustered_index] = element.clone();
-                            through_computation_context.constants.inner
+                            through_computation_context.constants
                                 [*accumulating_in_constant_name_clustered_index] = result.clone();
                             result = self.compute_node(
                                 &nodes[nodes_indexes[element_index]],

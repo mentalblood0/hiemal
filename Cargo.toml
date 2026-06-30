@@ -27,6 +27,7 @@ bincode = { version = "2.0", features = ["derive", "serde"] }
 serde_with = "3.21.0"
 lz4_flex = "0.13.1"
 indexmap = "2.14.0"
+im-lists = "0.12.1"
 
 [dev-dependencies]
 pretty_assertions = "1.4"

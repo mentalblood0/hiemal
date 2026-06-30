@@ -143,7 +143,7 @@ impl Value {
         }
     }
 
-    pub fn as_array_mut(&mut self) -> Option<&mut Vector<Option<Value>>> {
+    pub fn as_tuple_mut(&mut self) -> Option<&mut Vector<Option<Value>>> {
         match self {
             Value::Tuple(result) => Some(result),
             _ => None,
