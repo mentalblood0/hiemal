@@ -170,11 +170,12 @@ impl<'a> Type {
                     }
                 }
                 (Type::Union(union_types), other_type) | (other_type, Type::Union(union_types)) => {
-                    if union_types.contains(other_type) {
-                        Some(other_type.clone())
-                    } else {
-                        None
+                    for union_type in union_types {
+                        if let Some(result) = union_type.intersection(other_type) {
+                            return Some(result);
+                        }
                     }
+                    None
                 }
                 (Type::Literal(self_type_value), Type::Literal(other_type_value)) => {
                     if self_type_value == other_type_value {

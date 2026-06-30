@@ -43,55 +43,11 @@ fn assert_contains(
     expected_type: &Type,
     compilation_context: &CompilationContext,
     global_compilation_context: &mut GlobalCompilationContext,
-) -> Result<()> {
+) -> Result<Type> {
     if expected_type == &Type::Any || expected_type.contains(got_type) {
-        Ok(())
+        Ok(got_type.clone())
     } else {
         match (got_type, expected_type) {
-            (Type::Array(got_element_type), Type::Array(expected_element_type)) => assert_contains(
-                got_element_type,
-                expected_element_type,
-                compilation_context,
-                global_compilation_context,
-            ),
-            (Type::Array(got_element_type), Type::Tuple(expected_elements_types)) => {
-                for expected_element_type in expected_elements_types {
-                    assert_contains(
-                        got_element_type,
-                        expected_element_type,
-                        compilation_context,
-                        global_compilation_context,
-                    )?
-                }
-                Ok(())
-            }
-            (Type::Tuple(got_elements_types), Type::Array(expected_element_type)) => {
-                for got_element_type in got_elements_types {
-                    assert_contains(
-                        got_element_type,
-                        expected_element_type,
-                        compilation_context,
-                        global_compilation_context,
-                    )?
-                }
-                Ok(())
-            }
-            (Type::Object(got_inner_types), Type::Object(expected_inner_types)) => {
-                for (expected_value_key, expected_value_type) in expected_inner_types {
-                    if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
-                        assert_contains(
-                            got_value_type,
-                            expected_value_type,
-                            compilation_context,
-                            global_compilation_context,
-                        )?;
-                    } else {
-                        return Err(compilation_context.error(got_type, expected_type));
-                    }
-                }
-                Ok(())
-            }
-            (Type::Unknown(_), Type::Unknown(_)) => Ok(()),
             (Type::Unknown(got_program_index), expected_type)
             | (expected_type, Type::Unknown(got_program_index)) => {
                 match &global_compilation_context.user_functions[*got_program_index].1 {
@@ -107,11 +63,13 @@ fn assert_contains(
                                 .get_mut(got_program)
                                 .unwrap()
                                 .1 = expected_type.clone();
+                            Ok(expected_type.clone())
                         } else {
                             if previously_resolved_type != expected_type {
                                 return Err(compilation_context
                                     .error(&previously_resolved_type, expected_type));
                             }
+                            Ok(previously_resolved_type.clone())
                         }
                     }
                     ProgramOrNode::Node(got_node) => {
@@ -126,29 +84,79 @@ fn assert_contains(
                                 .get_mut(got_node)
                                 .unwrap()
                                 .1 = expected_type.clone();
+                            Ok(expected_type.clone())
                         } else {
                             if previously_resolved_type != expected_type {
                                 return Err(compilation_context
                                     .error(&previously_resolved_type, expected_type));
                             }
+                            Ok(previously_resolved_type.clone())
                         }
                     }
                 }
-                Ok(())
+            }
+            (Type::Array(got_element_type), Type::Array(expected_element_type)) => assert_contains(
+                got_element_type,
+                expected_element_type,
+                compilation_context,
+                global_compilation_context,
+            ),
+            (Type::Array(got_element_type), Type::Tuple(expected_elements_types)) => {
+                let mut result_union_types = BTreeSet::new();
+                for expected_element_type in expected_elements_types {
+                    result_union_types.insert(assert_contains(
+                        got_element_type,
+                        expected_element_type,
+                        compilation_context,
+                        global_compilation_context,
+                    )?);
+                }
+                Ok(Type::Array(Box::new(Type::from(result_union_types))))
+            }
+            (Type::Tuple(got_elements_types), Type::Array(expected_element_type)) => {
+                let mut result_tuple_types = Vec::with_capacity(got_elements_types.len());
+                for got_element_type in got_elements_types {
+                    result_tuple_types.push(assert_contains(
+                        got_element_type,
+                        expected_element_type,
+                        compilation_context,
+                        global_compilation_context,
+                    )?);
+                }
+                Ok(Type::Tuple(result_tuple_types))
+            }
+            (Type::Object(got_inner_types), Type::Object(expected_inner_types)) => {
+                let mut result_inner_types = BTreeMap::new();
+                for (expected_value_key, expected_value_type) in expected_inner_types {
+                    if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
+                        result_inner_types.insert(
+                            expected_value_key.clone(),
+                            assert_contains(
+                                got_value_type,
+                                expected_value_type,
+                                compilation_context,
+                                global_compilation_context,
+                            )?,
+                        );
+                    } else {
+                        return Err(compilation_context.error(got_type, expected_type));
+                    }
+                }
+                Ok(Type::Object(result_inner_types))
             }
             (Type::Union(got_union_types), Type::Union(expected_union_types)) => {
+                let mut result_union_types = BTreeSet::new();
                 if !got_union_types.is_subset(expected_union_types) {
                     for one_of_got_types in got_union_types {
                         let mut found = false;
                         for one_of_expected_types in expected_union_types {
-                            if assert_contains(
+                            if let Ok(result_union_type) = assert_contains(
                                 one_of_got_types,
                                 one_of_expected_types,
                                 compilation_context,
                                 global_compilation_context,
-                            )
-                            .is_ok()
-                            {
+                            ) {
+                                result_union_types.insert(result_union_type);
                                 found = true;
                                 break;
                             }
@@ -158,36 +166,35 @@ fn assert_contains(
                         }
                     }
                 }
-                Ok(())
+                Ok(Type::from(result_union_types))
             }
             (Type::Union(got_union_types), expected_type) => {
+                let mut result_union_types = BTreeSet::new();
                 for one_of_got_types in got_union_types {
-                    assert_contains(
+                    result_union_types.insert(assert_contains(
                         one_of_got_types,
                         expected_type,
                         compilation_context,
                         global_compilation_context,
-                    )?;
+                    )?);
                 }
-                Ok(())
+                Ok(Type::Union(result_union_types))
             }
             (got_type, Type::Union(expected_union_types)) => {
                 if !expected_union_types.contains(expected_type) {
                     for one_of_expected_types in expected_union_types {
-                        if assert_contains(
+                        if let Ok(result_type) = assert_contains(
                             got_type,
                             one_of_expected_types,
                             compilation_context,
                             global_compilation_context,
-                        )
-                        .is_ok()
-                        {
-                            return Ok(());
+                        ) {
+                            return Ok(result_type);
                         }
                     }
                     return Err(compilation_context.error(got_type, expected_type));
                 }
-                Ok(())
+                Ok(got_type.clone())
             }
             (Type::Literal(got_value), expected_type) => assert_contains(
                 &Value::r#type(got_value),
@@ -735,10 +742,9 @@ impl Compiler {
                         argument_compilation_context.clone(),
                         global_compilation_context,
                     )?;
-                    let expected_type = Type::Array(Box::new(Type::Number));
                     assert_contains(
                         &compiled_argument.r#type,
-                        &expected_type,
+                        &Type::Array(Box::new(Type::Number)),
                         &compilation_context,
                         global_compilation_context,
                     )?;
@@ -770,10 +776,9 @@ impl Compiler {
                         argument_compilation_context.clone(),
                         global_compilation_context,
                     )?;
-                    let expected_type = Type::Array(Box::new(Type::Any));
                     assert_contains(
                         &compiled_argument.r#type,
-                        &expected_type,
+                        &Type::Array(Box::new(Type::Any)),
                         &compilation_context,
                         global_compilation_context,
                     )?;
@@ -823,10 +828,9 @@ impl Compiler {
                         argument_compilation_context.clone(),
                         global_compilation_context,
                     )?;
-                    let expected_type = Type::String;
                     assert_contains(
                         &compiled_argument.r#type,
-                        &expected_type,
+                        &Type::String,
                         &argument_compilation_context,
                         global_compilation_context,
                     )?;
@@ -916,83 +920,104 @@ impl Compiler {
                         argument_compilation_context.clone(),
                         global_compilation_context,
                     )?;
-                    if let Type::Tuple(argument_tuple_types) = compiled_argument
-                        .r#type
+                    let compiled_argument_resolved_type = assert_contains(
+                        &compiled_argument.r#type,
+                        &Type::Array(Box::new(Type::Array(Box::new(Type::Any)))),
+                        &compilation_context,
+                        global_compilation_context,
+                    )?;
+                    let result_type = match compiled_argument_resolved_type
                         .clone()
                         .unliteral()
                         .weakest_from_union()
                     {
-                        let mut result_type = Type::Tuple(vec![]);
-                        for (argument_tuple_type_index, argument_tuple_type) in
-                            argument_tuple_types.iter().enumerate()
-                        {
-                            match argument_tuple_type.clone().unliteral().weakest_from_union() {
-                                Type::Tuple(argument_element_tuple_types) => match &mut result_type
-                                {
-                                    Type::Tuple(result_tuple_types) => {
-                                        result_tuple_types.extend(argument_element_tuple_types)
-                                    }
-                                    Type::Array(result_array_type) => {
-                                        for argument_element_tuple_type in
-                                            argument_element_tuple_types
-                                        {
-                                            match argument_element_tuple_type {
-                                                Type::Union(argument_element_tuple_union_types) => {
-                                                    result_array_type
-                                                        .as_union_mut()
-                                                        .unwrap()
-                                                        .append(
-                                                            &mut argument_element_tuple_union_types
-                                                                .clone(),
-                                                        )
-                                                }
-                                                _ => {
-                                                    result_array_type
-                                                        .as_union_mut()
-                                                        .unwrap()
-                                                        .insert(
-                                                            argument_element_tuple_type.clone(),
-                                                        );
-                                                }
-                                            };
+                        Type::Tuple(argument_tuple_types) => {
+                            if argument_tuple_types.iter().any(|argument_tuple_type| {
+                                if let Type::Array(_) = argument_tuple_type {
+                                    true
+                                } else {
+                                    false
+                                }
+                            }) {
+                                let mut result_element_union_types = BTreeSet::new();
+                                for argument_tuple_type in argument_tuple_types {
+                                    match argument_tuple_type {
+                                        Type::Array(argument_element_array_type) => {
+                                            result_element_union_types
+                                                .insert(*argument_element_array_type.clone());
+                                        }
+                                        Type::Tuple(argument_element_tuple_types) => {
+                                            for argument_element_tuple_type in
+                                                argument_element_tuple_types
+                                            {
+                                                result_element_union_types
+                                                    .insert(argument_element_tuple_type.clone());
+                                            }
+                                        }
+                                        unexpected_type => {
+                                            panic!("unexpected type in match: {unexpected_type:?}")
                                         }
                                     }
-                                    _ => panic!(),
-                                },
-                                unexpected_type => {
-                                    return Err(anyhow!(
-                                        "expected array or tuple, got {:#?} at {:#?}",
-                                        unexpected_type,
-                                        Path(compilation_context.path.0.extended([
-                                            PathSegment::Flatten,
-                                            PathSegment::ArrayIndex(argument_tuple_type_index)
-                                        ]))
-                                    ));
                                 }
+                                Type::Array(Box::new(Type::from(result_element_union_types)))
+                            } else {
+                                let mut result_elements_types = Vec::new();
+                                for argument_tuple_type in argument_tuple_types {
+                                    match argument_tuple_type {
+                                        Type::Tuple(argument_element_tuple_types) => {
+                                            result_elements_types
+                                                .extend_from_slice(&argument_element_tuple_types);
+                                        }
+                                        unexpected_type => {
+                                            panic!("unexpected type in match: {unexpected_type:?}")
+                                        }
+                                    }
+                                }
+                                Type::Tuple(result_elements_types)
                             }
                         }
-                        NodeAndMetadata {
-                            r#type: result_type,
-                            external_constants_name_clustered_indices: compiled_argument
-                                .external_constants_name_clustered_indices,
-                            node: Node {
-                                content: Content::EmbeddedFunctionCall {
-                                    path: None,
-                                    embedded_function: Box::new(
-                                        intermediate_representation::EmbeddedFunction::Flatten(
-                                            compiled_argument.node,
-                                        ),
-                                    ),
-                                },
-                            },
-                            is_pure: compiled_argument.is_pure,
+                        Type::Array(argument_array_type) => {
+                            let mut result_union_types = BTreeSet::new();
+                            match argument_array_type.unliteral().weakest_from_union() {
+                                Type::Tuple(argument_element_tuple_types) => {
+                                    for argument_element_tuple_type in argument_element_tuple_types
+                                    {
+                                        result_union_types
+                                            .insert(argument_element_tuple_type.clone());
+                                    }
+                                }
+                                Type::Array(argument_element_array_type) => {
+                                    result_union_types.insert(*argument_element_array_type.clone());
+                                }
+                                unexpected_type => {
+                                    panic!("unexpected type in match: {unexpected_type:?}")
+                                }
+                            };
+                            Type::Array(Box::new(Type::from(result_union_types)))
                         }
-                    } else {
-                        return Err(anyhow!(
-                            "expected array or tuple of arrays or tuples, found {:#?} at {:#?}",
-                            compiled_argument.r#type,
-                            compilation_context.path
-                        ));
+                        _ => {
+                            return Err(anyhow!(
+                                "expected array or tuple of arrays or tuples, found {:#?} at {:#?}",
+                                compiled_argument.r#type,
+                                compilation_context.path
+                            ));
+                        }
+                    };
+                    NodeAndMetadata {
+                        r#type: result_type,
+                        external_constants_name_clustered_indices: compiled_argument
+                            .external_constants_name_clustered_indices,
+                        node: Node {
+                            content: Content::EmbeddedFunctionCall {
+                                path: None,
+                                embedded_function: Box::new(
+                                    intermediate_representation::EmbeddedFunction::Flatten(
+                                        compiled_argument.node,
+                                    ),
+                                ),
+                            },
+                        },
+                        is_pure: compiled_argument.is_pure,
                     }
                 }
             },
@@ -1092,6 +1117,7 @@ impl Compiler {
                                     .intersection(&refined_match_type.clone().unliteral())
                                     .is_none()
                             {
+                                println!("no intersection");
                                 continue;
                             };
                             if let Some(match_constant_name) = r#as {
@@ -1459,7 +1485,7 @@ impl Compiler {
                             through_compilation_context.clone(),
                             global_compilation_context,
                         )?;
-                        assert_contains(
+                        let compiled_through_resolved_type = assert_contains(
                             &compiled_through.r#type,
                             &starting_with_type,
                             &through_compilation_context,
@@ -1478,7 +1504,7 @@ impl Compiler {
                                     throughs: Throughs::Array(Box::new(compiled_through.node)),
                                 },
                             },
-                            r#type: compiled_through.r#type,
+                            r#type: compiled_through_resolved_type,
                             external_constants_name_clustered_indices:
                                 result_external_constants_name_clustered_indices,
                             is_pure,

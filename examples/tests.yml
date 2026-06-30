@@ -8,6 +8,28 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test repeat:
+    assert equal::
+      found:
+        functions:
+          push back::
+            flatten: [{ constant: list }, [{ constant: value }]]
+          repeat::
+            match: { constant: amount }
+            cases:
+              - [1, [{ constant: value }]]
+              - - any
+                - push back::
+                    list:
+                      repeat::
+                        value: { constant: value }
+                        amount: { sum: [{ constant: amount }, -1] }
+                    value: { constant: value }
+        compute:
+          repeat::
+            value: [1, 2]
+            amount: 3
+      expected: [[1, 2], [1, 2], [1, 2]]
   test heterogenous branching:
     assert equal::
       found:
@@ -269,25 +291,3 @@ compute:
           - [[1, { sum: [1, 1] }, 3], true]
           - [any, it's something else]
       expected: true
-  # # test repeat:
-  # #   assert equal::
-  # #     found:
-  # #       functions:
-  # #         push back::
-  # #           flatten: [{ constant: list }, [{ constant: value }]]
-  # #         repeat::
-  # #           match: { constant: amount }
-  # #           cases:
-  # #             - [1, [{ constant: value }]]
-  # #             - - any
-  # #               - push back::
-  # #                   list:
-  # #                     repeat::
-  # #                       value: { constant: value }
-  # #                       amount: { sum: [{ constant: amount }, -1] }
-  # #                   value: { constant: value }
-  # #       compute:
-  # #         repeat::
-  # #           value: [1, 2]
-  # #           amount: 3
-  # #     expected: [[1, 2], [1, 2], [1, 2]]
