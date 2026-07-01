@@ -6,6 +6,8 @@
 - static type checking without annotations
 - tuples, union types, heterogenous fold
 - match clause exhaustiveness checking
+- pass-by-value, parallel execution
+- pure user functions results caching
 - strings, arrays/tuples and maps are immutable
 - numbers are arbitrary size rational
 
@@ -31,6 +33,7 @@ hiemal examples/include.yml
 - sum: [1, 2, 3]
 - is sorted: [1, 2, 3]
 - key-value pairs: {a: 1, b: 2, c: 3}
+- flatten: [[1, a], [3], [4, b, 6]]
 ```
 
 ### Clauses
@@ -101,6 +104,16 @@ compute:
   f::
     a: 1
     b: 2
+```
+
+```yaml
+functions:
+  apply::
+    function:: { constant: argument }
+compute:
+  apply::
+    function:: { sum: [_, 1] }
+    argument: 1
 ```
 
 #### match cases
