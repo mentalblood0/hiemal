@@ -1,9 +1,12 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use hiemal::{compiler::compile, computer::Computer, program::Program};
+use hiemal::{compiler::Compiler, computer::Computer, program::Program};
 use serde_json::json;
 
 fn benchmarks(bencher_context: &mut Criterion) {
     let computer = Computer::default();
+    let compiler = Compiler {
+        metaprograms_computer: computer.clone(),
+    };
     let computer_with_caching = Computer {
         user_functions_caching: true,
     };
@@ -46,7 +49,7 @@ fn benchmarks(bencher_context: &mut Criterion) {
                 }
             }))
             .unwrap();
-            let intermediate_representation = compile(&program).unwrap();
+            let intermediate_representation = compiler.compile(&program).unwrap();
             bencher_context.bench_function(&format!("fibonacci_{number}"), |b| {
                 b.iter(|| computer.compute(&intermediate_representation).unwrap())
             });
