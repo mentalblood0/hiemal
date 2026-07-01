@@ -8,6 +8,17 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test override function:
+    assert equal::
+      found:
+        functions:
+          f:: _
+        compute:
+          functions:
+            f:: { sum: [_, 1] }
+          compute:
+            f:: 1
+      expected: 2
   test repeat:
     assert equal::
       found:
