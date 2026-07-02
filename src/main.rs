@@ -1,4 +1,4 @@
-use std::{hash::Hash, io::BufReader};
+use std::{hash::Hash, io::BufReader, time::Instant};
 
 use anyhow::{Context, Result};
 use gxhash::GxHasher;
@@ -40,7 +40,13 @@ fn main() -> Result<()> {
             let compiler = Compiler {
                 metaprograms_computer: computer.clone(),
             };
-            let result = compiler.compile(&program)?;
+            let result = {
+                let compilation_start = Instant::now();
+                let result = compiler.compile(&program)?;
+                let compilation_duration = compilation_start.elapsed();
+                eprintln!("compiled in {compilation_duration:?}");
+                result
+            };
             std::fs::create_dir_all(cached_intermediate_representation_path.parent().unwrap())?;
             let mut encoder = lz4_flex::frame::FrameEncoder::new(
                 std::fs::OpenOptions::new()
