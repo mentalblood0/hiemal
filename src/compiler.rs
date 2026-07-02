@@ -1,6 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    hash::{Hash, Hasher},
+};
 
 use anyhow::{Context, Error, Result, anyhow};
+use gxhash::HashMap;
 
 use crate::{
     computer::Computer,
@@ -11,7 +15,7 @@ use crate::{
         self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction,
     },
     program::{
-        AtSegment, Condition, EmbeddedFunction, From, Path, PathSegment, Program, RangeBound,
+        self, AtSegment, Condition, EmbeddedFunction, Path, PathSegment, Program, RangeBound,
     },
     r#type::Type,
     value::Value,
@@ -52,49 +56,27 @@ fn assert_contains(
         match (got_type, expected_type) {
             (Type::Unknown(got_program_index), expected_type)
             | (expected_type, Type::Unknown(got_program_index)) => {
-                match &global_compilation_context.user_functions[*got_program_index].1 {
-                    ProgramOrNode::Program(got_program) => {
-                        let previously_resolved_type = &global_compilation_context
-                            .user_function_to_index_and_type_option
-                            .get(got_program)
-                            .unwrap()
-                            .1;
-                        if let Type::Unknown(_) = previously_resolved_type {
-                            global_compilation_context
-                                .user_function_to_index_and_type_option
-                                .get_mut(got_program)
-                                .unwrap()
-                                .1 = expected_type.clone();
-                            Ok(expected_type.clone())
-                        } else {
-                            if previously_resolved_type != expected_type {
-                                return Err(compilation_context
-                                    .error(&previously_resolved_type, expected_type));
-                            }
-                            Ok(previously_resolved_type.clone())
-                        }
+                let got_maybe_compiled_program =
+                    &global_compilation_context.user_functions[*got_program_index].1;
+                let previously_resolved_type = &global_compilation_context
+                    .user_function_to_index_and_type_option
+                    .get(got_maybe_compiled_program)
+                    .unwrap()
+                    .1;
+                if let Type::Unknown(_) = previously_resolved_type {
+                    global_compilation_context
+                        .user_function_to_index_and_type_option
+                        .get_mut(&got_maybe_compiled_program)
+                        .unwrap()
+                        .1 = expected_type.clone();
+                    Ok(expected_type.clone())
+                } else {
+                    if previously_resolved_type != expected_type {
+                        return Err(
+                            compilation_context.error(&previously_resolved_type, expected_type)
+                        );
                     }
-                    ProgramOrNode::Node(got_node) => {
-                        let previously_resolved_type = &global_compilation_context
-                            .user_function_node_to_index_and_type_option
-                            .get(got_node)
-                            .unwrap()
-                            .1;
-                        if let Type::Unknown(_) = previously_resolved_type {
-                            global_compilation_context
-                                .user_function_node_to_index_and_type_option
-                                .get_mut(got_node)
-                                .unwrap()
-                                .1 = expected_type.clone();
-                            Ok(expected_type.clone())
-                        } else {
-                            if previously_resolved_type != expected_type {
-                                return Err(compilation_context
-                                    .error(&previously_resolved_type, expected_type));
-                            }
-                            Ok(previously_resolved_type.clone())
-                        }
-                    }
+                    Ok(previously_resolved_type.clone())
                 }
             }
             (Type::Array(got_element_type), Type::Array(expected_element_type)) => assert_contains(
@@ -209,22 +191,6 @@ fn assert_contains(
     }
 }
 
-#[repr(u8)]
-#[derive(Debug)]
-enum ProgramOrNode {
-    Program(Program),
-    Node(Node),
-}
-
-impl ProgramOrNode {
-    fn as_node(&self) -> Option<&Node> {
-        match self {
-            &ProgramOrNode::Node(ref node) => Some(node),
-            &ProgramOrNode::Program(_) => None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 struct NodeAndMetadata {
     node: Node,
@@ -233,18 +199,47 @@ struct NodeAndMetadata {
     is_pure: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MaybeCompiledProgram {
+    program: Program,
+    node: Option<Node>,
+}
+
+impl Hash for MaybeCompiledProgram {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.program.hash(state);
+    }
+}
+
+impl From<&Program> for MaybeCompiledProgram {
+    fn from(program: &Program) -> Self {
+        Self {
+            program: program.clone(),
+            node: None,
+        }
+    }
+}
+
+impl From<Program> for MaybeCompiledProgram {
+    fn from(program: Program) -> Self {
+        Self {
+            program: program,
+            node: None,
+        }
+    }
+}
+
 #[derive(Default)]
 struct GlobalCompilationContext {
-    user_function_to_index_and_type_option: BTreeMap<Program, (usize, Type)>,
-    user_function_node_to_index_and_type_option: BTreeMap<Node, (usize, Type)>,
-    user_functions: Vec<(Vec<usize>, ProgramOrNode, bool)>,
-    constants_names_to_name_clustered_constants_indices: BTreeMap<String, usize>,
+    user_function_to_index_and_type_option: HashMap<MaybeCompiledProgram, (usize, Type)>,
+    user_functions: Vec<(Vec<usize>, MaybeCompiledProgram, bool)>,
+    constants_names_to_name_clustered_constants_indices: HashMap<String, usize>,
     constants: Vec<Type>,
     includes_cache: IncludesCache,
 }
 
 fn process_from_at_program_path_part(
-    from: &From,
+    from: &program::From,
     at: &Vec<AtSegment>,
     includes_cache: &mut IncludesCache,
 ) -> Result<(Program, Option<usize>)> {
@@ -384,7 +379,7 @@ impl Compiler {
                     |(external_constants_name_clustered_indices, program_or_node, is_pure)| {
                         UserFunction {
                             external_constants_name_clustered_indices,
-                            node: program_or_node.as_node().unwrap().clone(),
+                            node: program_or_node.node.unwrap().clone(),
                             is_pure,
                         }
                     },
@@ -1808,6 +1803,8 @@ impl Compiler {
                                         arguments_is_pure &= compiled_constant.is_pure;
                                     }
                                 }
+                                let function_body_as_maybe_compiled_program =
+                                    MaybeCompiledProgram::from(function_body);
                                 if compilation_context
                                     .entered_user_functions
                                     .inner
@@ -1816,7 +1813,7 @@ impl Compiler {
                                     let (function_index, function_type) =
                                         global_compilation_context
                                             .user_function_to_index_and_type_option
-                                            .get(function_body)
+                                            .get(&function_body_as_maybe_compiled_program)
                                             .unwrap();
                                     return Ok(NodeAndMetadata {
                                         r#type: function_type.clone(),
@@ -1837,13 +1834,13 @@ impl Compiler {
                                         global_compilation_context.user_functions.len();
                                     global_compilation_context.user_functions.push((
                                         Vec::new(),
-                                        ProgramOrNode::Program(function_body.clone()),
+                                        function_body_as_maybe_compiled_program.clone(),
                                         arguments_is_pure,
                                     ));
                                     global_compilation_context
                                         .user_function_to_index_and_type_option
                                         .insert(
-                                            function_body.clone(),
+                                            function_body_as_maybe_compiled_program.clone(),
                                             (function_index, Type::Unknown(function_index)),
                                         );
                                     let mut compiled_function = self.compile_with_context(
@@ -1853,13 +1850,18 @@ impl Compiler {
                                     )?;
                                     global_compilation_context
                                         .user_function_to_index_and_type_option
-                                        .get_mut(function_body)
+                                        .get_mut(&function_body_as_maybe_compiled_program)
                                         .unwrap()
                                         .1 = compiled_function.r#type.clone();
                                     global_compilation_context
-                                        .user_function_node_to_index_and_type_option
+                                        .user_function_to_index_and_type_option
                                         .insert(
-                                            compiled_function.node.clone(),
+                                            MaybeCompiledProgram {
+                                                program: function_body_as_maybe_compiled_program
+                                                    .program
+                                                    .clone(),
+                                                node: Some(compiled_function.node.clone()),
+                                            },
                                             (function_index, compiled_function.r#type.clone()),
                                         );
                                     global_compilation_context.user_functions[function_index] = (
@@ -1869,7 +1871,11 @@ impl Compiler {
                                                 .iter()
                                                 .cloned(),
                                         ),
-                                        ProgramOrNode::Node(compiled_function.node.clone()),
+                                        MaybeCompiledProgram {
+                                            program: function_body_as_maybe_compiled_program
+                                                .program,
+                                            node: Some(compiled_function.node.clone()),
+                                        },
                                         compiled_function.is_pure,
                                     );
                                     result_external_constants_name_clustered_indices.append(
