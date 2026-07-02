@@ -1,22 +1,22 @@
-use std::collections::BTreeMap;
 use std::hash::Hash;
 use std::io::Write;
 
 use anyhow::{Context, Result, anyhow};
 use glob::glob;
+use gxhash::HashMap;
 
 use crate::program::{DefaultArgument, From, Program};
 
 pub struct IncludesCache {
     pub directory: std::path::PathBuf,
-    pub source_hash_to_program: BTreeMap<u128, Program>,
+    pub source_to_program: HashMap<From, Program>,
 }
 
 impl Default for IncludesCache {
     fn default() -> IncludesCache {
         Self {
             directory: dirs::cache_dir().unwrap().join("hiemal"),
-            source_hash_to_program: BTreeMap::new(),
+            source_to_program: HashMap::default(),
         }
     }
 }
@@ -34,11 +34,12 @@ impl IncludesCache {
         Ok(())
     }
 
-    fn get_from_disk(&mut self, source_hash: u128) -> Result<Option<Program>> {
+    fn get_from_disk(&mut self, from: &From) -> Result<Option<Program>> {
+        let source_hash = self.source_hash(from);
         if let Some(Ok(path)) = glob(&format!(
             "{}.*",
             self.directory
-                .join(format!("{source_hash:x}"))
+                .join(format!("{:x}", source_hash))
                 .to_str()
                 .unwrap()
         ))?
@@ -56,8 +57,7 @@ impl IncludesCache {
                 "yml" | "yaml" => serde_saphyr::from_str::<Program>(&result_text)?,
                 _ => return Ok(None),
             };
-            self.source_hash_to_program
-                .insert(source_hash, result.clone());
+            self.source_to_program.insert(from.clone(), result.clone());
             Ok(Some(result))
         } else {
             Ok(None)
@@ -87,7 +87,7 @@ impl IncludesCache {
                     {
                         let source_hash = self.source_hash(url);
                         let source_hash_hex = format!("{source_hash:x}");
-                        if let Some(result) = self.source_hash_to_program.get(&source_hash) {
+                        if let Some(result) = self.source_to_program.get(&from) {
                             Ok(result.clone())
                         } else {
                             let extension = std::path::Path::new(url.path())
@@ -99,59 +99,58 @@ impl IncludesCache {
                                 "{}/{source_hash_hex}.*.*",
                                 self.directory.to_str().unwrap()
                             );
-                            let (response, etag) = if let Some(Ok(path_with_etag)) =
-                                glob(&glob_pattern)?.next()
-                            {
-                                let file_name_splitted = path_with_etag
-                                    .file_name()
-                                    .unwrap()
-                                    .to_str()
-                                    .unwrap()
-                                    .splitn(3, '.') // url hash, etag, extension
-                                    .collect::<Vec<_>>();
-                                let current_etag = file_name_splitted[1].to_string();
-                                match ureq::get(url.as_str())
-                                    .header(
-                                        "If-None-Match",
-                                        format!("\"{current_etag}\", W/\"{current_etag}\""),
-                                    )
-                                    .call()
-                                {
-                                    Ok(response) => {
-                                        if response.status() == 304 {
-                                            return Ok(self.get_from_disk(source_hash)?.unwrap());
+                            let (response, etag) =
+                                if let Some(Ok(path_with_etag)) = glob(&glob_pattern)?.next() {
+                                    let file_name_splitted = path_with_etag
+                                        .file_name()
+                                        .unwrap()
+                                        .to_str()
+                                        .unwrap()
+                                        .splitn(3, '.') // url hash, etag, extension
+                                        .collect::<Vec<_>>();
+                                    let current_etag = file_name_splitted[1].to_string();
+                                    match ureq::get(url.as_str())
+                                        .header(
+                                            "If-None-Match",
+                                            format!("\"{current_etag}\", W/\"{current_etag}\""),
+                                        )
+                                        .call()
+                                    {
+                                        Ok(response) => {
+                                            if response.status() == 304 {
+                                                return Ok(self.get_from_disk(from)?.unwrap());
+                                            }
+                                            let new_etag = response.headers()["etag"]
+                                                .to_str()?
+                                                .split("\"")
+                                                .nth(1)
+                                                .unwrap()
+                                                .to_string(); // etag can be W/"<etag_value>" or "<etag_value>"
+                                            (response, new_etag)
                                         }
-                                        let new_etag = response.headers()["etag"]
-                                            .to_str()?
-                                            .split("\"")
-                                            .nth(1)
-                                            .unwrap()
-                                            .to_string(); // etag can be W/"<etag_value>" or "<etag_value>"
-                                        (response, new_etag)
+                                        Err(
+                                            ureq::Error::ConnectionFailed
+                                            | ureq::Error::Timeout(_)
+                                            | ureq::Error::BodyStalled,
+                                        ) => {
+                                            return Ok(self.get_from_disk(from)?.unwrap());
+                                        }
+                                        Err(error) => {
+                                            return Err(error).with_context(|| {
+                                                format!("Can not download include from {url}")
+                                            });
+                                        }
                                     }
-                                    Err(
-                                        ureq::Error::ConnectionFailed
-                                        | ureq::Error::Timeout(_)
-                                        | ureq::Error::BodyStalled,
-                                    ) => {
-                                        return Ok(self.get_from_disk(source_hash)?.unwrap());
-                                    }
-                                    Err(error) => {
-                                        return Err(error).with_context(|| {
-                                            format!("Can not download include from {url}")
-                                        });
-                                    }
-                                }
-                            } else {
-                                let response = ureq::get(url.as_str()).call()?;
-                                let etag = response.headers()["etag"]
-                                    .to_str()?
-                                    .split("\"")
-                                    .nth(1)
-                                    .unwrap()
-                                    .to_string(); // etag can be W/"<etag_value>" or "<etag_value>"
-                                (response, etag)
-                            };
+                                } else {
+                                    let response = ureq::get(url.as_str()).call()?;
+                                    let etag = response.headers()["etag"]
+                                        .to_str()?
+                                        .split("\"")
+                                        .nth(1)
+                                        .unwrap()
+                                        .to_string(); // etag can be W/"<etag_value>" or "<etag_value>"
+                                    (response, etag)
+                                };
                             if response.status().is_success() {
                                 let result_text = response
                                     .into_body()
@@ -170,8 +169,7 @@ impl IncludesCache {
                                     }
                                 };
                                 self.remove_from_disk(&source_hash_hex)?;
-                                self.source_hash_to_program
-                                    .insert(source_hash, result.clone());
+                                self.source_to_program.insert(from.clone(), result.clone());
                                 let path = self
                                     .directory
                                     .join(&format!("{}.{etag}.{extension}", source_hash_hex));
@@ -197,8 +195,7 @@ impl IncludesCache {
                 }
             }
             From::File(path) => {
-                let source_hash = self.source_hash(path);
-                if let Some(result) = self.source_hash_to_program.get(&source_hash) {
+                if let Some(result) = self.source_to_program.get(from) {
                     Ok(result.clone())
                 } else {
                     match path.extension() {
