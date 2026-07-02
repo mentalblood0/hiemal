@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::value::Value;
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, Ord, Eq, Hash, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, Ord, Eq, Hash, PartialEq, Default)]
 pub enum Type {
     #[serde(rename = "number")]
     Number,
@@ -23,6 +23,7 @@ pub enum Type {
     Object(BTreeMap<String, Type>),
     #[serde(rename = "union")]
     Union(BTreeSet<Type>),
+    #[default]
     #[serde(rename = "any")]
     Any,
     #[serde(rename = "literal")]

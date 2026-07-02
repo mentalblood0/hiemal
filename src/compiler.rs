@@ -10,7 +10,9 @@ use crate::{
     intermediate_representation::{
         self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction,
     },
-    program::{AtSegment, Condition, EmbeddedFunction, From, Path, PathSegment, Program},
+    program::{
+        AtSegment, Condition, EmbeddedFunction, From, Path, PathSegment, Program, RangeBound,
+    },
     r#type::Type,
     value::Value,
 };
@@ -619,10 +621,11 @@ impl Compiler {
                     from_program_compilation_context,
                     global_compilation_context,
                 )?;
-                let external_constants_name_clustered_indices =
+                let mut result_external_constants_name_clustered_indices =
                     compiled_extracted_from.external_constants_name_clustered_indices;
-                let mut static_value_path_segments = Vec::new();
+                let mut value_path_segments = Vec::new();
                 let mut current_type = compiled_extracted_from.r#type;
+                let mut result_is_pure = compiled_extracted_from.is_pure;
                 if let Some(first_non_program_path_segment_index) =
                     first_non_program_path_segment_index_option
                 {
@@ -637,7 +640,7 @@ impl Compiler {
                             PathSegment::At,
                             PathSegment::ArrayIndex(value_path_segment_index),
                         ]);
-                        match (&current_type, value_path_segment) {
+                        match (&mut current_type, value_path_segment) {
                             (_, AtSegment::ProgramPathSegment(_)) => {
                                 return Err(anyhow!(
                                     "expected value path segment: array index or object key, \
@@ -650,12 +653,12 @@ impl Compiler {
                                 Type::Array(element_type),
                                 AtSegment::ValueArrayIndex(array_index),
                             ) => {
-                                static_value_path_segments.push(
+                                value_path_segments.push(
                                     intermediate_representation::ValuePathSegment::ArrayIndex(
                                         *array_index,
                                     ),
                                 );
-                                current_type = *element_type.clone();
+                                current_type = std::mem::take(&mut *element_type);
                             }
                             (
                                 Type::Tuple(elements_types),
@@ -670,12 +673,174 @@ impl Compiler {
                                         value_path_segment_compilation_context.path
                                     ));
                                 }
-                                static_value_path_segments.push(
+                                value_path_segments.push(
                                     intermediate_representation::ValuePathSegment::ArrayIndex(
                                         *tuple_index,
                                     ),
                                 );
-                                current_type = elements_types[*tuple_index].clone();
+                                current_type =
+                                    std::mem::take(elements_types.get_mut(*tuple_index).unwrap());
+                            }
+                            (
+                                Type::Array(_) | Type::Tuple(_),
+                                AtSegment::ValueArrayRange(from, to),
+                            ) => {
+                                if let (
+                                    RangeBound::Static(Some(from)),
+                                    RangeBound::Static(Some(to)),
+                                ) = (from, to)
+                                {
+                                    if from > to {
+                                        return Err(anyhow!(
+                                            "expected value array range from-index to be less \
+                                             than or equal to to-index, got from {from} to {to} \
+                                             at {:#?}",
+                                            value_path_segment_compilation_context.path
+                                        ));
+                                    }
+                                }
+                                match &mut current_type {
+                                    Type::Array(element_type) => {
+                                        current_type = std::mem::take(&mut *element_type);
+                                    }
+                                    Type::Tuple(elements_types) => {
+                                        if let RangeBound::Static(Some(from)) = from {
+                                            if *from >= elements_types.len() {
+                                                return Err(anyhow!(
+                                                    "expected value tuple range from-index to be \
+                                                     less than tuple length, got from-index \
+                                                     {from} >= {} at {:#?}",
+                                                    elements_types.len(),
+                                                    value_path_segment_compilation_context.path
+                                                ));
+                                            }
+                                        }
+                                        if let RangeBound::Static(Some(to)) = to {
+                                            if *to > elements_types.len() {
+                                                return Err(anyhow!(
+                                                    "expected value tuple range to-index to be \
+                                                     less than or equal to tuple length, got \
+                                                     from-index {to} >= {} at {:#?}",
+                                                    elements_types.len(),
+                                                    value_path_segment_compilation_context.path
+                                                ));
+                                            }
+                                        }
+                                        match (from, to) {
+                                            (
+                                                RangeBound::Static(Some(from)),
+                                                RangeBound::Static(Some(to)),
+                                            ) => {
+                                                current_type = Type::Tuple(Vec::from_iter(
+                                                    std::mem::take(elements_types)
+                                                        .into_iter()
+                                                        .skip(*from)
+                                                        .take(*to - *from),
+                                                ));
+                                            }
+                                            (
+                                                RangeBound::Static(Some(from)),
+                                                RangeBound::Static(None),
+                                            ) => {
+                                                current_type = Type::Tuple(Vec::from_iter(
+                                                    std::mem::take(elements_types)
+                                                        .into_iter()
+                                                        .skip(*from),
+                                                ));
+                                            }
+                                            (
+                                                RangeBound::Static(None),
+                                                RangeBound::Static(Some(to)),
+                                            ) => {
+                                                current_type = Type::Tuple(Vec::from_iter(
+                                                    std::mem::take(elements_types)
+                                                        .into_iter()
+                                                        .take(*to),
+                                                ));
+                                            }
+                                            (
+                                                RangeBound::Static(Some(from)),
+                                                RangeBound::Dynamic(_),
+                                            ) => {
+                                                current_type = Type::Array(Box::new(Type::Union(
+                                                    BTreeSet::from_iter(
+                                                        std::mem::take(elements_types)
+                                                            .into_iter()
+                                                            .skip(*from),
+                                                    ),
+                                                )));
+                                            }
+                                            (
+                                                RangeBound::Dynamic(_),
+                                                RangeBound::Static(Some(to)),
+                                            ) => {
+                                                current_type = Type::Array(Box::new(Type::Union(
+                                                    BTreeSet::from_iter(
+                                                        std::mem::take(elements_types)
+                                                            .into_iter()
+                                                            .take(*to),
+                                                    ),
+                                                )));
+                                            }
+                                            _ => {
+                                                current_type = Type::Array(Box::new(Type::Union(
+                                                    BTreeSet::from_iter(
+                                                        std::mem::take(elements_types).into_iter(),
+                                                    ),
+                                                )));
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                                value_path_segments.push(
+                                    intermediate_representation::ValuePathSegment::ArrayRange({
+                                            let mut result = [
+                                                intermediate_representation::RangeBound::Static(None),
+                                                intermediate_representation::RangeBound::Static(None)
+                                            ];
+                                            for (range_bound_index, range_bound) in [from, to].iter().enumerate() {
+                                                result[range_bound_index] = match range_bound {
+                                                    RangeBound::Static(range_bound) => {
+                                                        intermediate_representation::RangeBound::Static(
+                                                            *range_bound,
+                                                        )
+                                                    }
+                                                    RangeBound::Dynamic(range_bound_program) => {
+                                                        let mut range_bound_compilation_context =
+                                                            compilation_context.clone();
+                                                        range_bound_compilation_context.path.0.extend(
+                                                            [
+                                                                PathSegment::At,
+                                                                PathSegment::ArrayIndex(
+                                                                    value_path_segment_index,
+                                                                ),
+                                                            ],
+                                                        );
+                                                        let mut compiled_range_bound = self
+                                                            .compile_with_context(
+                                                                range_bound_program,
+                                                                range_bound_compilation_context,
+                                                                global_compilation_context,
+                                                            )?;
+                                                        result_external_constants_name_clustered_indices.append(
+                                                            &mut compiled_range_bound
+                                                                .external_constants_name_clustered_indices,
+                                                        );
+                                                        result_is_pure &= compiled_range_bound.is_pure;
+                                                        intermediate_representation::RangeBound::Dynamic(
+                                                            compiled_range_bound.node,
+                                                        )
+                                                    }
+                                                };
+                                            }
+                                            (
+                                                std::mem::take(&mut result.get_mut(0).unwrap()),
+                                                std::mem::take(&mut result.get_mut(1).unwrap())
+                                            )
+                                        }
+                                    ),
+                                );
                             }
                             (Type::Array(_), path_segment) => {
                                 return Err(anyhow!(
@@ -687,13 +852,15 @@ impl Compiler {
                                 Type::Object(object_inner_types),
                                 AtSegment::ValueObjectKey(object_key),
                             ) => {
-                                static_value_path_segments.push(
+                                value_path_segments.push(
                                     intermediate_representation::ValuePathSegment::ObjectKey(
                                         object_key.clone(),
                                     ),
                                 );
-                                if let Some(inner_type) = object_inner_types.get(object_key) {
-                                    current_type = inner_type.clone();
+                                if let Some(inner_type) =
+                                    std::mem::take(&mut object_inner_types.get_mut(object_key))
+                                {
+                                    current_type = std::mem::take(inner_type);
                                 } else {
                                     return Err(anyhow!(
                                         "expected object with key {object_key:?}, found \
@@ -722,12 +889,13 @@ impl Compiler {
                     node: Node {
                         content: Content::FromAt {
                             from: Box::new(compiled_extracted_from.node),
-                            value_path_segments: static_value_path_segments,
+                            value_path_segments,
                         },
                     },
                     r#type: current_type,
-                    external_constants_name_clustered_indices,
-                    is_pure: compiled_extracted_from.is_pure,
+                    external_constants_name_clustered_indices:
+                        result_external_constants_name_clustered_indices,
+                    is_pure: result_is_pure,
                 }
             }
             Program::EmbeddedFunction(embedded_function) => match &**embedded_function {

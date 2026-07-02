@@ -128,8 +128,22 @@ pub struct ConstantDefinition {
 }
 
 #[repr(u8)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+pub enum RangeBound {
+    Static(Option<usize>),
+    Dynamic(Node),
+}
+
+impl Default for RangeBound {
+    fn default() -> Self {
+        Self::Static(None)
+    }
+}
+
+#[repr(u8)]
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum ValuePathSegment {
     ArrayIndex(usize),
     ObjectKey(String),
+    ArrayRange((RangeBound, RangeBound)),
 }

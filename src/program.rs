@@ -107,10 +107,19 @@ pub enum From {
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
+pub enum RangeBound {
+    Static(Option<usize>),
+    Dynamic(Program),
+}
+
+#[repr(u8)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[serde(untagged)]
 pub enum AtSegment {
     ProgramPathSegment(PathSegment),
     ValueArrayIndex(usize),
     ValueObjectKey(String),
+    ValueArrayRange(RangeBound, RangeBound),
 }
 
 impl Default for Program {
