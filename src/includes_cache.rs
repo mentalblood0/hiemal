@@ -1,5 +1,5 @@
-use std::hash::Hash;
 use std::io::Write;
+use std::{hash::Hash, rc::Rc};
 
 use anyhow::{Context, Result, anyhow};
 use glob::glob;
@@ -9,7 +9,7 @@ use crate::program::{DefaultArgument, From, Program};
 
 pub struct IncludesCache {
     pub directory: std::path::PathBuf,
-    pub source_to_program: HashMap<From, Program>,
+    pub source_to_program: HashMap<From, Rc<Program>>,
 }
 
 impl Default for IncludesCache {
@@ -34,7 +34,7 @@ impl IncludesCache {
         Ok(())
     }
 
-    fn get_from_disk(&mut self, from: &From) -> Result<Option<Program>> {
+    fn get_from_disk(&mut self, from: &From) -> Result<Option<Rc<Program>>> {
         let source_hash = self.source_hash(from);
         if let Some(Ok(path)) = glob(&format!(
             "{}.*",
@@ -53,8 +53,8 @@ impl IncludesCache {
                 .unwrap()
                 .as_str()
             {
-                "json" => serde_json::from_str::<Program>(&result_text)?,
-                "yml" | "yaml" => serde_saphyr::from_str::<Program>(&result_text)?,
+                "json" => serde_json::from_str::<Rc<Program>>(&result_text)?,
+                "yml" | "yaml" => serde_saphyr::from_str::<Rc<Program>>(&result_text)?,
                 _ => return Ok(None),
             };
             self.source_to_program.insert(from.clone(), result.clone());
@@ -73,9 +73,11 @@ impl IncludesCache {
         hasher.finish_u128()
     }
 
-    pub fn get(&mut self, from: &From) -> Result<Program> {
+    pub fn get(&mut self, from: &From) -> Result<Rc<Program>> {
         match from {
-            From::DefaultArgument(_) => Ok(Program::DefaultArgument(DefaultArgument::Underline)),
+            From::DefaultArgument(_) => Ok(Rc::new(Program::DefaultArgument(
+                DefaultArgument::Underline,
+            ))),
             From::Url(url) => {
                 match std::path::Path::new(url.path())
                     .extension()
@@ -157,9 +159,9 @@ impl IncludesCache {
                                     .read_to_string()
                                     .with_context(|| "Can not read body of response from {url}")?;
                                 let result = match extension {
-                                    "json" => serde_json::from_str::<Program>(&result_text)?,
+                                    "json" => serde_json::from_str::<Rc<Program>>(&result_text)?,
                                     "yaml" | "yml" => {
-                                        serde_saphyr::from_str::<Program>(&result_text)?
+                                        serde_saphyr::from_str::<Rc<Program>>(&result_text)?
                                     }
                                     unsupported_extension => {
                                         return Err(anyhow!(
@@ -216,7 +218,7 @@ impl IncludesCache {
                     }
                 }
             }
-            From::Program(program) => Ok(*program.clone()),
+            From::Program(program) => Ok(program.clone()),
         }
     }
 }

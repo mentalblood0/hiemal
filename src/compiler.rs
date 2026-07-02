@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     hash::{Hash, Hasher},
+    rc::Rc,
 };
 
 use anyhow::{Context, Error, Result, anyhow};
@@ -24,9 +25,9 @@ use crate::{
 #[derive(Clone, Default)]
 struct CompilationContext {
     path: Path,
-    available_functions: Map<String, Program>,
+    available_functions: Map<String, Rc<Program>>,
     available_constants: Map<String, usize>,
-    entered_user_functions: Set<Program>,
+    entered_user_functions: Set<Rc<Program>>,
 }
 
 impl CompilationContext {
@@ -201,7 +202,7 @@ struct NodeAndMetadata {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct MaybeCompiledProgram {
-    program: Program,
+    program: Rc<Program>,
     node: Option<Node>,
 }
 
@@ -211,8 +212,8 @@ impl Hash for MaybeCompiledProgram {
     }
 }
 
-impl From<&Program> for MaybeCompiledProgram {
-    fn from(program: &Program) -> Self {
+impl From<&Rc<Program>> for MaybeCompiledProgram {
+    fn from(program: &Rc<Program>) -> Self {
         Self {
             program: program.clone(),
             node: None,
@@ -220,8 +221,8 @@ impl From<&Program> for MaybeCompiledProgram {
     }
 }
 
-impl From<Program> for MaybeCompiledProgram {
-    fn from(program: Program) -> Self {
+impl From<Rc<Program>> for MaybeCompiledProgram {
+    fn from(program: Rc<Program>) -> Self {
         Self {
             program: program,
             node: None,
@@ -242,30 +243,34 @@ fn process_from_at_program_path_part(
     from: &program::From,
     at: &Vec<AtSegment>,
     includes_cache: &mut IncludesCache,
-) -> Result<(Program, Option<usize>)> {
+) -> Result<(Rc<Program>, Option<usize>)> {
     let mut result = includes_cache.get(&from)?;
     let mut current_path_segment_index = 0;
     while let Some(current_path_segment) = at.get(current_path_segment_index) {
         match current_path_segment {
             AtSegment::ProgramPathSegment(program_path_segment) => {
-                match (result, program_path_segment) {
+                match (&*result, program_path_segment) {
                     (Program::Tuple(tuple), PathSegment::ArrayIndex(tuple_index)) => {
-                        result = tuple.get(*tuple_index).unwrap().clone();
+                        result = Rc::new(tuple.get(*tuple_index).unwrap().clone());
                     }
                     (Program::Object(object), PathSegment::ObjectKey(object_key)) => {
-                        result = object.get(object_key).unwrap().clone();
+                        result = Rc::new(object.get(object_key).unwrap().clone());
                     }
                     (
                         Program::Value(Some(Value::Tuple(array))),
                         PathSegment::ArrayIndex(array_index),
                     ) => {
-                        result = Program::Value(array.inner.get(*array_index).unwrap().clone());
+                        result = Rc::new(Program::Value(
+                            array.inner.get(*array_index).unwrap().clone(),
+                        ));
                     }
                     (
                         Program::Value(Some(Value::Object(object))),
                         PathSegment::ObjectKey(object_key),
                     ) => {
-                        result = Program::Value(object.inner.get(object_key).unwrap().clone());
+                        result = Rc::new(Program::Value(
+                            object.inner.get(object_key).unwrap().clone(),
+                        ));
                     }
                     (
                         Program::Scope {
@@ -326,7 +331,7 @@ fn process_from_at_program_path_part(
                         },
                         PathSegment::Compute,
                     ) => {
-                        result = *compute.clone();
+                        result = compute.clone();
                     }
                     _ => {
                         return Err(anyhow!(
@@ -1222,12 +1227,12 @@ impl Compiler {
                     } else {
                         None
                     };
-                for (case_condition, case) in cases {
+                for (case_index, (case_condition, case)) in cases.iter().enumerate() {
                     let mut case_compilation_context = compilation_context.clone();
-                    case_compilation_context.path.0.extend([
-                        PathSegment::Cases,
-                        PathSegment::Case(case_condition.clone()),
-                    ]);
+                    case_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::Cases, PathSegment::Case(case_index)]);
                     match case_condition {
                         Condition::Type(refined_match_type) => {
                             if compiled_match
@@ -1374,7 +1379,9 @@ impl Compiler {
                             indexmap::IndexSet::new();
                         let mut element_type_to_compiled_through_index: BTreeMap<Type, usize> =
                             BTreeMap::new();
-                        for element_type in map_tuple_elements_types {
+                        for (element_type_index, element_type) in
+                            map_tuple_elements_types.iter().enumerate()
+                        {
                             if let Some(element_through_index) =
                                 element_type_to_compiled_through_index.get(&element_type)
                             {
@@ -1386,7 +1393,7 @@ impl Compiler {
                                 through_compilation_context
                                     .path
                                     .0
-                                    .extend([PathSegment::Through(element_type.clone())]);
+                                    .extend([PathSegment::Through(element_type_index)]);
                                 self.define_constant(
                                     r#as.clone(),
                                     element_type.clone(),
@@ -1414,7 +1421,7 @@ impl Compiler {
                                     compiled_throughs.len() - 1
                                 };
                                 element_type_to_compiled_through_index
-                                    .insert(element_type, compiled_through_index);
+                                    .insert(element_type.clone(), compiled_through_index);
                                 result_throughs_nodes_indexes.push(compiled_through_index);
                             }
                         }
@@ -1443,7 +1450,7 @@ impl Compiler {
                         through_compilation_context
                             .path
                             .0
-                            .extend([PathSegment::Through(*map_array_element_type.clone())]);
+                            .extend([PathSegment::Through(0)]);
                         self.define_constant(
                             r#as.clone(),
                             *map_array_element_type.clone(),
@@ -1548,7 +1555,9 @@ impl Compiler {
                             indexmap::IndexSet::new();
                         let mut current_type_and_accumulating_in_type_to_compiled_through_index: BTreeMap<(Type, Type), usize> =
                         BTreeMap::new();
-                        for current_type in fold_tuple_elements_types {
+                        for (current_type_index, current_type) in
+                            fold_tuple_elements_types.iter().enumerate()
+                        {
                             if let Some(element_through_index) =
                                 current_type_and_accumulating_in_type_to_compiled_through_index
                                     .get(&(current_type.clone(), result_type.clone()))
@@ -1561,7 +1570,7 @@ impl Compiler {
                                 through_compilation_context
                                     .path
                                     .0
-                                    .extend([PathSegment::Through(current_type.clone())]);
+                                    .extend([PathSegment::Through(current_type_index)]);
                                 self.define_constant(
                                     r#as.clone(),
                                     current_type.clone(),
@@ -1596,7 +1605,7 @@ impl Compiler {
                                 };
                                 current_type_and_accumulating_in_type_to_compiled_through_index
                                     .insert(
-                                        (current_type, result_type.clone()),
+                                        (current_type.clone(), result_type.clone()),
                                         compiled_through_index,
                                     );
                                 result_throughs_nodes_indexes.push(compiled_through_index);
@@ -1629,7 +1638,7 @@ impl Compiler {
                         through_compilation_context
                             .path
                             .0
-                            .extend([PathSegment::Through(*fold_array_element_type.clone())]);
+                            .extend([PathSegment::Through(0)]);
                         let starting_with_type = compiled_starting_with.r#type.unliteral();
                         self.define_constant(
                             r#as.clone(),
@@ -1767,7 +1776,7 @@ impl Compiler {
                                     if function_argument_name.ends_with(":") {
                                         body_compilation_context.available_functions.extend([(
                                             function_argument_name.to_string(),
-                                            function_argument_body.clone(),
+                                            Rc::new(function_argument_body.clone()),
                                         )]);
                                     } else {
                                         let mut argument_compilation_context =

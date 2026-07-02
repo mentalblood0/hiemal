@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, rc::Rc};
 
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -14,10 +14,10 @@ pub enum Program {
     Tuple(Vec<Program>),
     Scope {
         #[serde(default)]
-        functions: BTreeMap<String, Program>,
+        functions: BTreeMap<String, Rc<Program>>,
         #[serde(default)]
-        constants: BTreeMap<String, Program>,
-        compute: Box<Program>,
+        constants: BTreeMap<String, Rc<Program>>,
+        compute: Rc<Program>,
     },
     Constant {
         constant: String,
@@ -101,7 +101,7 @@ pub enum From {
     DefaultArgument(DefaultArgument),
     Url(Url),
     File(std::path::PathBuf),
-    Program(Box<Program>),
+    Program(Rc<Program>),
 }
 
 #[repr(u8)]
@@ -165,11 +165,11 @@ pub enum PathSegment {
     #[serde(rename = "starting from")]
     StartingWith,
     #[serde(rename = "through")]
-    Through(Type),
+    Through(usize),
     #[serde(rename = "cases")]
     Cases,
     #[serde(rename = "case")]
-    Case(Condition),
+    Case(usize),
     #[serde(rename = "compute")]
     #[default]
     Compute,
