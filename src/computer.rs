@@ -1,10 +1,11 @@
 use std::borrow::Cow;
 use std::hash::Hash;
+use std::io::Read;
 use std::sync::Arc;
-use std::{collections::BTreeMap, io::Read};
 
 use anyhow::{Context, Result};
 use dashu::Rational;
+use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use rpds::RedBlackTreeMapSync;
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::intermediate_representation::Throughs;
 use crate::{
-    containers::{Map, Vector},
+    containers::{List, Map},
     intermediate_representation::{
         Condition, Content, EmbeddedFunction, IntermediateRepresentation, Node, ValuePathSegment,
     },
@@ -21,7 +22,7 @@ use crate::{
 
 #[derive(Default)]
 struct GlobalComputationContext {
-    functions_results_cache: BTreeMap<u128, Option<Value>>,
+    functions_results_cache: HashMap<u128, Option<Value>>,
 }
 
 #[derive(Clone, Debug)]
@@ -122,7 +123,7 @@ impl Computer {
         global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
     ) -> Result<Option<Value>> {
         match &node.content {
-            Content::Tuple(tuple) => Ok(Some(Value::Tuple(Vector {
+            Content::Tuple(tuple) => Ok(Some(Value::Tuple(List {
                 inner: im_lists::list::SharedList::from_iter(
                     self.compute_nodes(
                         tuple
@@ -225,7 +226,7 @@ impl Computer {
                         format!("can not compute embedded function at path {:#?}", path)
                     })?,
                 )),
-                EmbeddedFunction::KeyValuePairs(argument) => Ok(Some(Value::Tuple(Vector {
+                EmbeddedFunction::KeyValuePairs(argument) => Ok(Some(Value::Tuple(List {
                     inner: im_lists::list::SharedList::from_iter(
                         self.compute_node(
                             argument,
@@ -239,7 +240,7 @@ impl Computer {
                         .inner
                         .iter()
                         .map(|(key, value)| {
-                            Some(Value::Tuple(Vector {
+                            Some(Value::Tuple(List {
                                 inner: im_lists::list::SharedList::from_iter([
                                     Some(Value::String(ropey::Rope::from_str(key))),
                                     value.clone(),
@@ -249,7 +250,7 @@ impl Computer {
                     ),
                 }))),
                 EmbeddedFunction::Flatten(argument) => Ok(Some(Value::Tuple({
-                    Vector {
+                    List {
                         inner: im_lists::list::SharedList::from_iter(
                             self.compute_node(
                                 argument,
@@ -456,7 +457,7 @@ impl Computer {
                 )?;
                 let computed_map_array = computed_map.as_ref().unwrap().as_tuple().unwrap();
                 match throughs {
-                    Throughs::Array(node) => Ok(Some(Value::Tuple(Vector {
+                    Throughs::Array(node) => Ok(Some(Value::Tuple(List {
                         inner: im_lists::list::SharedList::from_iter(self.compute_nodes(
                             computed_map_array.inner.iter().map(|element_value| {
                                 let mut through_computation_context = computation_context.clone();
@@ -472,7 +473,7 @@ impl Computer {
                     Throughs::Tuple {
                         nodes_indexes,
                         nodes,
-                    } => Ok(Some(Value::Tuple(Vector {
+                    } => Ok(Some(Value::Tuple(List {
                         inner: im_lists::list::SharedList::from_iter(self.compute_nodes(
                             computed_map_array.inner.iter().enumerate().map(
                                 |(element_index, element_value)| {

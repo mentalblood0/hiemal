@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{
-    containers::Vector, default_argument_name::DEFAULT_ARGUMENT_NAME, r#type::Type, value::Value,
+    containers::List, default_argument_name::DEFAULT_ARGUMENT_NAME, r#type::Type, value::Value,
 };
 
 #[repr(u8)]
@@ -199,7 +199,7 @@ pub enum PathSegment {
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Hash)]
-pub struct Path(pub Vector<PathSegment>);
+pub struct Path(pub List<PathSegment>);
 
 impl std::fmt::Debug for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -8,7 +8,7 @@ use serde::{
 };
 
 use crate::{
-    containers::{Map, Vector},
+    containers::{List, Map},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     r#type::Type,
 };
@@ -40,7 +40,7 @@ pub enum Value {
     )]
     String(ropey::Rope),
     Bool(bool),
-    Tuple(Vector<Option<Value>>),
+    Tuple(List<Option<Value>>),
     Object(Map<String, Option<Value>>),
 }
 
@@ -136,14 +136,14 @@ impl Value {
         }
     }
 
-    pub fn as_tuple(&self) -> Option<&Vector<Option<Value>>> {
+    pub fn as_tuple(&self) -> Option<&List<Option<Value>>> {
         match self {
             Value::Tuple(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_tuple_mut(&mut self) -> Option<&mut Vector<Option<Value>>> {
+    pub fn as_tuple_mut(&mut self) -> Option<&mut List<Option<Value>>> {
         match self {
             Value::Tuple(result) => Some(result),
             _ => None,

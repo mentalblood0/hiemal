@@ -73,14 +73,14 @@ where
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
-pub struct Vector<V>
+pub struct List<V>
 where
     V: Ord + Clone + 'static,
 {
     pub inner: im_lists::list::SharedList<V>,
 }
 
-impl<V> Vector<V>
+impl<V> List<V>
 where
     V: Ord + Clone,
 {
@@ -119,7 +119,7 @@ where
     }
 }
 
-impl<V> Default for Vector<V>
+impl<V> Default for List<V>
 where
     V: Ord + Clone + 'static,
 {
@@ -130,7 +130,7 @@ where
     }
 }
 
-impl<V> Serialize for Vector<V>
+impl<V> Serialize for List<V>
 where
     V: Ord + Clone + Serialize + 'static,
 {
@@ -143,7 +143,7 @@ where
     }
 }
 
-impl<'de, V> Deserialize<'de> for Vector<V>
+impl<'de, V> Deserialize<'de> for List<V>
 where
     V: Ord + Clone + Deserialize<'de> + 'static,
 {
@@ -156,7 +156,7 @@ where
         where
             V: Ord + Clone + 'static,
         {
-            type Value = Vector<V>;
+            type Value = List<V>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("a sequence")
@@ -166,7 +166,7 @@ where
             where
                 A: SeqAccess<'de>,
             {
-                let mut result = Vector::default();
+                let mut result = List::default();
                 while let Some(element) = seq.next_element()? {
                     result.push_back_mut(element);
                 }

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 
 use crate::{
-    containers::{Map, Vector},
+    containers::{List, Map},
     program::Path,
     r#type::Type,
 };
@@ -23,7 +23,7 @@ pub enum Value {
         ropey::Rope,
     ),
     Bool(bool),
-    Tuple(Vector<Option<Value>>),
+    Tuple(List<Option<Value>>),
     Object(Map<String, Option<Value>>),
 }
 
