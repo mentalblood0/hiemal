@@ -55,6 +55,12 @@ from:
 at: [a, 2, b]
 ```
 
+```yaml
+from:
+  a: [1, 2, { b: 3 }, 4]
+at: [a, [1, { sum: [2, 1] }]]
+```
+
 #### constant
 
 ```yaml

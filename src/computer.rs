@@ -369,58 +369,46 @@ impl Computer {
                             )
                         }
                         ValuePathSegment::ArrayRange((from, to)) => {
+                            let from_number = match from {
+                                RangeBound::Static(Some(from)) => *from as f64,
+                                RangeBound::Static(None) => 0f64,
+                                RangeBound::Dynamic(from_node) => self
+                                    .compute_node(
+                                        from_node,
+                                        intermediate_representation,
+                                        computation_context,
+                                        global_computation_context,
+                                    )?
+                                    .unwrap()
+                                    .as_number()
+                                    .unwrap()
+                                    .to_f64()
+                                    .value(),
+                            };
+                            let to_number = match to {
+                                RangeBound::Static(Some(to)) => *to as f64,
+                                RangeBound::Static(None) => 0f64,
+                                RangeBound::Dynamic(to_node) => self
+                                    .compute_node(
+                                        to_node,
+                                        intermediate_representation,
+                                        computation_context,
+                                        global_computation_context,
+                                    )?
+                                    .unwrap()
+                                    .as_number()
+                                    .unwrap()
+                                    .to_f64()
+                                    .value(),
+                            };
                             result = Some(Value::Tuple(List {
                                 inner: im_lists::list::SharedList::from_iter(
                                     std::mem::take(
                                         &mut result.unwrap().as_tuple_mut().unwrap().inner,
                                     )
                                     .into_iter()
-                                    .skip(match from {
-                                        RangeBound::Static(Some(from)) => *from,
-                                        RangeBound::Static(None) => 0,
-                                        RangeBound::Dynamic(from_node) => {
-                                            let computed_number = self
-                                                .compute_node(
-                                                    from_node,
-                                                    intermediate_representation,
-                                                    computation_context,
-                                                    global_computation_context,
-                                                )?
-                                                .unwrap()
-                                                .as_number()
-                                                .unwrap()
-                                                .to_f64()
-                                                .value();
-                                            if computed_number >= 0f64 {
-                                                computed_number as usize
-                                            } else {
-                                                0
-                                            }
-                                        }
-                                    })
-                                    .take(match to {
-                                        RangeBound::Static(Some(to)) => *to,
-                                        RangeBound::Static(None) => 0,
-                                        RangeBound::Dynamic(to_node) => {
-                                            let computed_number = self
-                                                .compute_node(
-                                                    to_node,
-                                                    intermediate_representation,
-                                                    computation_context,
-                                                    global_computation_context,
-                                                )?
-                                                .unwrap()
-                                                .as_number()
-                                                .unwrap()
-                                                .to_f64()
-                                                .value();
-                                            if computed_number >= 0f64 {
-                                                computed_number as usize
-                                            } else {
-                                                0
-                                            }
-                                        }
-                                    }),
+                                    .skip(from_number.max(0f64) as usize)
+                                    .take((to_number - from_number).max(0f64) as usize),
                                 ),
                             }))
                         }

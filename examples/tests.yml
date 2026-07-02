@@ -248,30 +248,30 @@ compute:
     assert equal::
       found:
         from:
-          a: [1, 2, { b: 3 }]
+          a: [1, 2, { b: 3 }, 4]
         at: [a, [1, 3]]
       expected: [2, { b: 3 }]
   test from at value range from static to dynamic:
     assert equal::
       found:
         from:
-          a: [1, 2, { b: 3 }]
+          a: [1, 2, { b: 3 }, 4]
         at: [a, [1, { sum: [2, 1] }]]
       expected: [2, { b: 3 }]
   test from at value range from dynamic to dynamic:
     assert equal::
       found:
         from:
-          a: [1, 2, { b: 3 }]
+          a: [1, 2, { b: 3 }, 4]
         at: [a, [{ sum: [1, 0] }, { sum: [2, 1] }]]
       expected: [2, { b: 3 }]
   test from at value range from dynamic to dynamic out of range:
     assert equal::
       found:
         from:
-          a: [1, 2, { b: 3 }]
+          a: [1, 2, { b: 3 }, 4]
         at: [a, [{ sum: [-5, -10] }, { sum: [5, 10] }]]
-      expected: [1, 2, { b: 3 }]
+      expected: [1, 2, { b: 3 }, 4]
   test from at function:
     assert equal::
       found:
