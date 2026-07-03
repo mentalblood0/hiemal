@@ -8,6 +8,13 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test sequence:
+    assert equal::
+      found:
+        starting with: 1
+        next: { sum: [_, 1] }
+        while: { is sorted: [_, 3] }
+      expected: [1, 2, 3]
   test function as argument:
     assert equal::
       found:

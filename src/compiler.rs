@@ -45,7 +45,7 @@ pub struct ConstantDefinition {
     pub index: usize,
 }
 
-fn assert_contains(
+fn resolve_type(
     got_type: &Type,
     expected_type: &Type,
     compilation_context: &CompilationContext,
@@ -80,7 +80,7 @@ fn assert_contains(
                     Ok(previously_resolved_type.clone())
                 }
             }
-            (Type::Array(got_element_type), Type::Array(expected_element_type)) => assert_contains(
+            (Type::Array(got_element_type), Type::Array(expected_element_type)) => resolve_type(
                 got_element_type,
                 expected_element_type,
                 compilation_context,
@@ -89,7 +89,7 @@ fn assert_contains(
             (Type::Array(got_element_type), Type::Tuple(expected_elements_types)) => {
                 let mut result_union_types = BTreeSet::new();
                 for expected_element_type in expected_elements_types {
-                    result_union_types.insert(assert_contains(
+                    result_union_types.insert(resolve_type(
                         got_element_type,
                         expected_element_type,
                         compilation_context,
@@ -101,7 +101,7 @@ fn assert_contains(
             (Type::Tuple(got_elements_types), Type::Array(expected_element_type)) => {
                 let mut result_tuple_types = Vec::with_capacity(got_elements_types.len());
                 for got_element_type in got_elements_types {
-                    result_tuple_types.push(assert_contains(
+                    result_tuple_types.push(resolve_type(
                         got_element_type,
                         expected_element_type,
                         compilation_context,
@@ -116,7 +116,7 @@ fn assert_contains(
                     if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
                         result_inner_types.insert(
                             expected_value_key.clone(),
-                            assert_contains(
+                            resolve_type(
                                 got_value_type,
                                 expected_value_type,
                                 compilation_context,
@@ -135,7 +135,7 @@ fn assert_contains(
                     for one_of_got_types in got_union_types {
                         let mut found = false;
                         for one_of_expected_types in expected_union_types {
-                            if let Ok(result_union_type) = assert_contains(
+                            if let Ok(result_union_type) = resolve_type(
                                 one_of_got_types,
                                 one_of_expected_types,
                                 compilation_context,
@@ -156,7 +156,7 @@ fn assert_contains(
             (Type::Union(got_union_types), expected_type) => {
                 let mut result_union_types = BTreeSet::new();
                 for one_of_got_types in got_union_types {
-                    result_union_types.insert(assert_contains(
+                    result_union_types.insert(resolve_type(
                         one_of_got_types,
                         expected_type,
                         compilation_context,
@@ -168,7 +168,7 @@ fn assert_contains(
             (got_type, Type::Union(expected_union_types)) => {
                 if !expected_union_types.contains(expected_type) {
                     for one_of_expected_types in expected_union_types {
-                        if let Ok(result_type) = assert_contains(
+                        if let Ok(result_type) = resolve_type(
                             got_type,
                             one_of_expected_types,
                             compilation_context,
@@ -181,7 +181,7 @@ fn assert_contains(
                 }
                 Ok(got_type.clone())
             }
-            (Type::Literal(got_value), expected_type) => assert_contains(
+            (Type::Literal(got_value), expected_type) => resolve_type(
                 &Value::r#type(got_value),
                 expected_type,
                 compilation_context,
@@ -371,7 +371,7 @@ impl Compiler {
         let result_root = self
             .compile_with_context(
                 program,
-                CompilationContext::default(),
+                &CompilationContext::default(),
                 &mut global_compilation_context,
             )?
             .node;
@@ -434,7 +434,7 @@ impl Compiler {
     fn compile_with_context(
         &self,
         program: &Program,
-        compilation_context: CompilationContext,
+        compilation_context: &CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
     ) -> Result<NodeAndMetadata> {
         Ok(match program {
@@ -457,7 +457,7 @@ impl Compiler {
                         .extend([PathSegment::ArrayIndex(element_index)]);
                     let mut compiled_element = self.compile_with_context(
                         element,
-                        element_compilation_context.clone(),
+                        &element_compilation_context,
                         global_compilation_context,
                     )?;
                     result_content.push(compiled_element.node);
@@ -498,7 +498,7 @@ impl Compiler {
                     ]);
                     let mut compiled_constant = self.compile_with_context(
                         constant_compute_body,
-                        constant_compilation_context,
+                        &constant_compilation_context,
                         global_compilation_context,
                     )?;
                     result_external_constants_name_clustered_indices
@@ -536,7 +536,7 @@ impl Compiler {
                 }
                 let mut compiled_compute = self.compile_with_context(
                     compute,
-                    compute_compilation_context,
+                    &compute_compilation_context,
                     global_compilation_context,
                 )?;
                 for constant_name_clustered_index in constants_name_clustered_indices {
@@ -618,7 +618,7 @@ impl Compiler {
                     .extend([PathSegment::From]);
                 let compiled_extracted_from = self.compile_with_context(
                     &extracted_from,
-                    from_program_compilation_context,
+                    &from_program_compilation_context,
                     global_compilation_context,
                 )?;
                 let mut result_external_constants_name_clustered_indices =
@@ -820,7 +820,7 @@ impl Compiler {
                                                         let mut compiled_range_bound = self
                                                             .compile_with_context(
                                                                 range_bound_program,
-                                                                range_bound_compilation_context,
+                                                                &range_bound_compilation_context,
                                                                 global_compilation_context,
                                                             )?;
                                                         result_external_constants_name_clustered_indices.append(
@@ -907,10 +907,10 @@ impl Compiler {
                         .extend([PathSegment::Sum]);
                     let compiled_argument = self.compile_with_context(
                         &argument,
-                        argument_compilation_context.clone(),
+                        &argument_compilation_context,
                         global_compilation_context,
                     )?;
-                    assert_contains(
+                    resolve_type(
                         &compiled_argument.r#type,
                         &Type::Array(Box::new(Type::Number)),
                         &compilation_context,
@@ -941,10 +941,10 @@ impl Compiler {
                         .extend([PathSegment::IsSorted]);
                     let compiled_argument = self.compile_with_context(
                         &argument,
-                        argument_compilation_context.clone(),
+                        &argument_compilation_context,
                         global_compilation_context,
                     )?;
-                    assert_contains(
+                    resolve_type(
                         &compiled_argument.r#type,
                         &Type::Array(Box::new(Type::Any)),
                         &compilation_context,
@@ -993,10 +993,10 @@ impl Compiler {
                         .extend([PathSegment::ParseYaml]);
                     let compiled_argument = self.compile_with_context(
                         &argument,
-                        argument_compilation_context.clone(),
+                        &argument_compilation_context,
                         global_compilation_context,
                     )?;
-                    assert_contains(
+                    resolve_type(
                         &compiled_argument.r#type,
                         &Type::String,
                         &argument_compilation_context,
@@ -1032,7 +1032,7 @@ impl Compiler {
                         .extend([PathSegment::KeyValuePairs]);
                     let compiled_argument = self.compile_with_context(
                         &argument,
-                        argument_compilation_context.clone(),
+                        &argument_compilation_context,
                         global_compilation_context,
                     )?;
                     if let Type::Object(argument_object_values_types) = compiled_argument
@@ -1085,10 +1085,10 @@ impl Compiler {
                         .extend([PathSegment::KeyValuePairs]);
                     let compiled_argument = self.compile_with_context(
                         &argument,
-                        argument_compilation_context.clone(),
+                        &argument_compilation_context,
                         global_compilation_context,
                     )?;
-                    let compiled_argument_resolved_type = assert_contains(
+                    let compiled_argument_resolved_type = resolve_type(
                         &compiled_argument.r#type,
                         &Type::Array(Box::new(Type::Array(Box::new(Type::Any)))),
                         &compilation_context,
@@ -1201,7 +1201,7 @@ impl Compiler {
                     .extend([PathSegment::Match]);
                 let compiled_match = self.compile_with_context(
                     r#match,
-                    match_compilation_context,
+                    &match_compilation_context,
                     global_compilation_context,
                 )?;
                 let mut result_cases = Vec::new();
@@ -1252,7 +1252,7 @@ impl Compiler {
                             };
                             let mut compiled_case = self.compile_with_context(
                                 case,
-                                case_compilation_context,
+                                &case_compilation_context,
                                 global_compilation_context,
                             )?;
                             result_types.insert(compiled_case.r#type);
@@ -1272,7 +1272,7 @@ impl Compiler {
                         Condition::Value(condition) => {
                             let compiled_condition = self.compile_with_context(
                                 condition,
-                                case_compilation_context.clone(),
+                                &case_compilation_context,
                                 global_compilation_context,
                             )?;
                             let refined_match_type = compiled_condition.r#type;
@@ -1298,7 +1298,7 @@ impl Compiler {
                             }
                             let mut compiled_case = self.compile_with_context(
                                 case,
-                                case_compilation_context,
+                                &case_compilation_context,
                                 global_compilation_context,
                             )?;
                             result_types.insert(compiled_case.r#type);
@@ -1352,7 +1352,7 @@ impl Compiler {
                 map_compilation_context.path.0.extend([PathSegment::Map]);
                 let compiled_map = self.compile_with_context(
                     map,
-                    map_compilation_context.clone(),
+                    &map_compilation_context,
                     global_compilation_context,
                 )?;
                 let mut result_external_constants_name_clustered_indices =
@@ -1402,7 +1402,7 @@ impl Compiler {
                                 );
                                 let compiled_through = self.compile_with_context(
                                     through,
-                                    through_compilation_context,
+                                    &through_compilation_context,
                                     global_compilation_context,
                                 )?;
                                 result_elements_types.push(compiled_through.r#type.clone());
@@ -1459,7 +1459,7 @@ impl Compiler {
                         );
                         let compiled_through = self.compile_with_context(
                             through,
-                            through_compilation_context,
+                            &through_compilation_context,
                             global_compilation_context,
                         )?;
                         result_external_constants_name_clustered_indices
@@ -1499,7 +1499,7 @@ impl Compiler {
                 fold_compilation_context.path.0.extend([PathSegment::Fold]);
                 let compiled_fold = self.compile_with_context(
                     fold,
-                    fold_compilation_context.clone(),
+                    &fold_compilation_context,
                     global_compilation_context,
                 )?;
                 let mut result_external_constants_name_clustered_indices =
@@ -1512,7 +1512,7 @@ impl Compiler {
                     .extend([PathSegment::StartingWith]);
                 let compiled_starting_with = self.compile_with_context(
                     starting_with,
-                    starting_with_compilation_context,
+                    &starting_with_compilation_context,
                     global_compilation_context,
                 )?;
                 result_external_constants_name_clustered_indices
@@ -1585,7 +1585,7 @@ impl Compiler {
                                 );
                                 let compiled_through = self.compile_with_context(
                                     through,
-                                    through_compilation_context,
+                                    &through_compilation_context,
                                     global_compilation_context,
                                 )?;
                                 result_type = compiled_through.r#type.clone();
@@ -1654,10 +1654,10 @@ impl Compiler {
                         );
                         let compiled_through = self.compile_with_context(
                             through,
-                            through_compilation_context.clone(),
+                            &through_compilation_context,
                             global_compilation_context,
                         )?;
-                        let compiled_through_resolved_type = assert_contains(
+                        let compiled_through_resolved_type = resolve_type(
                             &compiled_through.r#type,
                             &starting_with_type,
                             &through_compilation_context,
@@ -1715,9 +1715,91 @@ impl Compiler {
                                 )
                             })?,
                     )?)?,
-                    metaprogram_compilation_context,
+                    &metaprogram_compilation_context,
                     global_compilation_context,
                 )?
+            }
+            Program::Sequence {
+                starting_with,
+                r#as,
+                next,
+                r#while,
+            } => {
+                let mut starting_with_compilation_context = compilation_context.clone();
+                starting_with_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::StartingWith]);
+                let mut compiled_starting_with = self.compile_with_context(
+                    starting_with,
+                    &starting_with_compilation_context,
+                    global_compilation_context,
+                )?;
+                let starting_with_type =
+                    std::mem::take(&mut compiled_starting_with.r#type).unliteral();
+                let mut result_external_constants_name_clustered_indices =
+                    compiled_starting_with.external_constants_name_clustered_indices;
+                let mut next_compilation_context = compilation_context.clone();
+                next_compilation_context.path.0.extend([PathSegment::Next]);
+                let current_constant_name_clustered_index = self
+                    .define_constant(
+                        r#as.clone(),
+                        starting_with_type.clone(),
+                        &mut next_compilation_context,
+                        global_compilation_context,
+                    )
+                    .name_clustered_index;
+                let mut compiled_next = self.compile_with_context(
+                    next,
+                    &next_compilation_context,
+                    global_compilation_context,
+                )?;
+                result_external_constants_name_clustered_indices
+                    .append(&mut compiled_next.external_constants_name_clustered_indices);
+                resolve_type(
+                    &compiled_next.r#type,
+                    &starting_with_type,
+                    &next_compilation_context,
+                    global_compilation_context,
+                )?;
+                let mut while_compilation_context = compilation_context.clone();
+                while_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::While]);
+                self.define_constant(
+                    r#as.clone(),
+                    starting_with_type,
+                    &mut while_compilation_context,
+                    global_compilation_context,
+                );
+                let mut compiled_while = self.compile_with_context(
+                    r#while,
+                    &while_compilation_context,
+                    global_compilation_context,
+                )?;
+                resolve_type(
+                    &compiled_while.r#type,
+                    &Type::Bool,
+                    &while_compilation_context,
+                    global_compilation_context,
+                )?;
+                result_external_constants_name_clustered_indices
+                    .append(&mut compiled_while.external_constants_name_clustered_indices);
+                NodeAndMetadata {
+                    node: Node {
+                        content: Content::Sequence {
+                            starting_with: Box::new(compiled_starting_with.node),
+                            current_constant_name_clustered_index,
+                            next: Box::new(compiled_next.node),
+                            r#while: Box::new(compiled_while.node),
+                        },
+                    },
+                    r#type: Type::Array(Box::new(compiled_starting_with.r#type)),
+                    external_constants_name_clustered_indices:
+                        result_external_constants_name_clustered_indices,
+                    is_pure: compiled_starting_with.is_pure & compiled_next.is_pure,
+                }
             }
             Program::Object(object) => {
                 match object.len() {
@@ -1789,7 +1871,7 @@ impl Compiler {
                                         ]);
                                         let mut compiled_constant = self.compile_with_context(
                                             &function_argument_body,
-                                            argument_compilation_context,
+                                            &argument_compilation_context,
                                             global_compilation_context,
                                         )?;
                                         result_external_constants_name_clustered_indices.append(
@@ -1854,7 +1936,7 @@ impl Compiler {
                                         );
                                     let mut compiled_function = self.compile_with_context(
                                         function_body,
-                                        body_compilation_context,
+                                        &body_compilation_context,
                                         global_compilation_context,
                                     )?;
                                     global_compilation_context
@@ -1932,7 +2014,7 @@ impl Compiler {
                         .extend([PathSegment::ObjectKey(object_key.clone())]);
                     let mut compiled_object_value = self.compile_with_context(
                         object_value,
-                        object_value_compilation_context,
+                        &object_value_compilation_context,
                         global_compilation_context,
                     )?;
                     result_external_constants_name_clustered_indices.append(

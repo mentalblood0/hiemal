@@ -597,6 +597,47 @@ impl Computer {
                 }
                 Ok(result)
             }
+            Content::Sequence {
+                starting_with,
+                current_constant_name_clustered_index,
+                next,
+                r#while,
+            } => {
+                let mut result = List::default();
+                let mut current_computation_context = computation_context.clone();
+                current_computation_context.constants[*current_constant_name_clustered_index] =
+                    self.compute_node(
+                        starting_with,
+                        intermediate_representation,
+                        computation_context,
+                        global_computation_context,
+                    )?;
+                while self
+                    .compute_node(
+                        r#while,
+                        intermediate_representation,
+                        &current_computation_context,
+                        global_computation_context,
+                    )?
+                    .unwrap()
+                    .as_bool()
+                    .unwrap()
+                {
+                    result.push_back_mut(
+                        current_computation_context.constants
+                            [*current_constant_name_clustered_index]
+                            .clone(),
+                    );
+                    current_computation_context.constants[*current_constant_name_clustered_index] =
+                        self.compute_node(
+                            next,
+                            intermediate_representation,
+                            &current_computation_context,
+                            global_computation_context,
+                        )?;
+                }
+                Ok(Some(Value::Tuple(result)))
+            }
             Content::Object(object) => Ok(Some(Value::Object(Map {
                 inner: RedBlackTreeMapSync::from_iter(
                     object.keys().cloned().zip(

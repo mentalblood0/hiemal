@@ -29,7 +29,7 @@ where
 }
 
 #[repr(u8)]
-#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Hash)]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, Eq, Hash, PartialOrd, Ord)]
 #[serde(untagged)]
 pub enum Value {
     #[serde(deserialize_with = "deserialize_rational")]

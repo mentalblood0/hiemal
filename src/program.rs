@@ -55,12 +55,16 @@ pub enum Program {
     Metaprogram {
         metaprogram: Box<Program>,
     },
+    Sequence {
+        #[serde(rename = "starting with")]
+        starting_with: Box<Program>,
+        #[serde(default = "default_sequence_as")]
+        r#as: String,
+        next: Box<Program>,
+        r#while: Box<Program>,
+    },
     Object(BTreeMap<String, Program>),
     Value(Option<Value>),
-}
-
-pub fn default_fold_as() -> String {
-    "current".to_string()
 }
 
 pub fn default_accumulating_in() -> String {
@@ -76,6 +80,14 @@ pub fn default_match_as() -> Option<String> {
 }
 
 pub fn default_map_as() -> String {
+    DEFAULT_ARGUMENT_NAME.to_string()
+}
+
+pub fn default_fold_as() -> String {
+    "current".to_string()
+}
+
+pub fn default_sequence_as() -> String {
     DEFAULT_ARGUMENT_NAME.to_string()
 }
 
@@ -164,6 +176,10 @@ pub enum PathSegment {
     Metaprogram,
     #[serde(rename = "starting from")]
     StartingWith,
+    #[serde(rename = "next")]
+    Next,
+    #[serde(rename = "while")]
+    While,
     #[serde(rename = "through")]
     Through(usize),
     #[serde(rename = "cases")]
