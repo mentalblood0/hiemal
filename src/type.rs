@@ -149,6 +149,15 @@ impl<'a> Type {
     pub fn unliteral(self) -> Type {
         match self {
             Type::Literal(type_value) => Value::r#type(&type_value),
+            Type::Tuple(tuple_types) => {
+                Type::Tuple(tuple_types.into_iter().map(Type::unliteral).collect())
+            }
+            Type::Object(object_types) => Type::Object(
+                object_types
+                    .into_iter()
+                    .map(|(key, value_type)| (key, value_type.unliteral()))
+                    .collect(),
+            ),
             _ => self,
         }
     }
