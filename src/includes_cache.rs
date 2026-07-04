@@ -89,7 +89,7 @@ impl IncludesCache {
                     {
                         let source_hash = self.source_hash(url);
                         let source_hash_hex = format!("{source_hash:x}");
-                        if let Some(result) = self.source_to_program.get(&from) {
+                        if let Some(result) = self.source_to_program.get(from) {
                             Ok(result.clone())
                         } else {
                             let extension = std::path::Path::new(url.path())
@@ -174,12 +174,13 @@ impl IncludesCache {
                                 self.source_to_program.insert(from.clone(), result.clone());
                                 let path = self
                                     .directory
-                                    .join(&format!("{}.{etag}.{extension}", source_hash_hex));
+                                    .join(format!("{}.{etag}.{extension}", source_hash_hex));
                                 if let Some(parent) = path.parent() {
                                     std::fs::create_dir_all(parent)?;
                                 }
                                 std::fs::OpenOptions::new()
                                     .create(true)
+                                    .truncate(true)
                                     .write(true)
                                     .open(path)?
                                     .write_all(result_text.as_bytes())?;
@@ -189,11 +190,9 @@ impl IncludesCache {
                             }
                         }
                     }
-                    extension => {
-                        return Err(anyhow!(
-                            "Unsupported include file extension {extension:?} in url {url:?}"
-                        ));
-                    }
+                    extension => Err(anyhow!(
+                        "Unsupported include file extension {extension:?} in url {url:?}"
+                    )),
                 }
             }
             From::File(path) => {
@@ -209,12 +208,10 @@ impl IncludesCache {
                             std::io::BufReader::new(std::fs::File::open(path.clone())?),
                         )
                         .with_context(|| format!("Can not parse included file at {path:?}")),
-                        extension => {
-                            return Err(anyhow!(
-                                "Unsupported include file extension {extension:?} in file path \
-                                 {path:?}"
-                            ));
-                        }
+                        extension => Err(anyhow!(
+                            "Unsupported include file extension {extension:?} in file path \
+                             {path:?}"
+                        )),
                     }
                 }
             }

@@ -51,6 +51,7 @@ fn main() -> Result<()> {
             let mut encoder = lz4_flex::frame::FrameEncoder::new(
                 std::fs::OpenOptions::new()
                     .create(true)
+                    .truncate(true)
                     .write(true)
                     .open(&cached_intermediate_representation_path)?,
             );

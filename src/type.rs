@@ -145,13 +145,11 @@ impl<'a> Type {
                     Some(Type::LiteralFalse)
                 }
                 (Type::Array(self_array_element_type), Type::Array(other_array_element_type)) => {
-                    if let Some(element_types_intersection) =
-                        self_array_element_type.intersection(other_array_element_type)
-                    {
-                        Some(Type::Array(Box::new(element_types_intersection)))
-                    } else {
-                        None
-                    }
+                    self_array_element_type
+                        .intersection(other_array_element_type)
+                        .map(|element_types_intersection| {
+                            Type::Array(Box::new(element_types_intersection))
+                        })
                 }
                 (
                     Type::Tuple(self_tuple_elements_types),

@@ -11,7 +11,7 @@ use rayon::prelude::*;
 use rpds::RedBlackTreeMapSync;
 use serde::{Deserialize, Serialize};
 
-use crate::intermediate_representation::{RangeBound, Throughs};
+use crate::intermediate_representation::{self, RangeBound, Throughs};
 use crate::{
     containers::{List, Map},
     intermediate_representation::{
@@ -44,10 +44,10 @@ impl Computer {
             &intermediate_representation.root,
             intermediate_representation,
             &ComputationContext {
-                constants: rpds::VectorSync::from_iter(
-                    std::iter::repeat(None)
-                        .take(intermediate_representation.unique_constants_names_count),
-                ),
+                constants: rpds::VectorSync::from_iter(std::iter::repeat_n(
+                    None,
+                    intermediate_representation.unique_constants_names_count,
+                )),
             },
             &Arc::new(RwLock::new(GlobalComputationContext::default())),
         )
@@ -69,7 +69,12 @@ impl Computer {
             .filter(
                 |(element_index, (node, computation_context))| match &node.content {
                     Content::Value(value) => {
-                        result[*element_index] = unsafe { std::mem::transmute(value.clone()) };
+                        result[*element_index] = unsafe {
+                            std::mem::transmute::<
+                                Option<intermediate_representation::Value>,
+                                Option<Value>,
+                            >(value.clone())
+                        };
                         false
                     }
                     Content::Constant(constant_name_clustered_index) => {
@@ -105,12 +110,11 @@ impl Computer {
                             &computation_context,
                             global_computation_context,
                         )
-                        .and_then(|result| {
+                        .map(|result| {
                             result_mutex.lock()[element_index] = result;
-                            Ok(())
                         })
                     })
-                    .and_then(|_| Ok(result_mutex.into_inner()))?
+                    .map(|_| result_mutex.into_inner())?
             }
         })
     }
@@ -156,7 +160,7 @@ impl Computer {
                         computed_constant;
                 }
                 self.compute_node(
-                    &compute,
+                    compute,
                     intermediate_representation,
                     &result_computation_context,
                     global_computation_context,
@@ -262,10 +266,11 @@ impl Computer {
                             .as_tuple()
                             .unwrap()
                             .inner
-                            .to_owned()
-                            .into_iter()
-                            .map(|list| list.unwrap().as_tuple_mut().unwrap().inner.to_owned())
-                            .flatten(),
+                            .iter()
+                            .cloned()
+                            .flat_map(|list| {
+                                list.unwrap().as_tuple_mut().unwrap().inner.to_owned()
+                            }),
                         ),
                     }
                 }))),
@@ -456,7 +461,7 @@ impl Computer {
                         }
                         Condition::Value(expected_value_node) => {
                             let computed_expected_value = self.compute_node(
-                                &expected_value_node,
+                                expected_value_node,
                                 intermediate_representation,
                                 computation_context,
                                 global_computation_context,
@@ -494,7 +499,7 @@ impl Computer {
                 map_constant_name_clustered_index,
             } => {
                 let computed_map = self.compute_node(
-                    &map,
+                    map,
                     intermediate_representation,
                     computation_context,
                     global_computation_context,
@@ -547,14 +552,14 @@ impl Computer {
                 throughs,
             } => {
                 let computed_fold = self.compute_node(
-                    &fold,
+                    fold,
                     intermediate_representation,
                     computation_context,
                     global_computation_context,
                 )?;
                 let computed_fold_array = computed_fold.as_ref().unwrap().as_tuple().unwrap();
                 let mut result = self.compute_node(
-                    &starting_with,
+                    starting_with,
                     intermediate_representation,
                     computation_context,
                     global_computation_context,
@@ -652,7 +657,11 @@ impl Computer {
                     ),
                 ),
             }))),
-            Content::Value(value) => Ok(unsafe { std::mem::transmute(value.clone()) }),
+            Content::Value(value) => Ok(unsafe {
+                std::mem::transmute::<Option<intermediate_representation::Value>, Option<Value>>(
+                    value.clone(),
+                )
+            }),
         }
     }
 }

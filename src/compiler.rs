@@ -67,14 +67,14 @@ fn resolve_type(
                 if let Type::Unknown(_) = previously_resolved_type {
                     global_compilation_context
                         .user_function_to_index_and_type_option
-                        .get_mut(&got_maybe_compiled_program)
+                        .get_mut(got_maybe_compiled_program)
                         .unwrap()
                         .1 = expected_type.clone();
                     Ok(expected_type.clone())
                 } else {
                     if previously_resolved_type != expected_type {
                         return Err(
-                            compilation_context.error(&previously_resolved_type, expected_type)
+                            compilation_context.error(previously_resolved_type, expected_type)
                         );
                     }
                     Ok(previously_resolved_type.clone())
@@ -218,7 +218,7 @@ impl From<&Rc<Program>> for MaybeCompiledProgram {
 impl From<Rc<Program>> for MaybeCompiledProgram {
     fn from(program: Rc<Program>) -> Self {
         Self {
-            program: program,
+            program,
             node: None,
         }
     }
@@ -238,7 +238,7 @@ fn process_from_at_program_path_part(
     at: &Vec<AtSegment>,
     includes_cache: &mut IncludesCache,
 ) -> Result<(Rc<Program>, Option<usize>)> {
-    let mut result = includes_cache.get(&from)?;
+    let mut result = includes_cache.get(from)?;
     let mut current_path_segment_index = 0;
     while let Some(current_path_segment) = at.get(current_path_segment_index) {
         match current_path_segment {
@@ -677,50 +677,49 @@ impl Compiler {
                             }
                             (
                                 Type::Array(_) | Type::Tuple(_),
-                                AtSegment::ValueArrayRange(from, to),
+                                AtSegment::ValueArrayRange(value_array_range),
                             ) => {
                                 if let (
                                     RangeBound::Static(Some(from)),
                                     RangeBound::Static(Some(to)),
-                                ) = (from, to)
+                                ) = (&value_array_range.from, &value_array_range.to)
+                                    && from > to
                                 {
-                                    if from > to {
-                                        return Err(anyhow!(
-                                            "expected value array range from-index to be less \
-                                             than or equal to to-index, got from {from} to {to} \
-                                             at {:#?}",
-                                            value_path_segment_compilation_context.path
-                                        ));
-                                    }
+                                    return Err(anyhow!(
+                                        "expected value array range from-index to be less than or \
+                                         equal to to-index, got from {from} to {to} at {:#?}",
+                                        value_path_segment_compilation_context.path
+                                    ));
                                 }
                                 match &mut current_type {
                                     Type::Array(element_type) => {
                                         current_type = std::mem::take(&mut *element_type);
                                     }
                                     Type::Tuple(elements_types) => {
-                                        if let RangeBound::Static(Some(from)) = from {
-                                            if *from >= elements_types.len() {
-                                                return Err(anyhow!(
-                                                    "expected value tuple range from-index to be \
-                                                     less than tuple length, got from-index \
-                                                     {from} >= {} at {:#?}",
-                                                    elements_types.len(),
-                                                    value_path_segment_compilation_context.path
-                                                ));
-                                            }
+                                        if let RangeBound::Static(Some(from)) =
+                                            value_array_range.from
+                                            && from >= elements_types.len()
+                                        {
+                                            return Err(anyhow!(
+                                                "expected value tuple range from-index to be less \
+                                                 than tuple length, got from-index {from} >= {} \
+                                                 at {:#?}",
+                                                elements_types.len(),
+                                                value_path_segment_compilation_context.path
+                                            ));
                                         }
-                                        if let RangeBound::Static(Some(to)) = to {
-                                            if *to > elements_types.len() {
-                                                return Err(anyhow!(
-                                                    "expected value tuple range to-index to be \
-                                                     less than or equal to tuple length, got \
-                                                     from-index {to} >= {} at {:#?}",
-                                                    elements_types.len(),
-                                                    value_path_segment_compilation_context.path
-                                                ));
-                                            }
+                                        if let RangeBound::Static(Some(to)) = value_array_range.to
+                                            && to > elements_types.len()
+                                        {
+                                            return Err(anyhow!(
+                                                "expected value tuple range to-index to be less \
+                                                 than or equal to tuple length, got from-index \
+                                                 {to} >= {} at {:#?}",
+                                                elements_types.len(),
+                                                value_path_segment_compilation_context.path
+                                            ));
                                         }
-                                        match (from, to) {
+                                        match (&value_array_range.from, &value_array_range.to) {
                                             (
                                                 RangeBound::Static(Some(from)),
                                                 RangeBound::Static(Some(to)),
@@ -729,7 +728,7 @@ impl Compiler {
                                                     std::mem::take(elements_types)
                                                         .into_iter()
                                                         .skip(*from)
-                                                        .take(*to - *from),
+                                                        .take(to - from),
                                                 ));
                                             }
                                             (
@@ -793,7 +792,7 @@ impl Compiler {
                                                 intermediate_representation::RangeBound::Static(None),
                                                 intermediate_representation::RangeBound::Static(None)
                                             ];
-                                            for (range_bound_index, range_bound) in [from, to].iter().enumerate() {
+                                            for (range_bound_index, range_bound) in [&value_array_range.from, &value_array_range.to].iter().enumerate() {
                                                 result[range_bound_index] = match range_bound {
                                                     RangeBound::Static(range_bound) => {
                                                         intermediate_representation::RangeBound::Static(
@@ -829,8 +828,8 @@ impl Compiler {
                                                 };
                                             }
                                             (
-                                                std::mem::take(&mut result.get_mut(0).unwrap()),
-                                                std::mem::take(&mut result.get_mut(1).unwrap())
+                                                std::mem::take(result.get_mut(0).unwrap()),
+                                                std::mem::take(result.get_mut(1).unwrap())
                                             )
                                         }
                                     ),
@@ -900,14 +899,14 @@ impl Compiler {
                         .0
                         .extend([PathSegment::Sum]);
                     let compiled_argument = self.compile_with_context(
-                        &argument,
+                        argument,
                         &argument_compilation_context,
                         global_compilation_context,
                     )?;
                     resolve_type(
                         &compiled_argument.r#type,
                         &Type::Array(Box::new(Type::Number)),
-                        &compilation_context,
+                        compilation_context,
                         global_compilation_context,
                     )?;
                     NodeAndMetadata {
@@ -934,14 +933,14 @@ impl Compiler {
                         .0
                         .extend([PathSegment::IsSorted]);
                     let compiled_argument = self.compile_with_context(
-                        &argument,
+                        argument,
                         &argument_compilation_context,
                         global_compilation_context,
                     )?;
                     resolve_type(
                         &compiled_argument.r#type,
                         &Type::Array(Box::new(Type::Any)),
-                        &compilation_context,
+                        compilation_context,
                         global_compilation_context,
                     )?;
                     NodeAndMetadata {
@@ -986,7 +985,7 @@ impl Compiler {
                         .0
                         .extend([PathSegment::ParseYaml]);
                     let compiled_argument = self.compile_with_context(
-                        &argument,
+                        argument,
                         &argument_compilation_context,
                         global_compilation_context,
                     )?;
@@ -1025,7 +1024,7 @@ impl Compiler {
                         .0
                         .extend([PathSegment::KeyValuePairs]);
                     let compiled_argument = self.compile_with_context(
-                        &argument,
+                        argument,
                         &argument_compilation_context,
                         global_compilation_context,
                     )?;
@@ -1034,9 +1033,7 @@ impl Compiler {
                     {
                         NodeAndMetadata {
                                 r#type: Type::Tuple(
-                                    argument_object_values_types
-                                        .iter()
-                                        .map(|(_, value)| {
+                                    argument_object_values_types.values().map(|value| {
                                             Type::Tuple(vec![
                                                 Type::String,
                                                 value.clone(),
@@ -1073,24 +1070,20 @@ impl Compiler {
                         .0
                         .extend([PathSegment::KeyValuePairs]);
                     let compiled_argument = self.compile_with_context(
-                        &argument,
+                        argument,
                         &argument_compilation_context,
                         global_compilation_context,
                     )?;
                     let compiled_argument_resolved_type = resolve_type(
                         &compiled_argument.r#type,
                         &Type::Array(Box::new(Type::Array(Box::new(Type::Any)))),
-                        &compilation_context,
+                        compilation_context,
                         global_compilation_context,
                     )?;
                     let result_type = match compiled_argument_resolved_type.weakest_from_union() {
                         Type::Tuple(argument_tuple_types) => {
                             if argument_tuple_types.iter().any(|argument_tuple_type| {
-                                if let Type::Array(_) = argument_tuple_type {
-                                    true
-                                } else {
-                                    false
-                                }
+                                matches!(argument_tuple_type, Type::Array(_))
                             }) {
                                 let mut result_element_union_types = BTreeSet::new();
                                 for argument_tuple_type in argument_tuple_types {
@@ -1368,7 +1361,7 @@ impl Compiler {
                             map_tuple_elements_types.iter().enumerate()
                         {
                             if let Some(element_through_index) =
-                                element_type_to_compiled_through_index.get(&element_type)
+                                element_type_to_compiled_through_index.get(element_type)
                             {
                                 result_elements_types
                                     .push(compiled_throughs[*element_through_index].r#type.clone());
@@ -1849,7 +1842,7 @@ impl Compiler {
                                             ),
                                         ]);
                                         let mut compiled_constant = self.compile_with_context(
-                                            &function_argument_body,
+                                            function_argument_body,
                                             &argument_compilation_context,
                                             global_compilation_context,
                                         )?;
@@ -2017,7 +2010,12 @@ impl Compiler {
                 r#type: Value::r#type(value_option),
                 external_constants_name_clustered_indices: BTreeSet::new(),
                 node: Node {
-                    content: Content::Value(unsafe { std::mem::transmute(value_option.clone()) }),
+                    content: Content::Value(unsafe {
+                        std::mem::transmute::<
+                            Option<Value>,
+                            Option<intermediate_representation::Value>,
+                        >(value_option.clone())
+                    }),
                 },
                 is_pure: true,
             },

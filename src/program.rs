@@ -124,6 +124,12 @@ pub enum RangeBound {
     Dynamic(Program),
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+pub struct ValueArrayRange {
+    pub from: RangeBound,
+    pub to: RangeBound,
+}
+
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
@@ -131,7 +137,7 @@ pub enum AtSegment {
     ProgramPathSegment(PathSegment),
     ValueArrayIndex(usize),
     ValueObjectKey(String),
-    ValueArrayRange(RangeBound, RangeBound),
+    ValueArrayRange(Box<ValueArrayRange>),
 }
 
 impl Default for Program {
