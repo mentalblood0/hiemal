@@ -2,8 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::value::Value;
-
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, Ord, Eq, Hash, PartialEq, Default)]
 pub enum Type {
@@ -26,8 +24,10 @@ pub enum Type {
     #[default]
     #[serde(rename = "any")]
     Any,
-    #[serde(rename = "literal")]
-    Literal(Option<Value>),
+    #[serde(rename = "literal true")]
+    LiteralTrue,
+    #[serde(rename = "literal false")]
+    LiteralFalse,
     Unknown(usize),
 }
 
@@ -36,40 +36,12 @@ impl From<BTreeSet<Type>> for Type {
         if union_types.contains(&Type::Any) {
             Type::Any
         } else {
-            if union_types.contains(&Type::Literal(Some(Value::Bool(true))))
-                && union_types.contains(&Type::Literal(Some(Value::Bool(false))))
+            if union_types.contains(&Type::LiteralTrue) && union_types.contains(&Type::LiteralFalse)
             {
-                union_types.remove(&Type::Literal(Some(Value::Bool(true))));
-                union_types.remove(&Type::Literal(Some(Value::Bool(false))));
+                union_types.remove(&Type::LiteralTrue);
+                union_types.remove(&Type::LiteralFalse);
                 union_types.insert(Type::Bool);
             }
-            if union_types.contains(&Type::Literal(None)) {
-                union_types.remove(&Type::Literal(None));
-                union_types.insert(Type::Null);
-            }
-            let non_literal_union_types = union_types
-                .iter()
-                .filter(|r#type| {
-                    if let Type::Literal(_) = r#type {
-                        false
-                    } else {
-                        true
-                    }
-                })
-                .cloned()
-                .collect::<BTreeSet<_>>();
-            union_types = union_types
-                .into_iter()
-                .filter(|r#type| {
-                    if let Type::Literal(type_value) = r#type
-                        && non_literal_union_types.contains(&Value::r#type(type_value))
-                    {
-                        false
-                    } else {
-                        true
-                    }
-                })
-                .collect::<BTreeSet<_>>();
             match union_types.len() {
                 0 => Type::Null,
                 1 => union_types.into_iter().next().unwrap(),
@@ -111,12 +83,7 @@ impl<'a> Type {
                     other_union_types.len() == 1
                         && Some(self_type) == other_union_types.iter().next()
                 }
-                (Type::Literal(self_value), Type::Literal(other_value)) => {
-                    self_value == other_value
-                }
-                (self_type, Type::Literal(other_value)) => {
-                    self_type.contains(&Value::r#type(other_value))
-                }
+                (Type::Bool, Type::LiteralTrue | Type::LiteralFalse) => true,
                 (
                     Type::Tuple(self_tuple_elements_types),
                     Type::Tuple(other_tuple_elements_types),
@@ -146,22 +113,6 @@ impl<'a> Type {
         }
     }
 
-    pub fn unliteral(self) -> Type {
-        match self {
-            Type::Literal(type_value) => Value::r#type(&type_value),
-            Type::Tuple(tuple_types) => {
-                Type::Tuple(tuple_types.into_iter().map(Type::unliteral).collect())
-            }
-            Type::Object(object_types) => Type::Object(
-                object_types
-                    .into_iter()
-                    .map(|(key, value_type)| (key, value_type.unliteral()))
-                    .collect(),
-            ),
-            _ => self,
-        }
-    }
-
     pub fn intersection(&self, other: &Type) -> Option<Type> {
         if self == other {
             Some(self.clone())
@@ -187,20 +138,11 @@ impl<'a> Type {
                     }
                     None
                 }
-                (Type::Literal(self_type_value), Type::Literal(other_type_value)) => {
-                    if self_type_value == other_type_value {
-                        Some(self.clone())
-                    } else {
-                        None
-                    }
+                (Type::Bool, Type::LiteralTrue) | (Type::LiteralTrue, Type::Bool) => {
+                    Some(Type::LiteralTrue)
                 }
-                (Type::Literal(type_value), other_type)
-                | (other_type, Type::Literal(type_value)) => {
-                    if &Value::r#type(type_value) == other_type {
-                        Some(Type::Literal(type_value.clone()))
-                    } else {
-                        None
-                    }
+                (Type::Bool, Type::LiteralFalse) | (Type::LiteralFalse, Type::Bool) => {
+                    Some(Type::LiteralFalse)
                 }
                 (Type::Array(self_array_element_type), Type::Array(other_array_element_type)) => {
                     if let Some(element_types_intersection) =

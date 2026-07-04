@@ -181,12 +181,6 @@ fn resolve_type(
                 }
                 Ok(got_type.clone())
             }
-            (Type::Literal(got_value), expected_type) => resolve_type(
-                &Value::r#type(got_value),
-                expected_type,
-                compilation_context,
-                global_compilation_context,
-            ),
             _ => Err(compilation_context.error(got_type, expected_type)),
         }
     }
@@ -1035,21 +1029,16 @@ impl Compiler {
                         &argument_compilation_context,
                         global_compilation_context,
                     )?;
-                    if let Type::Object(argument_object_values_types) = compiled_argument
-                        .r#type
-                        .clone()
-                        .unliteral()
-                        .weakest_from_union()
+                    if let Type::Object(argument_object_values_types) =
+                        compiled_argument.r#type.weakest_from_union()
                     {
                         NodeAndMetadata {
                                 r#type: Type::Tuple(
                                     argument_object_values_types
                                         .iter()
-                                        .map(|(key, value)| {
+                                        .map(|(_, value)| {
                                             Type::Tuple(vec![
-                                                Type::Literal(Some(Value::String(ropey::Rope::from(
-                                                    key.clone(),
-                                                )))),
+                                                Type::String,
                                                 value.clone(),
                                             ])
                                         })
@@ -1094,11 +1083,7 @@ impl Compiler {
                         &compilation_context,
                         global_compilation_context,
                     )?;
-                    let result_type = match compiled_argument_resolved_type
-                        .clone()
-                        .unliteral()
-                        .weakest_from_union()
-                    {
+                    let result_type = match compiled_argument_resolved_type.weakest_from_union() {
                         Type::Tuple(argument_tuple_types) => {
                             if argument_tuple_types.iter().any(|argument_tuple_type| {
                                 if let Type::Array(_) = argument_tuple_type {
@@ -1146,7 +1131,7 @@ impl Compiler {
                         }
                         Type::Array(argument_array_type) => {
                             let mut result_union_types = BTreeSet::new();
-                            match argument_array_type.unliteral().weakest_from_union() {
+                            match argument_array_type.weakest_from_union() {
                                 Type::Tuple(argument_element_tuple_types) => {
                                     for argument_element_tuple_type in argument_element_tuple_types
                                     {
@@ -1282,7 +1267,7 @@ impl Compiler {
                                 .is_none()
                                 && compiled_match
                                     .r#type
-                                    .intersection(&refined_match_type.clone().unliteral())
+                                    .intersection(&refined_match_type)
                                     .is_none()
                             {
                                 println!("no intersection");
@@ -1369,7 +1354,7 @@ impl Compiler {
                         .constants_names_to_name_clustered_constants_indices
                         .len()
                 };
-                match compiled_map.r#type.clone().unliteral().weakest_from_union() {
+                match compiled_map.r#type.weakest_from_union() {
                     Type::Tuple(map_tuple_elements_types) => {
                         let mut result_elements_types =
                             Vec::with_capacity(map_tuple_elements_types.len());
@@ -1541,12 +1526,7 @@ impl Compiler {
                         .len()
                         + 1
                 };
-                match compiled_fold
-                    .r#type
-                    .clone()
-                    .unliteral()
-                    .weakest_from_union()
-                {
+                match compiled_fold.r#type.weakest_from_union() {
                     Type::Tuple(fold_tuple_elements_types) => {
                         let mut result_type = compiled_starting_with.r#type;
                         let mut result_throughs_nodes_indexes =
@@ -1639,7 +1619,7 @@ impl Compiler {
                             .path
                             .0
                             .extend([PathSegment::Through(0)]);
-                        let starting_with_type = compiled_starting_with.r#type.unliteral();
+                        let starting_with_type = compiled_starting_with.r#type;
                         self.define_constant(
                             r#as.clone(),
                             *fold_array_element_type.clone(),
@@ -1735,8 +1715,7 @@ impl Compiler {
                     &starting_with_compilation_context,
                     global_compilation_context,
                 )?;
-                let starting_with_type =
-                    std::mem::take(&mut compiled_starting_with.r#type).unliteral();
+                let starting_with_type = std::mem::take(&mut compiled_starting_with.r#type);
                 let mut result_external_constants_name_clustered_indices =
                     compiled_starting_with.external_constants_name_clustered_indices;
                 let mut next_compilation_context = compilation_context.clone();
@@ -2034,11 +2013,11 @@ impl Compiler {
                     is_pure,
                 }
             }
-            Program::Value(value) => NodeAndMetadata {
-                r#type: Type::Literal(value.clone()),
+            Program::Value(value_option) => NodeAndMetadata {
+                r#type: Value::r#type(value_option),
                 external_constants_name_clustered_indices: BTreeSet::new(),
                 node: Node {
-                    content: Content::Value(unsafe { std::mem::transmute(value.clone()) }),
+                    content: Content::Value(unsafe { std::mem::transmute(value_option.clone()) }),
                 },
                 is_pure: true,
             },
