@@ -1263,7 +1263,6 @@ impl Compiler {
                                     .intersection(&refined_match_type)
                                     .is_none()
                             {
-                                println!("no intersection");
                                 continue;
                             };
                             if let Some(match_constant_name) = r#as {
@@ -1283,7 +1282,11 @@ impl Compiler {
                             result_external_constants_name_clustered_indices.append(
                                 &mut compiled_case.external_constants_name_clustered_indices,
                             );
-                            covered_types.insert(refined_match_type);
+                            if refined_match_type == Type::LiteralTrue
+                                || refined_match_type == Type::LiteralFalse
+                            {
+                                covered_types.insert(refined_match_type);
+                            }
 
                             case_is_pure &= compiled_condition.is_pure && compiled_case.is_pure;
                             result_cases.push(Case {

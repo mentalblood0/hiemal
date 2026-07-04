@@ -169,7 +169,8 @@ impl Value {
             Some(value) => match value {
                 Value::Number(_) => Type::Number,
                 Value::String(_) => Type::String,
-                Value::Bool(_) => Type::Bool,
+                Value::Bool(true) => Type::LiteralTrue,
+                Value::Bool(false) => Type::LiteralFalse,
                 Value::Tuple(tuple) => Type::Tuple(tuple.inner.iter().map(Value::r#type).collect()),
                 Value::Object(object) => Type::Object(BTreeMap::from_iter(
                     object
