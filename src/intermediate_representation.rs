@@ -90,18 +90,18 @@ pub enum Content {
         accumulating_in_constant_name_clustered_index: usize,
         throughs: Throughs,
     },
-    Sequence {
-        starting_with: Box<Node>,
-        current_constant_name_clustered_index: usize,
-        next: Box<Node>,
-        r#while: Box<Node>,
-    },
+    Sequence(Sequence),
     Object(BTreeMap<String, Node>),
     Value(Option<Value>),
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
-pub struct Sequence {}
+pub struct Sequence {
+    pub starting_with: Box<Node>,
+    pub current_constant_name_clustered_index: usize,
+    pub next: Box<Node>,
+    pub r#while: Box<Node>,
+}
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum Throughs {

@@ -1763,12 +1763,12 @@ impl Compiler {
                     .append(&mut compiled_while.external_constants_name_clustered_indices);
                 NodeAndMetadata {
                     node: Node {
-                        content: Content::Sequence {
+                        content: Content::Sequence(intermediate_representation::Sequence {
                             starting_with: Box::new(compiled_starting_with.node),
                             current_constant_name_clustered_index,
                             next: Box::new(compiled_next.node),
                             r#while: Box::new(compiled_while.node),
-                        },
+                        }),
                     },
                     r#type: Type::Array(Box::new(compiled_starting_with.r#type)),
                     external_constants_name_clustered_indices:
