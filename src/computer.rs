@@ -97,6 +97,7 @@ impl Sequence {
 enum IntermediateValue {
     Value(Option<Value>),
     Tuple(List<IntermediateValue>),
+    Object(Map<String, IntermediateValue>),
     Sequence(Sequence),
 }
 
@@ -110,6 +111,15 @@ impl IntermediateValue {
                     result.push_back_mut(intermediate_value.value()?);
                 }
                 Ok(Some(Value::Tuple(result)))
+            }
+            IntermediateValue::Object(object) => {
+                let mut result = Map::default();
+                for (key, intermediate_value) in object.inner.into_iter() {
+                    result
+                        .inner
+                        .insert_mut(key.clone(), intermediate_value.clone().value()?);
+                }
+                Ok(Some(Value::Object(result)))
             }
             IntermediateValue::Sequence(_) => Err(anyhow!(
                 "expected value, tuple or object, got unlimited sequence"
@@ -751,12 +761,12 @@ impl Computer {
                 let mut result = List::default();
                 let mut current_computation_context = computation_context.clone();
                 current_computation_context.constants[*current_constant_name_clustered_index] =
-                    self.compute_node(
+                    Some(self.compute_node(
                         starting_with,
                         intermediate_representation,
                         computation_context,
                         global_computation_context,
-                    )?;
+                    )?);
                 while self
                     .compute_node(
                         r#while,
@@ -764,6 +774,7 @@ impl Computer {
                         &current_computation_context,
                         global_computation_context,
                     )?
+                    .value()?
                     .unwrap()
                     .as_bool()
                     .unwrap()
@@ -771,19 +782,20 @@ impl Computer {
                     result.push_back_mut(
                         current_computation_context.constants
                             [*current_constant_name_clustered_index]
-                            .clone(),
+                            .clone()
+                            .unwrap(),
                     );
                     current_computation_context.constants[*current_constant_name_clustered_index] =
-                        self.compute_node(
+                        Some(self.compute_node(
                             next,
                             intermediate_representation,
                             &current_computation_context,
                             global_computation_context,
-                        )?;
+                        )?);
                 }
-                Ok(Some(Value::Tuple(result)))
+                Ok(IntermediateValue::Tuple(result))
             }
-            Content::Object(object) => Ok(Some(Value::Object(Map {
+            Content::Object(object) => Ok(IntermediateValue::Object(Map {
                 inner: RedBlackTreeMapSync::from_iter(
                     object.keys().cloned().zip(
                         self.compute_nodes(
@@ -796,11 +808,12 @@ impl Computer {
                         )?,
                     ),
                 ),
-            }))),
+            })),
             Content::Value(value) => Ok(unsafe {
-                std::mem::transmute::<Option<intermediate_representation::Value>, Option<Value>>(
-                    value.clone(),
-                )
+                IntermediateValue::Value(std::mem::transmute::<
+                    Option<intermediate_representation::Value>,
+                    Option<Value>,
+                >(value.clone()))
             }),
         }
     }
