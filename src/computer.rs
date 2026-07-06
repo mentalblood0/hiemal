@@ -185,7 +185,7 @@ impl IntermediateValue {
                 Ok(Some(Value::Object(result)))
             }
             IntermediateValue::Sequence(_) => Err(anyhow!(
-                "expected value, tuple or object, got unlimited sequence"
+                "expected value, tuple or object, found unlimited sequence"
             )),
         }
     }
@@ -198,7 +198,7 @@ impl IntermediateValue {
                 Ok(list.inner.get(index).cloned().map(IntermediateValue::Value))
             }
             unexpected_value => Err(anyhow!(
-                "expected tuple or sequence, got {:#?}",
+                "expected tuple or sequence, found {:#?}",
                 unexpected_value
             )),
         }
@@ -221,7 +221,7 @@ impl IntermediateValue {
                     .collect(),
             }),
             unexpected_value => Err(anyhow!(
-                "expected tuple or sequence, got {:#?}",
+                "expected tuple or sequence, found {:#?}",
                 unexpected_value
             )),
         }
@@ -586,8 +586,8 @@ impl Computer {
                             result = std::mem::take(&mut result.get(*array_index)?.with_context(
                                 || {
                                     format!(
-                                        "expected array with element at index {array_index}, got \
-                                         array {result:#?}"
+                                        "expected array with element at index {array_index}, \
+                                         found array {result:#?}"
                                     )
                                 },
                             )?)

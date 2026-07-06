@@ -375,7 +375,7 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn compile(&self, program: &Program) -> Result<IntermediateRepresentation> {
+    pub fn compile(&self, program: &Program) -> Result<Arc<IntermediateRepresentation>> {
         let mut global_compilation_context = GlobalCompilationContext::default();
         let result = self.compile_with_context(
             program,
@@ -384,10 +384,10 @@ impl Compiler {
         )?;
         if !result.is_computable {
             return Err(anyhow!(
-                "expected computable program, got program with unlimited result",
+                "expected computable program, found program with unlimited result",
             ));
         }
-        Ok(IntermediateRepresentation {
+        Ok(Arc::new(IntermediateRepresentation {
             root: result.node,
             user_functions: global_compilation_context
                 .user_functions_definitions
@@ -402,7 +402,7 @@ impl Compiler {
             unique_constants_names_count: global_compilation_context
                 .constants_names_to_name_clustered_constants_indices
                 .len(),
-        })
+        }))
     }
 
     fn define_constant(
@@ -714,7 +714,7 @@ impl Compiler {
                                 {
                                     return Err(anyhow!(
                                         "expected value array range from-index to be less than or \
-                                         equal to to-index, got from {from} to {to} at {:#?}",
+                                         equal to to-index, found from {from} to {to} at {:#?}",
                                         value_path_segment_compilation_context.path
                                     ));
                                 }
@@ -729,7 +729,7 @@ impl Compiler {
                                         {
                                             return Err(anyhow!(
                                                 "expected value tuple range from-index to be less \
-                                                 than tuple length, got from-index {from} >= {} \
+                                                 than tuple length, found from-index {from} >= {} \
                                                  at {:#?}",
                                                 elements_types.len(),
                                                 value_path_segment_compilation_context.path
@@ -740,7 +740,7 @@ impl Compiler {
                                         {
                                             return Err(anyhow!(
                                                 "expected value tuple range to-index to be less \
-                                                 than or equal to tuple length, got from-index \
+                                                 than or equal to tuple length, found from-index \
                                                  {to} >= {} at {:#?}",
                                                 elements_types.len(),
                                                 value_path_segment_compilation_context.path
@@ -934,7 +934,7 @@ impl Compiler {
                     )?;
                     if !compiled_argument.is_computable {
                         return Err(anyhow!(
-                            "expected computable argument, got {argument:#?} at {:#?}",
+                            "expected computable argument, found {argument:#?} at {:#?}",
                             argument_compilation_context.path
                         ));
                     }
@@ -975,7 +975,7 @@ impl Compiler {
                     )?;
                     if !compiled_argument.is_computable {
                         return Err(anyhow!(
-                            "expected computable argument, got {argument:#?} at {:#?}",
+                            "expected computable argument, found {argument:#?} at {:#?}",
                             argument_compilation_context.path
                         ));
                     }
@@ -1035,7 +1035,7 @@ impl Compiler {
                     )?;
                     if !compiled_argument.is_computable {
                         return Err(anyhow!(
-                            "expected computable argument, got {argument:#?} at {:#?}",
+                            "expected computable argument, found {argument:#?} at {:#?}",
                             argument_compilation_context.path
                         ));
                     }
@@ -1237,7 +1237,7 @@ impl Compiler {
                 )?;
                 if !compiled_match.is_computable {
                     return Err(anyhow!(
-                        "expected computable match, got {compiled_match:#?} at {:#?}",
+                        "expected computable match, found {compiled_match:#?} at {:#?}",
                         match_compilation_context.path
                     ));
                 }
@@ -1319,7 +1319,7 @@ impl Compiler {
                             )?;
                             if !compiled_condition.is_computable {
                                 return Err(anyhow!(
-                                    "expected computable condition, got {condition:#?} at {:#?}",
+                                    "expected computable condition, found {condition:#?} at {:#?}",
                                     case_compilation_context.path
                                 ));
                             }
@@ -1569,7 +1569,7 @@ impl Compiler {
                 )?;
                 if !compiled_fold.is_computable {
                     return Err(anyhow!(
-                        "expected computable fold, got {fold:#?} at {:#?}",
+                        "expected computable fold, found {fold:#?} at {:#?}",
                         fold_compilation_context.path
                     ));
                 }
@@ -1588,7 +1588,7 @@ impl Compiler {
                 )?;
                 if !compiled_fold.is_computable {
                     return Err(anyhow!(
-                        "expected computable starting-with, got {starting_with:#?} at {:#?}",
+                        "expected computable starting-with, found {starting_with:#?} at {:#?}",
                         starting_with_compilation_context.path
                     ));
                 }
@@ -1668,7 +1668,7 @@ impl Compiler {
                                 )?;
                                 if !compiled_fold.is_computable {
                                     return Err(anyhow!(
-                                        "expected computable through, got {through:#?} at {:#?}",
+                                        "expected computable through, found {through:#?} at {:#?}",
                                         through_compilation_context.path
                                     ));
                                 }
@@ -1750,7 +1750,7 @@ impl Compiler {
                         )?;
                         if !compiled_fold.is_computable {
                             return Err(anyhow!(
-                                "expected computable through, got {through:#?} at {:#?}",
+                                "expected computable through, found {through:#?} at {:#?}",
                                 through_compilation_context.path
                             ));
                         }
