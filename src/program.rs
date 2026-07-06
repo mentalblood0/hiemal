@@ -61,7 +61,6 @@ pub enum Program {
         #[serde(default = "default_sequence_as")]
         r#as: String,
         next: Box<Program>,
-        r#while: Box<Program>,
     },
     Object(BTreeMap<String, Program>),
     Value(Option<Value>),

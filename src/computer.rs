@@ -19,7 +19,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 struct LazyValue {
-    computer: Arc<Computer>,
+    computer: Computer,
     node: Arc<Node>,
     intermediate_representation: Arc<IntermediateRepresentation>,
     computation_context: ComputationContext,
@@ -45,7 +45,7 @@ struct SequenceLockableInternals {
 
 #[derive(Clone, Debug)]
 struct Sequence {
-    intermediate_representation_content: intermediate_representation::Sequence,
+    intermediate_representation_content: Arc<intermediate_representation::Sequence>,
     lockable_internals: Arc<RwLock<SequenceLockableInternals>>,
 }
 
@@ -77,19 +77,76 @@ impl Hash for Sequence {
 }
 
 impl Sequence {
-    fn next(&self) -> Result<IntermediateValue> {
-        let mut lockable_internals_write_guard = self.lockable_internals.write();
+    fn compute_next(
+        &self,
+        lockable_internals_write_guard: &mut parking_lot::RwLockWriteGuard<
+            SequenceLockableInternals,
+        >,
+    ) -> Result<()> {
         let mut current_next_lazy_value =
             std::mem::take(&mut lockable_internals_write_guard.next_lazy_value).unwrap();
-        let result = current_next_lazy_value.compute()?;
+        let next = current_next_lazy_value.compute()?;
         current_next_lazy_value.computation_context.constants[self
             .intermediate_representation_content
-            .current_constant_name_clustered_index] = Some(result.clone());
+            .current_constant_name_clustered_index] = Some(next.clone());
         lockable_internals_write_guard.next_lazy_value = Some(current_next_lazy_value);
         lockable_internals_write_guard
             .already_computed_values
-            .push_back_mut(result.clone());
-        Ok(result)
+            .push_back_mut(next.clone());
+        Ok(())
+    }
+
+    fn get(&self, index: usize) -> Result<IntermediateValue> {
+        let lockable_internals_read_guard = self.lockable_internals.upgradable_read();
+        if let Some(result) = lockable_internals_read_guard
+            .already_computed_values
+            .inner
+            .get(index)
+        {
+            Ok(result.clone())
+        } else {
+            let mut lockable_internals_write_guard =
+                parking_lot::RwLockUpgradableReadGuard::upgrade(lockable_internals_read_guard);
+            while lockable_internals_write_guard.already_computed_values.len() <= index {
+                self.compute_next(&mut lockable_internals_write_guard)?;
+            }
+            Ok(lockable_internals_write_guard
+                .already_computed_values
+                .inner
+                .last()
+                .unwrap()
+                .clone())
+        }
+    }
+
+    fn get_range(&self, from: usize, to: usize) -> Result<List<IntermediateValue>> {
+        let lockable_internals_read_guard = self.lockable_internals.upgradable_read();
+        if lockable_internals_read_guard.already_computed_values.len() > to {
+            Ok(List {
+                inner: lockable_internals_read_guard
+                    .already_computed_values
+                    .inner
+                    .iter()
+                    .skip(from)
+                    .take(to - from)
+                    .collect(),
+            })
+        } else {
+            let mut lockable_internals_write_guard =
+                parking_lot::RwLockUpgradableReadGuard::upgrade(lockable_internals_read_guard);
+            while lockable_internals_write_guard.already_computed_values.len() <= to {
+                self.compute_next(&mut lockable_internals_write_guard)?;
+            }
+            Ok(List {
+                inner: lockable_internals_write_guard
+                    .already_computed_values
+                    .inner
+                    .iter()
+                    .skip(from)
+                    .take(to - from)
+                    .collect(),
+            })
+        }
     }
 }
 
@@ -99,6 +156,12 @@ enum IntermediateValue {
     Tuple(List<IntermediateValue>),
     Object(Map<String, IntermediateValue>),
     Sequence(Sequence),
+}
+
+impl Default for IntermediateValue {
+    fn default() -> Self {
+        Self::Value(None)
+    }
 }
 
 impl IntermediateValue {
@@ -126,6 +189,24 @@ impl IntermediateValue {
             )),
         }
     }
+
+    fn get(&self, index: usize) -> Result<Option<IntermediateValue>> {
+        match self {
+            IntermediateValue::Tuple(list) => Ok(list.inner.get(index).cloned()),
+            IntermediateValue::Sequence(sequence) => Ok(Some(sequence.get(index)?)),
+            unexpected_value => panic!("expected tuple or sequence, got {:#?}", unexpected_value),
+        }
+    }
+
+    fn get_range(&self, from: usize, to: usize) -> Result<List<IntermediateValue>> {
+        match self {
+            IntermediateValue::Tuple(list) => Ok(List {
+                inner: list.inner.iter().skip(from).take(to - from).collect(),
+            }),
+            IntermediateValue::Sequence(sequence) => Ok(sequence.get_range(from, to)?),
+            unexpected_value => panic!("expected tuple or sequence, got {:#?}", unexpected_value),
+        }
+    }
 }
 
 #[derive(Default, Debug)]
@@ -139,6 +220,7 @@ struct ComputationContext {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(transparent)]
 pub struct Computer {
     pub user_functions_caching: bool,
 }
@@ -146,7 +228,7 @@ pub struct Computer {
 impl Computer {
     pub fn compute(
         &self,
-        intermediate_representation: &IntermediateRepresentation,
+        intermediate_representation: &Arc<IntermediateRepresentation>,
     ) -> Result<Option<Value>> {
         self.compute_node(
             &intermediate_representation.root,
@@ -166,7 +248,7 @@ impl Computer {
         &self,
         nodes_and_computation_contexts_iterator: N,
         nodes_count: usize,
-        intermediate_representation: &IntermediateRepresentation,
+        intermediate_representation: &Arc<IntermediateRepresentation>,
         global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
     ) -> Result<Vec<IntermediateValue>>
     where
@@ -237,7 +319,7 @@ impl Computer {
     fn compute_node(
         &self,
         node: &Node,
-        intermediate_representation: &IntermediateRepresentation,
+        intermediate_representation: &Arc<IntermediateRepresentation>,
         computation_context: &ComputationContext,
         global_computation_context: &Arc<RwLock<GlobalComputationContext>>,
     ) -> Result<IntermediateValue> {
@@ -473,45 +555,42 @@ impl Computer {
                 from,
                 value_path_segments,
             } => {
-                let mut result = self
-                    .compute_node(
-                        from,
-                        intermediate_representation,
-                        computation_context,
-                        global_computation_context,
-                    )?
-                    .value()?;
+                let mut result = self.compute_node(
+                    from,
+                    intermediate_representation,
+                    computation_context,
+                    global_computation_context,
+                )?;
                 for path_segment in value_path_segments {
                     match path_segment {
                         ValuePathSegment::ArrayIndex(array_index) => {
-                            result = std::mem::take(
-                                &mut result
-                                    .unwrap()
-                                    .as_tuple_mut()
-                                    .unwrap()
-                                    .inner
-                                    .get(*array_index)
-                                    .unwrap()
-                                    .to_owned(),
-                            )
+                            result = std::mem::take(&mut result.get(*array_index)?.with_context(
+                                || {
+                                    format!(
+                                        "expected array with element at index {array_index}, got \
+                                         array {result:#?}"
+                                    )
+                                },
+                            )?)
                         }
                         ValuePathSegment::ObjectKey(object_key) => {
-                            result = std::mem::take(
+                            result = IntermediateValue::Value(std::mem::take(
                                 result
+                                    .value()?
                                     .unwrap()
                                     .as_object_mut()
                                     .unwrap()
                                     .inner
                                     .get_mut(object_key)
                                     .unwrap(),
-                            )
+                            ))
                         }
                         ValuePathSegment::ArrayRange((from, to)) => {
                             let from_number = match from {
-                                RangeBound::Static(Some(from)) => *from as f64,
-                                RangeBound::Static(None) => 0f64,
-                                RangeBound::Dynamic(from_node) => self
-                                    .compute_node(
+                                RangeBound::Static(Some(from)) => *from,
+                                RangeBound::Static(None) => 0,
+                                RangeBound::Dynamic(from_node) => {
+                                    self.compute_node(
                                         from_node,
                                         intermediate_representation,
                                         computation_context,
@@ -522,13 +601,15 @@ impl Computer {
                                     .as_number()
                                     .unwrap()
                                     .to_f64()
-                                    .value(),
+                                    .value()
+                                    .max(0f64) as usize
+                                }
                             };
                             let to_number = match to {
-                                RangeBound::Static(Some(to)) => *to as f64,
-                                RangeBound::Static(None) => 0f64,
-                                RangeBound::Dynamic(to_node) => self
-                                    .compute_node(
+                                RangeBound::Static(Some(to)) => *to,
+                                RangeBound::Static(None) => 0,
+                                RangeBound::Dynamic(to_node) => {
+                                    self.compute_node(
                                         to_node,
                                         intermediate_representation,
                                         computation_context,
@@ -539,22 +620,17 @@ impl Computer {
                                     .as_number()
                                     .unwrap()
                                     .to_f64()
-                                    .value(),
+                                    .value()
+                                    .max(0f64) as usize
+                                }
                             };
-                            result = Some(Value::Tuple(List {
-                                inner: im_lists::list::SharedList::from_iter(
-                                    std::mem::take(
-                                        &mut result.unwrap().as_tuple_mut().unwrap().inner,
-                                    )
-                                    .into_iter()
-                                    .skip(from_number.max(0f64) as usize)
-                                    .take((to_number - from_number).max(0f64) as usize),
-                                ),
-                            }))
+                            result = IntermediateValue::Tuple(
+                                std::mem::take(&mut result).get_range(from_number, to_number)?,
+                            )
                         }
                     }
                 }
-                Ok(IntermediateValue::Value(result))
+                Ok(result)
             }
             Content::Match {
                 r#match,
@@ -752,48 +828,33 @@ impl Computer {
                 }
                 Ok(result)
             }
-            Content::Sequence(intermediate_representation::Sequence {
-                starting_with,
-                current_constant_name_clustered_index,
-                next,
-                r#while,
-            }) => {
-                let mut result = List::default();
-                let mut current_computation_context = computation_context.clone();
-                current_computation_context.constants[*current_constant_name_clustered_index] =
-                    Some(self.compute_node(
-                        starting_with,
-                        intermediate_representation,
-                        computation_context,
-                        global_computation_context,
-                    )?);
-                while self
-                    .compute_node(
-                        r#while,
-                        intermediate_representation,
-                        &current_computation_context,
-                        global_computation_context,
-                    )?
-                    .value()?
-                    .unwrap()
-                    .as_bool()
-                    .unwrap()
-                {
-                    result.push_back_mut(
-                        current_computation_context.constants
-                            [*current_constant_name_clustered_index]
-                            .clone()
-                            .unwrap(),
-                    );
-                    current_computation_context.constants[*current_constant_name_clustered_index] =
-                        Some(self.compute_node(
-                            next,
-                            intermediate_representation,
-                            &current_computation_context,
-                            global_computation_context,
-                        )?);
-                }
-                Ok(IntermediateValue::Tuple(result))
+            Content::Sequence(intermediate_representation_content) => {
+                let computed_starting_with = self.compute_node(
+                    &intermediate_representation_content.starting_with,
+                    intermediate_representation,
+                    computation_context,
+                    global_computation_context,
+                )?;
+                let mut next_computation_context = computation_context.clone();
+                next_computation_context.constants
+                    [intermediate_representation_content.current_constant_name_clustered_index] =
+                    Some(computed_starting_with.clone());
+                Ok(IntermediateValue::Sequence(Sequence {
+                    intermediate_representation_content: intermediate_representation_content
+                        .clone(),
+                    lockable_internals: Arc::new(RwLock::new(SequenceLockableInternals {
+                        next_lazy_value: Some(LazyValue {
+                            computer: self.clone(),
+                            node: intermediate_representation_content.next.clone(),
+                            intermediate_representation: intermediate_representation.clone(),
+                            computation_context: next_computation_context,
+                            global_computation_context: global_computation_context.clone(),
+                        }),
+                        already_computed_values: List {
+                            inner: im_lists::list::SharedList::from_iter([computed_starting_with]),
+                        },
+                    })),
+                }))
             }
             Content::Object(object) => Ok(IntermediateValue::Object(Map {
                 inner: RedBlackTreeMapSync::from_iter(

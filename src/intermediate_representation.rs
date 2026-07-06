@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use dashu::Rational;
 use serde::{Deserialize, Serialize};
@@ -90,7 +90,7 @@ pub enum Content {
         accumulating_in_constant_name_clustered_index: usize,
         throughs: Throughs,
     },
-    Sequence(Sequence),
+    Sequence(Arc<Sequence>),
     Object(BTreeMap<String, Node>),
     Value(Option<Value>),
 }
@@ -99,8 +99,7 @@ pub enum Content {
 pub struct Sequence {
     pub starting_with: Box<Node>,
     pub current_constant_name_clustered_index: usize,
-    pub next: Box<Node>,
-    pub r#while: Box<Node>,
+    pub next: Arc<Node>,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

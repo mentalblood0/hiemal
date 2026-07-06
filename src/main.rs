@@ -1,4 +1,4 @@
-use std::{hash::Hash, io::BufReader, time::Instant};
+use std::{hash::Hash, io::BufReader, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
 use gxhash::GxHasher;
@@ -21,59 +21,61 @@ fn main() -> Result<()> {
             .unwrap()
             .join("hiemal")
             .join(format!("{program_hash:x}.bin"));
-        let intermediate_representation = if let Ok(cached_intermediate_representation_file) =
-            std::fs::File::open(&cached_intermediate_representation_path)
-        {
-            bincode::serde::decode_from_std_read(
-                &mut lz4_flex::frame::FrameDecoder::new(&mut BufReader::new(
-                    cached_intermediate_representation_file,
-                )),
-                bincode::config::standard(),
-            )
-            .with_context(|| {
-                format!(
-                    "Can not decode cached intermediate representation from \
-                     {cached_intermediate_representation_path:?}"
+        let intermediate_representation = Arc::new(
+            if let Ok(cached_intermediate_representation_file) =
+                std::fs::File::open(&cached_intermediate_representation_path)
+            {
+                bincode::serde::decode_from_std_read(
+                    &mut lz4_flex::frame::FrameDecoder::new(&mut BufReader::new(
+                        cached_intermediate_representation_file,
+                    )),
+                    bincode::config::standard(),
                 )
-            })?
-        } else {
-            let compiler = Compiler {
-                metaprograms_computer: computer.clone(),
-            };
-            let result = {
-                let compilation_start = Instant::now();
-                let result = compiler.compile(&program)?;
-                let compilation_duration = compilation_start.elapsed();
-                eprintln!("compiled in {compilation_duration:?}");
+                .with_context(|| {
+                    format!(
+                        "Can not decode cached intermediate representation from \
+                         {cached_intermediate_representation_path:?}"
+                    )
+                })?
+            } else {
+                let compiler = Compiler {
+                    metaprograms_computer: computer.clone(),
+                };
+                let result = {
+                    let compilation_start = Instant::now();
+                    let result = compiler.compile(&program)?;
+                    let compilation_duration = compilation_start.elapsed();
+                    eprintln!("compiled in {compilation_duration:?}");
+                    result
+                };
+                std::fs::create_dir_all(cached_intermediate_representation_path.parent().unwrap())?;
+                let mut encoder = lz4_flex::frame::FrameEncoder::new(
+                    std::fs::OpenOptions::new()
+                        .create(true)
+                        .truncate(true)
+                        .write(true)
+                        .open(&cached_intermediate_representation_path)?,
+                );
+                bincode::serde::encode_into_std_write(
+                    &result,
+                    &mut encoder,
+                    bincode::config::standard(),
+                )
+                .with_context(|| {
+                    format!(
+                        "Can not encode intermediate representation to \
+                         {cached_intermediate_representation_path:?}"
+                    )
+                })?;
+                encoder.finish().with_context(|| {
+                    format!(
+                        "Can not finish compress-write of intermediate representation to \
+                         {cached_intermediate_representation_path:?}"
+                    )
+                })?;
                 result
-            };
-            std::fs::create_dir_all(cached_intermediate_representation_path.parent().unwrap())?;
-            let mut encoder = lz4_flex::frame::FrameEncoder::new(
-                std::fs::OpenOptions::new()
-                    .create(true)
-                    .truncate(true)
-                    .write(true)
-                    .open(&cached_intermediate_representation_path)?,
-            );
-            bincode::serde::encode_into_std_write(
-                &result,
-                &mut encoder,
-                bincode::config::standard(),
-            )
-            .with_context(|| {
-                format!(
-                    "Can not encode intermediate representation to \
-                     {cached_intermediate_representation_path:?}"
-                )
-            })?;
-            encoder.finish().with_context(|| {
-                format!(
-                    "Can not finish compress-write of intermediate representation to \
-                     {cached_intermediate_representation_path:?}"
-                )
-            })?;
-            result
-        };
+            },
+        );
         serde_saphyr::to_io_writer(
             &mut std::io::stdout(),
             &computer

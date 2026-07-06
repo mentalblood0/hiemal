@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     hash::{Hash, Hasher},
     rc::Rc,
+    sync::Arc,
 };
 
 use anyhow::{Context, Error, Result, anyhow};
@@ -58,7 +59,7 @@ fn resolve_type(
             (Type::Unknown(got_program_index), expected_type)
             | (expected_type, Type::Unknown(got_program_index)) => {
                 let got_maybe_compiled_program =
-                    &global_compilation_context.user_functions[*got_program_index].1;
+                    &global_compilation_context.user_functions_definitions[*got_program_index].body;
                 let previously_resolved_type = &global_compilation_context
                     .user_function_to_index_and_type_option
                     .get(got_maybe_compiled_program)
@@ -192,9 +193,10 @@ struct NodeAndMetadata {
     r#type: Type,
     external_constants_name_clustered_indices: BTreeSet<usize>,
     is_pure: bool,
+    is_computable: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 struct MaybeCompiledProgram {
     program: Rc<Program>,
     node: Option<Node>,
@@ -225,11 +227,24 @@ impl From<Rc<Program>> for MaybeCompiledProgram {
 }
 
 #[derive(Default)]
+struct UserFunctionCallDefinition {
+    external_constants_name_clustered_indices: Vec<usize>,
+    body: MaybeCompiledProgram,
+    is_pure: bool,
+}
+
+#[derive(Default, Clone)]
+struct ConstantMetadata {
+    r#type: Type,
+    is_computable: bool,
+}
+
+#[derive(Default)]
 struct GlobalCompilationContext {
     user_function_to_index_and_type_option: HashMap<MaybeCompiledProgram, (usize, Type)>,
-    user_functions: Vec<(Vec<usize>, MaybeCompiledProgram, bool)>,
+    user_functions_definitions: Vec<UserFunctionCallDefinition>,
     constants_names_to_name_clustered_constants_indices: HashMap<String, usize>,
-    constants: Vec<Type>,
+    constants: Vec<ConstantMetadata>,
     includes_cache: IncludesCache,
 }
 
@@ -362,27 +377,27 @@ pub struct Compiler {
 impl Compiler {
     pub fn compile(&self, program: &Program) -> Result<IntermediateRepresentation> {
         let mut global_compilation_context = GlobalCompilationContext::default();
-        let result_root = self
-            .compile_with_context(
-                program,
-                &CompilationContext::default(),
-                &mut global_compilation_context,
-            )?
-            .node;
+        let result = self.compile_with_context(
+            program,
+            &CompilationContext::default(),
+            &mut global_compilation_context,
+        )?;
+        if !result.is_computable {
+            return Err(anyhow!(
+                "expected computable program, got program with unlimited result",
+            ));
+        }
         Ok(IntermediateRepresentation {
-            root: result_root,
+            root: result.node,
             user_functions: global_compilation_context
-                .user_functions
+                .user_functions_definitions
                 .into_iter()
-                .map(
-                    |(external_constants_name_clustered_indices, program_or_node, is_pure)| {
-                        UserFunction {
-                            external_constants_name_clustered_indices,
-                            node: program_or_node.node.unwrap().clone(),
-                            is_pure,
-                        }
-                    },
-                )
+                .map(|user_function_definition| UserFunction {
+                    external_constants_name_clustered_indices: user_function_definition
+                        .external_constants_name_clustered_indices,
+                    node: user_function_definition.body.node.unwrap().clone(),
+                    is_pure: user_function_definition.is_pure,
+                })
                 .collect(),
             unique_constants_names_count: global_compilation_context
                 .constants_names_to_name_clustered_constants_indices
@@ -393,14 +408,14 @@ impl Compiler {
     fn define_constant(
         &self,
         name: String,
-        r#type: Type,
+        constant_metadata: ConstantMetadata,
         compilation_context: &mut CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
     ) -> ConstantDefinition {
         let result = ConstantDefinition {
             index: {
                 let result = global_compilation_context.constants.len();
-                global_compilation_context.constants.push(r#type);
+                global_compilation_context.constants.push(constant_metadata);
                 result
             },
             name_clustered_index: if let Some(constant_name_clustered_index) =
@@ -442,7 +457,8 @@ impl Compiler {
                 let mut result_content = Vec::with_capacity(tuple.len());
                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();
                 let mut result_elements_types = Vec::with_capacity(tuple.len());
-                let mut result_is_pure = true;
+                let mut is_pure = true;
+                let mut is_computable = true;
                 for (element_index, element) in tuple.iter().enumerate() {
                     let mut element_compilation_context = compilation_context.clone();
                     element_compilation_context
@@ -458,7 +474,8 @@ impl Compiler {
                     result_external_constants_name_clustered_indices
                         .append(&mut compiled_element.external_constants_name_clustered_indices);
                     result_elements_types.push(compiled_element.r#type.clone());
-                    result_is_pure &= compiled_element.is_pure;
+                    is_pure &= compiled_element.is_pure;
+                    is_computable &= compiled_element.is_computable;
                 }
                 NodeAndMetadata {
                     r#type: Type::Tuple(result_elements_types),
@@ -467,7 +484,8 @@ impl Compiler {
                     node: Node {
                         content: Content::Tuple(result_content),
                     },
-                    is_pure: result_is_pure,
+                    is_pure,
+                    is_computable,
                 }
             }
             Program::Scope {
@@ -483,7 +501,8 @@ impl Compiler {
                 let mut new_constants = Vec::with_capacity(constants.len());
                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();
                 let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
-                let mut result_is_pure = true;
+                let mut is_pure = true;
+                let mut is_computable = true;
                 for (constant_name, constant_compute_body) in constants.iter() {
                     let mut constant_compilation_context = compilation_context.clone();
                     constant_compilation_context.path.0.extend([
@@ -499,7 +518,10 @@ impl Compiler {
                         .append(&mut compiled_constant.external_constants_name_clustered_indices);
                     let constant_definition = self.define_constant(
                         constant_name.clone(),
-                        compiled_constant.r#type,
+                        ConstantMetadata {
+                            r#type: compiled_constant.r#type,
+                            is_computable: compiled_constant.is_computable,
+                        },
                         &mut compute_compilation_context,
                         global_compilation_context,
                     );
@@ -508,7 +530,8 @@ impl Compiler {
                         name_clustered_index: constant_definition.name_clustered_index,
                         node: compiled_constant.node,
                     });
-                    result_is_pure &= compiled_constant.is_pure;
+                    is_pure &= compiled_constant.is_pure;
+                    is_computable &= compiled_constant.is_computable;
                 }
                 for (function_name, function_body) in functions.iter() {
                     if !function_name.ends_with(":") {
@@ -540,7 +563,8 @@ impl Compiler {
                 }
                 result_external_constants_name_clustered_indices
                     .append(&mut compiled_compute.external_constants_name_clustered_indices);
-                result_is_pure &= compiled_compute.is_pure;
+                is_pure &= compiled_compute.is_pure;
+                is_computable &= compiled_compute.is_computable;
                 NodeAndMetadata {
                     r#type: compiled_compute.r#type,
                     external_constants_name_clustered_indices:
@@ -551,7 +575,8 @@ impl Compiler {
                             compute: Box::new(compiled_compute.node),
                         },
                     },
-                    is_pure: result_is_pure,
+                    is_pure,
+                    is_computable,
                 }
             }
             Program::Constant {
@@ -562,14 +587,14 @@ impl Compiler {
                     .inner
                     .get(constant_name)
                 {
-                    let constant_type =
+                    let constant_metadata =
                         global_compilation_context.constants[*constant_index].clone();
                     let name_clustered_constant_index = *global_compilation_context
                         .constants_names_to_name_clustered_constants_indices
                         .get(constant_name)
                         .unwrap();
                     NodeAndMetadata {
-                        r#type: constant_type,
+                        r#type: constant_metadata.r#type,
                         external_constants_name_clustered_indices: BTreeSet::from_iter([
                             name_clustered_constant_index,
                         ]),
@@ -577,6 +602,7 @@ impl Compiler {
                             content: Content::Constant(name_clustered_constant_index),
                         },
                         is_pure: true,
+                        is_computable: constant_metadata.is_computable,
                     }
                 } else {
                     return Err(anyhow!(
@@ -619,7 +645,8 @@ impl Compiler {
                     compiled_extracted_from.external_constants_name_clustered_indices;
                 let mut value_path_segments = Vec::new();
                 let mut current_type = compiled_extracted_from.r#type;
-                let mut result_is_pure = compiled_extracted_from.is_pure;
+                let mut is_pure = compiled_extracted_from.is_pure;
+                let mut is_computable = compiled_extracted_from.is_computable;
                 if let Some(first_non_program_path_segment_index) =
                     first_non_program_path_segment_index_option
                 {
@@ -820,7 +847,8 @@ impl Compiler {
                                                             &mut compiled_range_bound
                                                                 .external_constants_name_clustered_indices,
                                                         );
-                                                        result_is_pure &= compiled_range_bound.is_pure;
+                                                        is_pure &= compiled_range_bound.is_pure;
+                                                        is_computable &= compiled_range_bound.is_computable;
                                                         intermediate_representation::RangeBound::Dynamic(
                                                             compiled_range_bound.node,
                                                         )
@@ -888,7 +916,8 @@ impl Compiler {
                     r#type: current_type,
                     external_constants_name_clustered_indices:
                         result_external_constants_name_clustered_indices,
-                    is_pure: result_is_pure,
+                    is_pure,
+                    is_computable,
                 }
             }
             Program::EmbeddedFunction(embedded_function) => match &**embedded_function {
@@ -903,6 +932,12 @@ impl Compiler {
                         &argument_compilation_context,
                         global_compilation_context,
                     )?;
+                    if !compiled_argument.is_computable {
+                        return Err(anyhow!(
+                            "expected computable argument, got {argument:#?} at {:#?}",
+                            argument_compilation_context.path
+                        ));
+                    }
                     resolve_type(
                         &compiled_argument.r#type,
                         &Type::Array(Box::new(Type::Number)),
@@ -924,6 +959,7 @@ impl Compiler {
                             },
                         },
                         is_pure: compiled_argument.is_pure,
+                        is_computable: true,
                     }
                 }
                 EmbeddedFunction::IsSorted(argument) => {
@@ -937,6 +973,12 @@ impl Compiler {
                         &argument_compilation_context,
                         global_compilation_context,
                     )?;
+                    if !compiled_argument.is_computable {
+                        return Err(anyhow!(
+                            "expected computable argument, got {argument:#?} at {:#?}",
+                            argument_compilation_context.path
+                        ));
+                    }
                     resolve_type(
                         &compiled_argument.r#type,
                         &Type::Array(Box::new(Type::Any)),
@@ -958,6 +1000,7 @@ impl Compiler {
                             },
                         },
                         is_pure: compiled_argument.is_pure,
+                        is_computable: compiled_argument.is_computable,
                     }
                 }
                 EmbeddedFunction::StandardInput => NodeAndMetadata {
@@ -977,6 +1020,7 @@ impl Compiler {
                         },
                     },
                     is_pure: true,
+                    is_computable: true,
                 },
                 EmbeddedFunction::ParseYaml(argument) => {
                     let mut argument_compilation_context = compilation_context.clone();
@@ -989,6 +1033,12 @@ impl Compiler {
                         &argument_compilation_context,
                         global_compilation_context,
                     )?;
+                    if !compiled_argument.is_computable {
+                        return Err(anyhow!(
+                            "expected computable argument, got {argument:#?} at {:#?}",
+                            argument_compilation_context.path
+                        ));
+                    }
                     resolve_type(
                         &compiled_argument.r#type,
                         &Type::String,
@@ -1015,6 +1065,7 @@ impl Compiler {
                             },
                         },
                         is_pure: compiled_argument.is_pure,
+                        is_computable: true,
                     }
                 }
                 EmbeddedFunction::KeyValuePairs(argument) => {
@@ -1054,6 +1105,7 @@ impl Compiler {
                                     },
                                 },
                                 is_pure: compiled_argument.is_pure,
+                                is_computable: compiled_argument.is_computable
                             }
                     } else {
                         return Err(anyhow!(
@@ -1164,6 +1216,7 @@ impl Compiler {
                             },
                         },
                         is_pure: compiled_argument.is_pure,
+                        is_computable: compiled_argument.is_computable,
                     }
                 }
             },
@@ -1182,11 +1235,18 @@ impl Compiler {
                     &match_compilation_context,
                     global_compilation_context,
                 )?;
+                if !compiled_match.is_computable {
+                    return Err(anyhow!(
+                        "expected computable match, got {compiled_match:#?} at {:#?}",
+                        match_compilation_context.path
+                    ));
+                }
                 let mut result_cases = Vec::new();
                 let mut result_types = BTreeSet::new();
                 let mut result_external_constants_name_clustered_indices =
                     compiled_match.external_constants_name_clustered_indices;
                 let mut case_is_pure = true;
+                let mut case_is_computable = true;
                 let mut covered_types = BTreeSet::new();
                 let match_constant_name_clustered_index_option =
                     if let Some(match_constant_name) = r#as {
@@ -1223,7 +1283,10 @@ impl Compiler {
                             if let Some(match_constant_name) = r#as {
                                 self.define_constant(
                                     match_constant_name.clone(),
-                                    refined_match_type.clone(),
+                                    ConstantMetadata {
+                                        r#type: refined_match_type.clone(),
+                                        is_computable: compiled_match.is_computable,
+                                    },
                                     &mut case_compilation_context,
                                     global_compilation_context,
                                 );
@@ -1240,6 +1303,7 @@ impl Compiler {
                             covered_types.insert(refined_match_type.clone());
 
                             case_is_pure &= compiled_case.is_pure;
+                            case_is_computable &= compiled_case.is_computable;
                             result_cases.push(Case {
                                 condition: intermediate_representation::Condition::Type(
                                     refined_match_type.clone(),
@@ -1253,6 +1317,12 @@ impl Compiler {
                                 &case_compilation_context,
                                 global_compilation_context,
                             )?;
+                            if !compiled_condition.is_computable {
+                                return Err(anyhow!(
+                                    "expected computable condition, got {condition:#?} at {:#?}",
+                                    case_compilation_context.path
+                                ));
+                            }
                             let refined_match_type = compiled_condition.r#type;
                             if compiled_match
                                 .r#type
@@ -1268,7 +1338,10 @@ impl Compiler {
                             if let Some(match_constant_name) = r#as {
                                 self.define_constant(
                                     match_constant_name.clone(),
-                                    refined_match_type.clone(),
+                                    ConstantMetadata {
+                                        r#type: refined_match_type.clone(),
+                                        is_computable: compiled_match.is_computable,
+                                    },
                                     &mut case_compilation_context,
                                     global_compilation_context,
                                 );
@@ -1287,7 +1360,6 @@ impl Compiler {
                             {
                                 covered_types.insert(refined_match_type);
                             }
-
                             case_is_pure &= compiled_condition.is_pure && compiled_case.is_pure;
                             result_cases.push(Case {
                                 condition: intermediate_representation::Condition::Value(
@@ -1325,6 +1397,7 @@ impl Compiler {
                         external_constants_name_clustered_indices:
                             result_external_constants_name_clustered_indices,
                         is_pure: compiled_match.is_pure && case_is_pure,
+                        is_computable: case_is_computable,
                     },
                 }
             }
@@ -1339,6 +1412,7 @@ impl Compiler {
                 let mut result_external_constants_name_clustered_indices =
                     compiled_map.external_constants_name_clustered_indices;
                 let mut is_pure = compiled_map.is_pure;
+                let mut is_computable = compiled_map.is_computable;
                 let map_constant_name_clustered_index = if let Some(result) =
                     global_compilation_context
                         .constants_names_to_name_clustered_constants_indices
@@ -1377,7 +1451,10 @@ impl Compiler {
                                     .extend([PathSegment::Through(element_type_index)]);
                                 self.define_constant(
                                     r#as.clone(),
-                                    element_type.clone(),
+                                    ConstantMetadata {
+                                        r#type: element_type.clone(),
+                                        is_computable: compiled_map.is_computable,
+                                    },
                                     &mut through_compilation_context,
                                     global_compilation_context,
                                 );
@@ -1398,6 +1475,7 @@ impl Compiler {
                                             .clone(),
                                     );
                                     is_pure &= compiled_through.is_pure;
+                                    is_computable &= compiled_through.is_computable;
                                     compiled_throughs.insert(compiled_through);
                                     compiled_throughs.len() - 1
                                 };
@@ -1424,6 +1502,7 @@ impl Compiler {
                             external_constants_name_clustered_indices:
                                 result_external_constants_name_clustered_indices,
                             is_pure,
+                            is_computable,
                         }
                     }
                     Type::Array(map_array_element_type) => {
@@ -1434,7 +1513,10 @@ impl Compiler {
                             .extend([PathSegment::Through(0)]);
                         self.define_constant(
                             r#as.clone(),
-                            *map_array_element_type.clone(),
+                            ConstantMetadata {
+                                r#type: *map_array_element_type.clone(),
+                                is_computable: compiled_map.is_computable,
+                            },
                             &mut through_compilation_context,
                             global_compilation_context,
                         );
@@ -1446,6 +1528,7 @@ impl Compiler {
                         result_external_constants_name_clustered_indices
                             .extend(compiled_through.external_constants_name_clustered_indices);
                         is_pure &= compiled_through.is_pure;
+                        is_computable &= compiled_through.is_computable;
                         NodeAndMetadata {
                             node: Node {
                                 content: Content::Map {
@@ -1458,6 +1541,7 @@ impl Compiler {
                             external_constants_name_clustered_indices:
                                 result_external_constants_name_clustered_indices,
                             is_pure,
+                            is_computable,
                         }
                     }
                     _ => {
@@ -1483,6 +1567,12 @@ impl Compiler {
                     &fold_compilation_context,
                     global_compilation_context,
                 )?;
+                if !compiled_fold.is_computable {
+                    return Err(anyhow!(
+                        "expected computable fold, got {fold:#?} at {:#?}",
+                        fold_compilation_context.path
+                    ));
+                }
                 let mut result_external_constants_name_clustered_indices =
                     compiled_fold.external_constants_name_clustered_indices;
                 let mut is_pure = compiled_fold.is_pure;
@@ -1496,6 +1586,12 @@ impl Compiler {
                     &starting_with_compilation_context,
                     global_compilation_context,
                 )?;
+                if !compiled_fold.is_computable {
+                    return Err(anyhow!(
+                        "expected computable starting-with, got {starting_with:#?} at {:#?}",
+                        starting_with_compilation_context.path
+                    ));
+                }
                 result_external_constants_name_clustered_indices
                     .extend(compiled_starting_with.external_constants_name_clustered_indices);
                 is_pure &= compiled_starting_with.is_pure;
@@ -1549,13 +1645,19 @@ impl Compiler {
                                     .extend([PathSegment::Through(current_type_index)]);
                                 self.define_constant(
                                     r#as.clone(),
-                                    current_type.clone(),
+                                    ConstantMetadata {
+                                        r#type: current_type.clone(),
+                                        is_computable: true,
+                                    },
                                     &mut through_compilation_context,
                                     global_compilation_context,
                                 );
                                 self.define_constant(
                                     accumulating_in.clone(),
-                                    result_type.clone(),
+                                    ConstantMetadata {
+                                        r#type: result_type.clone(),
+                                        is_computable: true,
+                                    },
                                     &mut through_compilation_context,
                                     global_compilation_context,
                                 );
@@ -1564,6 +1666,12 @@ impl Compiler {
                                     &through_compilation_context,
                                     global_compilation_context,
                                 )?;
+                                if !compiled_fold.is_computable {
+                                    return Err(anyhow!(
+                                        "expected computable through, got {through:#?} at {:#?}",
+                                        through_compilation_context.path
+                                    ));
+                                }
                                 result_type = compiled_through.r#type.clone();
                                 let compiled_through_index = if let Some(compiled_through_index) =
                                     compiled_throughs.get_index_of(&compiled_through)
@@ -1607,6 +1715,7 @@ impl Compiler {
                             external_constants_name_clustered_indices:
                                 result_external_constants_name_clustered_indices,
                             is_pure,
+                            is_computable: true,
                         }
                     }
                     Type::Array(fold_array_element_type) => {
@@ -1618,13 +1727,19 @@ impl Compiler {
                         let starting_with_type = compiled_starting_with.r#type;
                         self.define_constant(
                             r#as.clone(),
-                            *fold_array_element_type.clone(),
+                            ConstantMetadata {
+                                r#type: *fold_array_element_type.clone(),
+                                is_computable: true,
+                            },
                             &mut through_compilation_context,
                             global_compilation_context,
                         );
                         self.define_constant(
                             accumulating_in.clone(),
-                            starting_with_type.clone(),
+                            ConstantMetadata {
+                                r#type: starting_with_type.clone(),
+                                is_computable: true,
+                            },
                             &mut through_compilation_context,
                             global_compilation_context,
                         );
@@ -1633,6 +1748,12 @@ impl Compiler {
                             &through_compilation_context,
                             global_compilation_context,
                         )?;
+                        if !compiled_fold.is_computable {
+                            return Err(anyhow!(
+                                "expected computable through, got {through:#?} at {:#?}",
+                                through_compilation_context.path
+                            ));
+                        }
                         let compiled_through_resolved_type = resolve_type(
                             &compiled_through.r#type,
                             &starting_with_type,
@@ -1656,6 +1777,7 @@ impl Compiler {
                             external_constants_name_clustered_indices:
                                 result_external_constants_name_clustered_indices,
                             is_pure,
+                            is_computable: true,
                         }
                     }
                     _ => {
@@ -1673,12 +1795,13 @@ impl Compiler {
                     .path
                     .0
                     .extend([PathSegment::Metaprogram]);
-                let compiled_metaprogram = self.compile(metaprogram).with_context(|| {
-                    format!(
-                        "expected valid metaprogram at {:#?}",
-                        metaprogram_compilation_context.path
-                    )
-                })?;
+                let compiled_metaprogram =
+                    Arc::new(self.compile(metaprogram).with_context(|| {
+                        format!(
+                            "expected valid metaprogram at {:#?}",
+                            metaprogram_compilation_context.path
+                        )
+                    })?);
                 self.compile_with_context(
                     &serde_saphyr::from_str(&serde_saphyr::to_string(
                         &self
@@ -1699,7 +1822,6 @@ impl Compiler {
                 starting_with,
                 r#as,
                 next,
-                r#while,
             } => {
                 let mut starting_with_compilation_context = compilation_context.clone();
                 starting_with_compilation_context
@@ -1719,7 +1841,10 @@ impl Compiler {
                 let current_constant_name_clustered_index = self
                     .define_constant(
                         r#as.clone(),
-                        starting_with_type.clone(),
+                        ConstantMetadata {
+                            r#type: starting_with_type.clone(),
+                            is_computable: compiled_starting_with.is_computable,
+                        },
                         &mut next_compilation_context,
                         global_compilation_context,
                     )
@@ -1744,36 +1869,29 @@ impl Compiler {
                     .extend([PathSegment::While]);
                 self.define_constant(
                     r#as.clone(),
-                    starting_with_type,
+                    ConstantMetadata {
+                        r#type: starting_with_type,
+                        is_computable: compiled_starting_with.is_computable,
+                    },
                     &mut while_compilation_context,
                     global_compilation_context,
                 );
-                let mut compiled_while = self.compile_with_context(
-                    r#while,
-                    &while_compilation_context,
-                    global_compilation_context,
-                )?;
-                resolve_type(
-                    &compiled_while.r#type,
-                    &Type::Bool,
-                    &while_compilation_context,
-                    global_compilation_context,
-                )?;
-                result_external_constants_name_clustered_indices
-                    .append(&mut compiled_while.external_constants_name_clustered_indices);
                 NodeAndMetadata {
                     node: Node {
-                        content: Content::Sequence(intermediate_representation::Sequence {
-                            starting_with: Box::new(compiled_starting_with.node),
-                            current_constant_name_clustered_index,
-                            next: Box::new(compiled_next.node),
-                            r#while: Box::new(compiled_while.node),
-                        }),
+                        content: Content::Sequence(Arc::new(
+                            intermediate_representation::Sequence {
+                                starting_with: Box::new(compiled_starting_with.node),
+                                current_constant_name_clustered_index,
+                                next: Arc::new(compiled_next.node),
+                            },
+                        )),
                     },
                     r#type: Type::Array(Box::new(compiled_starting_with.r#type)),
                     external_constants_name_clustered_indices:
                         result_external_constants_name_clustered_indices,
                     is_pure: compiled_starting_with.is_pure & compiled_next.is_pure,
+                    is_computable: compiled_starting_with.is_computable
+                        & compiled_next.is_computable,
                 }
             }
             Program::Object(object) => {
@@ -1786,6 +1904,7 @@ impl Compiler {
                                 content: Content::Object(BTreeMap::new()),
                             },
                             is_pure: true,
+                            is_computable: true,
                         });
                     }
                     1 => {
@@ -1797,6 +1916,7 @@ impl Compiler {
                                 .get(function_name)
                             {
                                 let mut arguments_is_pure = true;
+                                let mut arguments_is_computable = true;
                                 let mut body_compilation_context = compilation_context.clone();
                                 body_compilation_context
                                     .path
@@ -1855,7 +1975,10 @@ impl Compiler {
                                         );
                                         let constant_definition = self.define_constant(
                                             function_argument_name.to_string(),
-                                            compiled_constant.r#type,
+                                            ConstantMetadata {
+                                                r#type: compiled_constant.r#type,
+                                                is_computable: compiled_constant.is_computable,
+                                            },
                                             &mut body_compilation_context,
                                             global_compilation_context,
                                         );
@@ -1867,6 +1990,7 @@ impl Compiler {
                                             },
                                         );
                                         arguments_is_pure &= compiled_constant.is_pure;
+                                        arguments_is_computable &= compiled_constant.is_computable;
                                     }
                                 }
                                 let function_body_as_maybe_compiled_program =
@@ -1891,18 +2015,21 @@ impl Compiler {
                                             },
                                         },
                                         is_pure: arguments_is_pure,
+                                        is_computable: arguments_is_computable,
                                     });
                                 } else {
                                     body_compilation_context
                                         .entered_user_functions
                                         .extend([function_body.clone()]);
                                     let function_index =
-                                        global_compilation_context.user_functions.len();
-                                    global_compilation_context.user_functions.push((
-                                        Vec::new(),
-                                        function_body_as_maybe_compiled_program.clone(),
-                                        arguments_is_pure,
-                                    ));
+                                        global_compilation_context.user_functions_definitions.len();
+                                    global_compilation_context.user_functions_definitions.push(
+                                        UserFunctionCallDefinition {
+                                            external_constants_name_clustered_indices: Vec::new(),
+                                            body: function_body_as_maybe_compiled_program.clone(),
+                                            is_pure: arguments_is_pure,
+                                        },
+                                    );
                                     global_compilation_context
                                         .user_function_to_index_and_type_option
                                         .insert(
@@ -1930,20 +2057,21 @@ impl Compiler {
                                             },
                                             (function_index, compiled_function.r#type.clone()),
                                         );
-                                    global_compilation_context.user_functions[function_index] = (
-                                        Vec::from_iter(
+                                    global_compilation_context.user_functions_definitions
+                                        [function_index] = UserFunctionCallDefinition {
+                                        external_constants_name_clustered_indices: Vec::from_iter(
                                             compiled_function
                                                 .external_constants_name_clustered_indices
                                                 .iter()
                                                 .cloned(),
                                         ),
-                                        MaybeCompiledProgram {
+                                        body: MaybeCompiledProgram {
                                             program: function_body_as_maybe_compiled_program
                                                 .program,
                                             node: Some(compiled_function.node.clone()),
                                         },
-                                        compiled_function.is_pure,
-                                    );
+                                        is_pure: compiled_function.is_pure,
+                                    };
                                     result_external_constants_name_clustered_indices.append(
                                         &mut compiled_function
                                             .external_constants_name_clustered_indices,
@@ -1959,6 +2087,8 @@ impl Compiler {
                                             },
                                         },
                                         is_pure: arguments_is_pure && compiled_function.is_pure,
+                                        is_computable: arguments_is_computable
+                                            && compiled_function.is_computable,
                                     });
                                 }
                             } else {
@@ -1981,6 +2111,7 @@ impl Compiler {
                 let mut result_content = BTreeMap::new();
                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();
                 let mut is_pure = true;
+                let mut is_computable = true;
                 for (object_key, object_value) in object.iter() {
                     let mut object_value_compilation_context = compilation_context.clone();
                     object_value_compilation_context
@@ -1998,6 +2129,7 @@ impl Compiler {
                     result_content.insert(object_key.clone(), compiled_object_value.node);
                     result_inner_types.insert(object_key.clone(), compiled_object_value.r#type);
                     is_pure &= compiled_object_value.is_pure;
+                    is_computable &= compiled_object_value.is_computable;
                 }
                 NodeAndMetadata {
                     r#type: Type::Object(result_inner_types),
@@ -2007,6 +2139,7 @@ impl Compiler {
                         content: Content::Object(result_content),
                     },
                     is_pure,
+                    is_computable,
                 }
             }
             Program::Value(value_option) => NodeAndMetadata {
@@ -2021,6 +2154,7 @@ impl Compiler {
                     }),
                 },
                 is_pure: true,
+                is_computable: true,
             },
         })
     }
