@@ -194,7 +194,13 @@ impl IntermediateValue {
         match self {
             IntermediateValue::Tuple(list) => Ok(list.inner.get(index).cloned()),
             IntermediateValue::Sequence(sequence) => Ok(Some(sequence.get(index)?)),
-            unexpected_value => panic!("expected tuple or sequence, got {:#?}", unexpected_value),
+            IntermediateValue::Value(Some(Value::Tuple(list))) => {
+                Ok(list.inner.get(index).cloned().map(IntermediateValue::Value))
+            }
+            unexpected_value => Err(anyhow!(
+                "expected tuple or sequence, got {:#?}",
+                unexpected_value
+            )),
         }
     }
 
@@ -204,7 +210,20 @@ impl IntermediateValue {
                 inner: list.inner.iter().skip(from).take(to - from).collect(),
             }),
             IntermediateValue::Sequence(sequence) => Ok(sequence.get_range(from, to)?),
-            unexpected_value => panic!("expected tuple or sequence, got {:#?}", unexpected_value),
+            IntermediateValue::Value(Some(Value::Tuple(list))) => Ok(List {
+                inner: list
+                    .inner
+                    .iter()
+                    .skip(from)
+                    .take(to - from)
+                    .cloned()
+                    .map(IntermediateValue::Value)
+                    .collect(),
+            }),
+            unexpected_value => Err(anyhow!(
+                "expected tuple or sequence, got {:#?}",
+                unexpected_value
+            )),
         }
     }
 }
