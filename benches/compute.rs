@@ -1,5 +1,9 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use hiemal::{compiler::Compiler, computer::Computer, program::Program};
+use hiemal::{
+    compiler::Compiler,
+    computer::{Computer, ComputerConfig},
+    program::Program,
+};
 use serde_json::json;
 
 fn benchmarks(bencher_context: &mut Criterion) {
@@ -8,7 +12,9 @@ fn benchmarks(bencher_context: &mut Criterion) {
         metaprograms_computer: computer.clone(),
     };
     let computer_with_caching = Computer {
-        user_functions_caching: true,
+        config: ComputerConfig {
+            user_functions_caching: true,
+        },
     };
     {
         for number in [22, 23, 24] {
