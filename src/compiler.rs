@@ -719,9 +719,7 @@ impl Compiler {
                                     ));
                                 }
                                 match &mut current_type {
-                                    Type::Array(element_type) => {
-                                        current_type = std::mem::take(&mut *element_type);
-                                    }
+                                    Type::Array(_) => {}
                                     Type::Tuple(elements_types) => {
                                         if let RangeBound::Static(Some(from)) =
                                             value_array_range.from
@@ -804,9 +802,9 @@ impl Compiler {
                                             }
                                             _ => {
                                                 current_type = Type::Array(Box::new(Type::Union(
-                                                    BTreeSet::from_iter(
-                                                        std::mem::take(elements_types).into_iter(),
-                                                    ),
+                                                    BTreeSet::from_iter(std::mem::take(
+                                                        elements_types,
+                                                    )),
                                                 )));
                                             }
                                         }
@@ -1333,6 +1331,7 @@ impl Compiler {
                                     .intersection(&refined_match_type)
                                     .is_none()
                             {
+                                println!("no intersection");
                                 continue;
                             };
                             if let Some(match_constant_name) = r#as {
@@ -1870,7 +1869,7 @@ impl Compiler {
                 self.define_constant(
                     r#as.clone(),
                     ConstantMetadata {
-                        r#type: starting_with_type,
+                        r#type: starting_with_type.clone(),
                         is_computable: compiled_starting_with.is_computable,
                     },
                     &mut while_compilation_context,
@@ -1886,7 +1885,7 @@ impl Compiler {
                             },
                         )),
                     },
-                    r#type: Type::Array(Box::new(compiled_starting_with.r#type)),
+                    r#type: Type::Array(Box::new(starting_with_type)),
                     external_constants_name_clustered_indices:
                         result_external_constants_name_clustered_indices,
                     is_pure: compiled_starting_with.is_pure & compiled_next.is_pure,

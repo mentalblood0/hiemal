@@ -8,6 +8,16 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test lazy map:
+    assert equal::
+      found:
+        from:
+          map:
+            starting with: 1
+            next: { sum: [_, 1] }
+          through: { sum: [_, 2] }
+        at: [[0, 3]]
+      expected: [3, 4, 5]
   # test sequence complex:
   #   assert equal::
   #     found:
