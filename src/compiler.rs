@@ -1486,7 +1486,7 @@ impl Compiler {
                         }
                         NodeAndMetadata {
                             node: Node {
-                                content: Content::Map {
+                                content: Content::Map(Arc::new(intermediate_representation::Map {
                                     map: Box::new(compiled_map.node),
                                     throughs: Throughs::Tuple {
                                         nodes_indexes: result_throughs_nodes_indexes,
@@ -1496,7 +1496,7 @@ impl Compiler {
                                             .collect(),
                                     },
                                     map_constant_name_clustered_index,
-                                },
+                                })),
                             },
                             r#type: Type::Tuple(result_elements_types),
                             external_constants_name_clustered_indices:
@@ -1531,11 +1531,11 @@ impl Compiler {
                         is_computable &= compiled_through.is_computable;
                         NodeAndMetadata {
                             node: Node {
-                                content: Content::Map {
+                                content: Content::Map(Arc::new(intermediate_representation::Map {
                                     map: Box::new(compiled_map.node),
                                     throughs: Throughs::Array(Box::new(compiled_through.node)),
                                     map_constant_name_clustered_index,
-                                },
+                                })),
                             },
                             r#type: Type::Array(Box::new(compiled_through.r#type)),
                             external_constants_name_clustered_indices:

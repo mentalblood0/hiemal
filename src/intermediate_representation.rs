@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 
 use crate::{
-    containers::{List, Map},
+    containers::{self, List},
     program::Path,
     r#type::Type,
 };
@@ -24,7 +24,7 @@ pub enum Value {
     ),
     Bool(bool),
     Tuple(List<Option<Value>>),
-    Object(Map<String, Option<Value>>),
+    Object(containers::Map<String, Option<Value>>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
@@ -78,11 +78,7 @@ pub enum Content {
         cases: Vec<Case>,
         match_constant_name_clustered_index_option: Option<usize>,
     },
-    Map {
-        map: Box<Node>,
-        throughs: Throughs,
-        map_constant_name_clustered_index: usize,
-    },
+    Map(Arc<Map>),
     Fold {
         fold: Box<Node>,
         fold_constant_name_clustered_index: usize,
@@ -93,6 +89,13 @@ pub enum Content {
     Sequence(Arc<Sequence>),
     Object(BTreeMap<String, Node>),
     Value(Option<Value>),
+}
+
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
+pub struct Map {
+    pub map: Box<Node>,
+    pub throughs: Throughs,
+    pub map_constant_name_clustered_index: usize,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

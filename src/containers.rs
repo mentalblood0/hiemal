@@ -21,6 +21,10 @@ where
     K: Ord + Clone,
     V: Clone,
 {
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.inner.iter()
+    }
+
     pub fn extend<A>(&mut self, addition: A)
     where
         A: IntoIterator<Item = (K, V)>,
