@@ -290,26 +290,25 @@ impl<'a> ComputationContext<'a> {
     where
         N: Iterator<Item = (&'a Node, Cow<'a, Self>)>,
     {
-        let mut result = vec![None; nodes_count];
+        let mut result = vec![IntermediateValue::Value(None); nodes_count];
         let complex_elements = nodes_and_computation_contexts_iterator
             .enumerate()
             .filter(
                 |(element_index, (node, computation_context))| match &node.content {
                     Content::Value(value) => {
-                        result[*element_index] = Some(IntermediateValue::Value(unsafe {
+                        result[*element_index] = IntermediateValue::Value(unsafe {
                             std::mem::transmute::<
                                 Option<intermediate_representation::Value>,
                                 Option<Value>,
                             >(value.clone())
-                        }));
+                        });
                         false
                     }
                     Content::Constant(constant_name_clustered_index) => {
-                        result[*element_index] = Some(
-                            computation_context.constants[*constant_name_clustered_index]
-                                .clone()
-                                .unwrap(),
-                        );
+                        result[*element_index] = computation_context.constants
+                            [*constant_name_clustered_index]
+                            .clone()
+                            .unwrap();
                         false
                     }
                     _ => true,
@@ -321,7 +320,7 @@ impl<'a> ComputationContext<'a> {
             1 => {
                 let (element_index, (node, computation_context)) =
                     complex_elements.into_iter().next().unwrap();
-                result[element_index] = Some(computation_context.compute_node(node)?);
+                result[element_index] = computation_context.compute_node(node)?;
                 result
             }
             2.. => {
@@ -330,15 +329,12 @@ impl<'a> ComputationContext<'a> {
                     .into_par_iter()
                     .try_for_each(|(element_index, (node, computation_context))| {
                         computation_context.compute_node(node).map(|result| {
-                            result_mutex.lock()[element_index] = Some(result);
+                            result_mutex.lock()[element_index] = result;
                         })
                     })
                     .map(|_| result_mutex.into_inner())?
             }
-        }
-        .into_iter()
-        .map(Option::unwrap)
-        .collect())
+        })
     }
 
     fn compute_node(&self, node: &Node) -> Result<IntermediateValue> {
