@@ -311,15 +311,15 @@ impl<'a> ComputationContext<'a> {
                     from,
                     to,
                 )?;
-                println!(
-                    "getting write guard to compute map {:p} from {from} to {to}...",
-                    &*map.lockable_internals
-                );
                 let nodes_and_computation_contexts = {
-                    let lockable_internals_read_guard = map.lockable_internals.read();
-                    let mut already_computed_values_range_iterator = lockable_internals_read_guard
+                    let mut already_computed_values_range_iterator = map
+                        .lockable_internals
+                        .read()
                         .already_computed_values
-                        .range(from..to);
+                        .range(from..to)
+                        .map(|(key, value)| (*key, value.clone()))
+                        .collect::<Vec<_>>()
+                        .into_iter();
                     let mut computed_values_range_iterator_current_option =
                         already_computed_values_range_iterator.next();
                     computed_map_range
@@ -328,8 +328,8 @@ impl<'a> ComputationContext<'a> {
                         .enumerate()
                         .map(|(computed_map_element_index, computed_map_element)| {
                             if let Some((already_computed_through_index, already_computed_through)) =
-                                computed_values_range_iterator_current_option
-                                && *already_computed_through_index == computed_map_element_index + from
+                                std::mem::take(&mut computed_values_range_iterator_current_option)
+                                && already_computed_through_index == computed_map_element_index + from
                             {
                                 computed_values_range_iterator_current_option = already_computed_values_range_iterator.next();
                                 (
@@ -363,10 +363,6 @@ impl<'a> ComputationContext<'a> {
                         })
                         .collect::<Vec<_>>()
                 };
-                println!(
-                    "got write guard to compute map {:p} from {from} to {to}...",
-                    &*map.lockable_internals
-                );
                 let result = self.compute_nodes(
                     nodes_and_computation_contexts.into_iter(),
                     computed_map_range.inner.len(),
