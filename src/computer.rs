@@ -311,62 +311,63 @@ impl<'a> ComputationContext<'a> {
                     from,
                     to,
                 )?;
-                let nodes_and_computation_contexts = {
-                    let mut already_computed_values_range_iterator = map
-                        .lockable_internals
-                        .read()
-                        .already_computed_values
-                        .range(from..to)
-                        .map(|(key, value)| (*key, value.clone()))
-                        .collect::<Vec<_>>()
-                        .into_iter();
-                    let mut computed_values_range_iterator_current_option =
-                        already_computed_values_range_iterator.next();
-                    computed_map_range
-                        .inner
-                        .iter()
-                        .enumerate()
-                        .map(|(computed_map_element_index, computed_map_element)| {
-                            if let Some((already_computed_through_index, already_computed_through)) =
-                                std::mem::take(&mut computed_values_range_iterator_current_option)
-                                && already_computed_through_index == computed_map_element_index + from
-                            {
-                                computed_values_range_iterator_current_option = already_computed_values_range_iterator.next();
-                                (
-                                    NodeOrIntermediateValue::IntermediateValue(
-                                        already_computed_through.clone(),
-                                    ),
-                                    Cow::Borrowed(self),
-                                )
-                            } else {
-                                let mut through_computation_context = self.clone();
-                                through_computation_context.constants[map
-                                    .intermediate_representation_content
-                                    .map_constant_name_clustered_index] =
-                                    Some(computed_map_element.clone());
-                                (
-                                    NodeOrIntermediateValue::Node(
-                                        match &map.intermediate_representation_content.throughs {
-                                            Throughs::Array(node) => node,
-                                            Throughs::Tuple {
-                                                nodes_indexes,
-                                                nodes,
-                                            } => {
-                                                &nodes[nodes_indexes
-                                                    [computed_map_element_index + from]]
-                                            }
-                                        },
-                                    ),
-                                    Cow::Owned(through_computation_context),
-                                )
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                };
-                let result = self.compute_nodes(
-                    nodes_and_computation_contexts.into_iter(),
-                    computed_map_range.inner.len(),
-                )?;
+                let mut already_computed_values_range_iterator = map
+                    .lockable_internals
+                    .read()
+                    .already_computed_values
+                    .range(from..to)
+                    .map(|(key, value)| (*key, value.clone()))
+                    .collect::<Vec<_>>()
+                    .into_iter();
+                let mut computed_values_range_iterator_current_option =
+                    already_computed_values_range_iterator.next();
+                let result =
+                    self.compute_nodes(
+                        computed_map_range.inner.iter().enumerate().map(
+                            |(computed_map_element_index, computed_map_element)| {
+                                if let Some((
+                                    already_computed_through_index,
+                                    already_computed_through,
+                                )) = std::mem::take(
+                                    &mut computed_values_range_iterator_current_option,
+                                ) && already_computed_through_index
+                                    == computed_map_element_index + from
+                                {
+                                    computed_values_range_iterator_current_option =
+                                        already_computed_values_range_iterator.next();
+                                    (
+                                        NodeOrIntermediateValue::IntermediateValue(
+                                            already_computed_through.clone(),
+                                        ),
+                                        Cow::Borrowed(self),
+                                    )
+                                } else {
+                                    let mut through_computation_context = self.clone();
+                                    through_computation_context.constants[map
+                                        .intermediate_representation_content
+                                        .map_constant_name_clustered_index] =
+                                        Some(computed_map_element.clone());
+                                    (
+                                        NodeOrIntermediateValue::Node(
+                                            match &map.intermediate_representation_content.throughs
+                                            {
+                                                Throughs::Array(node) => node,
+                                                Throughs::Tuple {
+                                                    nodes_indexes,
+                                                    nodes,
+                                                } => {
+                                                    &nodes[nodes_indexes
+                                                        [computed_map_element_index + from]]
+                                                }
+                                            },
+                                        ),
+                                        Cow::Owned(through_computation_context),
+                                    )
+                                }
+                            },
+                        ),
+                        computed_map_range.inner.len(),
+                    )?;
                 let mut lockable_internals_write_guard = map.lockable_internals.write();
                 for (result_element_index, result_element) in result.iter().enumerate() {
                     lockable_internals_write_guard
