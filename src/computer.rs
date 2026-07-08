@@ -317,7 +317,7 @@ impl<'a> ComputationContext<'a> {
                         |(computed_map_element_index, computed_map_element)| {
                             if let Some(already_computed_element) = lockable_internals_write_guard
                                 .already_computed_values
-                                .get(&computed_map_element_index)
+                                .get(&(computed_map_element_index + from))
                             {
                                 (
                                     NodeOrIntermediateValue::IntermediateValue(
@@ -338,7 +338,10 @@ impl<'a> ComputationContext<'a> {
                                             Throughs::Tuple {
                                                 nodes_indexes,
                                                 nodes,
-                                            } => &nodes[nodes_indexes[computed_map_element_index]],
+                                            } => {
+                                                &nodes[nodes_indexes
+                                                    [computed_map_element_index + from]]
+                                            }
                                         },
                                     ),
                                     Cow::Owned(through_computation_context),

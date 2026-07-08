@@ -8,7 +8,32 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
-  test lazy map:
+  test map lazy slices intersections:
+    assert equal::
+      found:
+        constants:
+          numbers:
+            map:
+              starting with: 1
+              next: { sum: [_, 1] }
+            through: { sum: [_, 2] }
+        compute:
+          from:
+            map:
+              starting with: 1
+              next: { sum: [_, 1] }
+            through:
+              from: { constant: numbers }
+              at: [[_, { sum: [_, 3] }]]
+          at: [[1, 100]]
+      expected:
+        from:
+          map:
+            starting with: 4
+            next: { sum: [_, 1] }
+          through: [_, { sum: [_, 1] }, { sum: [_, 2] }]
+        at: [[1, 100]]
+  test map lazy:
     assert equal::
       found:
         from:
