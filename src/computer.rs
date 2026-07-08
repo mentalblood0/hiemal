@@ -311,17 +311,30 @@ impl<'a> ComputationContext<'a> {
                     from,
                     to,
                 )?;
-                let mut lockable_internals_write_guard = map.lockable_internals.write();
-                let result = self.compute_nodes(
-                    computed_map_range.inner.iter().enumerate().map(
-                        |(computed_map_element_index, computed_map_element)| {
-                            if let Some(already_computed_element) = lockable_internals_write_guard
-                                .already_computed_values
-                                .get(&(computed_map_element_index + from))
+                println!(
+                    "getting write guard to compute map {:p} from {from} to {to}...",
+                    &*map.lockable_internals
+                );
+                let nodes_and_computation_contexts = {
+                    let lockable_internals_read_guard = map.lockable_internals.read();
+                    let mut already_computed_values_range_iterator = lockable_internals_read_guard
+                        .already_computed_values
+                        .range(from..to);
+                    let mut computed_values_range_iterator_current_option =
+                        already_computed_values_range_iterator.next();
+                    computed_map_range
+                        .inner
+                        .iter()
+                        .enumerate()
+                        .map(|(computed_map_element_index, computed_map_element)| {
+                            if let Some((already_computed_through_index, already_computed_through)) =
+                                computed_values_range_iterator_current_option
+                                && *already_computed_through_index == computed_map_element_index + from
                             {
+                                computed_values_range_iterator_current_option = already_computed_values_range_iterator.next();
                                 (
                                     NodeOrIntermediateValue::IntermediateValue(
-                                        already_computed_element.clone(),
+                                        already_computed_through.clone(),
                                     ),
                                     Cow::Borrowed(self),
                                 )
@@ -347,10 +360,18 @@ impl<'a> ComputationContext<'a> {
                                     Cow::Owned(through_computation_context),
                                 )
                             }
-                        },
-                    ),
+                        })
+                        .collect::<Vec<_>>()
+                };
+                println!(
+                    "got write guard to compute map {:p} from {from} to {to}...",
+                    &*map.lockable_internals
+                );
+                let result = self.compute_nodes(
+                    nodes_and_computation_contexts.into_iter(),
                     computed_map_range.inner.len(),
                 )?;
+                let mut lockable_internals_write_guard = map.lockable_internals.write();
                 for (result_element_index, result_element) in result.iter().enumerate() {
                     lockable_internals_write_guard
                         .already_computed_values
@@ -506,8 +527,8 @@ impl<'a> ComputationContext<'a> {
                 complex_elements
                     .into_par_iter()
                     .try_for_each(|(element_index, (node, computation_context))| {
-                        computation_context.compute_node(node).map(|result| {
-                            result_mutex.lock()[element_index] = result;
+                        computation_context.compute_node(node).map(|result| unsafe {
+                            result_mutex.make_guard_unchecked()[element_index] = result;
                         })
                     })
                     .map(|_| result_mutex.into_inner())?

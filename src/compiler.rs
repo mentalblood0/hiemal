@@ -383,9 +383,7 @@ impl Compiler {
             &mut global_compilation_context,
         )?;
         if !result.is_computable {
-            return Err(anyhow!(
-                "expected computable program, found program with unlimited result",
-            ));
+            return Err(anyhow!("expected finite program",));
         }
         Ok(Arc::new(IntermediateRepresentation {
             root: result.node,
