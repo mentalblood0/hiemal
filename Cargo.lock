@@ -683,7 +683,6 @@ dependencies = [
  "lz4_flex",
  "parking_lot",
  "pretty_assertions",
- "rayon",
  "ropey",
  "rpds",
  "serde",

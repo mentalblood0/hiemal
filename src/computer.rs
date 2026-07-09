@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 use std::{borrow::Cow, hash::Hash, hash::Hasher, io::Read, sync::Arc};
 
 use anyhow::{Context, Result, anyhow};
 use dashu::Rational;
 use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
-use rayon::prelude::*;
 use rpds::RedBlackTreeMapSync;
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +19,21 @@ use crate::{
 };
 
 type Constants = rpds::VectorSync<Option<IntermediateValue>>;
+
+static THREADS_LEFT_TO_SPAWN: LazyLock<RwLock<u8>> = LazyLock::new(|| RwLock::new(16u8));
+
+fn compute_prepared_nodes<'a>(
+    input: &Vec<(usize, (&'a Node, Cow<'a, ComputationContext>))>,
+    output: &Mutex<Vec<IntermediateValue>>,
+) -> Result<()> {
+    for (element_index, (node, computation_context)) in input {
+        let node_result = computation_context.compute_node(node)?;
+        unsafe {
+            output.make_guard_unchecked()[*element_index] = node_result;
+        }
+    }
+    Ok(())
+}
 
 #[derive(Clone, Debug)]
 struct LazyValue {
@@ -282,10 +297,10 @@ impl<'a> ComputationContext<'a> {
                         parking_lot::RwLockUpgradableReadGuard::upgrade(
                             lockable_internals_read_guard,
                         );
-                    while lockable_internals_write_guard.already_computed_values.len() <= to {
+                    while lockable_internals_write_guard.already_computed_values.len() < to {
                         self.compute_next(sequence, &mut lockable_internals_write_guard)?;
                     }
-                    Ok(List {
+                    let result = Ok(List {
                         inner: lockable_internals_write_guard
                             .already_computed_values
                             .inner
@@ -293,7 +308,9 @@ impl<'a> ComputationContext<'a> {
                             .skip(from)
                             .take(to - from)
                             .collect(),
-                    })
+                    });
+                    drop(lockable_internals_write_guard);
+                    result
                 }
             }
             IntermediateValue::Map(map) => {
@@ -323,27 +340,27 @@ impl<'a> ComputationContext<'a> {
                                 .or_insert_with(|| {
                                     let element_value =
                                         Arc::new(RwLock::new(IntermediateValue::default()));
-                                    to_compute
-                                        .push((element_index, element_value.clone().write_arc()));
+                                    to_compute.push((element_index, element_value.write_arc()));
                                     element_value
                                 });
                         }
                     });
+                    drop(lockable_internals_read_guard);
                     (already_taken, to_compute)
                 };
-                let mut already_computed_values_range_iterator = already_taken_elements.iter();
-                let mut computed_values_range_iterator_current_option =
-                    already_computed_values_range_iterator.next();
+                let mut already_taken_elements_iterator = already_taken_elements.iter();
+                let mut already_taken_elements_iterator_current_option =
+                    already_taken_elements_iterator.next();
                 let mut result = self.compute_nodes(
                     computed_map_range.inner.iter().enumerate().map(
                         |(computed_map_element_index, computed_map_element)| {
                             if let Some((already_computed_through_index, _)) =
-                                std::mem::take(&mut computed_values_range_iterator_current_option)
+                                std::mem::take(&mut already_taken_elements_iterator_current_option)
                                 && *already_computed_through_index
                                     == computed_map_element_index + from
                             {
-                                computed_values_range_iterator_current_option =
-                                    already_computed_values_range_iterator.next();
+                                already_taken_elements_iterator_current_option =
+                                    already_taken_elements_iterator.next();
                                 (None, Cow::Borrowed(self))
                             } else {
                                 let mut through_computation_context = self.clone();
@@ -372,11 +389,31 @@ impl<'a> ComputationContext<'a> {
                     elements_to_compute.into_iter()
                 {
                     *element_to_compute_value = result[element_to_compute_index - from].clone();
+                    drop(element_to_compute_value);
                 }
-                for (already_computed_value_index, already_computed_value) in already_taken_elements
+                let mut waiting_for_result_indexes = vec![false; result.len()];
+                let mut results_to_wait = 0usize;
+                for (already_taken_element_index, _) in already_taken_elements.iter() {
+                    waiting_for_result_indexes[*already_taken_element_index - from] = true;
+                    results_to_wait += 1;
+                }
+                for (already_computed_value_index, already_computed_value) in
+                    already_taken_elements.iter().cycle()
                 {
-                    result[already_computed_value_index - from] =
-                        already_computed_value.read().clone();
+                    let result_index = already_computed_value_index - from;
+                    if waiting_for_result_indexes[result_index]
+                        && let Some(already_computed_value_read_guard) =
+                            already_computed_value.try_read_recursive()
+                    {
+                        result[already_computed_value_index - from] =
+                            already_computed_value_read_guard.clone();
+                        drop(already_computed_value_read_guard);
+                        waiting_for_result_indexes[result_index] = false;
+                        results_to_wait -= 1;
+                        if results_to_wait == 0 {
+                            break;
+                        }
+                    }
                 }
                 Ok(List {
                     inner: result.into(),
@@ -520,14 +557,8 @@ impl<'a> ComputationContext<'a> {
             }
             2.. => {
                 let result_mutex = Mutex::new(result);
-                complex_elements
-                    .into_par_iter()
-                    .try_for_each(|(element_index, (node, computation_context))| {
-                        computation_context.compute_node(node).map(|result| unsafe {
-                            result_mutex.make_guard_unchecked()[element_index] = result;
-                        })
-                    })
-                    .map(|_| result_mutex.into_inner())?
+                compute_prepared_nodes(&complex_elements, &result_mutex)?;
+                result_mutex.into_inner()
             }
         })
     }

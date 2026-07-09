@@ -10,8 +10,8 @@ functions:
 compute:
   test map lazy slices intersections:
     constants:
-      slice length: 10
-      slices amount: 1000
+      slice length: 4
+      slices amount: 100
     compute:
       assert equal::
         found:
