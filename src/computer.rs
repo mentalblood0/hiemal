@@ -67,7 +67,7 @@ impl Hash for Sequence {
 
 #[derive(Clone, Debug)]
 struct MapLockableInternals {
-    already_computed_values: BTreeMap<usize, IntermediateValue>,
+    elements_taken_for_computation: BTreeMap<usize, Arc<RwLock<IntermediateValue>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -306,15 +306,32 @@ impl<'a> ComputationContext<'a> {
                     from,
                     to,
                 )?;
-                let already_computed_values_range = map
-                    .lockable_internals
-                    .read()
-                    .already_computed_values
-                    .range(from..to)
-                    .map(|(key, value)| (*key, value.clone()))
-                    .collect::<Vec<_>>();
-                let mut already_computed_values_range_iterator =
-                    already_computed_values_range.iter();
+                let (already_taken_elements, elements_to_compute) = {
+                    let mut lockable_internals_read_guard =
+                        map.lockable_internals.upgradable_read();
+                    let already_taken = lockable_internals_read_guard
+                        .elements_taken_for_computation
+                        .range(from..to)
+                        .map(|(key, value)| (*key, value.clone()))
+                        .collect::<Vec<_>>();
+                    let mut to_compute = Vec::new();
+                    lockable_internals_read_guard.with_upgraded(|lockable_internals_write_guard| {
+                        for element_index in from..to {
+                            lockable_internals_write_guard
+                                .elements_taken_for_computation
+                                .entry(element_index)
+                                .or_insert_with(|| {
+                                    let element_value =
+                                        Arc::new(RwLock::new(IntermediateValue::default()));
+                                    to_compute
+                                        .push((element_index, element_value.clone().write_arc()));
+                                    element_value
+                                });
+                        }
+                    });
+                    (already_taken, to_compute)
+                };
+                let mut already_computed_values_range_iterator = already_taken_elements.iter();
                 let mut computed_values_range_iterator_current_option =
                     already_computed_values_range_iterator.next();
                 let mut result = self.compute_nodes(
@@ -351,17 +368,15 @@ impl<'a> ComputationContext<'a> {
                     ),
                     computed_map_range.inner.len(),
                 )?;
-                for (already_computed_value_index, already_computed_value) in
-                    already_computed_values_range
+                for (element_to_compute_index, mut element_to_compute_value) in
+                    elements_to_compute.into_iter()
                 {
-                    result[already_computed_value_index - from] = already_computed_value;
+                    *element_to_compute_value = result[element_to_compute_index - from].clone();
                 }
-                let mut lockable_internals_write_guard = map.lockable_internals.write();
-                for (result_element_index, result_element) in result.iter().enumerate() {
-                    lockable_internals_write_guard
-                        .already_computed_values
-                        .entry(from + result_element_index)
-                        .or_insert(result_element.clone());
+                for (already_computed_value_index, already_computed_value) in already_taken_elements
+                {
+                    result[already_computed_value_index - from] =
+                        already_computed_value.read().clone();
                 }
                 Ok(List {
                     inner: result.into(),
@@ -465,7 +480,7 @@ impl<'a> ComputationContext<'a> {
     where
         N: Iterator<Item = (Option<&'a Node>, Cow<'a, Self>)>,
     {
-        let mut result = vec![IntermediateValue::Value(None); nodes_count];
+        let mut result = vec![IntermediateValue::default(); nodes_count];
         let complex_elements = nodes_and_computation_contexts_iterator
             .enumerate()
             .filter_map(
@@ -490,10 +505,7 @@ impl<'a> ComputationContext<'a> {
                             }
                             _ => Some((element_index, (node, computation_context))),
                         },
-                        None => {
-                            result[element_index] = IntermediateValue::Value(None);
-                            None
-                        }
+                        None => None,
                     }
                 },
             )
@@ -810,7 +822,7 @@ impl<'a> ComputationContext<'a> {
                         .clone(),
                     constants,
                     lockable_internals: Arc::new(RwLock::new(MapLockableInternals {
-                        already_computed_values: BTreeMap::new(),
+                        elements_taken_for_computation: BTreeMap::new(),
                     })),
                 }))
             }
