@@ -353,7 +353,6 @@ impl<'a> ComputationContext<'a> {
                     elements_to_compute.into_iter()
                 {
                     *element_to_compute_value = result[element_to_compute_index - from].clone();
-                    drop(element_to_compute_value);
                 }
                 for (already_computed_value_index, already_computed_value) in
                     already_taken_elements.into_iter()
