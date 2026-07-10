@@ -11,4 +11,4 @@ functions:
             - fibonacci::
                 sum: [_, -2]
 compute:
-  fibonacci:: 10
+  fibonacci:: 24

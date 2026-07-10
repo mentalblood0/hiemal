@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::sync::LazyLock;
 use std::{borrow::Cow, hash::Hash, hash::Hasher, io::Read, sync::Arc};
 
 use anyhow::{Context, Result, anyhow};
@@ -20,17 +19,49 @@ use crate::{
 
 type Constants = rpds::VectorSync<Option<IntermediateValue>>;
 
-static THREADS_LEFT_TO_SPAWN: LazyLock<RwLock<u8>> = LazyLock::new(|| RwLock::new(16u8));
+static THREADS_LEFT_TO_SPAWN: Mutex<u8> = Mutex::new(8u8);
 
 fn compute_prepared_nodes<'a>(
-    input: &Vec<(usize, (&'a Node, Cow<'a, ComputationContext>))>,
-    output: &Mutex<Vec<IntermediateValue>>,
+    mut input: &[(usize, (&'a Node, Cow<'a, ComputationContext>))],
+    output: &'a Mutex<Vec<IntermediateValue>>,
 ) -> Result<()> {
-    for (element_index, (node, computation_context)) in input {
-        let node_result = computation_context.compute_node(node)?;
-        unsafe {
-            output.make_guard_unchecked()[*element_index] = node_result;
+    while !input.is_empty()
+        && (input.len() < 2 || {
+            let mut threads_left_to_spawn_lock_guard = THREADS_LEFT_TO_SPAWN.lock();
+            if *threads_left_to_spawn_lock_guard == 0u8 {
+                true
+            } else {
+                *threads_left_to_spawn_lock_guard -= 1;
+                false
+            }
+        })
+    {
+        if input.len() == 1 {
+            let (element_index, (node, computation_context)) = &input[0];
+            let node_result = computation_context.compute_node(node)?;
+            output.lock()[*element_index] = node_result;
+            return Ok(());
+        } else {
+            let left_half = input.split_off(..input.len().div_ceil(2)).unwrap();
+            for (element_index, (node, computation_context)) in left_half {
+                let node_result = computation_context.compute_node(node)?;
+                output.lock()[*element_index] = node_result;
+            }
         }
+    }
+    if !input.is_empty() {
+        let left_half = input.split_off(..input.len().div_ceil(2)).unwrap();
+        let (left_half_result, right_half_result) = std::thread::scope(|scope| {
+            let left_half_join_handle = scope.spawn(|| compute_prepared_nodes(left_half, output));
+            let right_half_result = compute_prepared_nodes(input, output);
+            let left_half_result = left_half_join_handle
+                .join()
+                .map_err(|error| anyhow!("Thread panicked: {error:?}"));
+            *THREADS_LEFT_TO_SPAWN.lock() += 1;
+            (left_half_result, right_half_result)
+        });
+        left_half_result??;
+        right_half_result?;
     }
     Ok(())
 }
@@ -119,6 +150,7 @@ impl Hash for Map {
     }
 }
 
+#[repr(u8)]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 enum IntermediateValue {
     Value(Option<Value>),
@@ -518,7 +550,7 @@ impl<'a> ComputationContext<'a> {
         N: Iterator<Item = (Option<&'a Node>, Cow<'a, Self>)>,
     {
         let mut result = vec![IntermediateValue::default(); nodes_count];
-        let complex_elements = nodes_and_computation_contexts_iterator
+        let mut complex_elements = nodes_and_computation_contexts_iterator
             .enumerate()
             .filter_map(
                 |(element_index, (node_or_intermediate_value, computation_context))| {
@@ -557,7 +589,7 @@ impl<'a> ComputationContext<'a> {
             }
             2.. => {
                 let result_mutex = Mutex::new(result);
-                compute_prepared_nodes(&complex_elements, &result_mutex)?;
+                compute_prepared_nodes(&mut complex_elements, &result_mutex)?;
                 result_mutex.into_inner()
             }
         })
