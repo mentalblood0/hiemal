@@ -81,7 +81,7 @@ pub struct List<V>
 where
     V: Ord + Clone + 'static,
 {
-    pub inner: im_lists::list::SharedList<V>,
+    pub inner: rpds::VectorSync<V>,
 }
 
 impl<V> List<V>
@@ -101,11 +101,13 @@ where
     }
 
     pub fn push_back_mut(&mut self, value: V) {
-        self.inner.push_back(value);
+        self.inner.push_back_mut(value);
     }
 
     pub fn append_mut(&mut self, other: Self) {
-        self.inner.append_mut(other.inner);
+        for element in other.inner.iter() {
+            self.inner.push_back_mut(element.clone());
+        }
     }
 
     pub fn extend<A>(&mut self, addition: A)
@@ -113,7 +115,7 @@ where
         A: IntoIterator<Item = V>,
     {
         for value in addition {
-            self.inner.push_back(value);
+            self.inner.push_back_mut(value);
         }
     }
 
@@ -133,7 +135,7 @@ where
 {
     fn default() -> Self {
         Self {
-            inner: im_lists::list::SharedList::new(),
+            inner: rpds::VectorSync::default(),
         }
     }
 }

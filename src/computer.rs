@@ -395,7 +395,7 @@ impl<'a> ComputationContext<'a> {
                 let mut result = List::default();
                 for intermediate_value in intermediate_values_list.inner.into_iter() {
                     result.push_back_mut(
-                        self.unroll_intermediate_value(intermediate_value, constants)?,
+                        self.unroll_intermediate_value(intermediate_value.clone(), constants)?,
                     );
                 }
                 Ok(Some(Value::Tuple(result)))
@@ -557,7 +557,7 @@ impl<'a> ComputationContext<'a> {
     fn compute_node(&self, node: &Node, constants: &Constants) -> Result<IntermediateValue> {
         match &node.content {
             Content::Tuple(tuple) => Ok(IntermediateValue::Tuple(List {
-                inner: im_lists::list::SharedList::from_iter(
+                inner: rpds::VectorSync::from_iter(
                     self.compute_nodes(
                         tuple
                             .iter()
@@ -652,9 +652,10 @@ impl<'a> ComputationContext<'a> {
                     })?,
                 ))),
                 EmbeddedFunction::KeyValuePairs(argument) => {
-                    Ok(IntermediateValue::Value(Some(Value::Tuple(List {
-                        inner: im_lists::list::SharedList::from_iter(
-                            self.unroll_intermediate_value(
+                    Ok(IntermediateValue::Value(Some(Value::Tuple({
+                        let mut result = List::default();
+                        for (key, value) in self
+                            .unroll_intermediate_value(
                                 self.compute_node(argument, constants)?,
                                 constants,
                             )?
@@ -663,36 +664,34 @@ impl<'a> ComputationContext<'a> {
                             .unwrap()
                             .inner
                             .iter()
-                            .map(|(key, value)| {
-                                Some(Value::Tuple(List {
-                                    inner: im_lists::list::SharedList::from_iter([
-                                        Some(Value::String(ropey::Rope::from_str(key))),
-                                        value.clone(),
-                                    ]),
-                                }))
-                            }),
-                        ),
+                        {
+                            result.push_back_mut(Some(Value::Tuple(List {
+                                inner: rpds::VectorSync::from_iter([
+                                    Some(Value::String(ropey::Rope::from_str(key))),
+                                    value.clone(),
+                                ]),
+                            })));
+                        }
+                        result
                     }))))
                 }
                 EmbeddedFunction::Flatten(argument) => {
                     Ok(IntermediateValue::Value(Some(Value::Tuple({
-                        List {
-                            inner: im_lists::list::SharedList::from_iter(
-                                self.unroll_intermediate_value(
-                                    self.compute_node(argument, constants)?,
-                                    constants,
-                                )?
-                                .unwrap()
-                                .as_tuple()
-                                .unwrap()
-                                .inner
-                                .iter()
-                                .cloned()
-                                .flat_map(|list| {
-                                    list.unwrap().as_tuple_mut().unwrap().inner.to_owned()
-                                }),
-                            ),
+                        let mut result = List::default();
+                        for list in self
+                            .unroll_intermediate_value(
+                                self.compute_node(argument, constants)?,
+                                constants,
+                            )?
+                            .unwrap()
+                            .as_tuple()
+                            .unwrap()
+                            .inner
+                            .iter()
+                        {
+                            result.append_mut(list.as_ref().unwrap().as_tuple().unwrap().clone());
                         }
+                        result
                     }))))
                 }
             },
@@ -931,7 +930,7 @@ impl<'a> ComputationContext<'a> {
                             constants: next_constants,
                         }),
                         already_computed_values: List {
-                            inner: im_lists::list::SharedList::from_iter([computed_starting_with]),
+                            inner: rpds::VectorSync::from_iter([computed_starting_with]),
                         },
                     })),
                 }))
