@@ -482,16 +482,17 @@ impl<'a> ComputationContext<'a> {
                     0,
                     usize::MAX,
                 )?;
+                let computed_map_len = computed_map.len();
                 Ok(Some(Value::Tuple({
                     let mut result = List::default();
                     for element in self.compute_nodes(
-                        computed_map.inner.iter().enumerate().map(
+                        computed_map.inner.into_iter().enumerate().map(
                             |(computed_map_element_index, computed_map_element)| {
                                 let mut through_computation_context = self.clone();
                                 through_computation_context.constants[map
                                     .intermediate_representation_content
                                     .map_constant_name_clustered_index] =
-                                    Some(computed_map_element.clone());
+                                    Some(computed_map_element);
                                 (
                                     match &map.intermediate_representation_content.throughs {
                                         Throughs::Array(node) => Some(&**node),
@@ -506,7 +507,7 @@ impl<'a> ComputationContext<'a> {
                                 )
                             },
                         ),
-                        computed_map.inner.len(),
+                        computed_map_len,
                     )? {
                         result.push_back_mut(self.unroll_intermediate_value(element)?);
                     }
