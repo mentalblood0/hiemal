@@ -4,7 +4,6 @@ use hiemal::{
     computer::{Computer, ComputerConfig},
     program::Program,
 };
-use serde_json::json;
 
 fn benchmarks(bencher_context: &mut Criterion) {
     let computer = Computer::default();
@@ -18,42 +17,45 @@ fn benchmarks(bencher_context: &mut Criterion) {
     };
     {
         for number in [22, 23, 24] {
-            let program = serde_json::from_value::<Program>(json!({
-                "functions": {
-                  "fibonacci:": {
-                      "match": { "is sorted": ["_", 1] },
-                      "cases": [
-                          [true, "_"],
-                          [
-                              false,
-                              {
-                                  "sum": [
-                                    {
-                                      "fibonacci:": {
-                                        "sum": [
-                                          "_",
-                                          -1
-                                        ]
-                                      }
-                                    },
-                                    {
-                                      "fibonacci:": {
-                                        "sum": [
-                                          "_",
-                                          -2
-                                        ]
-                                      }
-                                    }
-                                  ]
-                              }
+            let program = serde_saphyr::from_str::<Program>(
+                &r#"{
+                    "functions": {
+                      "fibonacci:": {
+                          "match": { "is sorted": ["_", 1] },
+                          "cases": [
+                              [true, "_"],
+                              [
+                                  false,
+                                  {
+                                      "sum": [
+                                        {
+                                          "fibonacci:": {
+                                            "sum": [
+                                              "_",
+                                              -1
+                                            ]
+                                          }
+                                        },
+                                        {
+                                          "fibonacci:": {
+                                            "sum": [
+                                              "_",
+                                              -2
+                                            ]
+                                          }
+                                        }
+                                      ]
+                                  }
+                              ]
                           ]
-                      ]
-                  }
-                },
-                "compute": {
-                  "fibonacci:": number
-                }
-            }))
+                      }
+                    },
+                    "compute": {
+                      "fibonacci:": number
+                    }
+                }"#
+                .replace("number", &number.to_string()),
+            )
             .unwrap();
             let intermediate_representation = compiler.compile(&program).unwrap();
             bencher_context.bench_function(&format!("fibonacci_{number}"), |b| {

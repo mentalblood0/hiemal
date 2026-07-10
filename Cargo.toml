@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive", "rc"] }
-serde_json = { version = "1.0.149", features = ["preserve_order"] }
 serde-saphyr = { version = "0.0.28" }
 anyhow = { version = "1.0", features = ["std", "backtrace"] }
 ureq = { version = "3.3" }

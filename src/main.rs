@@ -19,7 +19,7 @@ macro_rules! time_it {
 fn main() -> Result<()> {
     let computer = Computer::default();
     if let Some(target) = std::env::args().nth(1) {
-        let include_from = serde_json::from_value::<From>(serde_json::Value::String(target))?;
+        let include_from = serde_saphyr::from_str::<From>(&target)?;
         let program = IncludesCache::default().get(&include_from)?;
         let program_hash = {
             let mut hasher = GxHasher::default();

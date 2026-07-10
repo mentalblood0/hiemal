@@ -53,7 +53,6 @@ impl IncludesCache {
                 .unwrap()
                 .as_str()
             {
-                "json" => serde_json::from_str::<Rc<Program>>(&result_text)?,
                 "yml" | "yaml" => serde_saphyr::from_str::<Rc<Program>>(&result_text)?,
                 _ => return Ok(None),
             };
@@ -84,9 +83,7 @@ impl IncludesCache {
                     .and_then(std::ffi::OsStr::to_str)
                     .map(|extension| extension.to_lowercase())
                 {
-                    Some(extension)
-                        if extension == "yaml" || extension == "yml" || extension == "json" =>
-                    {
+                    Some(extension) if extension == "yaml" || extension == "yml" => {
                         let source_hash = self.source_hash(url);
                         let source_hash_hex = format!("{source_hash:x}");
                         if let Some(result) = self.source_to_program.get(from) {
@@ -159,7 +156,6 @@ impl IncludesCache {
                                     .read_to_string()
                                     .with_context(|| "Can not read body of response from {url}")?;
                                 let result = match extension {
-                                    "json" => serde_json::from_str::<Rc<Program>>(&result_text)?,
                                     "yaml" | "yml" => {
                                         serde_saphyr::from_str::<Rc<Program>>(&result_text)?
                                     }
@@ -201,10 +197,6 @@ impl IncludesCache {
                 } else {
                     match path.extension() {
                         Some(ext) if ext == "yaml" || ext == "yml" => serde_saphyr::from_reader(
-                            std::io::BufReader::new(std::fs::File::open(path.clone())?),
-                        )
-                        .with_context(|| format!("Can not parse included file at {path:?}")),
-                        Some(ext) if ext == "json" => serde_json::from_reader(
                             std::io::BufReader::new(std::fs::File::open(path.clone())?),
                         )
                         .with_context(|| format!("Can not parse included file at {path:?}")),
