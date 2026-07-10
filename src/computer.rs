@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 use std::{borrow::Cow, hash::Hash, hash::Hasher, io::Read, sync::Arc};
 
 use anyhow::{Context, Result, anyhow};
@@ -19,7 +20,15 @@ use crate::{
 
 type Constants = rpds::VectorSync<Option<IntermediateValue>>;
 
-static THREADS_LEFT_TO_SPAWN: Mutex<u8> = Mutex::new(8u8);
+static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
+    Mutex::new(
+        (std::thread::available_parallelism()
+            .unwrap_or(std::num::NonZero::try_from(1usize).unwrap())
+            .get()
+            .div_ceil(2)
+            - 1) as u8,
+    )
+});
 
 #[derive(Clone, Debug)]
 struct LazyValue {
