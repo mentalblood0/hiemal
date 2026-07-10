@@ -8,7 +8,7 @@
 - match clause exhaustiveness checking
 - pass-by-value, parallel execution
 - pure user functions results caching
-- strings, arrays/tuples and maps are immutable
+- strings and containers are structurally shared
 - numbers are arbitrary size rational
 
 ## Installation
@@ -34,6 +34,8 @@ hiemal examples/include.yml
 - is sorted: [1, 2, 3]
 - key-value pairs: {a: 1, b: 2, c: 3}
 - flatten: [[1, a], [3], [4, b, 6]]
+- standard input
+- parse yaml: "[1, 2, string, 3, 4]"
 ```
 
 ### Clauses
@@ -82,18 +84,18 @@ compute:
 ```yaml
 functions:
   fibonacci::
-    match:
-      is sorted: [_, 1]
+    match: _
     cases:
-      - [true, _]
-      - - false
+      - [1, 1]
+      - [2, 1]
+      - - number
         - sum:
             - fibonacci::
                 sum: [_, -1]
             - fibonacci::
                 sum: [_, -2]
 compute:
-  fibonacci:: 10
+  fibonacci:: 24
 ```
 
 ```yaml
@@ -160,6 +162,15 @@ cases:
   - [string, it's a string]
   - [[1, { sum: [1, 1] }, 3], true]
   - [any, it's something else]
+```
+
+#### starting with next
+
+```yaml
+from:
+  starting with: 1
+  next: { sum: [_, 1] }
+at: [[0, 3]]
 ```
 
 #### map as through

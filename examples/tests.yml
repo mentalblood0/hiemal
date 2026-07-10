@@ -146,7 +146,7 @@ compute:
     assert equal::
       found:
         fold:
-          match: { parse yaml: '[1, 2, "string", 3, 4]' }
+          match: { parse yaml: "[1, 2, string, 3, 4]" }
           as: matched
           cases:
             - [{ array: { union: [number, string] } }, { constant: matched }]
@@ -165,7 +165,7 @@ compute:
     assert equal::
       found:
         sum:
-          - fold: [1, 2, "string", 3, 4]
+          - fold: [1, 2, string, 3, 4]
             as: current
             starting with: 0
             accumulating in: accumulator
