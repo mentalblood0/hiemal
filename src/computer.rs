@@ -166,25 +166,6 @@ impl Default for IntermediateValue {
     }
 }
 
-impl IntermediateValue {
-    fn is_finite(&self) -> bool {
-        match self {
-            IntermediateValue::Value(_) => true,
-            IntermediateValue::Tuple(tuple) => tuple.iter().all(|element| element.is_finite()),
-            IntermediateValue::Object(object) => object.iter().all(|(_, value)| value.is_finite()),
-            IntermediateValue::Sequence(_) => false,
-            IntermediateValue::Map(Map {
-                intermediate_representation_content,
-                constants,
-                lockable_internals: _,
-            }) => constants[intermediate_representation_content.map_constant_name_clustered_index]
-                .as_ref()
-                .unwrap()
-                .is_finite(),
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 struct ComputationContext<'a> {
     computer_config: &'a ComputerConfig,
@@ -472,11 +453,6 @@ impl<'a> ComputationContext<'a> {
         &self,
         intermediate_value: IntermediateValue,
     ) -> Result<Option<Value>> {
-        if !intermediate_value.is_finite() {
-            return Err(anyhow!(
-                "expected finite intermediate value, got {intermediate_value:#?}"
-            ));
-        }
         match intermediate_value {
             IntermediateValue::Value(result) => Ok(result),
             IntermediateValue::Tuple(intermediate_values_list) => {
