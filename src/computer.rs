@@ -837,21 +837,21 @@ impl<'a> ComputationContext<'a> {
             } => {
                 let computed_match = self.unroll_intermediate_value(self.compute_node(r#match)?)?;
                 let match_type = Value::r#type(&computed_match);
+                let case_computation_context = if let Some(match_constant_name_clustered_index) =
+                    match_constant_name_clustered_index_option
+                {
+                    let mut result = self.clone();
+                    result.constants[*match_constant_name_clustered_index] =
+                        Some(IntermediateValue::Value(computed_match.clone()));
+                    Cow::Owned(result)
+                } else {
+                    Cow::Borrowed(self)
+                };
                 for case in cases {
                     match &case.condition {
                         Condition::Type(expected_type) => {
                             if expected_type.contains(&match_type) {
-                                if let Some(match_constant_name_clustered_index) =
-                                    match_constant_name_clustered_index_option
-                                {
-                                    let mut case_computation_context = self.clone();
-                                    case_computation_context.constants
-                                        [*match_constant_name_clustered_index] =
-                                        Some(IntermediateValue::Value(computed_match));
-                                    return case_computation_context.compute_node(&case.node);
-                                } else {
-                                    return self.compute_node(&case.node);
-                                }
+                                return case_computation_context.compute_node(&case.node);
                             }
                         }
                         Condition::Value(expected_value_node) => {
@@ -859,22 +859,12 @@ impl<'a> ComputationContext<'a> {
                                 self.compute_node(expected_value_node)?,
                             )?;
                             if computed_expected_value == computed_match {
-                                if let Some(match_constant_name_clustered_index) =
-                                    match_constant_name_clustered_index_option
-                                {
-                                    let mut case_computation_context = self.clone();
-                                    case_computation_context.constants
-                                        [*match_constant_name_clustered_index] =
-                                        Some(IntermediateValue::Value(computed_match));
-                                    return case_computation_context.compute_node(&case.node);
-                                } else {
-                                    return self.compute_node(&case.node);
-                                }
+                                return case_computation_context.compute_node(&case.node);
                             }
                         }
                     }
                 }
-                panic!("no case from {cases:#?} matches {computed_match:#?}")
+                panic!("no case from {cases:#?} matches computed value")
             }
             Content::Map(intermediate_representation_content) => {
                 let mut constants = self.constants.clone();
