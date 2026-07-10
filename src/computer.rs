@@ -121,6 +121,15 @@ impl Default for IntermediateValue {
     }
 }
 
+impl IntermediateValue {
+    fn as_tuple(&self) -> Option<&List<IntermediateValue>> {
+        match self {
+            IntermediateValue::Tuple(result) => Some(result),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct ComputationContext<'a> {
     computer_config: &'a ComputerConfig,
@@ -588,32 +597,31 @@ impl<'a> ComputationContext<'a> {
             } => match &**embedded_function {
                 EmbeddedFunction::Sum(argument) => {
                     Ok(IntermediateValue::Value(Some(Value::Number(
-                        self.unroll_intermediate_value(
-                            self.compute_node(argument, constants)?,
-                            constants,
-                        )?
-                        .unwrap()
-                        .as_tuple()
-                        .unwrap()
-                        .inner
-                        .iter()
-                        .fold(Rational::ZERO, |accumulator, current| {
-                            accumulator + current.as_ref().unwrap().as_number().unwrap()
-                        }),
+                        self.compute_node(argument, constants)?
+                            .as_tuple()
+                            .unwrap()
+                            .inner
+                            .iter()
+                            .fold(Rational::ZERO, |accumulator, current| {
+                                accumulator
+                                    + self
+                                        .unroll_intermediate_value(current.clone(), constants)
+                                        .unwrap()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_number()
+                                        .unwrap()
+                            }),
                     ))))
                 }
                 EmbeddedFunction::IsSorted(argument) => {
                     Ok(IntermediateValue::Value(Some(Value::Bool(
-                        self.unroll_intermediate_value(
-                            self.compute_node(argument, constants)?,
-                            constants,
-                        )?
-                        .unwrap()
-                        .as_tuple()
-                        .unwrap()
-                        .inner
-                        .iter()
-                        .is_sorted(),
+                        self.compute_node(argument, constants)?
+                            .as_tuple()
+                            .unwrap()
+                            .inner
+                            .iter()
+                            .is_sorted(),
                     ))))
                 }
                 EmbeddedFunction::StandardInput => {
