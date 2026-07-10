@@ -18,43 +18,22 @@ fn benchmarks(bencher_context: &mut Criterion) {
     {
         for number in [22, 23, 24] {
             let program = serde_saphyr::from_str::<Program>(
-                &r#"{
-                    "functions": {
-                      "fibonacci:": {
-                          "match": { "is sorted": ["_", 1] },
-                          "cases": [
-                              [true, "_"],
-                              [
-                                  false,
-                                  {
-                                      "sum": [
-                                        {
-                                          "fibonacci:": {
-                                            "sum": [
-                                              "_",
-                                              -1
-                                            ]
-                                          }
-                                        },
-                                        {
-                                          "fibonacci:": {
-                                            "sum": [
-                                              "_",
-                                              -2
-                                            ]
-                                          }
-                                        }
-                                      ]
-                                  }
-                              ]
-                          ]
-                      }
-                    },
-                    "compute": {
-                      "fibonacci:": number
-                    }
-                }"#
-                .replace("number", &number.to_string()),
+                &r#"functions:
+  fibonacci::
+    match: _
+    cases:
+      - [1, 1]
+      - [2, 1]
+      - - number
+        - sum:
+            - fibonacci::
+                sum: [_, -1]
+            - fibonacci::
+                sum: [_, -2]
+compute:
+  fibonacci:: NUMBER
+"#
+                .replace("NUMBER", &number.to_string()),
             )
             .unwrap();
             let intermediate_representation = compiler.compile(&program).unwrap();

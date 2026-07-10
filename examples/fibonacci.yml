@@ -1,10 +1,10 @@
 functions:
   fibonacci::
-    match:
-      is sorted: [_, 1]
+    match: _
     cases:
-      - [true, _]
-      - - false
+      - [1, 1]
+      - [2, 1]
+      - - number
         - sum:
             - fibonacci::
                 sum: [_, -1]
