@@ -8,6 +8,20 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test sum map:
+    assert equal::
+      found:
+        sum:
+          map: [1, 2, 3]
+          through: { sum: [_, 1] }
+      expected: 9
+  test is sorted map:
+    assert equal::
+      found:
+        is sorted:
+          map: [1, 2, 3]
+          through: { sum: [_, 1] }
+      expected: true
   test map lazy slices intersections:
     constants:
       slice length: 4

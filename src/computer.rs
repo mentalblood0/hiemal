@@ -121,15 +121,6 @@ impl Default for IntermediateValue {
     }
 }
 
-impl IntermediateValue {
-    fn as_tuple(&self) -> Option<&List<IntermediateValue>> {
-        match self {
-            IntermediateValue::Tuple(result) => Some(result),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 struct ComputationContext<'a> {
     computer_config: &'a ComputerConfig,
@@ -228,7 +219,6 @@ impl<'a> ComputationContext<'a> {
             }
             IntermediateValue::Map(_) => Ok(self
                 .get_range_from_intermediate_value(intermediate_value, index, index + 1, constants)?
-                .inner
                 .into_iter()
                 .next()),
             IntermediateValue::Value(Some(Value::Tuple(list))) => {
@@ -247,23 +237,26 @@ impl<'a> ComputationContext<'a> {
         from: usize,
         to: usize,
         constants: &Constants,
-    ) -> Result<List<IntermediateValue>> {
+    ) -> Result<Vec<IntermediateValue>> {
         match intermediate_value {
-            IntermediateValue::Tuple(list) => Ok(List {
-                inner: list.inner.iter().skip(from).take(to - from).collect(),
-            }),
+            IntermediateValue::Tuple(list) => Ok(list
+                .inner
+                .iter()
+                .skip(from)
+                .take(to - from)
+                .cloned()
+                .collect()),
             IntermediateValue::Sequence(sequence) => {
                 let lockable_internals_read_guard = sequence.lockable_internals.upgradable_read();
                 if lockable_internals_read_guard.already_computed_values.len() > to {
-                    Ok(List {
-                        inner: lockable_internals_read_guard
-                            .already_computed_values
-                            .inner
-                            .iter()
-                            .skip(from)
-                            .take(to - from)
-                            .collect(),
-                    })
+                    Ok(lockable_internals_read_guard
+                        .already_computed_values
+                        .inner
+                        .iter()
+                        .skip(from)
+                        .take(to - from)
+                        .cloned()
+                        .collect())
                 } else {
                     let mut lockable_internals_write_guard =
                         parking_lot::RwLockUpgradableReadGuard::upgrade(
@@ -272,15 +265,14 @@ impl<'a> ComputationContext<'a> {
                     while lockable_internals_write_guard.already_computed_values.len() < to {
                         self.compute_next(sequence, &mut lockable_internals_write_guard)?;
                     }
-                    Ok(List {
-                        inner: lockable_internals_write_guard
-                            .already_computed_values
-                            .inner
-                            .iter()
-                            .skip(from)
-                            .take(to - from)
-                            .collect(),
-                    })
+                    Ok(lockable_internals_write_guard
+                        .already_computed_values
+                        .inner
+                        .iter()
+                        .skip(from)
+                        .take(to - from)
+                        .cloned()
+                        .collect())
                 }
             }
             IntermediateValue::Map(map) => {
@@ -304,7 +296,7 @@ impl<'a> ComputationContext<'a> {
                         .collect::<Vec<_>>();
                     let mut to_compute = Vec::new();
                     lockable_internals_read_guard.with_upgraded(|lockable_internals_write_guard| {
-                        for element_index in from..to {
+                        for element_index in from..computed_map_range.len() {
                             lockable_internals_write_guard
                                 .elements_taken_for_computation
                                 .entry(element_index)
@@ -322,7 +314,7 @@ impl<'a> ComputationContext<'a> {
                 let mut already_taken_elements_iterator_current_option =
                     already_taken_elements_iterator.next();
                 let mut result = self.compute_nodes(
-                    computed_map_range.inner.iter().enumerate().map(
+                    computed_map_range.iter().enumerate().map(
                         |(computed_map_element_index, computed_map_element)| {
                             if let Some((already_computed_through_index, _)) =
                                 std::mem::take(&mut already_taken_elements_iterator_current_option)
@@ -353,7 +345,7 @@ impl<'a> ComputationContext<'a> {
                             }
                         },
                     ),
-                    computed_map_range.inner.len(),
+                    computed_map_range.len(),
                 )?;
                 for (element_to_compute_index, mut element_to_compute_value) in
                     elements_to_compute.into_iter()
@@ -366,20 +358,16 @@ impl<'a> ComputationContext<'a> {
                     result[already_computed_value_index - from] =
                         already_computed_value.read().clone();
                 }
-                Ok(List {
-                    inner: result.into(),
-                })
+                Ok(result)
             }
-            IntermediateValue::Value(Some(Value::Tuple(list))) => Ok(List {
-                inner: list
-                    .inner
-                    .iter()
-                    .skip(from)
-                    .take(to - from)
-                    .cloned()
-                    .map(IntermediateValue::Value)
-                    .collect(),
-            }),
+            IntermediateValue::Value(Some(Value::Tuple(list))) => Ok(list
+                .inner
+                .iter()
+                .skip(from)
+                .take(to - from)
+                .cloned()
+                .map(IntermediateValue::Value)
+                .collect()),
             unexpected_value => Err(anyhow!(
                 "expected tuple or sequence, found {:#?}",
                 unexpected_value
@@ -428,7 +416,7 @@ impl<'a> ComputationContext<'a> {
                 Ok(Some(Value::Tuple({
                     let mut result = List::default();
                     for element in self.compute_nodes(
-                        computed_map.inner.into_iter().enumerate().map(
+                        computed_map.into_iter().enumerate().map(
                             |(computed_map_element_index, computed_map_element)| {
                                 let mut through_constants = constants.clone();
                                 through_constants[map
@@ -597,31 +585,34 @@ impl<'a> ComputationContext<'a> {
             } => match &**embedded_function {
                 EmbeddedFunction::Sum(argument) => {
                     Ok(IntermediateValue::Value(Some(Value::Number(
-                        self.compute_node(argument, constants)?
-                            .as_tuple()
-                            .unwrap()
-                            .inner
-                            .iter()
-                            .fold(Rational::ZERO, |accumulator, current| {
-                                accumulator
-                                    + self
-                                        .unroll_intermediate_value(current.clone(), constants)
-                                        .unwrap()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_number()
-                                        .unwrap()
-                            }),
+                        self.get_range_from_intermediate_value(
+                            &self.compute_node(argument, constants)?,
+                            0,
+                            usize::MAX,
+                            constants,
+                        )?
+                        .into_iter()
+                        .fold(Rational::ZERO, |accumulator, current| {
+                            accumulator
+                                + self
+                                    .unroll_intermediate_value(current.clone(), constants)
+                                    .unwrap()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_number()
+                                    .unwrap()
+                        }),
                     ))))
                 }
                 EmbeddedFunction::IsSorted(argument) => {
                     Ok(IntermediateValue::Value(Some(Value::Bool(
-                        self.compute_node(argument, constants)?
-                            .as_tuple()
-                            .unwrap()
-                            .inner
-                            .iter()
-                            .is_sorted(),
+                        self.get_range_from_intermediate_value(
+                            &self.compute_node(argument, constants)?,
+                            0,
+                            usize::MAX,
+                            constants,
+                        )?
+                        .is_sorted(),
                     ))))
                 }
                 EmbeddedFunction::StandardInput => {
@@ -803,13 +794,17 @@ impl<'a> ComputationContext<'a> {
                                     .max(0f64) as usize
                                 }
                             };
-                            result =
-                                IntermediateValue::Tuple(self.get_range_from_intermediate_value(
-                                    &std::mem::take(&mut result),
-                                    from_number,
-                                    to_number,
-                                    constants,
-                                )?)
+                            result = IntermediateValue::Tuple(List {
+                                inner: self
+                                    .get_range_from_intermediate_value(
+                                        &std::mem::take(&mut result),
+                                        from_number,
+                                        to_number,
+                                        constants,
+                                    )?
+                                    .into_iter()
+                                    .collect(),
+                            })
                         }
                     }
                 }
