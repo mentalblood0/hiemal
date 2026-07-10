@@ -263,7 +263,7 @@ impl<'a> ComputationContext<'a> {
                     while lockable_internals_write_guard.already_computed_values.len() < to {
                         self.compute_next(sequence, &mut lockable_internals_write_guard)?;
                     }
-                    let result = Ok(List {
+                    Ok(List {
                         inner: lockable_internals_write_guard
                             .already_computed_values
                             .inner
@@ -271,9 +271,7 @@ impl<'a> ComputationContext<'a> {
                             .skip(from)
                             .take(to - from)
                             .collect(),
-                    });
-                    drop(lockable_internals_write_guard);
-                    result
+                    })
                 }
             }
             IntermediateValue::Map(map) => {
@@ -309,7 +307,6 @@ impl<'a> ComputationContext<'a> {
                                 });
                         }
                     });
-                    drop(lockable_internals_read_guard);
                     (already_taken, to_compute)
                 };
                 let mut already_taken_elements_iterator = already_taken_elements.iter();
