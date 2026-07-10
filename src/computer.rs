@@ -550,7 +550,7 @@ impl<'a> ComputationContext<'a> {
         N: Iterator<Item = (Option<&'a Node>, Cow<'a, Self>)>,
     {
         let mut result = vec![IntermediateValue::default(); nodes_count];
-        let mut complex_elements = nodes_and_computation_contexts_iterator
+        let complex_elements = nodes_and_computation_contexts_iterator
             .enumerate()
             .filter_map(
                 |(element_index, (node_or_intermediate_value, computation_context))| {
@@ -589,7 +589,7 @@ impl<'a> ComputationContext<'a> {
             }
             2.. => {
                 let result_mutex = Mutex::new(result);
-                compute_prepared_nodes(&mut complex_elements, &result_mutex)?;
+                compute_prepared_nodes(&complex_elements, &result_mutex)?;
                 result_mutex.into_inner()
             }
         })
@@ -744,13 +744,13 @@ impl<'a> ComputationContext<'a> {
                         body.hash(&mut hasher);
                         hasher.finish_u128()
                     };
-                    let functions_results_cache_read_guard = self.functions_results_cache.read();
-                    if let Some(cached_function_result) =
-                        functions_results_cache_read_guard.get(&function_call_identifier)
+                    if let Some(cached_function_result) = self
+                        .functions_results_cache
+                        .read()
+                        .get(&function_call_identifier)
                     {
                         Ok(cached_function_result.clone())
                     } else {
-                        drop(functions_results_cache_read_guard);
                         let result =
                             result_computation_context.compute_node(&user_function.node)?;
                         self.functions_results_cache
