@@ -355,29 +355,11 @@ impl<'a> ComputationContext<'a> {
                     *element_to_compute_value = result[element_to_compute_index - from].clone();
                     drop(element_to_compute_value);
                 }
-                let mut waiting_for_result_indexes = vec![false; result.len()];
-                let mut results_to_wait = 0usize;
-                for (already_taken_element_index, _) in already_taken_elements.iter() {
-                    waiting_for_result_indexes[*already_taken_element_index - from] = true;
-                    results_to_wait += 1;
-                }
                 for (already_computed_value_index, already_computed_value) in
-                    already_taken_elements.iter().cycle()
+                    already_taken_elements.into_iter()
                 {
-                    let result_index = already_computed_value_index - from;
-                    if waiting_for_result_indexes[result_index]
-                        && let Some(already_computed_value_read_guard) =
-                            already_computed_value.try_read_recursive()
-                    {
-                        result[already_computed_value_index - from] =
-                            already_computed_value_read_guard.clone();
-                        drop(already_computed_value_read_guard);
-                        waiting_for_result_indexes[result_index] = false;
-                        results_to_wait -= 1;
-                        if results_to_wait == 0 {
-                            break;
-                        }
-                    }
+                    result[already_computed_value_index - from] =
+                        already_computed_value.read().clone();
                 }
                 Ok(List {
                     inner: result.into(),

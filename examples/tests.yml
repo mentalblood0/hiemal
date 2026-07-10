@@ -359,7 +359,7 @@ compute:
       found:
         from: examples/fibonacci.yml
         at: [compute, { object key: "fibonacci:" }]
-      expected: 10
+      expected: 24
   test from at default argument:
     assert equal::
       found:
