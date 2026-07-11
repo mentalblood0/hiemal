@@ -40,6 +40,12 @@ pub enum Program {
         r#as: String,
         through: Box<Program>,
     },
+    Filter {
+        filter: Box<Program>,
+        #[serde(default = "default_filter_as")]
+        r#as: String,
+        through: Box<Program>,
+    },
     Fold {
         fold: Box<Program>,
         #[serde(default = "default_fold_as")]
@@ -79,6 +85,10 @@ pub fn default_match_as() -> Option<String> {
 }
 
 pub fn default_map_as() -> String {
+    DEFAULT_ARGUMENT_NAME.to_string()
+}
+
+pub fn default_filter_as() -> String {
     DEFAULT_ARGUMENT_NAME.to_string()
 }
 
@@ -175,6 +185,8 @@ pub enum PathSegment {
     Match,
     #[serde(rename = "map")]
     Map,
+    #[serde(rename = "filter")]
+    Filter,
     #[serde(rename = "fold")]
     Fold,
     #[serde(rename = "metaprogram")]

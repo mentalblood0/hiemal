@@ -79,6 +79,7 @@ pub enum Content {
         match_constant_name_clustered_index_option: Option<usize>,
     },
     Map(Arc<Map>),
+    Filter(Arc<Filter>),
     Fold {
         fold: Box<Node>,
         fold_constant_name_clustered_index: usize,
@@ -96,6 +97,13 @@ pub struct Map {
     pub map: Box<Node>,
     pub throughs: Throughs,
     pub map_constant_name_clustered_index: usize,
+}
+
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
+pub struct Filter {
+    pub filter: Box<Node>,
+    pub throughs: Throughs,
+    pub filter_constant_name_clustered_index: usize,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

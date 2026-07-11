@@ -8,6 +8,16 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test filter lazy:
+    assert equal::
+      found:
+        from:
+          filter:
+            starting with: 1
+            next: { sum: [_, 1] }
+          through: { is sorted: [5, _] }
+        at: [[0, 3]]
+      expected: [5, 6, 7]
   test sum map:
     assert equal::
       found:
