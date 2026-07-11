@@ -10,7 +10,7 @@ use gxhash::HashMap;
 
 use crate::{
     computer::Computer,
-    containers::{Map, Set},
+    containers::{List, Map, Set},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     includes_cache::IncludesCache,
     intermediate_representation::{
@@ -447,10 +447,17 @@ impl Compiler {
         Ok(match program {
             Program::Tuple(tuple) => {
                 if tuple.is_empty() {
-                    return Err(anyhow!(
-                        "Expected non-empty tuple at {:#?}",
-                        compilation_context.path
-                    ));
+                    return Ok(NodeAndMetadata {
+                        r#type: Type::Tuple([].into()),
+                        external_constants_name_clustered_indices: BTreeSet::new(),
+                        node: Node {
+                            content: Content::Value(Some(
+                                intermediate_representation::Value::Tuple(List::default()),
+                            )),
+                        },
+                        is_pure: true,
+                        is_computable: true,
+                    });
                 }
                 let mut result_content = Vec::with_capacity(tuple.len());
                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();
