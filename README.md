@@ -6,9 +6,10 @@
 - static type checking without annotations
 - tuples, union types, heterogenous fold
 - match clause exhaustiveness checking
-- pass-by-value, parallel execution
+- pass-by-value, strings and containers are structurally shared
+- parallel execution
+- `sequence`, `map` and `filter` are lazily evaluated
 - pure user functions results caching
-- strings and containers are structurally shared
 - numbers are arbitrary size rational
 
 ## Installation
@@ -204,6 +205,17 @@ through:
         as: element from matched
         through:
           sum: [{ constant: element from matched }, 1]
+```
+
+#### filter as through
+
+```yaml
+from:
+  filter:
+    starting with: 1
+    next: { sum: [_, 1] }
+  through: { is sorted: [5, _] }
+at: [[0, 3]]
 ```
 
 #### fold as starting with accumulating in through
