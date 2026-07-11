@@ -364,7 +364,7 @@ impl<'a> ComputationContext<'a> {
                 .collect()),
             IntermediateValue::Sequence(sequence) => {
                 let lockable_internals_read_guard = sequence.lockable_internals.upgradable_read();
-                if lockable_internals_read_guard.already_computed_values.len() > to {
+                if lockable_internals_read_guard.already_computed_values.len() >= to {
                     Ok(lockable_internals_read_guard
                         .already_computed_values
                         .iter()
