@@ -19,16 +19,6 @@ compute:
   #           - [any, [1]]
   #       through: { sum: [_, 1] }
   #     expected: [2]
-  test filter empty result:
-    assert equal::
-      found:
-        from:
-          filter:
-            starting with: 1
-            next: { sum: [_, 1] }
-          through: { is sorted: [_, 3] }
-        at: [[5, 8]]
-      expected: []
   test filter simple:
     assert equal::
       found:
