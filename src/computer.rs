@@ -932,7 +932,6 @@ impl<'a> ComputationContext<'a> {
             } => {
                 let computed_match =
                     self.unroll_intermediate_value(self.compute_node(r#match, constants)?)?;
-                let match_type = Value::r#type(&computed_match);
                 let case_constants = if let Some(match_constant_name_clustered_index) =
                     match_constant_name_clustered_index_option
                 {
@@ -946,6 +945,7 @@ impl<'a> ComputationContext<'a> {
                 for case in cases {
                     match &case.condition {
                         Condition::Type(expected_type) => {
+                            let match_type = Value::r#type(&computed_match);
                             if expected_type.contains(&match_type) {
                                 return self.compute_node(&case.node, &case_constants);
                             }
