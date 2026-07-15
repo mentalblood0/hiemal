@@ -37,6 +37,7 @@ pub struct IntermediateRepresentation {
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct Node {
     pub content: Content,
+    pub r#type: Type,
 }
 
 #[repr(u8)]

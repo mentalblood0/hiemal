@@ -52,6 +52,13 @@ impl From<BTreeSet<Type>> for Type {
 }
 
 impl<'a> Type {
+    pub fn as_object(&self) -> Option<&BTreeMap<String, Type>> {
+        match self {
+            Type::Object(result) => Some(result),
+            _ => None,
+        }
+    }
+
     pub fn as_tuple_mut(&'a mut self) -> Option<&'a mut Vec<Type>> {
         match self {
             Type::Tuple(result) => Some(result),
