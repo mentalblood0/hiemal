@@ -56,7 +56,7 @@ pub struct Case {
 #[repr(u8)]
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum Content {
-    Tuple(Vec<Node>),
+    Tuple(Vec<Arc<Node>>),
     Scope {
         constants: Vec<ConstantDefinition>,
         compute: Box<Node>,
@@ -89,7 +89,7 @@ pub enum Content {
         throughs: Throughs,
     },
     Sequence(Arc<Sequence>),
-    Object(BTreeMap<String, Node>),
+    Object(BTreeMap<String, Arc<Node>>),
     Value(Option<Value>),
 }
 

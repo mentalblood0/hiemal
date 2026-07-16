@@ -33,14 +33,9 @@ static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
 });
 
 #[derive(Clone, Debug)]
-struct LazyValue {
-    node: Arc<Node>,
-    constants: Constants,
-}
-
-#[derive(Clone, Debug)]
 struct SequenceLockableInternals {
-    next_lazy_value: Option<LazyValue>,
+    next_node: Arc<Node>,
+    next_constants: Constants,
     already_computed_values: Vec<IntermediateValueAndMetadata>,
 }
 
@@ -158,6 +153,50 @@ impl Hash for Filter {
     }
 }
 
+#[derive(Clone, Debug)]
+struct LazyValue {
+    node: Arc<Node>,
+    constants: Constants,
+    computed: Arc<RwLock<Option<IntermediateValueAndMetadata>>>,
+}
+
+impl From<(Arc<Node>, Constants)> for LazyValue {
+    fn from(node_and_constants: (Arc<Node>, Constants)) -> Self {
+        Self {
+            node: node_and_constants.0,
+            constants: node_and_constants.1,
+            computed: Arc::new(RwLock::new(None)),
+        }
+    }
+}
+
+impl PartialEq for LazyValue {
+    fn eq(&self, other: &Self) -> bool {
+        (&self.node, &self.constants) == (&other.node, &other.constants)
+    }
+}
+
+impl Eq for LazyValue {}
+
+impl PartialOrd for LazyValue {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for LazyValue {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (&self.node, &self.constants).cmp(&(&other.node, &other.constants))
+    }
+}
+
+impl Hash for LazyValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.node.hash(state);
+        self.constants.hash(state);
+    }
+}
+
 #[repr(u8)]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 enum IntermediateValue {
@@ -167,6 +206,7 @@ enum IntermediateValue {
     Sequence(Sequence),
     Map(Map),
     Filter(Filter),
+    LazyValue(LazyValue),
 }
 
 impl Default for IntermediateValue {
@@ -221,6 +261,52 @@ impl Computer {
 }
 
 impl<'a> ComputationContext<'a> {
+    // fn are_equal(&self, a: &IntermediateValue, b: &IntermediateValue) -> bool {
+    //     match (a, b) {
+    //         (IntermediateValue::Value(a_value), IntermediateValue::Value(b_value)) => {
+    //             a_value == b_value
+    //         }
+    //         (
+    //             IntermediateValue::Value(Some(Value::Tuple(values))),
+    //             IntermediateValue::Tuple(intermediate_values),
+    //         )
+    //         | (
+    //             IntermediateValue::Tuple(intermediate_values),
+    //             IntermediateValue::Value(Some(Value::Tuple(values))),
+    //         ) => {intermediate_values.len() == values.len() && {
+    //             for intermediate_value in intermediate_values {
+    //                 if
+    //             }
+    //         }}
+    //         _ => false,
+    //     }
+    // }
+
+    fn compute_lazy_value(&self, lazy_value: &LazyValue) -> Result<IntermediateValueAndMetadata> {
+        let mut computed_read_guard = lazy_value.computed.upgradable_read();
+        if computed_read_guard.is_none() {
+            let result = self.compute_node(&lazy_value.node, &lazy_value.constants)?;
+            computed_read_guard
+                .with_upgraded(|computed_write_guard| *computed_write_guard = Some(result.clone()));
+            Ok(result)
+        } else {
+            Ok(computed_read_guard.clone().unwrap())
+        }
+    }
+
+    fn with_computed_lazy_value<F, R>(&self, lazy_value: &LazyValue, function: F) -> Result<R>
+    where
+        F: Fn(&IntermediateValueAndMetadata) -> Result<R>,
+    {
+        let mut computed_read_guard = lazy_value.computed.upgradable_read();
+        if computed_read_guard.is_none() {
+            let result = self.compute_node(&lazy_value.node, &lazy_value.constants)?;
+            computed_read_guard
+                .with_upgraded(|computed_write_guard| *computed_write_guard = Some(result));
+        }
+        function(computed_read_guard.as_ref().unwrap())
+    }
+
     fn compute_next_in_sequence(
         &self,
         sequence: &Sequence,
@@ -228,16 +314,13 @@ impl<'a> ComputationContext<'a> {
             SequenceLockableInternals,
         >,
     ) -> Result<()> {
-        let mut current_next_lazy_value =
-            std::mem::take(&mut lockable_internals_write_guard.next_lazy_value).unwrap();
         let next = self.compute_node(
-            &current_next_lazy_value.node,
-            &current_next_lazy_value.constants,
+            &lockable_internals_write_guard.next_node,
+            &lockable_internals_write_guard.next_constants,
         )?;
-        current_next_lazy_value.constants[sequence
+        lockable_internals_write_guard.next_constants[sequence
             .intermediate_representation_content
             .current_constant_name_clustered_index] = Some(next.clone());
-        lockable_internals_write_guard.next_lazy_value = Some(current_next_lazy_value);
         lockable_internals_write_guard
             .already_computed_values
             .push(next.clone());
@@ -282,6 +365,43 @@ impl<'a> ComputationContext<'a> {
         }
     }
 
+    fn get_by_key_from_intermediate_value(
+        &self,
+        intermediate_value_and_metadata: &IntermediateValueAndMetadata,
+        key: &str,
+    ) -> Result<Option<IntermediateValueAndMetadata>> {
+        let result_type = match &intermediate_value_and_metadata.r#type {
+            Type::Object(inner_types) => {
+                if let Some(result_type) = inner_types.get(key) {
+                    result_type.clone()
+                } else {
+                    return Ok(None);
+                }
+            }
+            _ => panic!(),
+        };
+        match &intermediate_value_and_metadata.intermediate_value {
+            IntermediateValue::Object(object) => {
+                Ok(object
+                    .inner
+                    .get(key)
+                    .map(|result| IntermediateValueAndMetadata {
+                        intermediate_value: result.clone(),
+                        r#type: result_type,
+                    }))
+            }
+            IntermediateValue::LazyValue(lazy_value) => {
+                self.with_computed_lazy_value(lazy_value, |computed_lazy_value| {
+                    self.get_by_key_from_intermediate_value(computed_lazy_value, key)
+                })
+            }
+            unexpected_value => Err(anyhow!(
+                "expected tuple, sequence, map or filter, found {:#?}",
+                unexpected_value
+            )),
+        }
+    }
+
     fn get_from_intermediate_value(
         &self,
         intermediate_value_and_metadata: &IntermediateValueAndMetadata,
@@ -289,7 +409,13 @@ impl<'a> ComputationContext<'a> {
     ) -> Result<Option<IntermediateValueAndMetadata>> {
         let element_type = match &intermediate_value_and_metadata.r#type {
             Type::Array(element_type) => *element_type.clone(),
-            Type::Tuple(elements_types) => elements_types[index].clone(),
+            Type::Tuple(elements_types) => {
+                if let Some(result_type) = elements_types.get(index) {
+                    result_type.clone()
+                } else {
+                    return Ok(None);
+                }
+            }
             _ => panic!(),
         };
         match &intermediate_value_and_metadata.intermediate_value {
@@ -375,6 +501,10 @@ impl<'a> ComputationContext<'a> {
                     intermediate_value: element,
                     r#type: element_type,
                 })),
+            IntermediateValue::LazyValue(lazy_value) => self
+                .with_computed_lazy_value(lazy_value, |computed_lazy_value| {
+                    self.get_from_intermediate_value(computed_lazy_value, index)
+                }),
             unexpected_value => Err(anyhow!(
                 "expected tuple, sequence, map or filter, found {:#?}",
                 unexpected_value
@@ -550,6 +680,11 @@ impl<'a> ComputationContext<'a> {
                 }
                 Ok(result)
             }
+            IntermediateValue::LazyValue(lazy_value) => {
+                self.with_computed_lazy_value(lazy_value, |computed_lazy_value| {
+                    self.get_range_from_intermediate_value(computed_lazy_value, from, to)
+                })
+            }
             IntermediateValue::Value(Some(Value::Tuple(list))) => Ok(list
                 .inner
                 .iter()
@@ -630,6 +765,9 @@ impl<'a> ComputationContext<'a> {
                     result
                 })))
             }
+            IntermediateValue::LazyValue(lazy_value) => self.unroll_intermediate_value(
+                self.compute_lazy_value(&lazy_value)?.intermediate_value,
+            ),
             unexpected_variant => Err(anyhow!("unexpected enum variant {unexpected_variant:#?}")),
         }
     }
@@ -740,31 +878,17 @@ impl<'a> ComputationContext<'a> {
         constants: &Constants,
     ) -> Result<IntermediateValueAndMetadata> {
         match &node.content {
-            Content::Tuple(tuple) => {
-                let computed_elements = self.compute_nodes(
-                    tuple
-                        .iter()
-                        .map(|node| (Some(node), Cow::Borrowed(constants))),
-                    tuple.len(),
-                )?;
-                let r#type = Type::Tuple(
-                    computed_elements
-                        .iter()
-                        .map(|computed_element| &computed_element.r#type)
-                        .cloned()
-                        .collect(),
-                );
-                Ok(IntermediateValueAndMetadata {
-                    intermediate_value: IntermediateValue::Tuple(List {
-                        inner: rpds::VectorSync::from_iter(
-                            computed_elements
-                                .into_iter()
-                                .map(|computed_node| computed_node.intermediate_value),
-                        ),
-                    }),
-                    r#type,
-                })
-            }
+            Content::Tuple(tuple) => Ok(IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Tuple(List {
+                    inner: rpds::VectorSync::from_iter(tuple.iter().map(|element| {
+                        IntermediateValue::LazyValue(LazyValue::from((
+                            element.clone(),
+                            constants.clone(),
+                        )))
+                    })),
+                }),
+                r#type: node.r#type.clone(),
+            }),
             Content::Scope {
                 constants: scope_constants,
                 compute,
@@ -814,11 +938,14 @@ impl<'a> ComputationContext<'a> {
                 }),
                 EmbeddedFunction::IsSorted(argument) => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(Some(Value::Bool(
-                        self.get_range_from_intermediate_value(
-                            &self.compute_node(argument, constants)?,
-                            0,
-                            usize::MAX,
+                        self.unroll_intermediate_value(
+                            self.compute_node(argument, constants)?.intermediate_value,
                         )?
+                        .unwrap()
+                        .as_tuple()
+                        .unwrap()
+                        .inner
+                        .iter()
                         .is_sorted(),
                     ))),
                     r#type: node.r#type.clone(),
@@ -965,28 +1092,15 @@ impl<'a> ComputationContext<'a> {
                             )
                         }
                         ValuePathSegment::ObjectKey(object_key) => {
-                            result = IntermediateValueAndMetadata {
-                                intermediate_value: IntermediateValue::Value(std::mem::take(
-                                    self.unroll_intermediate_value(result.intermediate_value)?
-                                        .unwrap()
-                                        .as_object_mut()
-                                        .unwrap()
-                                        .inner
-                                        .get_mut(object_key)
-                                        .unwrap(),
-                                )),
-                                r#type: result
-                                    .r#type
-                                    .as_object()
-                                    .unwrap()
-                                    .get(object_key)
-                                    .unwrap()
-                                    .clone(),
-                            }
+                            result = std::mem::take(
+                                &mut self
+                                    .get_by_key_from_intermediate_value(&result, object_key)?
+                                    .unwrap(),
+                            )
                         }
-                        ValuePathSegment::ArrayRange((from, to)) => {
-                            let from_number = match from {
-                                RangeBound::Static(Some(from)) => *from,
+                        ValuePathSegment::ArrayRange((range_from, range_to)) => {
+                            let from_number = match range_from {
+                                RangeBound::Static(Some(range_from)) => *range_from,
                                 RangeBound::Static(None) => 0,
                                 RangeBound::Dynamic(from_node) => {
                                     self.unroll_intermediate_value(
@@ -1000,8 +1114,8 @@ impl<'a> ComputationContext<'a> {
                                     .max(0f64) as usize
                                 }
                             };
-                            let to_number = match to {
-                                RangeBound::Static(Some(to)) => *to,
+                            let to_number = match range_to {
+                                RangeBound::Static(Some(range_to)) => *range_to,
                                 RangeBound::Static(None) => 0,
                                 RangeBound::Dynamic(to_node) => {
                                     self.unroll_intermediate_value(
@@ -1189,44 +1303,28 @@ impl<'a> ComputationContext<'a> {
                         intermediate_representation_content: intermediate_representation_content
                             .clone(),
                         lockable_internals: Arc::new(RwLock::new(SequenceLockableInternals {
-                            next_lazy_value: Some(LazyValue {
-                                node: intermediate_representation_content.next.clone(),
-                                constants: next_constants,
-                            }),
+                            next_node: intermediate_representation_content.next.clone(),
+                            next_constants,
                             already_computed_values: [computed_starting_with].into(),
                         })),
                     }),
                     r#type: node.r#type.clone(),
                 })
             }
-            Content::Object(object) => {
-                let computed_values = self.compute_nodes(
-                    object
-                        .values()
-                        .map(|node| (Some(node), Cow::Borrowed(constants))),
-                    object.len(),
-                )?;
-                let r#type = Type::Object(BTreeMap::from_iter(
-                    object.keys().cloned().zip(
-                        computed_values
-                            .iter()
-                            .map(|computed_value| &computed_value.r#type)
-                            .cloned(),
-                    ),
-                ));
-                Ok(IntermediateValueAndMetadata {
-                    intermediate_value: IntermediateValue::Object(containers::Map {
-                        inner: RedBlackTreeMapSync::from_iter(
-                            object.keys().cloned().zip(
-                                computed_values
-                                    .into_iter()
-                                    .map(|computed_value| computed_value.intermediate_value),
-                            ),
-                        ),
-                    }),
-                    r#type,
-                })
-            }
+            Content::Object(object) => Ok(IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Object(containers::Map {
+                    inner: RedBlackTreeMapSync::from_iter(object.iter().map(|(key, value)| {
+                        (
+                            key.clone(),
+                            IntermediateValue::LazyValue(LazyValue::from((
+                                value.clone(),
+                                constants.clone(),
+                            ))),
+                        )
+                    })),
+                }),
+                r#type: node.r#type.clone(),
+            }),
             Content::Value(value) => Ok(IntermediateValueAndMetadata {
                 intermediate_value: unsafe {
                     IntermediateValue::Value(std::mem::transmute::<

@@ -475,7 +475,7 @@ impl Compiler {
                         global_compilation_context,
                     )?;
                     result_elements_types.push(compiled_element.node.r#type.clone());
-                    result_content.push(compiled_element.node);
+                    result_content.push(Arc::new(compiled_element.node));
                     result_external_constants_name_clustered_indices
                         .append(&mut compiled_element.external_constants_name_clustered_indices);
                     is_pure &= compiled_element.is_pure;
@@ -2314,7 +2314,7 @@ impl Compiler {
                         object_key.clone(),
                         compiled_object_value.node.r#type.clone(),
                     );
-                    result_content.insert(object_key.clone(), compiled_object_value.node);
+                    result_content.insert(object_key.clone(), Arc::new(compiled_object_value.node));
                     is_pure &= compiled_object_value.is_pure;
                     is_computable &= compiled_object_value.is_computable;
                 }

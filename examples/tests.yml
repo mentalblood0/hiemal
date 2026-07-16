@@ -8,6 +8,43 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test lazy object:
+    assert equal::
+      found:
+        from:
+          first:
+            from:
+              filter:
+                starting with: 1
+                next: 1
+              through: false
+            at: [0]
+          second: 1
+        at: ["second"]
+      expected: 1
+  test lazy tuple:
+    assert equal::
+      found:
+        from:
+          - from:
+              filter:
+                starting with: 1
+                next: 1
+              through: false
+            at: [0]
+          - 1
+        at: [1]
+      expected: 1
+  test filter simple:
+    assert equal::
+      found:
+        from:
+          filter:
+            starting with: 1
+            next: { sum: [_, 1] }
+          through: { is sorted: [5, _] }
+        at: [[0, 3]]
+      expected: [5, 6, 7]
   test match sequence:
     assert equal::
       found:
@@ -29,16 +66,6 @@ compute:
   #           - [any, [1]]
   #       through: { sum: [_, 1] }
   #     expected: [2]
-  test filter simple:
-    assert equal::
-      found:
-        from:
-          filter:
-            starting with: 1
-            next: { sum: [_, 1] }
-          through: { is sorted: [5, _] }
-        at: [[0, 3]]
-      expected: [5, 6, 7]
   test sum map:
     assert equal::
       found:
