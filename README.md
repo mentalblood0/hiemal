@@ -8,7 +8,7 @@
 - match clause exhaustiveness checking
 - pass-by-value, strings and containers are structurally shared
 - parallel execution
-- lazy evaluation: arrays/tuples, objects, sequence, map and filter
+- lazy evaluation: constants, arrays/tuples, objects, sequence, map and filter
 - pure user functions results caching
 - numbers are arbitrary size rational
 
