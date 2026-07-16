@@ -159,16 +159,6 @@ struct LazyValue {
     computed: Arc<RwLock<Option<IntermediateValueAndMetadata>>>,
 }
 
-impl From<(Arc<Node>, Constants)> for LazyValue {
-    fn from(node_and_constants: (Arc<Node>, Constants)) -> Self {
-        Self {
-            node: node_and_constants.0,
-            constants: node_and_constants.1,
-            computed: Arc::new(RwLock::new(None)),
-        }
-    }
-}
-
 impl PartialEq for LazyValue {
     fn eq(&self, other: &Self) -> bool {
         (&self.node, &self.constants) == (&other.node, &other.constants)
@@ -877,7 +867,9 @@ impl<'a> ComputationContext<'a> {
         constants: &Constants,
     ) -> Result<IntermediateValue> {
         Ok(match node.content {
-            Content::EmbeddedFunctionCall { .. }
+            Content::Sequence(_)
+            | Content::Fold { .. }
+            | Content::EmbeddedFunctionCall { .. }
             | Content::UserFunctionCall { .. }
             | Content::FromAt { .. }
             | Content::Scope { .. }
