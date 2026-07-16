@@ -7,7 +7,6 @@ use anyhow::{Context, Result, anyhow};
 use dashu::Rational;
 use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
-use rpds::RedBlackTreeMapSync;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -872,23 +871,41 @@ impl<'a> ComputationContext<'a> {
         })
     }
 
+    fn compute_or_lazy(
+        &self,
+        node: &Arc<Node>,
+        constants: &Constants,
+    ) -> Result<IntermediateValue> {
+        Ok(match node.content {
+            Content::EmbeddedFunctionCall { .. }
+            | Content::UserFunctionCall { .. }
+            | Content::FromAt { .. }
+            | Content::Scope { .. }
+            | Content::Match { .. } => IntermediateValue::LazyValue(LazyValue {
+                node: node.clone(),
+                constants: constants.clone(),
+                computed: Arc::new(RwLock::new(None)),
+            }),
+            _ => self.compute_node(node, constants)?.intermediate_value,
+        })
+    }
+
     fn compute_node(
         &self,
         node: &Node,
         constants: &Constants,
     ) -> Result<IntermediateValueAndMetadata> {
         match &node.content {
-            Content::Tuple(tuple) => Ok(IntermediateValueAndMetadata {
-                intermediate_value: IntermediateValue::Tuple(List {
-                    inner: rpds::VectorSync::from_iter(tuple.iter().map(|element| {
-                        IntermediateValue::LazyValue(LazyValue::from((
-                            element.clone(),
-                            constants.clone(),
-                        )))
-                    })),
-                }),
-                r#type: node.r#type.clone(),
-            }),
+            Content::Tuple(tuple) => {
+                let mut result = List::default();
+                for element in tuple {
+                    result.push_back_mut(self.compute_or_lazy(element, constants)?);
+                }
+                Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Tuple(result),
+                    r#type: node.r#type.clone(),
+                })
+            }
             Content::Scope {
                 constants: scope_constants,
                 compute,
@@ -1311,20 +1328,18 @@ impl<'a> ComputationContext<'a> {
                     r#type: node.r#type.clone(),
                 })
             }
-            Content::Object(object) => Ok(IntermediateValueAndMetadata {
-                intermediate_value: IntermediateValue::Object(containers::Map {
-                    inner: RedBlackTreeMapSync::from_iter(object.iter().map(|(key, value)| {
-                        (
-                            key.clone(),
-                            IntermediateValue::LazyValue(LazyValue::from((
-                                value.clone(),
-                                constants.clone(),
-                            ))),
-                        )
-                    })),
-                }),
-                r#type: node.r#type.clone(),
-            }),
+            Content::Object(object) => {
+                let mut result = containers::Map::default();
+                for (key, value) in object {
+                    result
+                        .inner
+                        .insert_mut(key.clone(), self.compute_or_lazy(value, constants)?);
+                }
+                Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Object(result),
+                    r#type: node.r#type.clone(),
+                })
+            }
             Content::Value(value) => Ok(IntermediateValueAndMetadata {
                 intermediate_value: unsafe {
                     IntermediateValue::Value(std::mem::transmute::<
