@@ -144,7 +144,7 @@ pub struct UserFunction {
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct ConstantDefinition {
     pub name_clustered_index: usize,
-    pub node: Node,
+    pub node: Arc<Node>,
 }
 
 #[repr(u8)]

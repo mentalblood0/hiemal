@@ -903,17 +903,13 @@ impl<'a> ComputationContext<'a> {
                 compute,
             } => {
                 let mut result_constants = constants.clone();
-                for (constant_name_clustered_index, computed_constant) in scope_constants
-                    .iter()
-                    .map(|constant_definition| constant_definition.name_clustered_index)
-                    .zip(self.compute_nodes(
-                        scope_constants.iter().map(|constant_definition| {
-                            (Some(&constant_definition.node), Cow::Borrowed(constants))
-                        }),
-                        scope_constants.len(),
-                    )?)
-                {
-                    result_constants[constant_name_clustered_index] = Some(computed_constant);
+                for constant_definition in scope_constants {
+                    result_constants[constant_definition.name_clustered_index] =
+                        Some(IntermediateValueAndMetadata {
+                            intermediate_value: self
+                                .compute_or_lazy(&constant_definition.node, constants)?,
+                            r#type: constant_definition.node.r#type.clone(),
+                        });
                 }
                 self.compute_node(compute, &result_constants)
             }
@@ -1044,7 +1040,7 @@ impl<'a> ComputationContext<'a> {
                     .map(|constant_definition| constant_definition.name_clustered_index)
                     .zip(self.compute_nodes(
                         arguments.iter().map(|constant_definition| {
-                            (Some(&constant_definition.node), Cow::Borrowed(constants))
+                            (Some(&*constant_definition.node), Cow::Borrowed(constants))
                         }),
                         arguments.len(),
                     )?)

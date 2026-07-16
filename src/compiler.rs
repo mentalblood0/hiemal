@@ -532,7 +532,7 @@ impl Compiler {
                     constants_name_clustered_indices.push(constant_definition.name_clustered_index);
                     new_constants.push(intermediate_representation::ConstantDefinition {
                         name_clustered_index: constant_definition.name_clustered_index,
-                        node: compiled_constant.node,
+                        node: Arc::new(compiled_constant.node),
                     });
                     is_pure &= compiled_constant.is_pure;
                     is_computable &= compiled_constant.is_computable;
@@ -2170,7 +2170,7 @@ impl Compiler {
                                             intermediate_representation::ConstantDefinition {
                                                 name_clustered_index: constant_definition
                                                     .name_clustered_index,
-                                                node: compiled_constant.node,
+                                                node: Arc::new(compiled_constant.node),
                                             },
                                         );
                                         arguments_is_pure &= compiled_constant.is_pure;
