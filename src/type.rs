@@ -146,6 +146,21 @@ impl From<BTreeSet<Type>> for Type {
 }
 
 impl<'a> Type {
+    pub fn is_known(&self) -> bool {
+        match self {
+            Type::Unknown(_) => false,
+            Type::Array(element_type) => element_type.is_known(),
+            Type::Tuple(elements_types) => elements_types
+                .iter()
+                .all(|element_type| element_type.is_known()),
+            Type::Object(inner_types) => {
+                inner_types.values().all(|value_type| value_type.is_known())
+            }
+            Type::Union(union_types) => union_types.iter().all(|union_type| union_type.is_known()),
+            _ => true,
+        }
+    }
+
     pub fn as_object(&self) -> Option<&BTreeMap<String, Type>> {
         match self {
             Type::Object(result) => Some(result),

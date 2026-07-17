@@ -1210,6 +1210,13 @@ impl Compiler {
                         match_compilation_context.path
                     ));
                 }
+                if !compiled_match.node.r#type.is_known() {
+                    return Err(anyhow!(
+                        "expected match of known type, found {:#?} at {:#?}",
+                        compiled_match.node.r#type,
+                        match_compilation_context.path
+                    ));
+                }
                 let mut result_cases = Vec::new();
                 let mut result_types = BTreeSet::new();
                 let mut result_external_constants_name_clustered_indices =
