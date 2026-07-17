@@ -1,9 +1,55 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
-use serde::{Deserialize, Serialize};
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize, Serializer};
+
+#[derive(Debug, Clone)]
+pub struct MaybeType {
+    pub lockable_internals: Arc<RwLock<Option<Type>>>,
+}
+
+impl Default for MaybeType {
+    fn default() -> Self {
+        Self {
+            lockable_internals: Arc::new(RwLock::new(None)),
+        }
+    }
+}
+
+impl PartialEq for MaybeType {
+    fn eq(&self, other: &Self) -> bool {
+        *self.lockable_internals.read() == *other.lockable_internals.read()
+    }
+}
+
+impl Eq for MaybeType {}
+
+impl PartialOrd for MaybeType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MaybeType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.lockable_internals
+            .read()
+            .cmp(&*other.lockable_internals.read())
+    }
+}
+
+impl Hash for MaybeType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.lockable_internals.read().hash(state);
+    }
+}
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, Ord, Eq, Hash, PartialEq, Default)]
+#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Type {
     #[serde(rename = "number")]
     Number,
@@ -28,7 +74,55 @@ pub enum Type {
     LiteralTrue,
     #[serde(rename = "literal false")]
     LiteralFalse,
-    Unknown(usize),
+    #[serde(skip_deserializing)]
+    Unknown(MaybeType),
+}
+
+#[repr(u8)]
+#[derive(Serialize, Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum KnownType {
+    #[serde(rename = "number")]
+    Number,
+    #[serde(rename = "string")]
+    String,
+    #[serde(rename = "bool")]
+    Bool,
+    #[serde(rename = "null")]
+    Null,
+    #[serde(rename = "array")]
+    Array(Box<Type>),
+    #[serde(rename = "tuple")]
+    Tuple(Vec<Type>),
+    #[serde(rename = "object")]
+    Object(BTreeMap<String, Type>),
+    #[serde(rename = "union")]
+    Union(BTreeSet<Type>),
+    #[default]
+    #[serde(rename = "any")]
+    Any,
+    #[serde(rename = "literal true")]
+    LiteralTrue,
+    #[serde(rename = "literal false")]
+    LiteralFalse,
+}
+
+impl Serialize for Type {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Type::Unknown(maybe_type) => match &*maybe_type.lockable_internals.read() {
+                Some(r#type) => r#type.serialize(serializer),
+                None => Result::Err(serde::ser::Error::custom(
+                    "unknown type have not been resolved",
+                )),
+            },
+            known_type => unsafe {
+                std::mem::transmute::<&Type, &KnownType>(known_type).serialize(serializer)
+            },
+        }
+    }
 }
 
 impl From<BTreeSet<Type>> for Type {

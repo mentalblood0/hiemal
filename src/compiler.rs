@@ -19,7 +19,7 @@ use crate::{
     program::{
         self, AtSegment, Condition, EmbeddedFunction, Path, PathSegment, Program, RangeBound,
     },
-    r#type::Type,
+    r#type::{MaybeType, Type},
     value::Value,
 };
 
@@ -50,43 +50,25 @@ fn resolve_type(
     got_type: &Type,
     expected_type: &Type,
     compilation_context: &CompilationContext,
-    global_compilation_context: &mut GlobalCompilationContext,
 ) -> Result<Type> {
     if expected_type == &Type::Any || expected_type.contains(got_type) {
         Ok(got_type.clone())
     } else {
         match (got_type, expected_type) {
-            (Type::Unknown(got_program_index), expected_type)
-            | (expected_type, Type::Unknown(got_program_index)) => {
-                let got_maybe_compiled_program =
-                    &global_compilation_context.user_functions_definitions[*got_program_index].body;
-                let previously_resolved_type = &global_compilation_context
-                    .user_function_to_index_and_type_option
-                    .get(got_maybe_compiled_program)
-                    .unwrap()
-                    .1;
-                if let Type::Unknown(_) = previously_resolved_type {
-                    global_compilation_context
-                        .user_function_to_index_and_type_option
-                        .get_mut(got_maybe_compiled_program)
-                        .unwrap()
-                        .1 = expected_type.clone();
-                    Ok(expected_type.clone())
-                } else {
-                    if previously_resolved_type != expected_type {
-                        return Err(
-                            compilation_context.error(previously_resolved_type, expected_type)
-                        );
+            (Type::Unknown(unknown_type), expected_type)
+            | (expected_type, Type::Unknown(unknown_type)) => {
+                let mut unknown_type_write_guard = unknown_type.lockable_internals.write();
+                match &*unknown_type_write_guard {
+                    Some(got_type) => resolve_type(got_type, expected_type, compilation_context),
+                    None => {
+                        *unknown_type_write_guard = Some(expected_type.clone());
+                        Ok(expected_type.clone())
                     }
-                    Ok(previously_resolved_type.clone())
                 }
             }
-            (Type::Array(got_element_type), Type::Array(expected_element_type)) => resolve_type(
-                got_element_type,
-                expected_element_type,
-                compilation_context,
-                global_compilation_context,
-            ),
+            (Type::Array(got_element_type), Type::Array(expected_element_type)) => {
+                resolve_type(got_element_type, expected_element_type, compilation_context)
+            }
             (Type::Array(got_element_type), Type::Tuple(expected_elements_types)) => {
                 let mut result_union_types = BTreeSet::new();
                 for expected_element_type in expected_elements_types {
@@ -94,7 +76,6 @@ fn resolve_type(
                         got_element_type,
                         expected_element_type,
                         compilation_context,
-                        global_compilation_context,
                     )?);
                 }
                 Ok(Type::Array(Box::new(Type::from(result_union_types))))
@@ -106,7 +87,6 @@ fn resolve_type(
                         got_element_type,
                         expected_element_type,
                         compilation_context,
-                        global_compilation_context,
                     )?);
                 }
                 Ok(Type::Tuple(result_tuple_types))
@@ -117,12 +97,7 @@ fn resolve_type(
                     if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
                         result_inner_types.insert(
                             expected_value_key.clone(),
-                            resolve_type(
-                                got_value_type,
-                                expected_value_type,
-                                compilation_context,
-                                global_compilation_context,
-                            )?,
+                            resolve_type(got_value_type, expected_value_type, compilation_context)?,
                         );
                     } else {
                         return Err(compilation_context.error(got_type, expected_type));
@@ -140,7 +115,6 @@ fn resolve_type(
                                 one_of_got_types,
                                 one_of_expected_types,
                                 compilation_context,
-                                global_compilation_context,
                             ) {
                                 result_union_types.insert(result_union_type);
                                 found = true;
@@ -161,7 +135,6 @@ fn resolve_type(
                         one_of_got_types,
                         expected_type,
                         compilation_context,
-                        global_compilation_context,
                     )?);
                 }
                 Ok(Type::Union(result_union_types))
@@ -169,12 +142,9 @@ fn resolve_type(
             (got_type, Type::Union(expected_union_types)) => {
                 if !expected_union_types.contains(expected_type) {
                     for one_of_expected_types in expected_union_types {
-                        if let Ok(result_type) = resolve_type(
-                            got_type,
-                            one_of_expected_types,
-                            compilation_context,
-                            global_compilation_context,
-                        ) {
+                        if let Ok(result_type) =
+                            resolve_type(got_type, one_of_expected_types, compilation_context)
+                        {
                             return Ok(result_type);
                         }
                     }
@@ -945,7 +915,6 @@ impl Compiler {
                         &compiled_argument.node.r#type,
                         &Type::Array(Box::new(Type::Number)),
                         compilation_context,
-                        global_compilation_context,
                     )?;
                     NodeAndMetadata {
                         external_constants_name_clustered_indices: compiled_argument
@@ -986,7 +955,6 @@ impl Compiler {
                         &compiled_argument.node.r#type,
                         &Type::Array(Box::new(Type::Any)),
                         compilation_context,
-                        global_compilation_context,
                     )?;
                     NodeAndMetadata {
                         external_constants_name_clustered_indices: compiled_argument
@@ -1046,7 +1014,6 @@ impl Compiler {
                         &compiled_argument.node.r#type,
                         &Type::String,
                         &argument_compilation_context,
-                        global_compilation_context,
                     )?;
                     NodeAndMetadata {
                         external_constants_name_clustered_indices: compiled_argument
@@ -1133,7 +1100,6 @@ impl Compiler {
                         &compiled_argument.node.r#type,
                         &Type::Array(Box::new(Type::Array(Box::new(Type::Any)))),
                         compilation_context,
-                        global_compilation_context,
                     )?;
                     let result_type = match compiled_argument_resolved_type.weakest_from_union() {
                         Type::Tuple(argument_tuple_types) => {
@@ -1942,7 +1908,6 @@ impl Compiler {
                             &compiled_through.node.r#type,
                             &starting_with_type,
                             &through_compilation_context,
-                            global_compilation_context,
                         )?;
                         result_external_constants_name_clustered_indices
                             .extend(compiled_through.external_constants_name_clustered_indices);
@@ -2044,7 +2009,6 @@ impl Compiler {
                     &compiled_next.node.r#type,
                     &starting_with_type,
                     &next_compilation_context,
-                    global_compilation_context,
                 )?;
                 let mut while_compilation_context = compilation_context.clone();
                 while_compilation_context
@@ -2188,7 +2152,7 @@ impl Compiler {
                                         global_compilation_context
                                             .user_function_to_index_and_type_option
                                             .get(&function_body_as_maybe_compiled_program)
-                                            .unwrap();
+                                            .unwrap(); // in different contexts the same function return type may be not the same, here this would mean polymorphic recursion which is not supported
                                     return Ok(NodeAndMetadata {
                                         external_constants_name_clustered_indices: BTreeSet::new(),
                                         node: Node {
@@ -2218,29 +2182,13 @@ impl Compiler {
                                         .user_function_to_index_and_type_option
                                         .insert(
                                             function_body_as_maybe_compiled_program.clone(),
-                                            (function_index, Type::Unknown(function_index)),
+                                            (function_index, Type::Unknown(MaybeType::default())),
                                         );
                                     let mut compiled_function = self.compile_with_context(
                                         function_body,
                                         &body_compilation_context,
                                         global_compilation_context,
                                     )?;
-                                    global_compilation_context
-                                        .user_function_to_index_and_type_option
-                                        .get_mut(&function_body_as_maybe_compiled_program)
-                                        .unwrap()
-                                        .1 = compiled_function.node.r#type.clone();
-                                    global_compilation_context
-                                        .user_function_to_index_and_type_option
-                                        .insert(
-                                            MaybeCompiledProgram {
-                                                program: function_body_as_maybe_compiled_program
-                                                    .program
-                                                    .clone(),
-                                                node: Some(compiled_function.node.clone()),
-                                            },
-                                            (function_index, compiled_function.node.r#type.clone()),
-                                        );
                                     global_compilation_context.user_functions_definitions
                                         [function_index] = UserFunctionCallDefinition {
                                         external_constants_name_clustered_indices: Vec::from_iter(
