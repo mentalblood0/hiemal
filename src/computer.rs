@@ -156,7 +156,7 @@ impl Hash for Filter {
 struct LazyValue {
     node: Arc<Node>,
     constants: Constants,
-    computed: Arc<RwLock<Option<IntermediateValueAndMetadata>>>,
+    computed: Arc<Mutex<Option<IntermediateValueAndMetadata>>>,
 }
 
 impl PartialEq for LazyValue {
@@ -251,14 +251,13 @@ impl Computer {
 
 impl<'a> ComputationContext<'a> {
     fn compute_lazy_value(&self, lazy_value: &LazyValue) -> Result<IntermediateValueAndMetadata> {
-        let mut computed_read_guard = lazy_value.computed.upgradable_read();
-        if computed_read_guard.is_none() {
+        let mut computed_lock = lazy_value.computed.lock();
+        if computed_lock.is_none() {
             let result = self.compute_node(&lazy_value.node, &lazy_value.constants)?;
-            computed_read_guard
-                .with_upgraded(|computed_write_guard| *computed_write_guard = Some(result.clone()));
+            *computed_lock = Some(result.clone());
             Ok(result)
         } else {
-            Ok(computed_read_guard.clone().unwrap())
+            Ok(computed_lock.clone().unwrap())
         }
     }
 
@@ -266,13 +265,12 @@ impl<'a> ComputationContext<'a> {
     where
         F: Fn(&IntermediateValueAndMetadata) -> Result<R>,
     {
-        let mut computed_read_guard = lazy_value.computed.upgradable_read();
-        if computed_read_guard.is_none() {
+        let mut computed_lock = lazy_value.computed.lock();
+        if computed_lock.is_none() {
             let result = self.compute_node(&lazy_value.node, &lazy_value.constants)?;
-            computed_read_guard
-                .with_upgraded(|computed_write_guard| *computed_write_guard = Some(result));
+            *computed_lock = Some(result);
         }
-        function(computed_read_guard.as_ref().unwrap())
+        function(computed_lock.as_ref().unwrap())
     }
 
     fn compute_next_in_sequence(
@@ -902,7 +900,7 @@ impl<'a> ComputationContext<'a> {
             | Content::Match { .. } => IntermediateValue::LazyValue(LazyValue {
                 node: node.clone(),
                 constants: constants.clone(),
-                computed: Arc::new(RwLock::new(None)),
+                computed: Arc::new(Mutex::new(None)),
             }),
             _ => self.compute_node(node, constants)?.intermediate_value,
         })
