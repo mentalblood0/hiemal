@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::{hash::Hash, rc::Rc};
+use std::{hash::Hash, sync::Arc};
 
 use anyhow::{Context, Result, anyhow};
 use glob::glob;
@@ -9,7 +9,7 @@ use crate::program::{DefaultArgument, From, Program};
 
 pub struct IncludesCache {
     pub directory: std::path::PathBuf,
-    pub source_to_program: HashMap<From, Rc<Program>>,
+    pub source_to_program: HashMap<From, Arc<Program>>,
 }
 
 impl Default for IncludesCache {
@@ -34,7 +34,7 @@ impl IncludesCache {
         Ok(())
     }
 
-    fn get_from_disk(&mut self, from: &From) -> Result<Option<Rc<Program>>> {
+    fn get_from_disk(&mut self, from: &From) -> Result<Option<Arc<Program>>> {
         let source_hash = self.source_hash(from);
         if let Some(Ok(path)) = glob(&format!(
             "{}.*",
@@ -53,7 +53,7 @@ impl IncludesCache {
                 .unwrap()
                 .as_str()
             {
-                "yml" | "yaml" => serde_saphyr::from_str::<Rc<Program>>(&result_text)?,
+                "yml" | "yaml" => serde_saphyr::from_str::<Arc<Program>>(&result_text)?,
                 _ => return Ok(None),
             };
             self.source_to_program.insert(from.clone(), result.clone());
@@ -72,9 +72,9 @@ impl IncludesCache {
         hasher.finish_u128()
     }
 
-    pub fn get(&mut self, from: &From) -> Result<Rc<Program>> {
+    pub fn get(&mut self, from: &From) -> Result<Arc<Program>> {
         match from {
-            From::DefaultArgument(_) => Ok(Rc::new(Program::DefaultArgument(
+            From::DefaultArgument(_) => Ok(Arc::new(Program::DefaultArgument(
                 DefaultArgument::Underline,
             ))),
             From::Url(url) => {
@@ -157,7 +157,7 @@ impl IncludesCache {
                                     .with_context(|| "Can not read body of response from {url}")?;
                                 let result = match extension {
                                     "yaml" | "yml" => {
-                                        serde_saphyr::from_str::<Rc<Program>>(&result_text)?
+                                        serde_saphyr::from_str::<Arc<Program>>(&result_text)?
                                     }
                                     unsupported_extension => {
                                         return Err(anyhow!(

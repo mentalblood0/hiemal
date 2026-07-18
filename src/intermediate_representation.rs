@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 
 use crate::{
-    containers::{self, List},
+    containers::{self, Vector},
     program::Path,
     r#type::Type,
 };
@@ -23,8 +23,8 @@ pub enum Value {
         ropey::Rope,
     ),
     Bool(bool),
-    Tuple(List<Option<Value>>),
-    Object(containers::Map<String, Option<Value>>),
+    Tuple(Vector<Option<Value>>),
+    Object(containers::Object<String, Option<Value>>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
@@ -89,8 +89,8 @@ pub enum Content {
         throughs: Throughs,
     },
     Sequence(Arc<Sequence>),
-    Object(BTreeMap<String, Arc<Node>>),
-    Value(Option<Value>),
+    Object(BTreeMap<Arc<String>, Arc<Node>>),
+    Value(Arc<Option<Value>>),
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

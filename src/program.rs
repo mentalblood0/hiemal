@@ -1,10 +1,10 @@
-use std::{collections::BTreeMap, rc::Rc};
+use std::{collections::BTreeMap, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{
-    containers::List, default_argument_name::DEFAULT_ARGUMENT_NAME, r#type::Type, value::Value,
+    containers::Vector, default_argument_name::DEFAULT_ARGUMENT_NAME, r#type::Type, value::Value,
 };
 
 #[repr(u8)]
@@ -14,13 +14,13 @@ pub enum Program {
     Tuple(Vec<Program>),
     Scope {
         #[serde(default)]
-        functions: BTreeMap<String, Rc<Program>>,
+        functions: BTreeMap<Arc<String>, Arc<Program>>,
         #[serde(default)]
-        constants: BTreeMap<String, Rc<Program>>,
-        compute: Rc<Program>,
+        constants: BTreeMap<Arc<String>, Arc<Program>>,
+        compute: Arc<Program>,
     },
     Constant {
-        constant: String,
+        constant: Arc<String>,
     },
     DefaultArgument(DefaultArgument),
     FromAt {
@@ -31,31 +31,31 @@ pub enum Program {
     Match {
         r#match: Box<Program>,
         #[serde(default = "default_match_as")]
-        r#as: Option<String>,
+        r#as: Option<Arc<String>>,
         cases: Vec<(Condition, Program)>,
     },
     Map {
         map: Box<Program>,
         #[serde(default = "default_map_as")]
-        r#as: String,
+        r#as: Arc<String>,
         through: Box<Program>,
     },
     Filter {
         filter: Box<Program>,
         #[serde(default = "default_filter_as")]
-        r#as: String,
+        r#as: Arc<String>,
         through: Box<Program>,
     },
     Fold {
         fold: Box<Program>,
         #[serde(default = "default_fold_as")]
-        r#as: String,
+        r#as: Arc<String>,
         #[serde(default = "default_starting_with")]
         #[serde(rename = "starting with")]
         starting_with: Box<Program>,
         #[serde(default = "default_accumulating_in")]
         #[serde(rename = "accumulating in")]
-        accumulating_in: String,
+        accumulating_in: Arc<String>,
         through: Box<Program>,
     },
     Metaprogram {
@@ -65,39 +65,39 @@ pub enum Program {
         #[serde(rename = "starting with")]
         starting_with: Box<Program>,
         #[serde(default = "default_sequence_as")]
-        r#as: String,
+        r#as: Arc<String>,
         next: Box<Program>,
     },
-    Object(BTreeMap<String, Program>),
-    Value(Option<Value>),
+    Object(BTreeMap<Arc<String>, Arc<Program>>),
+    Value(Arc<Option<Value>>),
 }
 
-pub fn default_accumulating_in() -> String {
-    "accumulator".to_string()
+pub fn default_accumulating_in() -> Arc<String> {
+    "accumulator".to_string().into()
 }
 
 pub fn default_starting_with() -> Box<Program> {
-    Box::new(Program::Value(None))
+    Box::new(Program::Value(Arc::new(None)))
 }
 
-pub fn default_match_as() -> Option<String> {
-    None
+pub fn default_match_as() -> Option<Arc<String>> {
+    None.into()
 }
 
-pub fn default_map_as() -> String {
-    DEFAULT_ARGUMENT_NAME.to_string()
+pub fn default_map_as() -> Arc<String> {
+    DEFAULT_ARGUMENT_NAME.to_string().into()
 }
 
-pub fn default_filter_as() -> String {
-    DEFAULT_ARGUMENT_NAME.to_string()
+pub fn default_filter_as() -> Arc<String> {
+    DEFAULT_ARGUMENT_NAME.to_string().into()
 }
 
-pub fn default_fold_as() -> String {
-    "current".to_string()
+pub fn default_fold_as() -> Arc<String> {
+    "current".to_string().into()
 }
 
-pub fn default_sequence_as() -> String {
-    DEFAULT_ARGUMENT_NAME.to_string()
+pub fn default_sequence_as() -> Arc<String> {
+    DEFAULT_ARGUMENT_NAME.to_string().into()
 }
 
 #[repr(u8)]
@@ -122,7 +122,7 @@ pub enum From {
     DefaultArgument(DefaultArgument),
     Url(Url),
     File(std::path::PathBuf),
-    Program(Rc<Program>),
+    Program(Arc<Program>),
 }
 
 #[repr(u8)]
@@ -151,7 +151,7 @@ pub enum AtSegment {
 
 impl Default for Program {
     fn default() -> Self {
-        Self::Value(None)
+        Self::Value(Arc::new(None))
     }
 }
 
@@ -209,13 +209,13 @@ pub enum PathSegment {
     #[serde(rename = "functions")]
     Functions,
     #[serde(rename = "function")]
-    Function(String),
+    Function(Arc<String>),
     #[serde(rename = "constants")]
     Constants,
     #[serde(rename = "constant")]
-    Constant(String),
+    Constant(Arc<String>),
     #[serde(rename = "argument")]
-    Argument(String),
+    Argument(Arc<String>),
     #[serde(rename = "if")]
     If,
     #[serde(rename = "then")]
@@ -235,17 +235,10 @@ pub enum PathSegment {
     #[serde(rename = "flatten")]
     Flatten,
     #[serde(rename = "user function call")]
-    UserFunctionCall(String),
+    UserFunctionCall(Arc<String>),
     #[serde(rename = "object key")]
-    ObjectKey(String),
+    ObjectKey(Arc<String>),
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Hash)]
-pub struct Path(pub List<PathSegment>);
-
-impl std::fmt::Debug for Path {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let collected: Vec<&PathSegment> = self.0.inner.iter().collect();
-        f.debug_tuple("Path").field(&collected).finish()
-    }
-}
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Hash, Debug)]
+pub struct Path(pub Vector<PathSegment>);

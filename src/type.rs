@@ -64,7 +64,7 @@ pub enum Type {
     #[serde(rename = "tuple")]
     Tuple(Vec<Type>),
     #[serde(rename = "object")]
-    Object(BTreeMap<String, Type>),
+    Object(BTreeMap<Arc<String>, Type>),
     #[serde(rename = "union")]
     Union(BTreeSet<Type>),
     #[default]
@@ -94,7 +94,7 @@ pub enum KnownType {
     #[serde(rename = "tuple")]
     Tuple(Vec<Type>),
     #[serde(rename = "object")]
-    Object(BTreeMap<String, Type>),
+    Object(BTreeMap<Arc<String>, Type>),
     #[serde(rename = "union")]
     Union(BTreeSet<Type>),
     #[default]
@@ -161,7 +161,7 @@ impl<'a> Type {
         }
     }
 
-    pub fn as_object(&self) -> Option<&BTreeMap<String, Type>> {
+    pub fn as_object(&self) -> Option<&BTreeMap<Arc<String>, Type>> {
         match self {
             Type::Object(result) => Some(result),
             _ => None,

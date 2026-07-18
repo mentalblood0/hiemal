@@ -8,7 +8,7 @@ use serde::{
 };
 
 use crate::{
-    containers::{List, Map},
+    containers::{Object, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     r#type::Type,
 };
@@ -40,8 +40,8 @@ pub enum Value {
     )]
     String(ropey::Rope),
     Bool(bool),
-    Tuple(List<Option<Value>>),
-    Object(Map<String, Option<Value>>),
+    Tuple(Vector<Option<Value>>),
+    Object(Object<String, Option<Value>>),
 }
 
 impl Default for Value {
@@ -136,28 +136,28 @@ impl Value {
         }
     }
 
-    pub fn as_tuple(&self) -> Option<&List<Option<Value>>> {
+    pub fn as_tuple(&self) -> Option<&Vector<Option<Value>>> {
         match self {
             Value::Tuple(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_tuple_mut(&mut self) -> Option<&mut List<Option<Value>>> {
+    pub fn as_tuple_mut(&mut self) -> Option<&mut Vector<Option<Value>>> {
         match self {
             Value::Tuple(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_object(&self) -> Option<&Map<String, Option<Value>>> {
+    pub fn as_object(&self) -> Option<&Object<String, Option<Value>>> {
         match self {
             Value::Object(result) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_object_mut(&mut self) -> Option<&mut Map<String, Option<Value>>> {
+    pub fn as_object_mut(&mut self) -> Option<&mut Object<String, Option<Value>>> {
         match self {
             Value::Object(result) => Some(result),
             _ => None,
@@ -171,10 +171,11 @@ impl Value {
                 Value::String(_) => Type::String,
                 Value::Bool(true) => Type::LiteralTrue,
                 Value::Bool(false) => Type::LiteralFalse,
-                Value::Tuple(tuple) => Type::Tuple(tuple.inner.iter().map(Value::r#type).collect()),
+                Value::Tuple(tuple) => {
+                    Type::Tuple(tuple.iter().map(|element| Value::r#type(element)).collect())
+                }
                 Value::Object(object) => Type::Object(BTreeMap::from_iter(
                     object
-                        .inner
                         .iter()
                         .map(|(key, value)| (key.clone(), Value::r#type(value))),
                 )),

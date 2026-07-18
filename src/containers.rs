@@ -1,46 +1,59 @@
-use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
-    de::{SeqAccess, Visitor},
-    ser::SerializeSeq,
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
 };
-use std::fmt;
-use std::marker::PhantomData;
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Debug, Hash)]
 #[serde(transparent)]
-pub struct Map<K, V>
+pub struct Object<K, V>
 where
     K: Ord + Clone,
     V: Clone,
 {
-    pub inner: rpds::RedBlackTreeMapSync<K, V>,
+    inner: BTreeMap<Arc<K>, Arc<V>>,
 }
 
-impl<K, V> Map<K, V>
+impl<K, V> Object<K, V>
 where
     K: Ord + Clone,
     V: Clone,
 {
-    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn from_iter(iterator: impl Iterator<Item = (Arc<K>, Arc<V>)>) -> Self {
+        Self {
+            inner: BTreeMap::from_iter(iterator),
+        }
+    }
+
+    pub fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
+        self.inner.insert(key, value);
+    }
+
+    pub fn get(&self, key: &K) -> Option<&Arc<V>> {
+        self.inner.get(key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&Arc<K>, &Arc<V>)> {
         self.inner.iter()
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &Arc<K>> {
+        self.inner.keys()
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &Arc<V>> {
+        self.inner.values()
     }
 
     pub fn extend<A>(&mut self, addition: A)
     where
-        A: IntoIterator<Item = (K, V)>,
+        A: Iterator<Item = (Arc<K>, Arc<V>)>,
     {
-        for (key, value) in addition {
-            self.inner.insert_mut(key, value);
-        }
-    }
-
-    pub fn extended<A>(&self, addition: A) -> Self
-    where
-        A: IntoIterator<Item = (K, V)>,
-    {
-        let mut result = self.clone();
-        result.extend(addition);
-        result
+        self.inner.extend(addition);
     }
 }
 
@@ -50,142 +63,118 @@ pub struct Set<V>
 where
     V: Ord + Clone,
 {
-    pub inner: rpds::RedBlackTreeSetSync<V>,
+    inner: BTreeSet<Arc<V>>,
 }
 
 impl<V> Set<V>
 where
     V: Ord + Clone,
 {
-    pub fn extend<A>(&mut self, addition: A)
-    where
-        A: IntoIterator<Item = V>,
-    {
-        for value in addition {
-            self.inner.insert_mut(value);
-        }
+    pub fn contains(&self, value: &V) -> bool {
+        self.inner.contains(value)
     }
 
-    pub fn extended<A>(&self, addition: A) -> Self
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn insert(&mut self, value: Arc<V>) {
+        self.inner.insert(value);
+    }
+
+    pub fn extend<A>(&mut self, addition: A)
     where
-        A: IntoIterator<Item = V>,
+        A: IntoIterator<Item = Arc<V>>,
     {
-        let mut result = self.clone();
-        result.extend(addition);
-        result
+        for value in addition {
+            self.inner.insert(value);
+        }
     }
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
-pub struct List<V>
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Vector<V>
 where
     V: Ord + Clone + 'static,
 {
-    pub inner: rpds::VectorSync<V>,
+    pub inner: Vec<Arc<V>>,
 }
 
-impl<V> List<V>
+impl<V> Vector<V>
 where
     V: Ord + Clone,
 {
+    pub fn from_iter(iterator: impl Iterator<Item = Arc<V>>) -> Self {
+        Self {
+            inner: Vec::from_iter(iterator),
+        }
+    }
+
+    pub fn set(&mut self, index: usize, value: Arc<V>) {
+        self.inner[index] = value
+    }
+
     pub fn len(&self) -> usize {
         self.inner.len()
+    }
+
+    pub fn append(&mut self, iterator: impl Iterator<Item = Arc<V>>) {
+        for new_element in iterator {
+            self.inner.push(new_element);
+        }
+    }
+
+    pub fn get(&self, index: usize) -> Option<&Arc<V>> {
+        self.inner.get(index)
     }
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &V> {
+    pub fn iter(&self) -> impl Iterator<Item = &Arc<V>> {
         self.inner.iter()
     }
 
-    pub fn push_back_mut(&mut self, value: V) {
-        self.inner.push_back_mut(value);
+    pub fn into_iter(self) -> impl Iterator<Item = Arc<V>> {
+        self.inner.into_iter()
     }
 
-    pub fn append_mut(&mut self, other: Self) {
-        for element in other.inner.iter() {
-            self.inner.push_back_mut(element.clone());
-        }
+    pub fn push(&mut self, value: Arc<V>) {
+        self.inner.push(value);
     }
 
     pub fn extend<A>(&mut self, addition: A)
     where
-        A: IntoIterator<Item = V>,
+        A: IntoIterator<Item = Arc<V>>,
     {
         for value in addition {
-            self.inner.push_back_mut(value);
+            self.inner.push(value);
         }
     }
 
     pub fn extended<A>(&self, addition: A) -> Self
     where
-        A: IntoIterator<Item = V>,
+        A: IntoIterator<Item = Arc<V>>,
     {
         let mut result = self.clone();
         result.extend(addition);
         result
     }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            inner: Vec::with_capacity(capacity),
+        }
+    }
 }
 
-impl<V> Default for List<V>
+impl<V> Default for Vector<V>
 where
     V: Ord + Clone + 'static,
 {
     fn default() -> Self {
-        Self {
-            inner: rpds::VectorSync::default(),
-        }
-    }
-}
-
-impl<V> Serialize for List<V>
-where
-    V: Ord + Clone + Serialize + 'static,
-{
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut result = serializer.serialize_seq(Some(self.len()))?;
-        for element in self.iter() {
-            result.serialize_element(element)?;
-        }
-        result.end()
-    }
-}
-
-impl<'de, V> Deserialize<'de> for List<V>
-where
-    V: Ord + Clone + Deserialize<'de> + 'static,
-{
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct VectorVisitor<V> {
-            marker: PhantomData<V>,
-        }
-
-        impl<'de, V: Deserialize<'de>> Visitor<'de> for VectorVisitor<V>
-        where
-            V: Ord + Clone + 'static,
-        {
-            type Value = List<V>;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a sequence")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                let mut result = List::default();
-                while let Some(element) = seq.next_element()? {
-                    result.push_back_mut(element);
-                }
-                Ok(result)
-            }
-        }
-
-        deserializer.deserialize_seq(VectorVisitor {
-            marker: PhantomData,
-        })
+        Self { inner: Vec::new() }
     }
 }
