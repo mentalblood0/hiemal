@@ -6,7 +6,7 @@
 - static type checking without annotations
 - tuples, union types, heterogenous fold
 - match clause exhaustiveness checking
-- pass-by-value, strings and containers are structurally shared
+- pass-by-value, strings and containers are cheap to clone
 - parallel execution
 - lazy evaluation: constants, arrays/tuples, objects, sequence, map and filter
 - pure user functions results caching
