@@ -250,27 +250,6 @@ impl Computer {
 }
 
 impl<'a> ComputationContext<'a> {
-    // fn are_equal(&self, a: &IntermediateValue, b: &IntermediateValue) -> bool {
-    //     match (a, b) {
-    //         (IntermediateValue::Value(a_value), IntermediateValue::Value(b_value)) => {
-    //             a_value == b_value
-    //         }
-    //         (
-    //             IntermediateValue::Value(Some(Value::Tuple(values))),
-    //             IntermediateValue::Tuple(intermediate_values),
-    //         )
-    //         | (
-    //             IntermediateValue::Tuple(intermediate_values),
-    //             IntermediateValue::Value(Some(Value::Tuple(values))),
-    //         ) => {intermediate_values.len() == values.len() && {
-    //             for intermediate_value in intermediate_values {
-    //                 if
-    //             }
-    //         }}
-    //         _ => false,
-    //     }
-    // }
-
     fn compute_lazy_value(&self, lazy_value: &LazyValue) -> Result<IntermediateValueAndMetadata> {
         let mut computed_read_guard = lazy_value.computed.upgradable_read();
         if computed_read_guard.is_none() {
@@ -693,30 +672,120 @@ impl<'a> ComputationContext<'a> {
         }
     }
 
+    fn process_in_parallel<I, F, O>(
+        &self,
+        mut input: &[(usize, I)],
+        function: &F,
+        output: &Mutex<Vec<O>>,
+    ) -> Result<()>
+    where
+        I: Send + Sync + Clone,
+        F: Fn(I) -> Result<O> + Send + Sync,
+        O: Send + Sync,
+    {
+        while !input.is_empty()
+            && (input.len() < 2 || {
+                let mut threads_left_to_spawn_lock_guard = THREADS_LEFT_TO_SPAWN.lock();
+                if *threads_left_to_spawn_lock_guard == 0u8 {
+                    true
+                } else {
+                    *threads_left_to_spawn_lock_guard -= 1;
+                    false
+                }
+            })
+        {
+            if input.len() == 1 {
+                let (element_index, input_element) = input[0].clone();
+                let node_result = function(input_element)?;
+                output.lock()[element_index] = node_result;
+                return Ok(());
+            } else {
+                let left_half = input.split_off(..input.len().div_ceil(2)).unwrap();
+                for (element_index, input_element) in left_half.iter().cloned() {
+                    let node_result = function(input_element)?;
+                    output.lock()[element_index] = node_result;
+                }
+            }
+        }
+        if !input.is_empty() {
+            let left_half = input.split_off(..input.len().div_ceil(2)).unwrap();
+            let (left_half_result, right_half_result) = std::thread::scope(|scope| {
+                let left_half_join_handle =
+                    scope.spawn(|| self.process_in_parallel(left_half, function, output));
+                let right_half_result = self.process_in_parallel(input, function, output);
+                let left_half_result = left_half_join_handle
+                    .join()
+                    .map_err(|error| anyhow!("Thread panicked: {error:?}"));
+                *THREADS_LEFT_TO_SPAWN.lock() += 1;
+                (left_half_result, right_half_result)
+            });
+            left_half_result??;
+            right_half_result?;
+        }
+        Ok(())
+    }
+
+    fn unroll_intermediate_values<I>(
+        &self,
+        intermediate_values_iterator: I,
+        intermediate_values_count: usize,
+    ) -> Result<Vec<Option<Value>>>
+    where
+        I: Iterator<Item = IntermediateValue>,
+    {
+        let mut result = vec![None; intermediate_values_count];
+        let complex_elements = intermediate_values_iterator
+            .enumerate()
+            .filter_map(
+                |(element_index, intermediate_value)| match intermediate_value {
+                    IntermediateValue::Value(value) => {
+                        result[element_index] = value;
+                        None
+                    }
+                    _ => Some((element_index, intermediate_value)),
+                },
+            )
+            .collect::<Vec<_>>();
+        Ok(match complex_elements.len() {
+            0 => result,
+            1 => {
+                let (element_index, intermediate_value) =
+                    complex_elements.into_iter().next().unwrap();
+                result[element_index] = self.unroll_intermediate_value(intermediate_value)?;
+                result
+            }
+            2.. => {
+                let result_mutex = Mutex::new(result);
+                self.process_in_parallel(
+                    &complex_elements,
+                    &|intermediate_value| self.unroll_intermediate_value(intermediate_value),
+                    &result_mutex,
+                )?;
+                result_mutex.into_inner()
+            }
+        })
+    }
+
     fn unroll_intermediate_value(
         &self,
         intermediate_value: IntermediateValue,
     ) -> Result<Option<Value>> {
         match intermediate_value {
             IntermediateValue::Value(result) => Ok(result),
-            IntermediateValue::Tuple(intermediate_values_list) => {
-                let mut result = List::default();
-                for intermediate_value in intermediate_values_list.inner.into_iter() {
-                    result
-                        .push_back_mut(self.unroll_intermediate_value(intermediate_value.clone())?);
-                }
-                Ok(Some(Value::Tuple(result)))
-            }
-            IntermediateValue::Object(object) => {
-                let mut result = containers::Map::default();
-                for (key, intermediate_value) in object.inner.into_iter() {
-                    result.inner.insert_mut(
-                        key.clone(),
-                        self.unroll_intermediate_value(intermediate_value.clone())?,
-                    );
-                }
-                Ok(Some(Value::Object(result)))
-            }
+            IntermediateValue::Tuple(intermediate_values_list) => Ok(Some(Value::Tuple(List {
+                inner: rpds::Vector::from_iter(self.unroll_intermediate_values(
+                    intermediate_values_list.inner.iter().cloned(),
+                    intermediate_values_list.len(),
+                )?),
+            }))),
+            IntermediateValue::Object(object) => Ok(Some(Value::Object(containers::Map {
+                inner: rpds::RedBlackTreeMapSync::from_iter(object.inner.keys().cloned().zip(
+                    self.unroll_intermediate_values(
+                        object.inner.values().cloned(),
+                        object.inner.size(),
+                    )?,
+                )),
+            }))),
             IntermediateValue::Map(map) => {
                 let computed_map_range =
                     self.get_range_from_intermediate_value(&map.computed_map, 0, usize::MAX)?;
@@ -759,53 +828,6 @@ impl<'a> ComputationContext<'a> {
             ),
             unexpected_variant => Err(anyhow!("unexpected enum variant {unexpected_variant:#?}")),
         }
-    }
-
-    fn compute_prepared_nodes<'b>(
-        &self,
-        mut input: &[(usize, (&'b Node, Cow<'b, Constants>))],
-        output: &'b Mutex<Vec<IntermediateValueAndMetadata>>,
-    ) -> Result<()> {
-        while !input.is_empty()
-            && (input.len() < 2 || {
-                let mut threads_left_to_spawn_lock_guard = THREADS_LEFT_TO_SPAWN.lock();
-                if *threads_left_to_spawn_lock_guard == 0u8 {
-                    true
-                } else {
-                    *threads_left_to_spawn_lock_guard -= 1;
-                    false
-                }
-            })
-        {
-            if input.len() == 1 {
-                let (element_index, (node, constants)) = &input[0];
-                let node_result = self.compute_node(node, constants)?;
-                output.lock()[*element_index] = node_result;
-                return Ok(());
-            } else {
-                let left_half = input.split_off(..input.len().div_ceil(2)).unwrap();
-                for (element_index, (node, constants)) in left_half {
-                    let node_result = self.compute_node(node, constants)?;
-                    output.lock()[*element_index] = node_result;
-                }
-            }
-        }
-        if !input.is_empty() {
-            let left_half = input.split_off(..input.len().div_ceil(2)).unwrap();
-            let (left_half_result, right_half_result) = std::thread::scope(|scope| {
-                let left_half_join_handle =
-                    scope.spawn(|| self.compute_prepared_nodes(left_half, output));
-                let right_half_result = self.compute_prepared_nodes(input, output);
-                let left_half_result = left_half_join_handle
-                    .join()
-                    .map_err(|error| anyhow!("Thread panicked: {error:?}"));
-                *THREADS_LEFT_TO_SPAWN.lock() += 1;
-                (left_half_result, right_half_result)
-            });
-            left_half_result??;
-            right_half_result?;
-        }
-        Ok(())
     }
 
     fn compute_nodes<N>(
@@ -855,7 +877,11 @@ impl<'a> ComputationContext<'a> {
             }
             2.. => {
                 let result_mutex = Mutex::new(result);
-                self.compute_prepared_nodes(&complex_elements, &result_mutex)?;
+                self.process_in_parallel(
+                    &complex_elements,
+                    &|(node, constants)| self.compute_node(node, &constants),
+                    &result_mutex,
+                )?;
                 result_mutex.into_inner()
             }
         })
@@ -922,21 +948,16 @@ impl<'a> ComputationContext<'a> {
             } => match &**embedded_function {
                 EmbeddedFunction::Sum(argument) => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(Some(Value::Number(
-                        self.get_range_from_intermediate_value(
-                            &self.compute_node(argument, constants)?,
-                            0,
-                            usize::MAX,
+                        self.unroll_intermediate_value(
+                            self.compute_node(argument, constants)?.intermediate_value,
                         )?
+                        .unwrap()
+                        .as_tuple()
+                        .unwrap()
+                        .inner
                         .into_iter()
                         .fold(Rational::ZERO, |accumulator, current| {
-                            accumulator
-                                + self
-                                    .unroll_intermediate_value(current.intermediate_value.clone())
-                                    .unwrap()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_number()
-                                    .unwrap()
+                            accumulator + current.as_ref().unwrap().as_number().unwrap()
                         }),
                     ))),
                     r#type: node.r#type.clone(),
