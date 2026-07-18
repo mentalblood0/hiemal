@@ -19,7 +19,10 @@ dashu = { version = "0.4.1", features = [
 ] }
 rpds = { "version" = "1.2.1", "features" = ["std", "serde", "rayon"] }
 ropey = "1.6.1"
-parking_lot = { version = "0.12.5", features = ["hardware-lock-elision", "arc_lock"] }
+parking_lot = { version = "0.12.5", features = [
+  "hardware-lock-elision",
+  "arc_lock",
+] }
 gxhash = "3.5.0"
 bincode = { version = "2.0", features = ["derive", "serde"] }
 serde_with = "3.21.0"
@@ -27,6 +30,7 @@ lz4_flex = "0.13.1"
 indexmap = "2.14.0"
 
 [dev-dependencies]
+nanorand = "0.8"
 pretty_assertions = "1.4"
 criterion = "0.5"
 
