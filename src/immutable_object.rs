@@ -74,7 +74,12 @@ where
                 },
             );
             Self {
-                lockable_internals: RwLock::new(common_base_version_lockable_internals),
+                lockable_internals: RwLock::new(Arc::new(RwLock::new(LockableInternals {
+                    base_version_lockable_internals_option: Some(
+                        common_base_version_lockable_internals,
+                    ),
+                    difference: BTreeMap::new(),
+                }))),
             }
         }
     }
@@ -208,30 +213,55 @@ mod tests {
         let mut normal_objects = vec![BTreeMap::<Arc<usize>, Arc<usize>>::new()];
         let mut immutable_objects = vec![ImmutableObject::<usize, usize>::default()];
         for _ in 0..1000 {
-            let current_object_index = rng.generate_range(0..normal_objects.len());
-            match rng.generate_range(0..2) {
-                0 => {
+            let current_object_index =
+                rng.generate_range(normal_objects.len().saturating_sub(20)..normal_objects.len());
+            match rng.generate_range(1..=10) {
+                1..=9 => {
                     let new_key = Arc::new(rng.generate_range(0..usize::MAX));
                     let new_value = Arc::new(rng.generate_range(0..usize::MAX));
                     let mut new_normal_object = normal_objects[current_object_index].clone();
+                    // println!(
+                    //     "insert ({new_key:?} {new_value:?}) in {current_object_index} and save as \
+                    //      {}",
+                    //     normal_objects.len()
+                    // );
                     new_normal_object.insert(new_key.clone(), new_value.clone());
                     normal_objects.push(new_normal_object);
                     let mut new_immutable_object = immutable_objects[current_object_index].clone();
                     new_immutable_object.insert(new_key, new_value);
                     immutable_objects.push(new_immutable_object);
                 }
-                1 => {}
+                10 => {
+                    let mut new_normal_object = normal_objects[current_object_index].clone();
+                    if new_normal_object.is_empty() {
+                        continue;
+                    }
+                    let key_to_remove = new_normal_object
+                        .keys()
+                        .nth(rng.generate_range(0..new_normal_object.len()))
+                        .unwrap()
+                        .clone();
+                    // println!(
+                    //     "remove {key_to_remove:?} from {current_object_index} and save as {}",
+                    //     normal_objects.len()
+                    // );
+                    new_normal_object.remove(&key_to_remove);
+                    normal_objects.push(new_normal_object);
+                    let mut new_immutable_object = immutable_objects[current_object_index].clone();
+                    new_immutable_object.remove(&key_to_remove);
+                    immutable_objects.push(new_immutable_object);
+                }
                 _ => {}
             }
-            for (normal_object, immutable_object) in
-                normal_objects.iter().zip(immutable_objects.iter())
-            {
+            for object_index in 0..normal_objects.len() {
                 assert_eq!(
-                    normal_object
+                    immutable_objects[object_index].iter().collect::<Vec<_>>(),
+                    normal_objects[object_index]
                         .iter()
                         .map(|(key, value)| (key.clone(), value.clone()))
                         .collect::<Vec<_>>(),
-                    immutable_object.iter().collect::<Vec<_>>()
+                    "objects at index {}",
+                    object_index
                 );
             }
         }
