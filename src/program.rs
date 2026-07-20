@@ -81,7 +81,7 @@ pub fn default_starting_with() -> Box<Program> {
 }
 
 pub fn default_match_as() -> Option<Arc<String>> {
-    None.into()
+    None
 }
 
 pub fn default_map_as() -> Arc<String> {

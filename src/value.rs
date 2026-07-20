@@ -87,18 +87,16 @@ where
         fn visit_str<E: de::Error>(self, s: &str) -> Result<Rational, E> {
             if s == DEFAULT_ARGUMENT_NAME {
                 Err(de::Error::invalid_value(Unexpected::Str(s), &self))
-            } else {
-                if let Ok(result) = Rational::from_str(s) {
+            } else if let Ok(result) = Rational::from_str(s) {
+                Ok(result)
+            } else if let Ok(result_real) = Decimal::from_str(s) {
+                if let Ok(result) = Rational::try_from(result_real) {
                     Ok(result)
-                } else if let Ok(result_real) = Decimal::from_str(s) {
-                    if let Ok(result) = Rational::try_from(result_real) {
-                        Ok(result)
-                    } else {
-                        Err(de::Error::invalid_value(Unexpected::Str(s), &self))
-                    }
                 } else {
                     Err(de::Error::invalid_value(Unexpected::Str(s), &self))
                 }
+            } else {
+                Err(de::Error::invalid_value(Unexpected::Str(s), &self))
             }
         }
 

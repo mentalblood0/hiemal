@@ -1,6 +1,6 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, ops::Bound, sync::Arc};
 
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 
 #[derive(Default)]
 struct LockableInternals<K, V> {
@@ -28,14 +28,12 @@ where
     fn get(&self, key: &Arc<K>) -> Option<Arc<V>> {
         if let Some(result) = self.difference.get(key) {
             result.clone()
+        } else if let Some(ref base_version_lockable_internals) =
+            self.base_version_lockable_internals_option
+        {
+            base_version_lockable_internals.read().get(key).clone()
         } else {
-            if let Some(ref base_version_lockable_internals) =
-                self.base_version_lockable_internals_option
-            {
-                base_version_lockable_internals.read().get(key).clone()
-            } else {
-                None
-            }
+            None
         }
     }
 }
@@ -52,11 +50,18 @@ where
 {
     fn clone(&self) -> Self {
         let mut lockable_internals_outer_read_guard = self.lockable_internals.upgradable_read();
-        if lockable_internals_outer_read_guard.read().difference.len() < 16 {
+        let lockable_internals_read_guard = lockable_internals_outer_read_guard.read();
+        if lockable_internals_read_guard.difference.len() < 16 {
             Self {
-                lockable_internals: RwLock::new(lockable_internals_outer_read_guard.clone()),
+                lockable_internals: RwLock::new(Arc::new(RwLock::new(LockableInternals {
+                    base_version_lockable_internals_option: lockable_internals_read_guard
+                        .base_version_lockable_internals_option
+                        .clone(),
+                    difference: lockable_internals_read_guard.difference.clone(),
+                }))),
             }
         } else {
+            drop(lockable_internals_read_guard);
             let common_base_version_lockable_internals =
                 lockable_internals_outer_read_guard.clone();
             lockable_internals_outer_read_guard.with_upgraded(
@@ -95,5 +100,140 @@ where
     pub fn get(&self, key: &Arc<K>) -> Option<Arc<V>> {
         let lockable_internals_outer_read_guard = self.lockable_internals.read();
         lockable_internals_outer_read_guard.read().get(key)
+    }
+
+    pub fn iter(&self) -> ImmutableObjectIterator<K, V> {
+        let head = self.lockable_internals.read().clone();
+
+        let mut guards = Vec::new();
+        let mut cursors = Vec::new();
+        let mut current_arc = Some(head.clone());
+
+        while let Some(arc) = current_arc {
+            let guard = arc.read();
+            let first = guard
+                .difference
+                .iter()
+                .next()
+                .map(|(k, v)| (k.clone(), v.clone()));
+
+            // SAFETY: We transmute the guard's lifetime to `'static`. This is sound because
+            // the iterator owns `head`, which keeps the entire Arc chain alive. The guard
+            // will be dropped before the Arc chain, so no dangling reference occurs.
+            let static_guard: RwLockReadGuard<'static, LockableInternals<K, V>> =
+                unsafe { std::mem::transmute(guard) };
+
+            let base = static_guard.base_version_lockable_internals_option.clone();
+
+            guards.push(static_guard);
+            cursors.push(first);
+            current_arc = base;
+        }
+
+        ImmutableObjectIterator {
+            _head: head,
+            guards,
+            cursors,
+        }
+    }
+}
+
+type Entry<K, V> = (Arc<K>, Option<Arc<V>>);
+
+pub struct ImmutableObjectIterator<K: Ord + 'static, V: 'static> {
+    _head: Arc<RwLock<LockableInternals<K, V>>>,
+    guards: Vec<RwLockReadGuard<'static, LockableInternals<K, V>>>,
+    cursors: Vec<Option<Entry<K, V>>>,
+}
+
+impl<K: Ord, V> Iterator for ImmutableObjectIterator<K, V> {
+    type Item = (Arc<K>, Arc<V>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let mut min_key: Option<Arc<K>> = None;
+            for (key, _) in self.cursors.iter().flatten() {
+                match &min_key {
+                    None => min_key = Some(key.clone()),
+                    Some(cur_min) if *key < *cur_min => min_key = Some(key.clone()),
+                    _ => {}
+                }
+            }
+            let min_key = min_key?;
+
+            let mut value_to_yield: Option<Arc<V>> = None;
+            for cursor in self.cursors.iter() {
+                if let Some((key, val)) = cursor
+                    && *key == min_key
+                {
+                    value_to_yield = val.clone();
+                    break;
+                }
+            }
+
+            for (cursor_index, cursor) in self.cursors.iter_mut().enumerate() {
+                if let Some((key, _)) = cursor
+                    && *key == min_key
+                {
+                    let guard = &self.guards[cursor_index];
+                    let node: &LockableInternals<K, V> = guard;
+                    let next = node
+                        .difference
+                        .range((Bound::Excluded(key.clone()), Bound::Unbounded))
+                        .next()
+                        .map(|(k, v)| (k.clone(), v.clone()));
+                    *cursor = next;
+                }
+            }
+
+            if let Some(v) = value_to_yield {
+                return Some((min_key, v));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::collections::BTreeMap;
+
+    use nanorand::{Rng, WyRand};
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_generative() {
+        let mut rng = WyRand::new_seed(0);
+        let mut normal_objects = vec![BTreeMap::<Arc<usize>, Arc<usize>>::new()];
+        let mut immutable_objects = vec![ImmutableObject::<usize, usize>::default()];
+        for _ in 0..1000 {
+            let current_object_index = rng.generate_range(0..normal_objects.len());
+            match rng.generate_range(0..2) {
+                0 => {
+                    let new_key = Arc::new(rng.generate_range(0..usize::MAX));
+                    let new_value = Arc::new(rng.generate_range(0..usize::MAX));
+                    let mut new_normal_object = normal_objects[current_object_index].clone();
+                    new_normal_object.insert(new_key.clone(), new_value.clone());
+                    normal_objects.push(new_normal_object);
+                    let mut new_immutable_object = immutable_objects[current_object_index].clone();
+                    new_immutable_object.insert(new_key, new_value);
+                    immutable_objects.push(new_immutable_object);
+                }
+                1 => {}
+                _ => {}
+            }
+            for (normal_object, immutable_object) in
+                normal_objects.iter().zip(immutable_objects.iter())
+            {
+                assert_eq!(
+                    normal_object
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect::<Vec<_>>(),
+                    immutable_object.iter().collect::<Vec<_>>()
+                );
+            }
+        }
     }
 }
