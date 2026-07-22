@@ -844,8 +844,8 @@ impl Compiler {
                                                 };
                                             }
                                             (
-                                                std::mem::take(result.get_mut(0).unwrap()),
-                                                std::mem::take(result.get_mut(1).unwrap())
+                                                Box::new(std::mem::take(result.get_mut(0).unwrap())),
+                                                Box::new(std::mem::take(result.get_mut(1).unwrap()))
                                             )
                                         }
                                     ),

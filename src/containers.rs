@@ -23,7 +23,11 @@ where
         self.inner.len()
     }
 
-    pub fn from_iter(iterator: impl Iterator<Item = (Arc<K>, Arc<V>)>) -> Self {
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn new_from_iter(iterator: impl Iterator<Item = (Arc<K>, Arc<V>)>) -> Self {
         Self {
             inner: BTreeMap::from_iter(iterator),
         }
@@ -78,6 +82,10 @@ where
         self.inner.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn insert(&mut self, value: Arc<V>) {
         self.inner.insert(value);
     }
@@ -105,7 +113,7 @@ impl<V> Vector<V>
 where
     V: Ord + Clone,
 {
-    pub fn from_iter(iterator: impl Iterator<Item = Arc<V>>) -> Self {
+    pub fn new_from_iter(iterator: impl Iterator<Item = Arc<V>>) -> Self {
         Self {
             inner: Vec::from_iter(iterator),
         }
@@ -135,10 +143,6 @@ where
 
     pub fn iter(&self) -> impl Iterator<Item = &Arc<V>> {
         self.inner.iter()
-    }
-
-    pub fn into_iter(self) -> impl Iterator<Item = Arc<V>> {
-        self.inner.into_iter()
     }
 
     pub fn push(&mut self, value: Arc<V>) {

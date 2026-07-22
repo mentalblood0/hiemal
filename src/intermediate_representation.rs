@@ -165,5 +165,5 @@ impl Default for RangeBound {
 pub enum ValuePathSegment {
     ArrayIndex(usize),
     ObjectKey(String),
-    ArrayRange((RangeBound, RangeBound)),
+    ArrayRange((Box<RangeBound>, Box<RangeBound>)),
 }

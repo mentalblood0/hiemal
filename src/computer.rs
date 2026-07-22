@@ -767,7 +767,7 @@ impl<'a> ComputationContext<'a> {
                     },
                     &result_mutex,
                 )?;
-                return Ok(Vector::from_iter(
+                return Ok(Vector::new_from_iter(
                     result_mutex.into_inner().into_iter().map(Option::unwrap),
                 ));
             }
@@ -787,10 +787,10 @@ impl<'a> ComputationContext<'a> {
                 )?))
                 .into())
             }
-            IntermediateValue::Object(object) => Ok(Some(Value::Object(Object::from_iter(
+            IntermediateValue::Object(object) => Ok(Some(Value::Object(Object::new_from_iter(
                 object.keys().cloned().zip(
                     self.unroll_intermediate_values(object.values().cloned(), object.len())?
-                        .into_iter(),
+                        .inner,
                 ),
             )))
             .into()),
@@ -1052,7 +1052,7 @@ impl<'a> ComputationContext<'a> {
                                 .iter()
                             {
                                 result.push(
-                                    Some(Value::Tuple(Vector::from_iter(
+                                    Some(Value::Tuple(Vector::new_from_iter(
                                         [
                                             Some(Value::String(ropey::Rope::from_str(key))).into(),
                                             value.clone(),
@@ -1173,7 +1173,7 @@ impl<'a> ComputationContext<'a> {
                             )
                         }
                         ValuePathSegment::ArrayRange((range_from, range_to)) => {
-                            let from_number = match range_from {
+                            let from_number = match &**range_from {
                                 RangeBound::Static(Some(range_from)) => *range_from,
                                 RangeBound::Static(None) => 0,
                                 RangeBound::Dynamic(from_node) => {
@@ -1192,7 +1192,7 @@ impl<'a> ComputationContext<'a> {
                                     .max(0f64) as usize
                                 }
                             };
-                            let to_number = match range_to {
+                            let to_number = match &**range_to {
                                 RangeBound::Static(Some(range_to)) => *range_to,
                                 RangeBound::Static(None) => 0,
                                 RangeBound::Dynamic(to_node) => {
@@ -1225,11 +1225,13 @@ impl<'a> ComputationContext<'a> {
                                     .collect(),
                             );
                             result = IntermediateValueAndMetadata {
-                                intermediate_value: IntermediateValue::Tuple(Vector::from_iter(
-                                    result_elements
-                                        .into_iter()
-                                        .map(|element| element.intermediate_value),
-                                ))
+                                intermediate_value: IntermediateValue::Tuple(
+                                    Vector::new_from_iter(
+                                        result_elements
+                                            .into_iter()
+                                            .map(|element| element.intermediate_value),
+                                    ),
+                                )
                                 .into(),
                                 r#type,
                             }

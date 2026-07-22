@@ -18,11 +18,7 @@ where
     }
 
     fn remove(&mut self, key: &Arc<K>) {
-        if let Some(value) = self.difference.get_mut(key) {
-            *value = None;
-        } else {
-            self.difference.insert(key.clone(), None);
-        }
+        self.difference.insert(key.clone(), None);
     }
 
     fn get(&self, key: &Arc<K>) -> Option<Arc<V>> {
