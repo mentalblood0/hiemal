@@ -108,26 +108,19 @@ where
 
         let mut guards = Vec::new();
         let mut cursors = Vec::new();
+        let mut current_cursors_elements = Vec::new();
         let mut current_arc = Some(head.clone());
 
         while let Some(arc) = current_arc {
             let guard = arc.read();
-            let first = guard
-                .difference
-                .iter()
-                .next()
-                .map(|(k, v)| (k.clone(), v.clone()));
+            let mut cursor: Box<dyn Iterator<Item = Entry<K, V>>> =
+                Box::new(guard.difference.iter().map(|(k, v)| (k.clone(), v.clone())));
 
-            // SAFETY: We transmute the guard's lifetime to `'static`. This is sound because
-            // the iterator owns `head`, which keeps the entire Arc chain alive. The guard
-            // will be dropped before the Arc chain, so no dangling reference occurs.
-            let static_guard: RwLockReadGuard<'static, LockableInternals<K, V>> =
-                unsafe { std::mem::transmute(guard) };
+            let base = guard.base_version_lockable_internals_option.clone();
 
-            let base = static_guard.base_version_lockable_internals_option.clone();
-
-            guards.push(static_guard);
-            cursors.push(first);
+            guards.push(guard);
+            current_cursors_elements.push(cursor.next());
+            cursors.push(cursor);
             current_arc = base;
         }
 
@@ -135,60 +128,50 @@ where
             _head: head,
             guards,
             cursors,
+            current_cursors_elements,
         }
     }
 }
 
 type Entry<K, V> = (Arc<K>, Option<Arc<V>>);
 
-pub struct ImmutableObjectIterator<K: Ord + 'static, V: 'static> {
+pub struct ImmutableObjectIterator<'a, K: Ord + 'static, V: 'static> {
     _head: Arc<RwLock<LockableInternals<K, V>>>,
-    guards: Vec<RwLockReadGuard<'static, LockableInternals<K, V>>>,
-    cursors: Vec<Option<Entry<K, V>>>,
+    guards: Vec<RwLockReadGuard<'a, LockableInternals<K, V>>>,
+    cursors: Vec<Box<dyn Iterator<Item = Entry<K, V>> + 'a>>,
+    current_cursors_elements: Vec<Option<Entry<K, V>>>,
 }
 
-impl<K: Ord, V> Iterator for ImmutableObjectIterator<K, V> {
+impl<'a, K: Ord, V> Iterator for ImmutableObjectIterator<'a, K, V> {
     type Item = (Arc<K>, Arc<V>);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let mut min_key: Option<Arc<K>> = None;
-            for (key, _) in self.cursors.iter().flatten() {
-                match &min_key {
-                    None => min_key = Some(key.clone()),
-                    Some(cur_min) if *key < *cur_min => min_key = Some(key.clone()),
+            let mut min_key_entry = None;
+            for entry in self.current_cursors_elements.iter() {
+                match &min_key_entry {
+                    None => min_key_entry = entry.clone(),
+                    // Some(cur_min) if *key < *cur_min => min_key = Some(key.clone()),
+                    Some((min_key, _)) if &entry.as_ref().unwrap().0 < min_key => {
+                        min_key_entry = entry.clone()
+                    }
                     _ => {}
                 }
             }
-            let min_key = min_key?;
-
-            let mut value_to_yield: Option<Arc<V>> = None;
-            for cursor in self.cursors.iter() {
-                if let Some((key, val)) = cursor
-                    && *key == min_key
+            let min_key_entry = min_key_entry?;
+            for (cursor, current_cursor_element) in self
+                .cursors
+                .iter_mut()
+                .zip(self.current_cursors_elements.iter_mut())
+            {
+                if let Some((key, _)) = current_cursor_element
+                    && key == &min_key_entry.0
                 {
-                    value_to_yield = val.clone();
-                    break;
+                    *current_cursor_element = cursor.next();
                 }
             }
-
-            for (cursor_index, cursor) in self.cursors.iter_mut().enumerate() {
-                if let Some((key, _)) = cursor
-                    && *key == min_key
-                {
-                    let guard = &self.guards[cursor_index];
-                    let node: &LockableInternals<K, V> = guard;
-                    let next = node
-                        .difference
-                        .range((Bound::Excluded(key.clone()), Bound::Unbounded))
-                        .next()
-                        .map(|(k, v)| (k.clone(), v.clone()));
-                    *cursor = next;
-                }
-            }
-
-            if let Some(v) = value_to_yield {
-                return Some((min_key, v));
+            if let Some(result_value) = min_key_entry.1 {
+                return Some((min_key_entry.0, result_value));
             }
         }
     }
