@@ -250,6 +250,17 @@ impl Computer {
     }
 }
 
+fn concrete_or_else<F>(concrete: &Type, or_else: F) -> Type
+where
+    F: Fn() -> Type,
+{
+    if concrete.is_concrete() {
+        concrete.clone()
+    } else {
+        or_else()
+    }
+}
+
 impl<'a> ComputationContext<'a> {
     fn compute_lazy_value(&self, lazy_value: &LazyValue) -> Result<IntermediateValueAndMetadata> {
         let mut computed_lock = lazy_value.computed.lock();
@@ -931,7 +942,14 @@ impl<'a> ComputationContext<'a> {
                 }
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Tuple(result).into(),
-                    r#type: node.r#type.clone(),
+                    r#type: concrete_or_else(&node.r#type, || {
+                        Type::Tuple(
+                            tuple
+                                .iter()
+                                .map(|tuple_element| tuple_element.r#type.clone())
+                                .collect(),
+                        )
+                    }),
                 })
             }
             Content::Scope {
@@ -979,7 +997,7 @@ impl<'a> ComputationContext<'a> {
                         .into(),
                     )
                     .into(),
-                    r#type: node.r#type.clone(),
+                    r#type: Type::Number,
                 }),
                 EmbeddedFunction::IsSorted(argument) => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
@@ -998,7 +1016,7 @@ impl<'a> ComputationContext<'a> {
                         .into(),
                     )
                     .into(),
-                    r#type: node.r#type.clone(),
+                    r#type: Type::Bool,
                 }),
                 EmbeddedFunction::StandardInput => {
                     let mut result = String::new();
@@ -1012,7 +1030,7 @@ impl<'a> ComputationContext<'a> {
                             Some(Value::String(ropey::Rope::from(result))).into(),
                         )
                         .into(),
-                        r#type: node.r#type.clone(),
+                        r#type: Type::String,
                     })
                 }
                 EmbeddedFunction::ParseYaml(argument) => {
@@ -1037,39 +1055,56 @@ impl<'a> ComputationContext<'a> {
                         r#type,
                     })
                 }
-                EmbeddedFunction::KeyValuePairs(argument) => Ok(IntermediateValueAndMetadata {
-                    intermediate_value: IntermediateValue::Value(
-                        Some(Value::Tuple({
-                            let mut result = Vector::default();
-                            for (key, value) in self
-                                .unroll_intermediate_value(
-                                    &self.compute_node(argument, constants)?.intermediate_value,
-                                )?
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_object()
-                                .unwrap()
-                                .iter()
-                            {
-                                result.push(
-                                    Some(Value::Tuple(Vector::new_from_iter(
-                                        [
-                                            Some(Value::String(ropey::Rope::from_str(key))).into(),
-                                            value.clone(),
-                                        ]
-                                        .into_iter(),
-                                    )))
-                                    .into(),
-                                );
-                            }
-                            result
-                        }))
+                EmbeddedFunction::KeyValuePairs(argument) => {
+                    let unrolled_argument = self.unroll_intermediate_value(
+                        &self.compute_node(argument, constants)?.intermediate_value,
+                    )?;
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Tuple({
+                                let mut result = Vector::default();
+                                for (key, value) in unrolled_argument
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_object()
+                                    .unwrap()
+                                    .iter()
+                                {
+                                    result.push(
+                                        Some(Value::Tuple(Vector::new_from_iter(
+                                            [
+                                                Some(Value::String(ropey::Rope::from_str(key)))
+                                                    .into(),
+                                                value.clone(),
+                                            ]
+                                            .into_iter(),
+                                        )))
+                                        .into(),
+                                    );
+                                }
+                                result
+                            }))
+                            .into(),
+                        )
                         .into(),
-                    )
-                    .into(),
-                    r#type: node.r#type.clone(),
-                }),
+                        r#type: concrete_or_else(&node.r#type, || {
+                            Type::Tuple(
+                                unrolled_argument
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_object()
+                                    .unwrap()
+                                    .values()
+                                    .map(|value| {
+                                        Type::Tuple(vec![Type::String, Value::r#type(value)])
+                                    })
+                                    .collect(),
+                            )
+                        }),
+                    })
+                }
                 EmbeddedFunction::Flatten(argument) => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         Some(Value::Tuple({
@@ -1305,6 +1340,16 @@ impl<'a> ComputationContext<'a> {
                         throughs_option = Some(throughs.clone());
                     }
                 }
+                let r#type =
+                    concrete_or_else(&node.r#type, || match throughs_option.as_ref().unwrap() {
+                        Throughs::Array(through_node) => {
+                            Type::Array(Box::new(through_node.r#type.clone()))
+                        }
+                        Throughs::Tuple {
+                            nodes_indexes: _,
+                            nodes,
+                        } => Type::Tuple(nodes.iter().map(|node| node.r#type.clone()).collect()),
+                    });
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Map(Map {
                         intermediate_representation_content: intermediate_representation_content
@@ -1317,7 +1362,7 @@ impl<'a> ComputationContext<'a> {
                         })),
                     })
                     .into(),
-                    r#type: node.r#type.clone(),
+                    r#type,
                 })
             }
             Content::Filter(intermediate_representation_content) => {

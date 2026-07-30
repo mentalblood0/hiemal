@@ -161,6 +161,25 @@ impl<'a> Type {
         }
     }
 
+    pub fn is_concrete(&self) -> bool {
+        match self {
+            Type::Number
+            | Type::String
+            | Type::Bool
+            | Type::Null
+            | Type::LiteralTrue
+            | Type::LiteralFalse => true,
+            Type::Array(element_type) => element_type.is_concrete(),
+            Type::Tuple(elements_types) => elements_types
+                .iter()
+                .all(|element_type| element_type.is_concrete()),
+            Type::Object(inner_types) => inner_types
+                .values()
+                .all(|value_type| value_type.is_concrete()),
+            Type::Union(_) | Type::Any | Type::Unknown(_) => false,
+        }
+    }
+
     pub fn as_object(&self) -> Option<&BTreeMap<Arc<String>, Type>> {
         match self {
             Type::Object(result) => Some(result),

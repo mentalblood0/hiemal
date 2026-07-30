@@ -66,7 +66,16 @@ fn resolve_type(
                 }
             }
             (Type::Array(got_element_type), Type::Array(expected_element_type)) => {
-                resolve_type(got_element_type, expected_element_type, compilation_context)
+                let mut inner_compilation_context = compilation_context.clone();
+                inner_compilation_context
+                    .path
+                    .0
+                    .push(Arc::new(PathSegment::ArrayIndex(0)));
+                resolve_type(
+                    got_element_type,
+                    expected_element_type,
+                    &inner_compilation_context,
+                )
             }
             (Type::Array(got_element_type), Type::Tuple(expected_elements_types)) => {
                 let mut result_union_types = BTreeSet::new();
