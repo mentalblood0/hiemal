@@ -229,6 +229,20 @@ impl<'a> Type {
         }
     }
 
+    pub fn union_types(&'a self) -> Box<dyn Iterator<Item = &'a Type> + 'a> {
+        match self {
+            Type::Union(union_types) => Box::new(union_types.iter()),
+            _ => Box::new([self].into_iter()),
+        }
+    }
+
+    pub fn union_types_len(&'a self) -> usize {
+        match self {
+            Type::Union(union_types) => union_types.len(),
+            _ => 1,
+        }
+    }
+
     pub fn intersection(&self, other: &Type) -> Option<Type> {
         if self == other {
             Some(self.clone())
@@ -306,21 +320,6 @@ impl<'a> Type {
                 }
                 _ => None,
             }
-        }
-    }
-
-    pub fn weakest_from_union(&self) -> Type {
-        match self {
-            Type::Union(union_types) => {
-                let mut result = union_types.iter().next().unwrap().clone();
-                for union_type in union_types.iter().skip(1) {
-                    if union_type.contains(&result) {
-                        result = union_type.clone();
-                    }
-                }
-                result
-            }
-            r#type => r#type.clone(),
         }
     }
 }

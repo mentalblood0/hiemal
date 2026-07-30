@@ -96,7 +96,7 @@ pub enum Content {
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct Map {
     pub map: Box<Node>,
-    pub throughs: Throughs,
+    pub map_concrete_type_and_throughs: Vec<(Type, Throughs)>,
     pub map_constant_name_clustered_index: usize,
 }
 

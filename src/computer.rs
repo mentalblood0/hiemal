@@ -80,6 +80,7 @@ struct MapLockableInternals {
 struct Map {
     intermediate_representation_content: Arc<intermediate_representation::Map>,
     computed_map: Box<IntermediateValueAndMetadata>,
+    throughs: Throughs,
     constants: Constants,
     lockable_internals: Arc<RwLock<MapLockableInternals>>,
 }
@@ -614,7 +615,7 @@ impl<'a> ComputationContext<'a> {
                                     .map_constant_name_clustered_index] =
                                     Some(computed_map_element.clone());
                                 (
-                                    Some(match &map.intermediate_representation_content.throughs {
+                                    Some(match &map.throughs {
                                         Throughs::Array(node) => node,
                                         Throughs::Tuple {
                                             nodes_indexes,
@@ -809,7 +810,7 @@ impl<'a> ComputationContext<'a> {
                                     .map_constant_name_clustered_index] =
                                     Some(computed_map_element);
                                 (
-                                    match &map.intermediate_representation_content.throughs {
+                                    match &map.throughs {
                                         Throughs::Array(node) => Some(&**node),
                                         Throughs::Tuple {
                                             nodes_indexes,
@@ -1291,21 +1292,34 @@ impl<'a> ComputationContext<'a> {
                     panic!("no case from {cases:#?} matches computed value");
                 }
             }
-            Content::Map(intermediate_representation_content) => Ok(IntermediateValueAndMetadata {
-                intermediate_value: IntermediateValue::Map(Map {
-                    intermediate_representation_content: intermediate_representation_content
-                        .clone(),
-                    computed_map: Box::new(
-                        self.compute_node(&intermediate_representation_content.map, constants)?,
-                    ),
-                    constants: constants.clone(),
-                    lockable_internals: Arc::new(RwLock::new(MapLockableInternals {
-                        elements_taken_for_computation: BTreeMap::new(),
-                    })),
+            Content::Map(intermediate_representation_content) => {
+                let computed_map = Box::new(
+                    self.compute_node(&intermediate_representation_content.map, constants)?,
+                );
+                let mut throughs_option = None;
+                for (map_concrete_type, throughs) in intermediate_representation_content
+                    .map_concrete_type_and_throughs
+                    .iter()
+                {
+                    if map_concrete_type.contains(&computed_map.r#type) {
+                        throughs_option = Some(throughs.clone());
+                    }
+                }
+                Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Map(Map {
+                        intermediate_representation_content: intermediate_representation_content
+                            .clone(),
+                        computed_map,
+                        throughs: throughs_option.unwrap(),
+                        constants: constants.clone(),
+                        lockable_internals: Arc::new(RwLock::new(MapLockableInternals {
+                            elements_taken_for_computation: BTreeMap::new(),
+                        })),
+                    })
+                    .into(),
+                    r#type: node.r#type.clone(),
                 })
-                .into(),
-                r#type: node.r#type.clone(),
-            }),
+            }
             Content::Filter(intermediate_representation_content) => {
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Filter(Filter {

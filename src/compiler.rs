@@ -1065,7 +1065,7 @@ impl Compiler {
                         global_compilation_context,
                     )?;
                     if let Type::Object(argument_object_values_types) =
-                        compiled_argument.node.r#type.weakest_from_union()
+                        compiled_argument.node.r#type.clone()
                     {
                         NodeAndMetadata {
                                 external_constants_name_clustered_indices: compiled_argument
@@ -1116,7 +1116,7 @@ impl Compiler {
                         &Type::Array(Box::new(Type::Array(Box::new(Type::Any)))),
                         compilation_context,
                     )?;
-                    let result_type = match compiled_argument_resolved_type.weakest_from_union() {
+                    let result_type = match compiled_argument_resolved_type {
                         Type::Tuple(argument_tuple_types) => {
                             if argument_tuple_types.iter().any(|argument_tuple_type| {
                                 matches!(argument_tuple_type, Type::Array(_))
@@ -1160,7 +1160,7 @@ impl Compiler {
                         }
                         Type::Array(argument_array_type) => {
                             let mut result_union_types = BTreeSet::new();
-                            match argument_array_type.weakest_from_union() {
+                            match &*argument_array_type {
                                 Type::Tuple(argument_element_tuple_types) => {
                                     for argument_element_tuple_type in argument_element_tuple_types
                                     {
@@ -1424,39 +1424,100 @@ impl Compiler {
                         .constants_names_to_name_clustered_constants_indices
                         .len()
                 };
-                match compiled_map.node.r#type.weakest_from_union() {
-                    Type::Tuple(map_tuple_elements_types) => {
-                        let mut result_elements_types =
-                            Vec::with_capacity(map_tuple_elements_types.len());
-                        let mut result_throughs_nodes_indexes =
-                            Vec::with_capacity(map_tuple_elements_types.len());
-                        let mut compiled_throughs: indexmap::IndexSet<NodeAndMetadata> =
-                            indexmap::IndexSet::new();
-                        let mut element_type_to_compiled_through_index: BTreeMap<Type, usize> =
-                            BTreeMap::new();
-                        for (element_type_index, element_type) in
-                            map_tuple_elements_types.iter().enumerate()
-                        {
-                            if let Some(element_through_index) =
-                                element_type_to_compiled_through_index.get(element_type)
-                            {
-                                result_elements_types.push(
-                                    compiled_throughs[*element_through_index]
-                                        .node
-                                        .r#type
-                                        .clone(),
-                                );
-                                result_throughs_nodes_indexes.push(*element_through_index);
-                            } else {
+                let mut map_concrete_type_and_throughs =
+                    Vec::with_capacity(compiled_map.node.r#type.union_types_len());
+                let mut result_union_types = BTreeSet::new();
+                for map_concrete_type in compiled_map.node.r#type.union_types() {
+                    map_concrete_type_and_throughs.push((
+                        map_concrete_type.clone(),
+                        match map_concrete_type {
+                            Type::Tuple(map_tuple_elements_types) => {
+                                let mut result_elements_types =
+                                    Vec::with_capacity(map_tuple_elements_types.len());
+                                let mut result_throughs_nodes_indexes =
+                                    Vec::with_capacity(map_tuple_elements_types.len());
+                                let mut compiled_throughs: indexmap::IndexSet<NodeAndMetadata> =
+                                    indexmap::IndexSet::new();
+                                let mut element_type_to_compiled_through_index: BTreeMap<
+                                    Type,
+                                    usize,
+                                > = BTreeMap::new();
+                                for (element_type_index, element_type) in
+                                    map_tuple_elements_types.iter().enumerate()
+                                {
+                                    if let Some(element_through_index) =
+                                        element_type_to_compiled_through_index.get(element_type)
+                                    {
+                                        result_elements_types.push(
+                                            compiled_throughs[*element_through_index]
+                                                .node
+                                                .r#type
+                                                .clone(),
+                                        );
+                                        result_throughs_nodes_indexes.push(*element_through_index);
+                                    } else {
+                                        let mut through_compilation_context =
+                                            compilation_context.clone();
+                                        through_compilation_context.path.0.extend([
+                                            PathSegment::Through(element_type_index).into(),
+                                        ]);
+                                        self.define_constant(
+                                            r#as.clone(),
+                                            ConstantMetadata {
+                                                r#type: element_type.clone(),
+                                                is_computable: compiled_map.is_computable,
+                                            },
+                                            &mut through_compilation_context,
+                                            global_compilation_context,
+                                        );
+                                        let compiled_through = self.compile_with_context(
+                                            through,
+                                            &through_compilation_context,
+                                            global_compilation_context,
+                                        )?;
+                                        result_elements_types
+                                            .push(compiled_through.node.r#type.clone());
+                                        let compiled_through_index =
+                                            if let Some(compiled_through_index) =
+                                                compiled_throughs.get_index_of(&compiled_through)
+                                            {
+                                                compiled_through_index
+                                            } else {
+                                                result_external_constants_name_clustered_indices
+                                                    .extend(
+                                                    compiled_through
+                                                        .external_constants_name_clustered_indices
+                                                        .clone(),
+                                                );
+                                                is_pure &= compiled_through.is_pure;
+                                                is_computable &= compiled_through.is_computable;
+                                                compiled_throughs.insert(compiled_through);
+                                                compiled_throughs.len() - 1
+                                            };
+                                        element_type_to_compiled_through_index
+                                            .insert(element_type.clone(), compiled_through_index);
+                                        result_throughs_nodes_indexes.push(compiled_through_index);
+                                    }
+                                }
+                                result_union_types.insert(Type::Tuple(result_elements_types));
+                                Throughs::Tuple {
+                                    nodes_indexes: result_throughs_nodes_indexes,
+                                    nodes: compiled_throughs
+                                        .into_iter()
+                                        .map(|compiled_through| compiled_through.node)
+                                        .collect(),
+                                }
+                            }
+                            Type::Array(map_array_element_type) => {
                                 let mut through_compilation_context = compilation_context.clone();
                                 through_compilation_context
                                     .path
                                     .0
-                                    .extend([PathSegment::Through(element_type_index).into()]);
+                                    .extend([PathSegment::Through(0).into()]);
                                 self.define_constant(
                                     r#as.clone(),
                                     ConstantMetadata {
-                                        r#type: element_type.clone(),
+                                        r#type: *map_array_element_type.clone(),
                                         is_computable: compiled_map.is_computable,
                                     },
                                     &mut through_compilation_context,
@@ -1467,96 +1528,39 @@ impl Compiler {
                                     &through_compilation_context,
                                     global_compilation_context,
                                 )?;
-                                result_elements_types.push(compiled_through.node.r#type.clone());
-                                let compiled_through_index = if let Some(compiled_through_index) =
-                                    compiled_throughs.get_index_of(&compiled_through)
-                                {
-                                    compiled_through_index
-                                } else {
-                                    result_external_constants_name_clustered_indices.extend(
-                                        compiled_through
-                                            .external_constants_name_clustered_indices
-                                            .clone(),
-                                    );
-                                    is_pure &= compiled_through.is_pure;
-                                    is_computable &= compiled_through.is_computable;
-                                    compiled_throughs.insert(compiled_through);
-                                    compiled_throughs.len() - 1
-                                };
-                                element_type_to_compiled_through_index
-                                    .insert(element_type.clone(), compiled_through_index);
-                                result_throughs_nodes_indexes.push(compiled_through_index);
+                                result_external_constants_name_clustered_indices.extend(
+                                    compiled_through.external_constants_name_clustered_indices,
+                                );
+                                is_pure &= compiled_through.is_pure;
+                                is_computable &= compiled_through.is_computable;
+                                result_union_types.insert(Type::Array(Box::new(
+                                    compiled_through.node.r#type.clone(),
+                                )));
+                                Throughs::Array(Box::new(compiled_through.node))
                             }
-                        }
-                        NodeAndMetadata {
-                            node: Node {
-                                content: Content::Map(Arc::new(intermediate_representation::Map {
-                                    map: Box::new(compiled_map.node),
-                                    throughs: Throughs::Tuple {
-                                        nodes_indexes: result_throughs_nodes_indexes,
-                                        nodes: compiled_throughs
-                                            .into_iter()
-                                            .map(|compiled_through| compiled_through.node)
-                                            .collect(),
-                                    },
-                                    map_constant_name_clustered_index,
-                                })),
-                                r#type: Type::Tuple(result_elements_types),
-                            },
-                            external_constants_name_clustered_indices:
-                                result_external_constants_name_clustered_indices,
-                            is_pure,
-                            is_computable,
-                        }
-                    }
-                    Type::Array(map_array_element_type) => {
-                        let mut through_compilation_context = compilation_context.clone();
-                        through_compilation_context
-                            .path
-                            .0
-                            .extend([PathSegment::Through(0).into()]);
-                        self.define_constant(
-                            r#as.clone(),
-                            ConstantMetadata {
-                                r#type: *map_array_element_type.clone(),
-                                is_computable: compiled_map.is_computable,
-                            },
-                            &mut through_compilation_context,
-                            global_compilation_context,
-                        );
-                        let compiled_through = self.compile_with_context(
-                            through,
-                            &through_compilation_context,
-                            global_compilation_context,
-                        )?;
-                        result_external_constants_name_clustered_indices
-                            .extend(compiled_through.external_constants_name_clustered_indices);
-                        is_pure &= compiled_through.is_pure;
-                        is_computable &= compiled_through.is_computable;
-                        let result_type =
-                            Type::Array(Box::new(compiled_through.node.r#type.clone()));
-                        NodeAndMetadata {
-                            node: Node {
-                                content: Content::Map(Arc::new(intermediate_representation::Map {
-                                    map: Box::new(compiled_map.node),
-                                    throughs: Throughs::Array(Box::new(compiled_through.node)),
-                                    map_constant_name_clustered_index,
-                                })),
-                                r#type: result_type,
-                            },
-                            external_constants_name_clustered_indices:
-                                result_external_constants_name_clustered_indices,
-                            is_pure,
-                            is_computable,
-                        }
-                    }
-                    _ => {
-                        return Err(anyhow!(
-                            "expected tuple or array, found {:#?} at {:#?}",
-                            compiled_map.node.r#type,
-                            map_compilation_context.path
-                        ));
-                    }
+                            _ => {
+                                return Err(anyhow!(
+                                    "expected tuple or array, found {:#?} at {:#?}",
+                                    compiled_map.node.r#type,
+                                    map_compilation_context.path
+                                ));
+                            }
+                        },
+                    ));
+                }
+                NodeAndMetadata {
+                    node: Node {
+                        content: Content::Map(Arc::new(intermediate_representation::Map {
+                            map: Box::new(compiled_map.node),
+                            map_concrete_type_and_throughs,
+                            map_constant_name_clustered_index,
+                        })),
+                        r#type: Type::from(result_union_types),
+                    },
+                    external_constants_name_clustered_indices:
+                        result_external_constants_name_clustered_indices,
+                    is_pure,
+                    is_computable,
                 }
             }
             Program::Filter {
@@ -1589,8 +1593,8 @@ impl Compiler {
                         .constants_names_to_name_clustered_constants_indices
                         .len()
                 };
-                match compiled_filter.node.r#type.weakest_from_union() {
-                    Type::Tuple(filter_tuple_elements_types) => {
+                match compiled_filter.node.r#type {
+                    Type::Tuple(ref filter_tuple_elements_types) => {
                         let mut result_elements_types = BTreeSet::new();
                         let mut result_throughs_nodes_indexes =
                             Vec::with_capacity(filter_tuple_elements_types.len());
@@ -1675,7 +1679,7 @@ impl Compiler {
                             is_computable,
                         }
                     }
-                    Type::Array(filter_array_element_type) => {
+                    Type::Array(ref filter_array_element_type) => {
                         let mut through_compilation_context = compilation_context.clone();
                         through_compilation_context
                             .path
@@ -1794,7 +1798,7 @@ impl Compiler {
                         .len()
                         + 1
                 };
-                match compiled_fold.node.r#type.weakest_from_union() {
+                match &compiled_fold.node.r#type {
                     Type::Tuple(fold_tuple_elements_types) => {
                         let mut result_type = compiled_starting_with.node.r#type.clone();
                         let mut result_throughs_nodes_indexes =
