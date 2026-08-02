@@ -122,6 +122,7 @@ struct FilterLockableInternals {
 struct Filter {
     intermediate_representation_content: Arc<intermediate_representation::Filter>,
     computed_filter: Box<IntermediateValueAndMetadata>,
+    throughs: Throughs,
     constants: Constants,
     lockable_internals: Arc<RwLock<FilterLockableInternals>>,
 }
@@ -318,7 +319,7 @@ impl<'a> ComputationContext<'a> {
             next_constants[filter
                 .intermediate_representation_content
                 .filter_constant_name_clustered_index] = Some(next_input_value.clone());
-            let next_through = match &filter.intermediate_representation_content.throughs {
+            let next_through = match &filter.throughs {
                 Throughs::Array(node) => &**node,
                 Throughs::Tuple {
                     nodes_indexes,
@@ -727,7 +728,7 @@ impl<'a> ComputationContext<'a> {
                 let right_half_result = self.process_in_parallel(input, function, output);
                 let left_half_result = left_half_join_handle
                     .join()
-                    .map_err(|error| anyhow!("Thread panicked: {error:?}"));
+                    .map_err(|error| anyhow!("Thread panicked: {error:#?}"));
                 *THREADS_LEFT_TO_SPAWN.lock() += 1;
                 (left_half_result, right_half_result)
             });
@@ -845,6 +846,27 @@ impl<'a> ComputationContext<'a> {
             IntermediateValue::LazyValue(lazy_value) => self.unroll_intermediate_value(
                 &self.compute_lazy_value(lazy_value)?.intermediate_value,
             ),
+            IntermediateValue::Filter(filter) => {
+                {
+                    let mut lockable_internals_write_guard = filter.lockable_internals.write();
+                    while self
+                        .compute_next_in_filter(filter, &mut lockable_internals_write_guard)?
+                    {
+                    }
+                }
+                let lockable_internals_read_guard = filter.lockable_internals.read();
+                Ok(Arc::new(Some(Value::Tuple(
+                    self.unroll_intermediate_values(
+                        lockable_internals_read_guard
+                            .already_computed_values
+                            .iter()
+                            .map(|intermediate_value_and_metadata| {
+                                intermediate_value_and_metadata.intermediate_value.clone()
+                            }),
+                        lockable_internals_read_guard.already_computed_values.len(),
+                    )?,
+                ))))
+            }
             unexpected_variant => Err(anyhow!("unexpected enum variant {unexpected_variant:#?}")),
         }
     }
@@ -1366,6 +1388,28 @@ impl<'a> ComputationContext<'a> {
                 })
             }
             Content::Filter(intermediate_representation_content) => {
+                let computed_filter = Box::new(
+                    self.compute_node(&intermediate_representation_content.filter, constants)?,
+                );
+                let mut throughs_option = None;
+                for (filter_concrete_type, throughs) in intermediate_representation_content
+                    .filter_concrete_type_and_throughs
+                    .iter()
+                {
+                    if filter_concrete_type.contains(&computed_filter.r#type) {
+                        throughs_option = Some(throughs.clone());
+                    }
+                }
+                let r#type =
+                    concrete_or_else(&node.r#type, || match throughs_option.as_ref().unwrap() {
+                        Throughs::Array(through_node) => {
+                            Type::Array(Box::new(through_node.r#type.clone()))
+                        }
+                        Throughs::Tuple {
+                            nodes_indexes: _,
+                            nodes,
+                        } => Type::Tuple(nodes.iter().map(|node| node.r#type.clone()).collect()),
+                    });
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Filter(Filter {
                         intermediate_representation_content: intermediate_representation_content
@@ -1374,6 +1418,7 @@ impl<'a> ComputationContext<'a> {
                             &intermediate_representation_content.filter,
                             constants,
                         )?),
+                        throughs: throughs_option.unwrap(),
                         constants: constants.clone(),
                         lockable_internals: Arc::new(RwLock::new(FilterLockableInternals {
                             already_processed_values_count: 0,
@@ -1381,7 +1426,7 @@ impl<'a> ComputationContext<'a> {
                         })),
                     })
                     .into(),
-                    r#type: node.r#type.clone(),
+                    r#type,
                 })
             }
             Content::Fold {

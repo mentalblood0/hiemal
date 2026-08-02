@@ -8,6 +8,23 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test filter union:
+    assert equal::
+      found:
+        filter:
+          match: { parse yaml: "[1]" }
+          cases:
+            - [number, [1, 2, 3]]
+            - [{ array: number }, [s]]
+            - [any, [1]]
+        through:
+          is sorted:
+            - 0
+            - match: _
+              cases:
+                - [number, _]
+                - [string, 0]
+      expected: [s]
   test lazy object:
     assert equal::
       found:

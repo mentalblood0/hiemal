@@ -103,7 +103,7 @@ pub struct Map {
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct Filter {
     pub filter: Box<Node>,
-    pub throughs: Throughs,
+    pub filter_concrete_type_and_throughs: Vec<(Type, Throughs)>,
     pub filter_constant_name_clustered_index: usize,
 }
 
