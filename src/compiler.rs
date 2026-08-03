@@ -1799,37 +1799,111 @@ impl Compiler {
                         .len()
                         + 1
                 };
-                match &compiled_fold.node.r#type {
-                    Type::Tuple(fold_tuple_elements_types) => {
-                        let mut result_type = compiled_starting_with.node.r#type.clone();
-                        let mut result_throughs_nodes_indexes =
-                            Vec::with_capacity(fold_tuple_elements_types.len());
-                        let mut compiled_throughs: indexmap::IndexSet<NodeAndMetadata> =
-                            indexmap::IndexSet::new();
-                        let mut current_type_and_accumulating_in_type_to_compiled_through_index: BTreeMap<(Type, Type), usize> =
-                        BTreeMap::new();
-                        for (current_type_index, current_type) in
-                            fold_tuple_elements_types.iter().enumerate()
-                        {
-                            if let Some(element_through_index) =
-                                current_type_and_accumulating_in_type_to_compiled_through_index
-                                    .get(&(current_type.clone(), result_type.clone()))
-                            {
-                                result_type = compiled_throughs[*element_through_index]
-                                    .node
-                                    .r#type
-                                    .clone();
-                                result_throughs_nodes_indexes.push(*element_through_index);
-                            } else {
+                let mut fold_concrete_type_and_throughs =
+                    Vec::with_capacity(compiled_fold.node.r#type.union_types_len());
+                let mut result_union_types = BTreeSet::new();
+                for fold_concrete_type in compiled_fold.node.r#type.union_types() {
+                    fold_concrete_type_and_throughs.push((
+                        fold_concrete_type.clone(),
+                        match &fold_concrete_type {
+                            Type::Tuple(fold_tuple_elements_types) => {
+                                let mut result_type = compiled_starting_with.node.r#type.clone();
+                                let mut result_throughs_nodes_indexes =
+                                    Vec::with_capacity(fold_tuple_elements_types.len());
+                                let mut compiled_throughs: indexmap::IndexSet<NodeAndMetadata> =
+                                    indexmap::IndexSet::new();
+                                let mut current_type_and_accumulating_in_type_to_compiled_through_index: BTreeMap<(Type, Type), usize> =
+                                BTreeMap::new();
+                                for (current_type_index, current_type) in
+                                    fold_tuple_elements_types.iter().enumerate()
+                                {
+                                    if let Some(element_through_index) =
+                                        current_type_and_accumulating_in_type_to_compiled_through_index
+                                            .get(&(current_type.clone(), result_type.clone()))
+                                    {
+                                        result_type = compiled_throughs[*element_through_index]
+                                            .node
+                                            .r#type
+                                            .clone();
+                                        result_throughs_nodes_indexes.push(*element_through_index);
+                                    } else {
+                                        let mut through_compilation_context = compilation_context.clone();
+                                        through_compilation_context
+                                            .path
+                                            .0
+                                            .extend([PathSegment::Through(current_type_index).into()]);
+                                        self.define_constant(
+                                            r#as.clone(),
+                                            ConstantMetadata {
+                                                r#type: current_type.clone(),
+                                                is_computable: true,
+                                            },
+                                            &mut through_compilation_context,
+                                            global_compilation_context,
+                                        );
+                                        self.define_constant(
+                                            accumulating_in.clone(),
+                                            ConstantMetadata {
+                                                r#type: result_type.clone(),
+                                                is_computable: true,
+                                            },
+                                            &mut through_compilation_context,
+                                            global_compilation_context,
+                                        );
+                                        let compiled_through = self.compile_with_context(
+                                            through,
+                                            &through_compilation_context,
+                                            global_compilation_context,
+                                        )?;
+                                        if !compiled_fold.is_computable {
+                                            return Err(anyhow!(
+                                                "expected computable through, found {through:#?} at {:#?}",
+                                                through_compilation_context.path
+                                            ));
+                                        }
+                                        result_type = compiled_through.node.r#type.clone();
+                                        let compiled_through_index = if let Some(compiled_through_index) =
+                                            compiled_throughs.get_index_of(&compiled_through)
+                                        {
+                                            compiled_through_index
+                                        } else {
+                                            result_external_constants_name_clustered_indices.extend(
+                                                compiled_through
+                                                    .external_constants_name_clustered_indices
+                                                    .clone(),
+                                            );
+                                            is_pure &= compiled_through.is_pure;
+                                            compiled_throughs.insert(compiled_through);
+                                            compiled_throughs.len() - 1
+                                        };
+                                        current_type_and_accumulating_in_type_to_compiled_through_index
+                                            .insert(
+                                                (current_type.clone(), result_type.clone()),
+                                                compiled_through_index,
+                                            );
+                                        result_throughs_nodes_indexes.push(compiled_through_index);
+                                    }
+                                }
+                                result_union_types.insert(result_type);
+                                Throughs::Tuple {
+                                    nodes_indexes: result_throughs_nodes_indexes,
+                                    nodes: compiled_throughs
+                                        .into_iter()
+                                        .map(|compiled_through| compiled_through.node)
+                                        .collect(),
+                                }
+                            }
+                            Type::Array(fold_array_element_type) => {
                                 let mut through_compilation_context = compilation_context.clone();
                                 through_compilation_context
                                     .path
                                     .0
-                                    .extend([PathSegment::Through(current_type_index).into()]);
+                                    .extend([PathSegment::Through(0).into()]);
+                                let starting_with_type = compiled_starting_with.node.r#type.clone();
                                 self.define_constant(
                                     r#as.clone(),
                                     ConstantMetadata {
-                                        r#type: current_type.clone(),
+                                        r#type: *fold_array_element_type.clone(),
                                         is_computable: true,
                                     },
                                     &mut through_compilation_context,
@@ -1838,7 +1912,7 @@ impl Compiler {
                                 self.define_constant(
                                     accumulating_in.clone(),
                                     ConstantMetadata {
-                                        r#type: result_type.clone(),
+                                        r#type: starting_with_type.clone(),
                                         is_computable: true,
                                     },
                                     &mut through_compilation_context,
@@ -1855,120 +1929,42 @@ impl Compiler {
                                         through_compilation_context.path
                                     ));
                                 }
-                                result_type = compiled_through.node.r#type.clone();
-                                let compiled_through_index = if let Some(compiled_through_index) =
-                                    compiled_throughs.get_index_of(&compiled_through)
-                                {
-                                    compiled_through_index
-                                } else {
-                                    result_external_constants_name_clustered_indices.extend(
-                                        compiled_through
-                                            .external_constants_name_clustered_indices
-                                            .clone(),
-                                    );
-                                    is_pure &= compiled_through.is_pure;
-                                    compiled_throughs.insert(compiled_through);
-                                    compiled_throughs.len() - 1
-                                };
-                                current_type_and_accumulating_in_type_to_compiled_through_index
-                                    .insert(
-                                        (current_type.clone(), result_type.clone()),
-                                        compiled_through_index,
-                                    );
-                                result_throughs_nodes_indexes.push(compiled_through_index);
+                                let compiled_through_resolved_type = resolve_type(
+                                    &compiled_through.node.r#type,
+                                    &starting_with_type,
+                                    &through_compilation_context,
+                                )?;
+                                result_external_constants_name_clustered_indices
+                                    .extend(compiled_through.external_constants_name_clustered_indices);
+                                is_pure &= compiled_through.is_pure;
+                                result_union_types.insert(compiled_through_resolved_type);
+                                Throughs::Array(Box::new(compiled_through.node))
                             }
-                        }
-                        NodeAndMetadata {
-                            node: Node {
-                                content: Content::Fold {
-                                    fold: Box::new(compiled_fold.node),
-                                    fold_constant_name_clustered_index,
-                                    starting_with: Box::new(compiled_starting_with.node),
-                                    accumulating_in_constant_name_clustered_index,
-                                    throughs: Throughs::Tuple {
-                                        nodes_indexes: result_throughs_nodes_indexes,
-                                        nodes: compiled_throughs
-                                            .into_iter()
-                                            .map(|compiled_through| compiled_through.node)
-                                            .collect(),
-                                    },
-                                },
-                                r#type: result_type,
-                            },
-                            external_constants_name_clustered_indices:
-                                result_external_constants_name_clustered_indices,
-                            is_pure,
-                            is_computable: true,
-                        }
-                    }
-                    Type::Array(fold_array_element_type) => {
-                        let mut through_compilation_context = compilation_context.clone();
-                        through_compilation_context
-                            .path
-                            .0
-                            .extend([PathSegment::Through(0).into()]);
-                        let starting_with_type = compiled_starting_with.node.r#type.clone();
-                        self.define_constant(
-                            r#as.clone(),
-                            ConstantMetadata {
-                                r#type: *fold_array_element_type.clone(),
-                                is_computable: true,
-                            },
-                            &mut through_compilation_context,
-                            global_compilation_context,
-                        );
-                        self.define_constant(
-                            accumulating_in.clone(),
-                            ConstantMetadata {
-                                r#type: starting_with_type.clone(),
-                                is_computable: true,
-                            },
-                            &mut through_compilation_context,
-                            global_compilation_context,
-                        );
-                        let compiled_through = self.compile_with_context(
-                            through,
-                            &through_compilation_context,
-                            global_compilation_context,
-                        )?;
-                        if !compiled_fold.is_computable {
-                            return Err(anyhow!(
-                                "expected computable through, found {through:#?} at {:#?}",
-                                through_compilation_context.path
-                            ));
-                        }
-                        let compiled_through_resolved_type = resolve_type(
-                            &compiled_through.node.r#type,
-                            &starting_with_type,
-                            &through_compilation_context,
-                        )?;
-                        result_external_constants_name_clustered_indices
-                            .extend(compiled_through.external_constants_name_clustered_indices);
-                        is_pure &= compiled_through.is_pure;
-                        NodeAndMetadata {
-                            node: Node {
-                                content: Content::Fold {
-                                    fold: Box::new(compiled_fold.node),
-                                    fold_constant_name_clustered_index,
-                                    starting_with: Box::new(compiled_starting_with.node),
-                                    accumulating_in_constant_name_clustered_index,
-                                    throughs: Throughs::Array(Box::new(compiled_through.node)),
-                                },
-                                r#type: compiled_through_resolved_type,
-                            },
-                            external_constants_name_clustered_indices:
-                                result_external_constants_name_clustered_indices,
-                            is_pure,
-                            is_computable: true,
-                        }
-                    }
-                    _ => {
-                        return Err(anyhow!(
-                            "expected tuple or array, found {:#?} at {:#?}",
-                            compiled_fold.node.r#type,
-                            fold_compilation_context.path
-                        ));
-                    }
+                            _ => {
+                                return Err(anyhow!(
+                                    "expected tuple or array, found {:#?} at {:#?}",
+                                    fold_concrete_type,
+                                    fold_compilation_context.path
+                                ));
+                            }
+                        })
+                    );
+                }
+                NodeAndMetadata {
+                    node: Node {
+                        content: Content::Fold {
+                            fold: Box::new(compiled_fold.node),
+                            fold_constant_name_clustered_index,
+                            starting_with: Box::new(compiled_starting_with.node),
+                            accumulating_in_constant_name_clustered_index,
+                            fold_concrete_type_and_throughs,
+                        },
+                        r#type: Type::from(result_union_types),
+                    },
+                    external_constants_name_clustered_indices:
+                        result_external_constants_name_clustered_indices,
+                    is_pure,
+                    is_computable: true,
                 }
             }
             Program::Metaprogram { metaprogram } => {

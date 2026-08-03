@@ -86,7 +86,7 @@ pub enum Content {
         fold_constant_name_clustered_index: usize,
         starting_with: Box<Node>,
         accumulating_in_constant_name_clustered_index: usize,
-        throughs: Throughs,
+        fold_concrete_type_and_throughs: Vec<(Type, Throughs)>,
     },
     Sequence(Arc<Sequence>),
     Object(BTreeMap<Arc<String>, Arc<Node>>),

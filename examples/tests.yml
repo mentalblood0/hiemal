@@ -8,6 +8,24 @@ functions:
             expected: { constant: expected }
             found: { constant: found }
 compute:
+  test fold union:
+    assert equal::
+      found:
+        fold:
+          match: { parse yaml: "lalala" }
+          cases:
+            - [number, [a, b, c]]
+            - [any, [4, 5, 6]]
+        starting with: 0
+        through:
+          sum:
+            - constant: accumulator
+            - match: { constant: current }
+              as: _
+              cases:
+                - [number, _]
+                - [string, 0]
+      expected: 15
   test filter union:
     assert equal::
       found:

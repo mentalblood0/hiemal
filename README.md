@@ -207,6 +207,22 @@ through:
           sum: [{ constant: element from matched }, 1]
 ```
 
+```yaml
+map:
+  match: { parse yaml: "[1]" }
+  cases:
+    - [number, [1, 2, 3]]
+    - [{ array: number }, [s]]
+    - [any, [1]]
+through:
+  sum:
+    - 1
+    - match: _
+      cases:
+        - [number, _]
+        - [string, 0]
+```
+
 #### filter as through
 
 ```yaml
@@ -216,6 +232,22 @@ from:
     next: { sum: [_, 1] }
   through: { is sorted: [5, _] }
 at: [[0, 3]]
+```
+
+```yaml
+filter:
+  match: { parse yaml: "[1]" }
+  cases:
+    - [number, [1, 2, 3]]
+    - [{ array: number }, [s]]
+    - [any, [1]]
+through:
+  is sorted:
+    - 0
+    - match: _
+      cases:
+        - [number, _]
+        - [string, 0]
 ```
 
 #### fold as starting with accumulating in through
@@ -239,6 +271,23 @@ sum:
         - [number, sum: [{ constant: accumulator }, { constant: current }]]
         - [string, 0]
   - 1
+```
+
+```yaml
+fold:
+  match: { parse yaml: "lalala" }
+  cases:
+    - [number, [a, b, c]]
+    - [any, [4, 5, 6]]
+starting with: 0
+through:
+  sum:
+    - constant: accumulator
+    - match: { constant: current }
+      as: _
+      cases:
+        - [number, _]
+        - [string, 0]
 ```
 
 ## Name

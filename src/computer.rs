@@ -1434,7 +1434,7 @@ impl<'a> ComputationContext<'a> {
                 fold_constant_name_clustered_index,
                 starting_with,
                 accumulating_in_constant_name_clustered_index,
-                throughs,
+                fold_concrete_type_and_throughs,
             } => {
                 let computed_fold = self.unroll_intermediate_value(
                     &self.compute_node(fold, constants)?.intermediate_value,
@@ -1442,7 +1442,13 @@ impl<'a> ComputationContext<'a> {
                 let computed_fold_array =
                     computed_fold.as_ref().as_ref().unwrap().as_tuple().unwrap();
                 let mut result = self.compute_node(starting_with, constants)?;
-                match throughs {
+                let mut throughs_option = None;
+                for (fold_concrete_type, throughs) in fold_concrete_type_and_throughs.iter() {
+                    if fold_concrete_type.contains(&Value::r#type(&computed_fold)) {
+                        throughs_option = Some(throughs.clone());
+                    }
+                }
+                match throughs_option.unwrap() {
                     Throughs::Array(through_node) => {
                         for element in computed_fold_array.inner.iter() {
                             let mut through_constants = constants.clone();
@@ -1454,7 +1460,7 @@ impl<'a> ComputationContext<'a> {
                                 });
                             through_constants[*accumulating_in_constant_name_clustered_index] =
                                 Some(result.clone());
-                            result = self.compute_node(through_node, &through_constants)?;
+                            result = self.compute_node(&through_node, &through_constants)?;
                         }
                     }
                     Throughs::Tuple {
