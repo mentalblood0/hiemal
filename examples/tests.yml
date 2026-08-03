@@ -16,7 +16,8 @@ functions:
           at: [1]
         cases:
           - [ok, false]
-          - [any, true]
+          - [string, true]
+          - [{object: {error: any}}, true]
     as: _
     cases:
       - [[], ok]

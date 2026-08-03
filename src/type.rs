@@ -209,7 +209,23 @@ impl<'a> Type {
                 (Type::Any, _) => true,
                 (_, Type::Any) => false,
                 (Type::Union(self_union_types), Type::Union(other_union_types)) => {
-                    self_union_types.is_superset(other_union_types)
+                    if self_union_types.is_superset(other_union_types) {
+                        true
+                    } else {
+                        for other_union_type in other_union_types {
+                            let mut found_container = false;
+                            for self_union_type in self_union_types {
+                                if self_union_type.contains(other_union_type) {
+                                    found_container = true;
+                                    break;
+                                }
+                            }
+                            if !found_container {
+                                return false;
+                            }
+                        }
+                        true
+                    }
                 }
                 (Type::Union(self_union_types), other_type) => {
                     self_union_types.contains(other_type)
@@ -238,6 +254,20 @@ impl<'a> Type {
                 (Type::Array(self_array_element_type), Type::Tuple(other_tuple_elements_types)) => {
                     for other_tuple_element_type in other_tuple_elements_types {
                         if !self_array_element_type.contains(other_tuple_element_type) {
+                            return false;
+                        }
+                    }
+                    true
+                }
+
+                (Type::Object(self_inner_types), Type::Object(other_inner_types)) => {
+                    for ((self_key, self_value_type), (other_key, other_value_type)) in
+                        self_inner_types.iter().zip(other_inner_types.iter())
+                    {
+                        if self_key != other_key {
+                            return false;
+                        }
+                        if !self_value_type.contains(other_value_type) {
                             return false;
                         }
                     }
@@ -336,6 +366,24 @@ impl<'a> Type {
                         }
                     }
                     Some(Type::Tuple(tuple_elements_types.clone()))
+                }
+                (Type::Object(self_inner_types), Type::Object(other_inner_types)) => {
+                    let mut result_inner_types = BTreeMap::new();
+                    for ((self_key, self_value_type), (other_key, other_value_type)) in
+                        self_inner_types.iter().zip(other_inner_types.iter())
+                    {
+                        if self_key != other_key {
+                            return None;
+                        }
+                        if let Some(values_types_intersection) =
+                            self_value_type.intersection(other_value_type)
+                        {
+                            result_inner_types.insert(self_key.clone(), values_types_intersection);
+                        } else {
+                            return None;
+                        }
+                    }
+                    Some(Type::Object(result_inner_types))
                 }
                 _ => None,
             }
