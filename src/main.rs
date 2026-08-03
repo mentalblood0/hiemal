@@ -1,4 +1,7 @@
-use std::{hash::Hash, io::BufReader};
+use std::{
+    hash::Hash,
+    io::{BufReader, Write},
+};
 
 use anyhow::{Context, Result};
 use gxhash::GxHasher;
@@ -16,10 +19,10 @@ macro_rules! time_it {
     }};
 }
 
-fn main() -> Result<()> {
+pub fn run(target_option: &Option<String>, output_writer: &mut impl Write) -> Result<()> {
     let computer = Computer::default();
-    if let Some(target) = std::env::args().nth(1) {
-        let include_from = serde_saphyr::from_str::<From>(&target)?;
+    if let Some(target) = target_option {
+        let include_from = serde_saphyr::from_str::<From>(target)?;
         let program = IncludesCache::default().get(&include_from)?;
         let program_hash = {
             let mut hasher = GxHasher::default();
@@ -82,7 +85,7 @@ fn main() -> Result<()> {
             })
         };
         serde_saphyr::to_io_writer(
-            &mut std::io::stdout(),
+            output_writer,
             &time_it!("computed", {
                 computer
                     .compute(&intermediate_representation)
@@ -92,4 +95,27 @@ fn main() -> Result<()> {
         .context("Can not output result of the program computation")?;
     }
     Ok(())
+}
+
+fn main() -> Result<()> {
+    run(&std::env::args().nth(1), &mut std::io::stdout())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{BufWriter, Write};
+
+    use anyhow::Result;
+    use pretty_assertions::assert_eq;
+
+    use super::run;
+
+    #[test]
+    fn test_native() -> Result<()> {
+        let mut output_writer = BufWriter::new(Vec::new());
+        run(&Some("examples/tests.yml".to_string()), &mut output_writer)?;
+        output_writer.flush()?;
+        assert_eq!(String::from_utf8(output_writer.into_inner()?)?, "ok\n");
+        Ok(())
+    }
 }
