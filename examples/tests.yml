@@ -255,25 +255,25 @@ compute:
       found:
         flatten: [[1, 2, 3], [4], [5, 6]]
       expected: [1, 2, 3, 4, 5, 6]
-  # test fold heterogenous array:
-  #   assert equal::
-  #     found:
-  #       fold:
-  #         match: { parse yaml: "[1, 2, string, 3, 4]" }
-  #         as: matched
-  #         cases:
-  #           - [{ array: { union: [number, string] } }, { constant: matched }]
-  #           - [any, [1]]
-  #       as: current
-  #       starting with: 0
-  #       accumulating in: accumulator
-  #       through:
-  #         match: { constant: current }
-  #         as: matched
-  #         cases:
-  #           - [number, sum: [{ constant: accumulator }, { constant: matched }]]
-  #           - [string, 0]
-  #     expected: 7
+  test fold heterogenous array:
+    assert equal::
+      found:
+        fold:
+          match: { parse yaml: "[1, 2, string, 3, 4]" }
+          as: matched
+          cases:
+            - [{ array: { union: [number, string] } }, { constant: matched }]
+            - [any, [1]]
+        as: current
+        starting with: 0
+        accumulating in: accumulator
+        through:
+          match: { constant: current }
+          as: matched
+          cases:
+            - [number, sum: [{ constant: accumulator }, { constant: matched }]]
+            - [string, 0]
+      expected: 7
   test fold heterogenous tuple:
     assert equal::
       found:
