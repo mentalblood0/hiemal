@@ -25,6 +25,21 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test flatten union:
+        assert equal::
+          found:
+            flatten:
+              match: { parse yaml: "[1]" }
+              cases:
+                - [string, [[1, 2], [3, 4, 5]]]
+                - - any
+                  - - [1, a, 3]
+                    - match: { parse yaml: "[2]" }
+                      cases:
+                        - [string, [1]]
+                        - [any, [b]]
+                    - [5, 6]
+          expected: [1, a, 3, b, 5, 6]
       test fold union:
         assert equal::
           found:

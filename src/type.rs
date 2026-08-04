@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use anyhow::{Result, anyhow};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -275,6 +276,119 @@ impl<'a> Type {
                 }
                 _ => false,
             }
+        }
+    }
+
+    pub fn flatten(&self) -> Result<Type> {
+        match self {
+            Type::Union(self_union_types) => {
+                let mut result_union_types = BTreeSet::new();
+                for self_union_type in self_union_types {
+                    result_union_types.insert(self_union_type.flatten()?);
+                }
+                Ok(Type::from(result_union_types))
+            }
+            Type::Array(element_type) => match &**element_type {
+                Type::Array(element_element_type) => Ok(Type::Array(element_element_type.clone())),
+                Type::Tuple(element_elements_types) => Ok(Type::Array(Box::new(Type::Union(
+                    BTreeSet::from_iter(element_elements_types.iter().cloned()),
+                )))),
+                Type::Union(element_union_types) => {
+                    let mut result_element_union_types = BTreeSet::new();
+                    for element_union_type in element_union_types {
+                        match element_union_type {
+                            Type::Array(element_union_element_type) => {
+                                result_element_union_types
+                                    .insert(*element_union_element_type.clone());
+                            }
+                            Type::Tuple(element_union_elements_types) => {
+                                for element_union_element_type in element_union_elements_types {
+                                    result_element_union_types
+                                        .insert(element_union_element_type.clone());
+                                }
+                            }
+                            non_sequence_type => {
+                                return Err(anyhow!(
+                                    "can not flatten {self:#?} because it may contain element of \
+                                     type {non_sequence_type:#?}"
+                                ));
+                            }
+                        }
+                    }
+                    Ok(Type::Array(Box::new(Type::from(
+                        result_element_union_types,
+                    ))))
+                }
+                non_sequence_type => Err(anyhow!(
+                    "can not flatten {self:#?} because it contains element of type \
+                     {non_sequence_type:#?}"
+                )),
+            },
+            Type::Tuple(elements_types) => {
+                if elements_types
+                    .iter()
+                    .all(|element_type| matches!(element_type, Type::Tuple(_)))
+                {
+                    let mut result_elements_types = Vec::new();
+                    for element_type in elements_types {
+                        match element_type {
+                            Type::Tuple(element_elements_types) => {
+                                for element_element_type in element_elements_types {
+                                    result_elements_types.push(element_element_type.clone());
+                                }
+                            }
+                            _ => panic!(),
+                        }
+                    }
+                    Ok(Type::Tuple(result_elements_types))
+                } else {
+                    let mut result_elements_types = BTreeSet::new();
+                    for element_type in elements_types {
+                        match element_type {
+                            Type::Array(element_element_type) => {
+                                result_elements_types.insert(*element_element_type.clone());
+                            }
+                            Type::Tuple(element_elements_types) => {
+                                for element_element_type in element_elements_types {
+                                    result_elements_types.insert(element_element_type.clone());
+                                }
+                            }
+                            Type::Union(element_union_types) => {
+                                for element_union_type in element_union_types {
+                                    match element_union_type {
+                                        Type::Array(element_union_element_type) => {
+                                            result_elements_types
+                                                .insert(*element_union_element_type.clone());
+                                        }
+                                        Type::Tuple(element_union_elements_types) => {
+                                            for element_union_element_type in
+                                                element_union_elements_types
+                                            {
+                                                result_elements_types
+                                                    .insert(element_union_element_type.clone());
+                                            }
+                                        }
+                                        non_sequence_type => {
+                                            return Err(anyhow!(
+                                                "can not flatten {self:#?} because it may contain \
+                                                 element of type {non_sequence_type:#?}"
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                            non_sequence_type => {
+                                return Err(anyhow!(
+                                    "can not flatten {self:#?} because it contains element of \
+                                     type {non_sequence_type:#?}"
+                                ));
+                            }
+                        }
+                    }
+                    Ok(Type::Array(Box::new(Type::from(result_elements_types))))
+                }
+            }
+            _ => Err(anyhow!("can not flatten {self:#?}")),
         }
     }
 

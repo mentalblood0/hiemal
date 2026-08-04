@@ -1114,7 +1114,7 @@ impl Compiler {
                     argument_compilation_context
                         .path
                         .0
-                        .extend([PathSegment::KeyValuePairs.into()]);
+                        .extend([PathSegment::Flatten.into()]);
                     let compiled_argument = self.compile_with_context(
                         argument,
                         &argument_compilation_context,
@@ -1125,75 +1125,13 @@ impl Compiler {
                         &Type::Array(Box::new(Type::Array(Box::new(Type::Any)))),
                         compilation_context,
                     )?;
-                    let result_type = match compiled_argument_resolved_type {
-                        Type::Tuple(argument_tuple_types) => {
-                            if argument_tuple_types.iter().any(|argument_tuple_type| {
-                                matches!(argument_tuple_type, Type::Array(_))
-                            }) {
-                                let mut result_element_union_types = BTreeSet::new();
-                                for argument_tuple_type in argument_tuple_types {
-                                    match argument_tuple_type {
-                                        Type::Array(argument_element_array_type) => {
-                                            result_element_union_types
-                                                .insert(*argument_element_array_type.clone());
-                                        }
-                                        Type::Tuple(argument_element_tuple_types) => {
-                                            for argument_element_tuple_type in
-                                                argument_element_tuple_types
-                                            {
-                                                result_element_union_types
-                                                    .insert(argument_element_tuple_type.clone());
-                                            }
-                                        }
-                                        unexpected_type => {
-                                            panic!("unexpected type in match: {unexpected_type:?}")
-                                        }
-                                    }
-                                }
-                                Type::Array(Box::new(Type::from(result_element_union_types)))
-                            } else {
-                                let mut result_elements_types = Vec::new();
-                                for argument_tuple_type in argument_tuple_types {
-                                    match argument_tuple_type {
-                                        Type::Tuple(argument_element_tuple_types) => {
-                                            result_elements_types
-                                                .extend_from_slice(&argument_element_tuple_types);
-                                        }
-                                        unexpected_type => {
-                                            panic!("unexpected type in match: {unexpected_type:?}")
-                                        }
-                                    }
-                                }
-                                Type::Tuple(result_elements_types)
-                            }
-                        }
-                        Type::Array(argument_array_type) => {
-                            let mut result_union_types = BTreeSet::new();
-                            match &*argument_array_type {
-                                Type::Tuple(argument_element_tuple_types) => {
-                                    for argument_element_tuple_type in argument_element_tuple_types
-                                    {
-                                        result_union_types
-                                            .insert(argument_element_tuple_type.clone());
-                                    }
-                                }
-                                Type::Array(argument_element_array_type) => {
-                                    result_union_types.insert(*argument_element_array_type.clone());
-                                }
-                                unexpected_type => {
-                                    panic!("unexpected type in match: {unexpected_type:?}")
-                                }
-                            };
-                            Type::Array(Box::new(Type::from(result_union_types)))
-                        }
-                        _ => {
-                            return Err(anyhow!(
-                                "expected array or tuple of arrays or tuples, found {:#?} at {:#?}",
-                                compiled_argument.node.r#type,
-                                compilation_context.path
-                            ));
-                        }
-                    };
+                    let r#type = compiled_argument_resolved_type.flatten().with_context(|| {
+                        format!(
+                            "expected flattenable type, found \
+                             {compiled_argument_resolved_type:#?} at {:#?}",
+                            compilation_context.path
+                        )
+                    })?;
                     NodeAndMetadata {
                         external_constants_name_clustered_indices: compiled_argument
                             .external_constants_name_clustered_indices,
@@ -1206,7 +1144,7 @@ impl Compiler {
                                     ),
                                 ),
                             },
-                            r#type: result_type,
+                            r#type,
                         },
                         is_pure: compiled_argument.is_pure,
                         is_computable: compiled_argument.is_computable,
