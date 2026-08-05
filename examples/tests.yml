@@ -31,15 +31,15 @@ compute:
             from:
               match: { parse yaml: "s" }
               cases:
-                - [number, { a: [1, 2, { b: 4 }] }]
+                - [number, { a: [1, 2, { b: 4, t: 1 }] }]
                 - - any
                   - a:
                       - 1
                       - 2
                       - match: { parse yaml: "s" }
                         cases:
-                          - [number, { b: 5 }]
-                          - [any, { b: 3 }]
+                          - [number, { b: 5, p: s }]
+                          - [any, { b: 3, t: s }]
             at: [a, 2, b]
           expected: 3
       test flatten union:

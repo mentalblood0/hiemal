@@ -1,5 +1,5 @@
 use std::cell::LazyCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 use std::{borrow::Cow, hash::Hash, hash::Hasher, io::Read, sync::Arc};
 
@@ -21,15 +21,17 @@ use crate::{
 
 type Constants = rpds::VectorSync<Option<IntermediateValueAndMetadata>>;
 
-static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
-    Mutex::new(
-        (std::thread::available_parallelism()
-            .unwrap_or(std::num::NonZero::try_from(1usize).unwrap())
-            .get()
-            .div_ceil(2)
-            - 1) as u8,
-    )
-});
+// static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
+//     Mutex::new(
+//         (std::thread::available_parallelism()
+//             .unwrap_or(std::num::NonZero::try_from(1usize).unwrap())
+//             .get()
+//             .div_ceil(2)
+//             - 1) as u8,
+//     )
+// });
+
+static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| Mutex::new(0u8));
 
 #[derive(Clone, Debug)]
 struct SequenceLockableInternals {
@@ -356,6 +358,22 @@ impl<'a> ComputationContext<'a> {
                 } else {
                     return Ok(None);
                 }
+            }
+            Type::Union(union_types) => {
+                let mut result_union_types = BTreeSet::new();
+                for union_type in union_types {
+                    result_union_types.insert(match union_type {
+                        Type::Object(inner_types) => {
+                            if let Some(result_type) = inner_types.get(key) {
+                                result_type.clone()
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                        _ => panic!(),
+                    });
+                }
+                Type::Union(result_union_types)
             }
             _ => panic!(),
         };
@@ -1322,7 +1340,7 @@ impl<'a> ComputationContext<'a> {
                 if cases.len() == 1 {
                     self.compute_node(&cases.first().unwrap().node, &case_constants)
                 } else {
-                    let computed_match_unrolled = LazyCell::new(|| {
+                    let computed_match_unrolled_lazy_cell = LazyCell::new(|| {
                         self.unroll_intermediate_value(&computed_match.intermediate_value)
                     });
                     for case in cases {
@@ -1339,7 +1357,7 @@ impl<'a> ComputationContext<'a> {
                                         .intermediate_value,
                                 )?;
                                 if &computed_expected_value == {
-                                    match &*computed_match_unrolled {
+                                    match &*computed_match_unrolled_lazy_cell {
                                         Ok(result) => result,
                                         Err(error) => return Err(anyhow!(error.to_string())),
                                     }
