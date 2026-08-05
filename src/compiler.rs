@@ -1144,6 +1144,7 @@ impl Compiler {
                             );
                             if refined_match_type == Type::LiteralTrue
                                 || refined_match_type == Type::LiteralFalse
+                                || refined_match_type == Type::Null
                             {
                                 covered_types.insert(refined_match_type);
                             }

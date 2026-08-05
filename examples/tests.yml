@@ -44,518 +44,518 @@ compute:
               at: [a, 2, b]
             cases:
               - [string, false]
-              - ["null", false]
+              - [null, false]
               - [number, true]
           expected: true
-      # test flatten union:
-      #   assert equal::
-      #     found:
-      #       flatten:
-      #         match: { parse yaml: "[1]" }
-      #         cases:
-      #           - [string, [[1, 2], [3, 4, 5]]]
-      #           - - any
-      #             - - [1, a, 3]
-      #               - match: { parse yaml: "[2]" }
-      #                 cases:
-      #                   - [string, [1]]
-      #                   - [any, [b]]
-      #               - [5, 6]
-      #     expected: [1, a, 3, b, 5, 6]
-      # test fold union:
-      #   assert equal::
-      #     found:
-      #       fold:
-      #         match: { parse yaml: "lalala" }
-      #         cases:
-      #           - [number, [a, b, c]]
-      #           - [any, [4, 5, 6]]
-      #       starting with: 0
-      #       through:
-      #         sum:
-      #           - constant: accumulator
-      #           - match: { constant: current }
-      #             as: _
-      #             cases:
-      #               - [number, _]
-      #               - [string, 0]
-      #     expected: 15
-      # test filter union:
-      #   assert equal::
-      #     found:
-      #       filter:
-      #         match: { parse yaml: "[1]" }
-      #         cases:
-      #           - [number, [1, 2, 3]]
-      #           - [{ array: number }, [s]]
-      #           - [any, [1]]
-      #       through:
-      #         is sorted:
-      #           - 0
-      #           - match: _
-      #             cases:
-      #               - [number, _]
-      #               - [string, 0]
-      #     expected: [s]
-      # test lazy object:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         first:
-      #           from:
-      #             filter:
-      #               starting with: 1
-      #               next: 1
-      #             through: false
-      #           at: [0]
-      #         second: 1
-      #       at: ["second"]
-      #     expected: 1
-      # test lazy tuple:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         - from:
-      #             filter:
-      #               starting with: 1
-      #               next: 1
-      #             through: false
-      #           at: [0]
-      #         - 1
-      #       at: [1]
-      #     expected: 1
-      # test filter simple:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         filter:
-      #           starting with: 1
-      #           next: { sum: [_, 1] }
-      #         through: { is sorted: [5, _] }
-      #       at: [[0, 3]]
-      #     expected: [5, 6, 7]
-      # test match sequence:
-      #   assert equal::
-      #     found:
-      #       match:
-      #         starting with: 1
-      #         next: {sum: [_, 1]}
-      #       cases:
-      #         - [{array: number}, true]
-      #         - [any, false]
-      #     expected: true
-      # test map union:
-      #   assert equal::
-      #     found:
-      #       map:
-      #         match: { parse yaml: "[1]" }
-      #         cases:
-      #           - [number, [1, 2, 3]]
-      #           - [{ array: number }, [s]]
-      #           - [any, [1]]
-      #       through:
-      #         sum:
-      #           - 1
-      #           - match: _
-      #             cases:
-      #               - [number, _]
-      #               - [string, 0]
-      #     expected: [1]
-      # test sum map:
-      #   assert equal::
-      #     found:
-      #       sum:
-      #         map: [1, 2, 3]
-      #         through: { sum: [_, 1] }
-      #     expected: 9
-      # test is sorted map:
-      #   assert equal::
-      #     found:
-      #       is sorted:
-      #         map: [1, 2, 3]
-      #         through: { sum: [_, 1] }
-      #     expected: true
-      # test map lazy slices intersections:
-      #   constants:
-      #     slice length: 4
-      #     slices amount: 100
-      #   compute:
-      #     assert equal::
-      #       found:
-      #         constants:
-      #           numbers:
-      #             map:
-      #               starting with: 1
-      #               next: { sum: [_, 1] }
-      #             through: { sum: [_, 2] }
-      #         compute:
-      #           from:
-      #             map:
-      #               starting with: 1
-      #               next: { sum: [_, 1] }
-      #             through:
-      #               from: { constant: numbers }
-      #               at: [[_, { sum: [_, { constant: slice length }] }]]
-      #           at: [[1, { constant: slices amount }]]
-      #       expected:
-      #         from:
-      #           map:
-      #             starting with: 4
-      #             next: { sum: [_, 1] }
-      #           through:
-      #             from:
-      #               starting with: _
-      #               next: { sum: [_, 1] }
-      #             at: [[0, { constant: slice length }]]
-      #         at: [[1, { constant: slices amount }]]
-      # test map lazy:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         map:
-      #           starting with: 1
-      #           next: { sum: [_, 1] }
-      #         through: { sum: [_, 2] }
-      #       at: [[2, 5]]
-      #     expected: [5, 6, 7]
-      # test sequence simple:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         starting with: 1
-      #         next: { sum: [_, 1] }
-      #       at: [[0, 3]]
-      #     expected: [1, 2, 3]
-      # test function as argument:
-      #   assert equal::
-      #     found:
-      #       functions:
-      #         apply::
-      #           function:: { constant: argument }
-      #       compute:
-      #         apply::
-      #           function:: { sum: [_, 1] }
-      #           argument: 1
-      #     expected: 2
-      # test override function:
-      #   assert equal::
-      #     found:
-      #       functions:
-      #         f:: _
-      #       compute:
-      #         functions:
-      #           f:: { sum: [_, 1] }
-      #         compute:
-      #           f:: 1
-      #     expected: 2
-      # test repeat:
-      #   assert equal::
-      #     found:
-      #       functions:
-      #         push back::
-      #           flatten: [{ constant: list }, [{ constant: value }]]
-      #         repeat::
-      #           match: { constant: amount }
-      #           cases:
-      #             - [1, [{ constant: value }]]
-      #             - - any
-      #               - push back::
-      #                   list:
-      #                     repeat::
-      #                       value: { constant: value }
-      #                       amount: { sum: [{ constant: amount }, -1] }
-      #                   value: { constant: value }
-      #       compute:
-      #         repeat::
-      #           value: [1, 2]
-      #           amount: 3
-      #     expected: [[1, 2], [1, 2], [1, 2]]
-      # test heterogenous branching:
-      #   assert equal::
-      #     found:
-      #       match: { is sorted: [1, 2, 3] }
-      #       cases:
-      #         - [true, 1]
-      #         - [false, string]
-      #     expected: 1
-      # test flatten tuple complex:
-      #   assert equal::
-      #     found:
-      #       flatten: [[1, a, 3], [b], [5, 6]]
-      #     expected: [1, a, 3, b, 5, 6]
-      # test flatten tuple simple:
-      #   assert equal::
-      #     found:
-      #       flatten: [[1, 2, 3], [4], [5, 6]]
-      #     expected: [1, 2, 3, 4, 5, 6]
-      # test fold heterogenous array:
-      #   assert equal::
-      #     found:
-      #       fold:
-      #         match: { parse yaml: "[1, 2, string, 3, 4]" }
-      #         as: matched
-      #         cases:
-      #           - [{ array: { union: [number, string] } }, { constant: matched }]
-      #           - [any, [1]]
-      #       as: current
-      #       starting with: 0
-      #       accumulating in: accumulator
-      #       through:
-      #         match: { constant: current }
-      #         as: matched
-      #         cases:
-      #           - [number, sum: [{ constant: accumulator }, { constant: matched }]]
-      #           - [string, 0]
-      #     expected: 7
-      # test fold heterogenous tuple:
-      #   assert equal::
-      #     found:
-      #       sum:
-      #         - fold: [1, 2, string, 3, 4]
-      #           as: current
-      #           starting with: 0
-      #           accumulating in: accumulator
-      #           through:
-      #             match: { constant: current }
-      #             cases:
-      #               - [
-      #                   number,
-      #                   sum: [{ constant: accumulator }, { constant: current }],
-      #                 ]
-      #               - [string, 0]
-      #         - 1
-      #     expected: 8
-      # test fold simple:
-      #   assert equal::
-      #     found:
-      #       fold: [1, 2, 3]
-      #       starting with: 0
-      #       through:
-      #         sum: [{ constant: accumulator }, { constant: current }]
-      #     expected: 6
-      # test map object:
-      #   assert equal::
-      #     found:
-      #       map:
-      #         key-value pairs: { first: 1, second: string, third: [1, 2, 3] }
-      #       through:
-      #         match: _
-      #         as: matched
-      #         cases:
-      #           - [{ tuple: [string, number] }, it's a number]
-      #           - [{ tuple: [string, string] }, it's a string]
-      #           - - { tuple: [string, { array: number }] }
-      #             - map: { from: { constant: matched }, at: [1] }
-      #               as: element from matched
-      #               through:
-      #                 sum: [{ constant: element from matched }, 1]
-      #     expected: [it's a number, it's a string, [2, 3, 4]]
-      # test map tuple and array:
-      #   assert equal::
-      #     found:
-      #       map: [1, string, 2, [1, 2, 3]]
-      #       through:
-      #         match: _
-      #         as: matched
-      #         cases:
-      #           - [number, it's a number]
-      #           - [string, it's a string]
-      #           - - { array: number }
-      #             - map: { constant: matched }
-      #               as: element from matched
-      #               through:
-      #                 sum: [{ constant: element from matched }, 1]
-      #     expected: [it's a number, it's a string, it's a number, [2, 3, 4]]
-      # test numbers:
-      #   assert equal::
-      #     found:
-      #       sum:
-      #         - 1234
-      #         - 1234.1234
-      #         - "1234"
-      #         - "1234.1234"
-      #         - "12345678901234567890123456789012345678901234567890123456789012345678901234567890"
-      #         - "12345678901234567890123456789012345678901234567890123456789012345678901234567.890"
-      #         - "12345678901234567890123456789012345678901234567890123456789012345678901234567/890"
-      #     expected: 687415888874985338887498533888749853388874985338887498533888749853388874985613459297/55625
-      # test recursive big:
-      #   assert equal::
-      #     found:
-      #       functions:
-      #         fibonacci 1::
-      #           match:
-      #             is sorted: [_, 1]
-      #           cases:
-      #             - [true, _]
-      #             - - false
-      #               - sum:
-      #                   - fibonacci 2::
-      #                       sum: [_, -1]
-      #                   - fibonacci 3::
-      #                       sum: [_, -2]
-      #         fibonacci 2::
-      #           match:
-      #             is sorted: [_, 1]
-      #           cases:
-      #             - [true, _]
-      #             - - false
-      #               - sum:
-      #                   - fibonacci 1::
-      #                       sum: [_, -1]
-      #                   - fibonacci 3::
-      #                       sum: [_, -2]
-      #         fibonacci 3::
-      #           match:
-      #             is sorted: [_, 1]
-      #           cases:
-      #             - [true, _]
-      #             - - false
-      #               - sum:
-      #                   - fibonacci 1::
-      #                       sum: [_, -1]
-      #                   - fibonacci 2::
-      #                       sum: [_, -2]
-      #       compute:
-      #         - fibonacci 1:: 10
-      #         - fibonacci 2:: 10
-      #         - fibonacci 3:: 10
-      #     expected: [55, 55, 55]
-      # test recursive normal:
-      #   assert equal::
-      #     found:
-      #       functions:
-      #         fibonacci::
-      #           match:
-      #             is sorted: [_, 1]
-      #           cases:
-      #             - [true, _]
-      #             - - false
-      #               - sum:
-      #                   - fibonacci::
-      #                       sum: [_, -1]
-      #                   - fibonacci::
-      #                       sum: [_, -2]
-      #       compute:
-      #         fibonacci:: 10
-      #     expected: 55
-      # test compound context:
-      #   assert equal::
-      #     found:
-      #       functions:
-      #         f::
-      #           sum:
-      #             - constant: a
-      #             - constant: b
-      #             - constant: c
-      #             - 4
-      #       constants:
-      #         c: 3
-      #       compute:
-      #         f::
-      #           a: 1
-      #           b: 2
-      #     expected: 10
-      # test from at value:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         a: [1, 2, { b: 3 }]
-      #       at: [a, 2, b]
-      #     expected: 3
-      # test from at value range from static to static:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         a: [1, 2, { b: 3 }, 4]
-      #       at: [a, [1, 3]]
-      #     expected: [2, { b: 3 }]
-      # test from at value range from static to dynamic:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         a: [1, 2, { b: 3 }, 4]
-      #       at: [a, [1, { sum: [2, 1] }]]
-      #     expected: [2, { b: 3 }]
-      # test from at value range from dynamic to dynamic:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         a: [1, 2, { b: 3 }, 4]
-      #       at: [a, [{ sum: [1, 0] }, { sum: [2, 1] }]]
-      #     expected: [2, { b: 3 }]
-      # test from at value range from dynamic to dynamic out of range:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         a: [1, 2, { b: 3 }, 4]
-      #       at: [a, [{ sum: [-5, -10] }, { sum: [5, 10] }]]
-      #     expected: [1, 2, { b: 3 }, 4]
-      # test from at function:
-      #   assert equal::
-      #     found:
-      #       functions:
-      #         fibonacci::
-      #           from: examples/fibonacci.yml
-      #           at: [functions, { object key: "fibonacci:" }]
-      #       compute:
-      #         fibonacci:: 10
-      #     expected: 55
-      # test from at compute:
-      #   assert equal::
-      #     found:
-      #       from: examples/fibonacci.yml
-      #       at: [compute, { object key: "fibonacci:" }]
-      #     expected: 24
-      # test from at default argument:
-      #   assert equal::
-      #     found:
-      #       functions:
-      #         f::
-      #           from: _
-      #           at: [1]
-      #       compute:
-      #         f:: [1, 2]
-      #     expected: 2
-      # test match by type refined branch:
-      #   assert equal::
-      #     found:
-      #       match: { parse yaml: "0x1A" }
-      #       cases:
-      #         - [number, true]
-      #         - [string, it's a string]
-      #         - [any, it's something else]
-      #     expected: true
-      # test match by type any branch:
-      #   assert equal::
-      #     found:
-      #       match: { parse yaml: "[]" }
-      #       cases:
-      #         - [number, it's a number]
-      #         - [string, it's a string]
-      #         - [any, true]
-      #     expected: true
-      # test match by type without any branch:
-      #   assert equal::
-      #     found:
-      #       match:
-      #         match: { parse yaml: "[]" }
-      #         as: _
-      #         cases:
-      #           - [number, _]
-      #           - [string, _]
-      #           - [any, null]
-      #       cases:
-      #         - [number, it's a number]
-      #         - [string, it's a string]
-      #         - ["null", true]
-      #     expected: true
-      # test match by value:
-      #   assert equal::
-      #     found:
-      #       match: { parse yaml: "[1, 2, 3]" }
-      #       cases:
-      #         - [number, it's a number]
-      #         - [string, it's a string]
-      #         - [[1, { sum: [1, 1] }, 3], true]
-      #         - [any, it's something else]
-      #     expected: true
+      test flatten union:
+        assert equal::
+          found:
+            flatten:
+              match: { parse yaml: "[1]" }
+              cases:
+                - [string, [[1, 2], [3, 4, 5]]]
+                - - any
+                  - - [1, a, 3]
+                    - match: { parse yaml: "[2]" }
+                      cases:
+                        - [string, [1]]
+                        - [any, [b]]
+                    - [5, 6]
+          expected: [1, a, 3, b, 5, 6]
+      test fold union:
+        assert equal::
+          found:
+            fold:
+              match: { parse yaml: "lalala" }
+              cases:
+                - [number, [a, b, c]]
+                - [any, [4, 5, 6]]
+            starting with: 0
+            through:
+              sum:
+                - constant: accumulator
+                - match: { constant: current }
+                  as: _
+                  cases:
+                    - [number, _]
+                    - [string, 0]
+          expected: 15
+      test filter union:
+        assert equal::
+          found:
+            filter:
+              match: { parse yaml: "[1]" }
+              cases:
+                - [number, [1, 2, 3]]
+                - [{ array: number }, [s]]
+                - [any, [1]]
+            through:
+              is sorted:
+                - 0
+                - match: _
+                  cases:
+                    - [number, _]
+                    - [string, 0]
+          expected: [s]
+      test lazy object:
+        assert equal::
+          found:
+            from:
+              first:
+                from:
+                  filter:
+                    starting with: 1
+                    next: 1
+                  through: false
+                at: [0]
+              second: 1
+            at: ["second"]
+          expected: 1
+      test lazy tuple:
+        assert equal::
+          found:
+            from:
+              - from:
+                  filter:
+                    starting with: 1
+                    next: 1
+                  through: false
+                at: [0]
+              - 1
+            at: [1]
+          expected: 1
+      test filter simple:
+        assert equal::
+          found:
+            from:
+              filter:
+                starting with: 1
+                next: { sum: [_, 1] }
+              through: { is sorted: [5, _] }
+            at: [[0, 3]]
+          expected: [5, 6, 7]
+      test match sequence:
+        assert equal::
+          found:
+            match:
+              starting with: 1
+              next: {sum: [_, 1]}
+            cases:
+              - [{array: number}, true]
+              - [any, false]
+          expected: true
+      test map union:
+        assert equal::
+          found:
+            map:
+              match: { parse yaml: "[1]" }
+              cases:
+                - [number, [1, 2, 3]]
+                - [{ array: number }, [s]]
+                - [any, [1]]
+            through:
+              sum:
+                - 1
+                - match: _
+                  cases:
+                    - [number, _]
+                    - [string, 0]
+          expected: [1]
+      test sum map:
+        assert equal::
+          found:
+            sum:
+              map: [1, 2, 3]
+              through: { sum: [_, 1] }
+          expected: 9
+      test is sorted map:
+        assert equal::
+          found:
+            is sorted:
+              map: [1, 2, 3]
+              through: { sum: [_, 1] }
+          expected: true
+      test map lazy slices intersections:
+        constants:
+          slice length: 4
+          slices amount: 100
+        compute:
+          assert equal::
+            found:
+              constants:
+                numbers:
+                  map:
+                    starting with: 1
+                    next: { sum: [_, 1] }
+                  through: { sum: [_, 2] }
+              compute:
+                from:
+                  map:
+                    starting with: 1
+                    next: { sum: [_, 1] }
+                  through:
+                    from: { constant: numbers }
+                    at: [[_, { sum: [_, { constant: slice length }] }]]
+                at: [[1, { constant: slices amount }]]
+            expected:
+              from:
+                map:
+                  starting with: 4
+                  next: { sum: [_, 1] }
+                through:
+                  from:
+                    starting with: _
+                    next: { sum: [_, 1] }
+                  at: [[0, { constant: slice length }]]
+              at: [[1, { constant: slices amount }]]
+      test map lazy:
+        assert equal::
+          found:
+            from:
+              map:
+                starting with: 1
+                next: { sum: [_, 1] }
+              through: { sum: [_, 2] }
+            at: [[2, 5]]
+          expected: [5, 6, 7]
+      test sequence simple:
+        assert equal::
+          found:
+            from:
+              starting with: 1
+              next: { sum: [_, 1] }
+            at: [[0, 3]]
+          expected: [1, 2, 3]
+      test function as argument:
+        assert equal::
+          found:
+            functions:
+              apply::
+                function:: { constant: argument }
+            compute:
+              apply::
+                function:: { sum: [_, 1] }
+                argument: 1
+          expected: 2
+      test override function:
+        assert equal::
+          found:
+            functions:
+              f:: _
+            compute:
+              functions:
+                f:: { sum: [_, 1] }
+              compute:
+                f:: 1
+          expected: 2
+      test repeat:
+        assert equal::
+          found:
+            functions:
+              push back::
+                flatten: [{ constant: list }, [{ constant: value }]]
+              repeat::
+                match: { constant: amount }
+                cases:
+                  - [1, [{ constant: value }]]
+                  - - any
+                    - push back::
+                        list:
+                          repeat::
+                            value: { constant: value }
+                            amount: { sum: [{ constant: amount }, -1] }
+                        value: { constant: value }
+            compute:
+              repeat::
+                value: [1, 2]
+                amount: 3
+          expected: [[1, 2], [1, 2], [1, 2]]
+      test heterogenous branching:
+        assert equal::
+          found:
+            match: { is sorted: [1, 2, 3] }
+            cases:
+              - [true, 1]
+              - [false, string]
+          expected: 1
+      test flatten tuple complex:
+        assert equal::
+          found:
+            flatten: [[1, a, 3], [b], [5, 6]]
+          expected: [1, a, 3, b, 5, 6]
+      test flatten tuple simple:
+        assert equal::
+          found:
+            flatten: [[1, 2, 3], [4], [5, 6]]
+          expected: [1, 2, 3, 4, 5, 6]
+      test fold heterogenous array:
+        assert equal::
+          found:
+            fold:
+              match: { parse yaml: "[1, 2, string, 3, 4]" }
+              as: matched
+              cases:
+                - [{ array: { union: [number, string] } }, { constant: matched }]
+                - [any, [1]]
+            as: current
+            starting with: 0
+            accumulating in: accumulator
+            through:
+              match: { constant: current }
+              as: matched
+              cases:
+                - [number, sum: [{ constant: accumulator }, { constant: matched }]]
+                - [string, 0]
+          expected: 7
+      test fold heterogenous tuple:
+        assert equal::
+          found:
+            sum:
+              - fold: [1, 2, string, 3, 4]
+                as: current
+                starting with: 0
+                accumulating in: accumulator
+                through:
+                  match: { constant: current }
+                  cases:
+                    - [
+                        number,
+                        sum: [{ constant: accumulator }, { constant: current }],
+                      ]
+                    - [string, 0]
+              - 1
+          expected: 8
+      test fold simple:
+        assert equal::
+          found:
+            fold: [1, 2, 3]
+            starting with: 0
+            through:
+              sum: [{ constant: accumulator }, { constant: current }]
+          expected: 6
+      test map object:
+        assert equal::
+          found:
+            map:
+              key-value pairs: { first: 1, second: string, third: [1, 2, 3] }
+            through:
+              match: _
+              as: matched
+              cases:
+                - [{ tuple: [string, number] }, it's a number]
+                - [{ tuple: [string, string] }, it's a string]
+                - - { tuple: [string, { array: number }] }
+                  - map: { from: { constant: matched }, at: [1] }
+                    as: element from matched
+                    through:
+                      sum: [{ constant: element from matched }, 1]
+          expected: [it's a number, it's a string, [2, 3, 4]]
+      test map tuple and array:
+        assert equal::
+          found:
+            map: [1, string, 2, [1, 2, 3]]
+            through:
+              match: _
+              as: matched
+              cases:
+                - [number, it's a number]
+                - [string, it's a string]
+                - - { array: number }
+                  - map: { constant: matched }
+                    as: element from matched
+                    through:
+                      sum: [{ constant: element from matched }, 1]
+          expected: [it's a number, it's a string, it's a number, [2, 3, 4]]
+      test numbers:
+        assert equal::
+          found:
+            sum:
+              - 1234
+              - 1234.1234
+              - "1234"
+              - "1234.1234"
+              - "12345678901234567890123456789012345678901234567890123456789012345678901234567890"
+              - "12345678901234567890123456789012345678901234567890123456789012345678901234567.890"
+              - "12345678901234567890123456789012345678901234567890123456789012345678901234567/890"
+          expected: 687415888874985338887498533888749853388874985338887498533888749853388874985613459297/55625
+      test recursive big:
+        assert equal::
+          found:
+            functions:
+              fibonacci 1::
+                match:
+                  is sorted: [_, 1]
+                cases:
+                  - [true, _]
+                  - - false
+                    - sum:
+                        - fibonacci 2::
+                            sum: [_, -1]
+                        - fibonacci 3::
+                            sum: [_, -2]
+              fibonacci 2::
+                match:
+                  is sorted: [_, 1]
+                cases:
+                  - [true, _]
+                  - - false
+                    - sum:
+                        - fibonacci 1::
+                            sum: [_, -1]
+                        - fibonacci 3::
+                            sum: [_, -2]
+              fibonacci 3::
+                match:
+                  is sorted: [_, 1]
+                cases:
+                  - [true, _]
+                  - - false
+                    - sum:
+                        - fibonacci 1::
+                            sum: [_, -1]
+                        - fibonacci 2::
+                            sum: [_, -2]
+            compute:
+              - fibonacci 1:: 10
+              - fibonacci 2:: 10
+              - fibonacci 3:: 10
+          expected: [55, 55, 55]
+      test recursive normal:
+        assert equal::
+          found:
+            functions:
+              fibonacci::
+                match:
+                  is sorted: [_, 1]
+                cases:
+                  - [true, _]
+                  - - false
+                    - sum:
+                        - fibonacci::
+                            sum: [_, -1]
+                        - fibonacci::
+                            sum: [_, -2]
+            compute:
+              fibonacci:: 10
+          expected: 55
+      test compound context:
+        assert equal::
+          found:
+            functions:
+              f::
+                sum:
+                  - constant: a
+                  - constant: b
+                  - constant: c
+                  - 4
+            constants:
+              c: 3
+            compute:
+              f::
+                a: 1
+                b: 2
+          expected: 10
+      test from at value:
+        assert equal::
+          found:
+            from:
+              a: [1, 2, { b: 3 }]
+            at: [a, 2, b]
+          expected: 3
+      test from at value range from static to static:
+        assert equal::
+          found:
+            from:
+              a: [1, 2, { b: 3 }, 4]
+            at: [a, [1, 3]]
+          expected: [2, { b: 3 }]
+      test from at value range from static to dynamic:
+        assert equal::
+          found:
+            from:
+              a: [1, 2, { b: 3 }, 4]
+            at: [a, [1, { sum: [2, 1] }]]
+          expected: [2, { b: 3 }]
+      test from at value range from dynamic to dynamic:
+        assert equal::
+          found:
+            from:
+              a: [1, 2, { b: 3 }, 4]
+            at: [a, [{ sum: [1, 0] }, { sum: [2, 1] }]]
+          expected: [2, { b: 3 }]
+      test from at value range from dynamic to dynamic out of range:
+        assert equal::
+          found:
+            from:
+              a: [1, 2, { b: 3 }, 4]
+            at: [a, [{ sum: [-5, -10] }, { sum: [5, 10] }]]
+          expected: [1, 2, { b: 3 }, 4]
+      test from at function:
+        assert equal::
+          found:
+            functions:
+              fibonacci::
+                from: examples/fibonacci.yml
+                at: [functions, { object key: "fibonacci:" }]
+            compute:
+              fibonacci:: 10
+          expected: 55
+      test from at compute:
+        assert equal::
+          found:
+            from: examples/fibonacci.yml
+            at: [compute, { object key: "fibonacci:" }]
+          expected: 24
+      test from at default argument:
+        assert equal::
+          found:
+            functions:
+              f::
+                from: _
+                at: [1]
+            compute:
+              f:: [1, 2]
+          expected: 2
+      test match by type refined branch:
+        assert equal::
+          found:
+            match: { parse yaml: "0x1A" }
+            cases:
+              - [number, true]
+              - [string, it's a string]
+              - [any, it's something else]
+          expected: true
+      test match by type any branch:
+        assert equal::
+          found:
+            match: { parse yaml: "[]" }
+            cases:
+              - [number, it's a number]
+              - [string, it's a string]
+              - [any, true]
+          expected: true
+      test match by type without any branch:
+        assert equal::
+          found:
+            match:
+              match: { parse yaml: "[]" }
+              as: _
+              cases:
+                - [number, _]
+                - [string, _]
+                - [any, null]
+            cases:
+              - [number, it's a number]
+              - [string, it's a string]
+              - [null, true]
+          expected: true
+      test match by value:
+        assert equal::
+          found:
+            match: { parse yaml: "[1, 2, 3]" }
+            cases:
+              - [number, it's a number]
+              - [string, it's a string]
+              - [[1, { sum: [1, 1] }, 3], true]
+              - [any, it's something else]
+          expected: true
