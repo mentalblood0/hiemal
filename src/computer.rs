@@ -21,17 +21,15 @@ use crate::{
 
 type Constants = rpds::VectorSync<Option<IntermediateValueAndMetadata>>;
 
-// static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
-//     Mutex::new(
-//         (std::thread::available_parallelism()
-//             .unwrap_or(std::num::NonZero::try_from(1usize).unwrap())
-//             .get()
-//             .div_ceil(2)
-//             - 1) as u8,
-//     )
-// });
-
-static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| Mutex::new(0u8));
+static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
+    Mutex::new(
+        (std::thread::available_parallelism()
+            .unwrap_or(std::num::NonZero::try_from(1usize).unwrap())
+            .get()
+            .div_ceil(2)
+            - 1) as u8,
+    )
+});
 
 #[derive(Clone, Debug)]
 struct SequenceLockableInternals {
