@@ -645,7 +645,7 @@ impl Compiler {
                 let mut is_computable = compiled_extracted_from.is_computable;
                 let mut external_constants_name_clustered_indices =
                     compiled_extracted_from.external_constants_name_clustered_indices;
-                let at_path = if let Some(first_non_program_path_segment_index) =
+                let value_path = if let Some(first_non_program_path_segment_index) =
                     first_non_program_path_segment_index_option
                 {
                     let mut result =
@@ -740,8 +740,13 @@ impl Compiler {
                     .node
                     .r#type
                     .clone()
-                    .at_path(&at_path)?
-                {
+                    .at_path(&value_path)
+                    .with_context(|| {
+                        format!(
+                            "expected value with path {value_path:#?}, found {:#?} at {:#?}",
+                            compiled_extracted_from.node.r#type, compilation_context.path
+                        )
+                    })? {
                     TypeAtResult::Single(r#type) => r#type,
                     TypeAtResult::Multiple(union_types) => Type::Union(union_types),
                 };
@@ -749,7 +754,7 @@ impl Compiler {
                     node: Node {
                         content: Content::FromAt {
                             from: Box::new(compiled_extracted_from.node),
-                            value_path_segments: at_path,
+                            value_path_segments: value_path,
                         },
                         r#type,
                     },
