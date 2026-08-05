@@ -8,6 +8,10 @@ use anyhow::{Result, anyhow};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize, Serializer};
 
+use crate::{
+    intermediate_representation::RangeBound, intermediate_representation::ValuePathSegment,
+};
+
 #[derive(Debug, Clone)]
 pub struct MaybeType {
     pub lockable_internals: Arc<RwLock<Option<Type>>>,
@@ -144,6 +148,12 @@ impl From<BTreeSet<Type>> for Type {
             }
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum TypeAtResult {
+    Single(Type),
+    Multiple(BTreeSet<Type>),
 }
 
 impl<'a> Type {
@@ -389,6 +399,160 @@ impl<'a> Type {
                 }
             }
             _ => Err(anyhow!("can not flatten {self:#?}")),
+        }
+    }
+
+    pub fn at(self, at_segment: &ValuePathSegment) -> Result<TypeAtResult> {
+        match (self, at_segment) {
+            (Type::Union(union_types), _) => {
+                let mut result_types = BTreeSet::new();
+                for union_type in union_types {
+                    match union_type.at(at_segment)? {
+                        TypeAtResult::Single(result_type) => {
+                            result_types.insert(result_type);
+                        }
+                        TypeAtResult::Multiple(ref mut result_types_part) => {
+                            result_types.append(result_types_part);
+                        }
+                    }
+                }
+                Ok(TypeAtResult::Multiple(result_types))
+            }
+            (Type::Array(element_type), ValuePathSegment::ArrayIndex(_)) => {
+                Ok(TypeAtResult::Single(*element_type))
+            }
+            (Type::Tuple(mut elements_types), ValuePathSegment::ArrayIndex(tuple_index)) => {
+                if *tuple_index >= elements_types.len() {
+                    let elements_types_len = elements_types.len();
+                    return Err(anyhow!(
+                        "can not get from {:#?} at {at_segment:?} because there is only {} \
+                         elements",
+                        Type::Tuple(elements_types),
+                        elements_types_len
+                    ));
+                }
+                Ok(TypeAtResult::Single(elements_types.remove(*tuple_index)))
+            }
+            (Type::Array(element_type), ValuePathSegment::ArrayRange { from, to }) => {
+                if let (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) =
+                    (&**from, &**to)
+                    && from > to
+                {
+                    return Err(anyhow!(
+                        "can not get from {:#?} at {at_segment:?}",
+                        Type::Array(element_type)
+                    ));
+                }
+                if let (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) =
+                    (&**from, &**to)
+                {
+                    Ok(TypeAtResult::Single(Type::Tuple(vec![
+                        *element_type;
+                        to - from
+                    ])))
+                } else {
+                    Ok(TypeAtResult::Single(Type::Array(element_type)))
+                }
+            }
+            (Type::Tuple(elements_types), ValuePathSegment::ArrayRange { from, to }) => {
+                if let (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) =
+                    (&**from, &**to)
+                    && from > to
+                {
+                    return Err(anyhow!(
+                        "can not get from {:#?} at {at_segment:?}",
+                        Type::Tuple(elements_types)
+                    ));
+                }
+                if let RangeBound::Static(Some(from)) = &**from
+                    && from >= &elements_types.len()
+                {
+                    let elements_types_len = elements_types.len();
+                    return Err(anyhow!(
+                        "can not get from {:#?} at {at_segment:?} because {from} >= {}",
+                        Type::Tuple(elements_types),
+                        elements_types_len
+                    ));
+                }
+                if let RangeBound::Static(Some(to)) = &**to
+                    && to > &elements_types.len()
+                {
+                    let elements_types_len = elements_types.len();
+                    return Err(anyhow!(
+                        "can not get from {:#?} at {at_segment:?} because {to} > {}",
+                        Type::Tuple(elements_types),
+                        elements_types_len
+                    ));
+                }
+                match (&**from, &**to) {
+                    (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) => {
+                        Ok(TypeAtResult::Single(Type::Tuple(Vec::from_iter(
+                            elements_types.into_iter().skip(*from).take(to - from),
+                        ))))
+                    }
+                    (RangeBound::Static(Some(from)), RangeBound::Static(None)) => {
+                        Ok(TypeAtResult::Single(Type::Tuple(Vec::from_iter(
+                            elements_types.into_iter().skip(*from),
+                        ))))
+                    }
+                    (RangeBound::Static(None), RangeBound::Static(Some(to))) => {
+                        Ok(TypeAtResult::Single(Type::Tuple(Vec::from_iter(
+                            elements_types.into_iter().take(*to),
+                        ))))
+                    }
+                    (RangeBound::Static(Some(from)), RangeBound::Dynamic(_)) => {
+                        Ok(TypeAtResult::Single(Type::Array(Box::new(Type::Union(
+                            BTreeSet::from_iter(elements_types.into_iter().skip(*from)),
+                        )))))
+                    }
+                    (RangeBound::Dynamic(_), RangeBound::Static(Some(to))) => {
+                        Ok(TypeAtResult::Single(Type::Array(Box::new(Type::Union(
+                            BTreeSet::from_iter(elements_types.into_iter().take(*to)),
+                        )))))
+                    }
+                    _ => Ok(TypeAtResult::Single(Type::Array(Box::new(Type::Union(
+                        BTreeSet::from_iter(elements_types),
+                    ))))),
+                }
+            }
+            (Type::Object(mut object_inner_types), ValuePathSegment::ObjectKey(object_key)) => {
+                if let Some(inner_type) = object_inner_types.remove(object_key) {
+                    Ok(TypeAtResult::Single(inner_type))
+                } else {
+                    Err(anyhow!(
+                        "can not get from {:#?} at {at_segment:?} because no key {object_key:?}",
+                        Type::Object(object_inner_types)
+                    ))
+                }
+            }
+            (self_, _) => Err(anyhow!("can not get from {self_:#?} at {at_segment:?}",)),
+        }
+    }
+
+    pub fn at_path(self, path: &[ValuePathSegment]) -> Result<TypeAtResult> {
+        if let Some(first_path_segment) = path.first() {
+            let self_at = self.at(first_path_segment)?;
+            match self_at {
+                TypeAtResult::Single(intermediate_result) => {
+                    intermediate_result.at_path(&path[1..])
+                }
+                TypeAtResult::Multiple(intermediate_results) => {
+                    let mut results = BTreeSet::new();
+                    for intermediate_result in intermediate_results {
+                        match intermediate_result.at_path(&path[1..])? {
+                            TypeAtResult::Single(result) => {
+                                results.insert(result);
+                            }
+                            TypeAtResult::Multiple(mut results_part) => {
+                                results.append(&mut results_part);
+                            }
+                        }
+                    }
+                    Ok(TypeAtResult::Multiple(results))
+                }
+            }
+        } else {
+            Ok(TypeAtResult::Single(self))
         }
     }
 

@@ -149,6 +149,7 @@ pub struct ConstantDefinition {
 
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[serde(untagged)]
 pub enum RangeBound {
     Static(Option<usize>),
     Dynamic(Node),
@@ -165,5 +166,8 @@ impl Default for RangeBound {
 pub enum ValuePathSegment {
     ArrayIndex(usize),
     ObjectKey(String),
-    ArrayRange((Box<RangeBound>, Box<RangeBound>)),
+    ArrayRange {
+        from: Box<RangeBound>,
+        to: Box<RangeBound>,
+    },
 }
