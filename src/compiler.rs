@@ -161,6 +161,7 @@ fn resolve_type(
                 }
                 Ok(got_type.clone())
             }
+            (Type::LiteralString(_), Type::String) => Ok(got_type.clone()),
             _ => Err(compilation_context.error(got_type, expected_type)),
         }
     }
@@ -1114,11 +1115,6 @@ impl Compiler {
                                 .r#type
                                 .intersection(&refined_match_type)
                                 .is_none()
-                                && compiled_match
-                                    .node
-                                    .r#type
-                                    .intersection(&refined_match_type)
-                                    .is_none()
                             {
                                 continue;
                             };
@@ -1142,10 +1138,13 @@ impl Compiler {
                             result_external_constants_name_clustered_indices.append(
                                 &mut compiled_case.external_constants_name_clustered_indices,
                             );
-                            if refined_match_type == Type::LiteralTrue
-                                || refined_match_type == Type::LiteralFalse
-                                || refined_match_type == Type::Null
-                            {
+                            if matches!(
+                                refined_match_type,
+                                Type::LiteralTrue
+                                    | Type::LiteralFalse
+                                    | Type::LiteralString(_)
+                                    | Type::Null
+                            ) {
                                 covered_types.insert(refined_match_type);
                             }
                             case_is_pure &= compiled_condition.is_pure && compiled_case.is_pure;

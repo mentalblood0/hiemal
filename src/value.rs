@@ -166,7 +166,7 @@ impl Value {
         match value_option {
             Some(value) => match value {
                 Value::Number(_) => Type::Number,
-                Value::String(_) => Type::String,
+                Value::String(string) => Type::LiteralString(string.clone()),
                 Value::Bool(true) => Type::LiteralTrue,
                 Value::Bool(false) => Type::LiteralFalse,
                 Value::Tuple(tuple) => {

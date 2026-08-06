@@ -9,7 +9,9 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::{
-    intermediate_representation::RangeBound, intermediate_representation::ValuePathSegment,
+    intermediate_representation::RangeBound,
+    intermediate_representation::ValuePathSegment,
+    value::{deserialize_rope, serialize_rope},
 };
 
 #[derive(Debug, Clone)]
@@ -79,6 +81,8 @@ pub enum Type {
     LiteralTrue,
     #[serde(rename = "literal false")]
     LiteralFalse,
+    #[serde(rename = "literal string")]
+    LiteralString(#[serde(deserialize_with = "deserialize_rope")] ropey::Rope),
     #[serde(skip_deserializing)]
     Unknown(MaybeType),
 }
@@ -109,6 +113,14 @@ pub enum KnownType {
     LiteralTrue,
     #[serde(rename = "literal false")]
     LiteralFalse,
+    #[serde(rename = "literal string")]
+    LiteralString(
+        #[serde(
+            deserialize_with = "deserialize_rope",
+            serialize_with = "serialize_rope"
+        )]
+        ropey::Rope,
+    ),
 }
 
 impl Serialize for Type {
@@ -142,7 +154,6 @@ impl From<BTreeSet<Type>> for Type {
                 union_types.insert(Type::Bool);
             }
             match union_types.len() {
-                0 => Type::Null,
                 1 => union_types.into_iter().next().unwrap(),
                 _ => Type::Union(union_types),
             }
@@ -174,12 +185,6 @@ impl<'a> Type {
 
     pub fn is_concrete(&self) -> bool {
         match self {
-            Type::Number
-            | Type::String
-            | Type::Bool
-            | Type::Null
-            | Type::LiteralTrue
-            | Type::LiteralFalse => true,
             Type::Array(element_type) => element_type.is_concrete(),
             Type::Tuple(elements_types) => elements_types
                 .iter()
@@ -188,6 +193,7 @@ impl<'a> Type {
                 .values()
                 .all(|value_type| value_type.is_concrete()),
             Type::Union(_) | Type::Any | Type::Unknown(_) => false,
+            _ => true,
         }
     }
 
@@ -217,8 +223,7 @@ impl<'a> Type {
             true
         } else {
             match (self, other) {
-                (Type::Any, _) => true,
-                (_, Type::Any) => false,
+                (Type::Any, _) | (Type::String, Type::LiteralString(_)) => true,
                 (Type::Union(self_union_types), Type::Union(other_union_types)) => {
                     if self_union_types.is_superset(other_union_types) {
                         true
@@ -239,11 +244,20 @@ impl<'a> Type {
                     }
                 }
                 (Type::Union(self_union_types), other_type) => {
-                    self_union_types.contains(other_type)
+                    if self_union_types.contains(other_type) {
+                        true
+                    } else {
+                        for self_union_type in self_union_types {
+                            if self_union_type.contains(other_type) {
+                                return true;
+                            }
+                        }
+                        false
+                    }
                 }
                 (self_type, Type::Union(other_union_types)) => {
                     other_union_types.len() == 1
-                        && Some(self_type) == other_union_types.iter().next()
+                        && self_type.contains(other_union_types.iter().next().unwrap())
                 }
                 (Type::Bool, Type::LiteralTrue | Type::LiteralFalse) => true,
                 (
@@ -576,6 +590,16 @@ impl<'a> Type {
         } else {
             match (self, other) {
                 (Type::Any, other_type) | (other_type, Type::Any) => Some(other_type.clone()),
+                (Type::Bool, Type::LiteralTrue) | (Type::LiteralTrue, Type::Bool) => {
+                    Some(Type::LiteralTrue)
+                }
+                (Type::Bool, Type::LiteralFalse) | (Type::LiteralFalse, Type::Bool) => {
+                    Some(Type::LiteralFalse)
+                }
+                (Type::String, Type::LiteralString(literal_string))
+                | (Type::LiteralString(literal_string), Type::String) => {
+                    Some(Type::LiteralString(literal_string.clone()))
+                }
                 (Type::Union(self_union_types), Type::Union(other_union_types)) => {
                     let result = self_union_types
                         .intersection(other_union_types)
@@ -594,12 +618,6 @@ impl<'a> Type {
                         }
                     }
                     None
-                }
-                (Type::Bool, Type::LiteralTrue) | (Type::LiteralTrue, Type::Bool) => {
-                    Some(Type::LiteralTrue)
-                }
-                (Type::Bool, Type::LiteralFalse) | (Type::LiteralFalse, Type::Bool) => {
-                    Some(Type::LiteralFalse)
                 }
                 (Type::Array(self_array_element_type), Type::Array(other_array_element_type)) => {
                     self_array_element_type

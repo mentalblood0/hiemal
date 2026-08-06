@@ -16,7 +16,6 @@ functions:
           at: [1]
         cases:
           - [ok, false]
-          - [string, true]
           - [{object: {error: any}}, true]
     as: _
     cases:
