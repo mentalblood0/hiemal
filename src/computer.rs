@@ -1,5 +1,5 @@
 use std::cell::LazyCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::LazyLock;
 use std::{borrow::Cow, hash::Hash, hash::Hasher, io::Read, sync::Arc};
 
@@ -19,7 +19,7 @@ use crate::{
     value::Value,
 };
 
-type Constants = rpds::VectorSync<Option<IntermediateValueAndMetadata>>;
+type Constants = rpds::VectorSync<Option<Arc<IntermediateValueAndMetadata>>>;
 
 static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
     Mutex::new(
@@ -35,7 +35,7 @@ static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
 struct SequenceLockableInternals {
     next_node: Arc<Node>,
     next_constants: Constants,
-    already_computed_values: Vec<IntermediateValueAndMetadata>,
+    already_computed_values: Vec<Arc<IntermediateValueAndMetadata>>,
 }
 
 #[derive(Clone, Debug)]
@@ -73,13 +73,13 @@ impl Hash for Sequence {
 
 #[derive(Clone, Debug)]
 struct MapLockableInternals {
-    elements_taken_for_computation: BTreeMap<usize, Arc<RwLock<IntermediateValueAndMetadata>>>,
+    elements_taken_for_computation: BTreeMap<usize, Arc<RwLock<Arc<IntermediateValueAndMetadata>>>>,
 }
 
 #[derive(Clone, Debug)]
 struct Map {
     intermediate_representation_content: Arc<intermediate_representation::Map>,
-    computed_map: Box<IntermediateValueAndMetadata>,
+    computed_map: Arc<IntermediateValueAndMetadata>,
     throughs: Throughs,
     constants: Constants,
     lockable_internals: Arc<RwLock<MapLockableInternals>>,
@@ -115,13 +115,13 @@ impl Hash for Map {
 #[derive(Clone, Debug)]
 struct FilterLockableInternals {
     already_processed_values_count: usize,
-    already_computed_values: Vec<IntermediateValueAndMetadata>,
+    already_computed_values: Vec<Arc<IntermediateValueAndMetadata>>,
 }
 
 #[derive(Clone, Debug)]
 struct Filter {
     intermediate_representation_content: Arc<intermediate_representation::Filter>,
-    computed_filter: Box<IntermediateValueAndMetadata>,
+    computed_filter: Arc<IntermediateValueAndMetadata>,
     throughs: Throughs,
     constants: Constants,
     lockable_internals: Arc<RwLock<FilterLockableInternals>>,
@@ -158,7 +158,7 @@ impl Hash for Filter {
 struct LazyValue {
     node: Arc<Node>,
     constants: Constants,
-    computed: Arc<Mutex<Option<IntermediateValueAndMetadata>>>,
+    computed: Arc<Mutex<Option<Arc<IntermediateValueAndMetadata>>>>,
 }
 
 impl PartialEq for LazyValue {
@@ -192,8 +192,8 @@ impl Hash for LazyValue {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 enum IntermediateValue {
     Value(Arc<Option<Value>>),
-    Tuple(Vector<IntermediateValue>),
-    Object(containers::Object<String, IntermediateValue>),
+    Tuple(Vector<IntermediateValueAndMetadata>),
+    Object(containers::Object<String, IntermediateValueAndMetadata>),
     Sequence(Sequence),
     Map(Map),
     Filter(Filter),
@@ -208,7 +208,7 @@ impl Default for IntermediateValue {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 struct IntermediateValueAndMetadata {
-    intermediate_value: Arc<IntermediateValue>,
+    intermediate_value: IntermediateValue,
     r#type: Type,
 }
 
@@ -216,7 +216,7 @@ struct IntermediateValueAndMetadata {
 struct ComputationContext<'a> {
     computer_config: &'a ComputerConfig,
     intermediate_representation: &'a IntermediateRepresentation,
-    functions_results_cache: &'a Arc<RwLock<HashMap<u128, IntermediateValueAndMetadata>>>,
+    functions_results_cache: &'a Arc<RwLock<HashMap<u128, Arc<IntermediateValueAndMetadata>>>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -244,9 +244,7 @@ impl Computer {
             intermediate_representation.unique_constants_names_count,
         ));
         computation_context.unroll_intermediate_value(
-            &computation_context
-                .compute_node(&intermediate_representation.root, &constants)?
-                .intermediate_value,
+            &computation_context.compute_node(&intermediate_representation.root, &constants)?,
         )
     }
 }
@@ -263,7 +261,10 @@ where
 }
 
 impl<'a> ComputationContext<'a> {
-    fn compute_lazy_value(&self, lazy_value: &LazyValue) -> Result<IntermediateValueAndMetadata> {
+    fn compute_lazy_value(
+        &self,
+        lazy_value: &LazyValue,
+    ) -> Result<Arc<IntermediateValueAndMetadata>> {
         let mut computed_lock = lazy_value.computed.lock();
         if computed_lock.is_none() {
             let result = self.compute_node(&lazy_value.node, &lazy_value.constants)?;
@@ -276,7 +277,7 @@ impl<'a> ComputationContext<'a> {
 
     fn with_computed_lazy_value<F, R>(&self, lazy_value: &LazyValue, function: F) -> Result<R>
     where
-        F: Fn(&IntermediateValueAndMetadata) -> Result<R>,
+        F: Fn(&Arc<IntermediateValueAndMetadata>) -> Result<R>,
     {
         let mut computed_lock = lazy_value.computed.lock();
         if computed_lock.is_none() {
@@ -302,7 +303,7 @@ impl<'a> ComputationContext<'a> {
             .current_constant_name_clustered_index] = Some(next.clone());
         lockable_internals_write_guard
             .already_computed_values
-            .push(next.clone());
+            .push(next);
         Ok(())
     }
 
@@ -327,7 +328,7 @@ impl<'a> ComputationContext<'a> {
                 } => &nodes[nodes_indexes[next_input_value_index]],
             };
             let computed_next_through = self.compute_node(next_through, &next_constants)?;
-            if (*self.unroll_intermediate_value(&computed_next_through.intermediate_value)?)
+            if (*self.unroll_intermediate_value(&computed_next_through)?)
                 .clone()
                 .unwrap()
                 .as_bool()
@@ -335,7 +336,7 @@ impl<'a> ComputationContext<'a> {
             {
                 lockable_internals_write_guard
                     .already_computed_values
-                    .push(next_input_value.clone());
+                    .push(next_input_value);
             }
             lockable_internals_write_guard.already_processed_values_count += 1;
             Ok(true)
@@ -346,42 +347,11 @@ impl<'a> ComputationContext<'a> {
 
     fn get_by_key_from_intermediate_value(
         &self,
-        intermediate_value_and_metadata: &IntermediateValueAndMetadata,
+        intermediate_value_and_metadata: &Arc<IntermediateValueAndMetadata>,
         key: &String,
-    ) -> Result<Option<IntermediateValueAndMetadata>> {
-        let result_type = match &intermediate_value_and_metadata.r#type {
-            Type::Object(inner_types) => {
-                if let Some(result_type) = inner_types.get(key) {
-                    result_type.clone()
-                } else {
-                    return Ok(None);
-                }
-            }
-            Type::Union(union_types) => {
-                let mut result_union_types = BTreeSet::new();
-                for union_type in union_types {
-                    result_union_types.insert(match union_type {
-                        Type::Object(inner_types) => {
-                            if let Some(result_type) = inner_types.get(key) {
-                                result_type.clone()
-                            } else {
-                                return Ok(None);
-                            }
-                        }
-                        _ => panic!(),
-                    });
-                }
-                Type::Union(result_union_types)
-            }
-            _ => panic!(),
-        };
-        match &*intermediate_value_and_metadata.intermediate_value {
-            IntermediateValue::Object(object) => {
-                Ok(object.get(key).map(|result| IntermediateValueAndMetadata {
-                    intermediate_value: result.clone(),
-                    r#type: result_type,
-                }))
-            }
+    ) -> Result<Option<Arc<IntermediateValueAndMetadata>>> {
+        match &intermediate_value_and_metadata.intermediate_value {
+            IntermediateValue::Object(object) => Ok(object.get(key).cloned()),
             IntermediateValue::LazyValue(lazy_value) => {
                 self.with_computed_lazy_value(lazy_value, |computed_lazy_value| {
                     self.get_by_key_from_intermediate_value(computed_lazy_value, key)
@@ -396,27 +366,11 @@ impl<'a> ComputationContext<'a> {
 
     fn get_from_intermediate_value(
         &self,
-        intermediate_value_and_metadata: &IntermediateValueAndMetadata,
+        intermediate_value_and_metadata: &Arc<IntermediateValueAndMetadata>,
         index: usize,
-    ) -> Result<Option<IntermediateValueAndMetadata>> {
-        let element_type = match &intermediate_value_and_metadata.r#type {
-            Type::Array(element_type) => *element_type.clone(),
-            Type::Tuple(elements_types) => {
-                if let Some(result_type) = elements_types.get(index) {
-                    result_type.clone()
-                } else {
-                    return Ok(None);
-                }
-            }
-            _ => panic!(),
-        };
-        match &*intermediate_value_and_metadata.intermediate_value {
-            IntermediateValue::Tuple(list) => {
-                Ok(list.get(index).map(|element| IntermediateValueAndMetadata {
-                    intermediate_value: element.clone(),
-                    r#type: element_type,
-                }))
-            }
+    ) -> Result<Option<Arc<IntermediateValueAndMetadata>>> {
+        match &intermediate_value_and_metadata.intermediate_value {
+            IntermediateValue::Tuple(list) => Ok(list.get(index).cloned()),
             IntermediateValue::Sequence(sequence) => {
                 let lockable_internals_read_guard = sequence.lockable_internals.upgradable_read();
                 if let Some(result) = lockable_internals_read_guard
@@ -478,22 +432,35 @@ impl<'a> ComputationContext<'a> {
                     index,
                     index + 1,
                 )?
+                .inner
                 .into_iter()
                 .next()),
-            IntermediateValue::Value(value_arc) => match &**value_arc {
-                Some(Value::Tuple(list)) => Ok(list
-                    .get(index)
-                    .cloned()
-                    .map(IntermediateValue::Value)
-                    .map(|element| IntermediateValueAndMetadata {
-                        intermediate_value: element.into(),
-                        r#type: element_type,
+            IntermediateValue::Value(value_arc) => {
+                let element_type = match &intermediate_value_and_metadata.r#type {
+                    Type::Array(element_type) => *element_type.clone(),
+                    Type::Tuple(elements_types) => {
+                        if let Some(result_type) = elements_types.get(index) {
+                            result_type.clone()
+                        } else {
+                            return Ok(None);
+                        }
+                    }
+                    _ => panic!(),
+                };
+                match &**value_arc {
+                    Some(Value::Tuple(list)) => Ok(list.get(index).cloned().map(|element| {
+                        IntermediateValueAndMetadata {
+                            intermediate_value: IntermediateValue::Value(element),
+                            r#type: element_type,
+                        }
+                        .into()
                     })),
-                unexpected_value => Err(anyhow!(
-                    "expected tuple, sequence, map or filter, found {:#?}",
-                    unexpected_value
-                )),
-            },
+                    unexpected_value => Err(anyhow!(
+                        "expected tuple, sequence, map or filter, found {:#?}",
+                        unexpected_value
+                    )),
+                }
+            }
             IntermediateValue::LazyValue(lazy_value) => self
                 .with_computed_lazy_value(lazy_value, |computed_lazy_value| {
                     self.get_from_intermediate_value(computed_lazy_value, index)
@@ -507,42 +474,26 @@ impl<'a> ComputationContext<'a> {
 
     fn get_range_from_intermediate_value(
         &self,
-        intermediate_value_and_metadata: &IntermediateValueAndMetadata,
+        intermediate_value_and_metadata: &Arc<IntermediateValueAndMetadata>,
         from: usize,
         to: usize,
-    ) -> Result<Vec<IntermediateValueAndMetadata>> {
-        let elements_types = match &intermediate_value_and_metadata.r#type {
-            Type::Array(element_type) => [*element_type.clone()].to_vec(),
-            Type::Tuple(elements_types) => elements_types
-                .iter()
-                .skip(from)
-                .take(to - from)
-                .cloned()
-                .collect::<Vec<_>>(),
-            _ => panic!(),
-        };
-        match &*intermediate_value_and_metadata.intermediate_value {
-            IntermediateValue::Tuple(list) => Ok(list
-                .iter()
-                .skip(from)
-                .take(to - from)
-                .cloned()
-                .zip(elements_types)
-                .map(|(element, element_type)| IntermediateValueAndMetadata {
-                    intermediate_value: element,
-                    r#type: element_type,
-                })
-                .collect()),
+    ) -> Result<Vector<IntermediateValueAndMetadata>> {
+        match &intermediate_value_and_metadata.intermediate_value {
+            IntermediateValue::Tuple(list) => Ok(Vector {
+                inner: list.iter().skip(from).take(to - from).cloned().collect(),
+            }),
             IntermediateValue::Sequence(sequence) => {
                 let lockable_internals_read_guard = sequence.lockable_internals.upgradable_read();
                 if lockable_internals_read_guard.already_computed_values.len() >= to {
-                    Ok(lockable_internals_read_guard
-                        .already_computed_values
-                        .iter()
-                        .skip(from)
-                        .take(to - from)
-                        .cloned()
-                        .collect())
+                    Ok(Vector {
+                        inner: lockable_internals_read_guard
+                            .already_computed_values
+                            .iter()
+                            .skip(from)
+                            .take(to - from)
+                            .cloned()
+                            .collect(),
+                    })
                 } else {
                     let mut lockable_internals_write_guard =
                         parking_lot::RwLockUpgradableReadGuard::upgrade(
@@ -554,25 +505,29 @@ impl<'a> ComputationContext<'a> {
                             &mut lockable_internals_write_guard,
                         )?;
                     }
-                    Ok(lockable_internals_write_guard
-                        .already_computed_values
-                        .iter()
-                        .skip(from)
-                        .take(to - from)
-                        .cloned()
-                        .collect())
+                    Ok(Vector {
+                        inner: lockable_internals_write_guard
+                            .already_computed_values
+                            .iter()
+                            .skip(from)
+                            .take(to - from)
+                            .cloned()
+                            .collect(),
+                    })
                 }
             }
             IntermediateValue::Filter(filter) => {
                 let lockable_internals_read_guard = filter.lockable_internals.upgradable_read();
                 if lockable_internals_read_guard.already_computed_values.len() >= to {
-                    Ok(lockable_internals_read_guard
-                        .already_computed_values
-                        .iter()
-                        .skip(from)
-                        .take(to - from)
-                        .cloned()
-                        .collect())
+                    Ok(Vector {
+                        inner: lockable_internals_read_guard
+                            .already_computed_values
+                            .iter()
+                            .skip(from)
+                            .take(to - from)
+                            .cloned()
+                            .collect(),
+                    })
                 } else {
                     let mut lockable_internals_write_guard =
                         parking_lot::RwLockUpgradableReadGuard::upgrade(
@@ -585,13 +540,15 @@ impl<'a> ComputationContext<'a> {
                             break;
                         }
                     }
-                    Ok(lockable_internals_write_guard
-                        .already_computed_values
-                        .iter()
-                        .skip(from)
-                        .take(to - from)
-                        .cloned()
-                        .collect())
+                    Ok(Vector {
+                        inner: lockable_internals_write_guard
+                            .already_computed_values
+                            .iter()
+                            .skip(from)
+                            .take(to - from)
+                            .cloned()
+                            .collect(),
+                    })
                 }
             }
             IntermediateValue::Map(map) => {
@@ -612,9 +569,9 @@ impl<'a> ComputationContext<'a> {
                                 .elements_taken_for_computation
                                 .entry(element_index)
                                 .or_insert_with(|| {
-                                    let element_value = Arc::new(RwLock::new(
+                                    let element_value = Arc::new(RwLock::new(Arc::new(
                                         IntermediateValueAndMetadata::default(),
-                                    ));
+                                    )));
                                     to_compute.push((element_index, element_value.write_arc()));
                                     element_value
                                 });
@@ -662,12 +619,13 @@ impl<'a> ComputationContext<'a> {
                 for (element_to_compute_index, mut element_to_compute_value) in
                     elements_to_compute.into_iter()
                 {
-                    *element_to_compute_value = result[element_to_compute_index - from].clone();
+                    *element_to_compute_value =
+                        result.inner[element_to_compute_index - from].clone();
                 }
                 for (already_computed_value_index, already_computed_value) in
                     already_taken_elements.into_iter()
                 {
-                    result[already_computed_value_index - from] =
+                    result.inner[already_computed_value_index - from] =
                         already_computed_value.read().clone();
                 }
                 Ok(result)
@@ -677,23 +635,40 @@ impl<'a> ComputationContext<'a> {
                     self.get_range_from_intermediate_value(computed_lazy_value, from, to)
                 })
             }
-            IntermediateValue::Value(value_arc) => match &**value_arc {
-                Some(Value::Tuple(list)) => Ok(list
-                    .iter()
-                    .skip(from)
-                    .take(to - from)
-                    .cloned()
-                    .zip(elements_types)
-                    .map(|(value, r#type)| IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(value).into(),
-                        r#type: r#type.clone(),
-                    })
-                    .collect()),
-                unexpected_value => Err(anyhow!(
-                    "expected tuple, sequence, map or filter, found {:#?}",
-                    unexpected_value
-                )),
-            },
+            IntermediateValue::Value(value_arc) => {
+                let elements_types = match &intermediate_value_and_metadata.r#type {
+                    Type::Array(element_type) => [*element_type.clone()].to_vec(),
+                    Type::Tuple(elements_types) => elements_types
+                        .iter()
+                        .skip(from)
+                        .take(to - from)
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    _ => panic!(),
+                };
+                match &**value_arc {
+                    Some(Value::Tuple(list)) => Ok(Vector {
+                        inner: list
+                            .iter()
+                            .skip(from)
+                            .take(to - from)
+                            .cloned()
+                            .zip(elements_types)
+                            .map(|(value, r#type)| {
+                                IntermediateValueAndMetadata {
+                                    intermediate_value: IntermediateValue::Value(value),
+                                    r#type: r#type.clone(),
+                                }
+                                .into()
+                            })
+                            .collect(),
+                    }),
+                    unexpected_value => Err(anyhow!(
+                        "expected tuple, sequence, map or filter, found {:#?}",
+                        unexpected_value
+                    )),
+                }
+            }
             unexpected_value => Err(anyhow!(
                 "expected tuple, sequence, map or filter, found {:#?}",
                 unexpected_value
@@ -760,14 +735,17 @@ impl<'a> ComputationContext<'a> {
         intermediate_values_count: usize,
     ) -> Result<Vector<Option<Value>>>
     where
-        I: Iterator<Item = Arc<IntermediateValue>>,
+        I: Iterator<Item = Arc<IntermediateValueAndMetadata>>,
     {
         let mut result = vec![None; intermediate_values_count];
         let complex_elements = intermediate_values_iterator
             .enumerate()
             .filter_map(
                 |(element_index, intermediate_value)| match &*intermediate_value {
-                    IntermediateValue::Value(value) => {
+                    IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(value),
+                        r#type: _,
+                    } => {
                         result[element_index] = Some(value.clone());
                         None
                     }
@@ -805,64 +783,81 @@ impl<'a> ComputationContext<'a> {
 
     fn unroll_intermediate_value(
         &self,
-        intermediate_value: &IntermediateValue,
+        intermediate_value: &Arc<IntermediateValueAndMetadata>,
     ) -> Result<Arc<Option<Value>>> {
-        match intermediate_value {
-            IntermediateValue::Value(result) => Ok(result.clone()),
-            IntermediateValue::Tuple(intermediate_values_list) => {
-                Ok(Some(Value::Tuple(self.unroll_intermediate_values(
-                    intermediate_values_list.iter().cloned(),
-                    intermediate_values_list.len(),
-                )?))
-                .into())
-            }
-            IntermediateValue::Object(object) => Ok(Some(Value::Object(Object::new_from_iter(
+        match &**intermediate_value {
+            &IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Value(ref result),
+                r#type: _,
+            } => Ok(result.clone()),
+            &IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Tuple(ref intermediate_values_list),
+                r#type: _,
+            } => Ok(Some(Value::Tuple(self.unroll_intermediate_values(
+                intermediate_values_list.inner.iter().cloned(),
+                intermediate_values_list.len(),
+            )?))
+            .into()),
+            &IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Object(ref object),
+                r#type: _,
+            } => Ok(Some(Value::Object(Object::new_from_iter(
                 object.keys().cloned().zip(
                     self.unroll_intermediate_values(object.values().cloned(), object.len())?
                         .inner,
                 ),
             )))
             .into()),
-            IntermediateValue::Map(map) => {
+            &IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Map(ref map),
+                r#type: _,
+            } => {
                 let computed_map_range =
                     self.get_range_from_intermediate_value(&map.computed_map, 0, usize::MAX)?;
                 let computed_map_len = computed_map_range.len();
                 Ok(Some(Value::Tuple({
                     let mut result = Vector::default();
-                    for element in self.compute_nodes(
-                        computed_map_range.into_iter().enumerate().map(
-                            |(computed_map_element_index, computed_map_element)| {
-                                let mut through_constants = map.constants.clone();
-                                through_constants[map
-                                    .intermediate_representation_content
-                                    .map_constant_name_clustered_index] =
-                                    Some(computed_map_element);
-                                (
-                                    match &map.throughs {
-                                        Throughs::Array(node) => Some(&**node),
-                                        Throughs::Tuple {
-                                            nodes_indexes,
-                                            nodes,
-                                        } => {
-                                            Some(&nodes[nodes_indexes[computed_map_element_index]])
-                                        }
-                                    },
-                                    Cow::Owned(through_constants),
-                                )
-                            },
-                        ),
-                        computed_map_len,
-                    )? {
-                        result.push(self.unroll_intermediate_value(&element.intermediate_value)?);
+                    for element in self
+                        .compute_nodes(
+                            computed_map_range.inner.into_iter().enumerate().map(
+                                |(computed_map_element_index, computed_map_element)| {
+                                    let mut through_constants = map.constants.clone();
+                                    through_constants[map
+                                        .intermediate_representation_content
+                                        .map_constant_name_clustered_index] =
+                                        Some(computed_map_element);
+                                    (
+                                        match &map.throughs {
+                                            Throughs::Array(node) => Some(&**node),
+                                            Throughs::Tuple {
+                                                nodes_indexes,
+                                                nodes,
+                                            } => Some(
+                                                &nodes[nodes_indexes[computed_map_element_index]],
+                                            ),
+                                        },
+                                        Cow::Owned(through_constants),
+                                    )
+                                },
+                            ),
+                            computed_map_len,
+                        )?
+                        .inner
+                    {
+                        result.push(self.unroll_intermediate_value(&element)?);
                     }
                     result
                 }))
                 .into())
             }
-            IntermediateValue::LazyValue(lazy_value) => self.unroll_intermediate_value(
-                &self.compute_lazy_value(lazy_value)?.intermediate_value,
-            ),
-            IntermediateValue::Filter(filter) => {
+            &IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::LazyValue(ref lazy_value),
+                r#type: _,
+            } => self.unroll_intermediate_value(&self.compute_lazy_value(lazy_value)?),
+            &IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Filter(ref filter),
+                r#type: _,
+            } => {
                 {
                     let mut lockable_internals_write_guard = filter.lockable_internals.write();
                     while self
@@ -876,9 +871,7 @@ impl<'a> ComputationContext<'a> {
                         lockable_internals_read_guard
                             .already_computed_values
                             .iter()
-                            .map(|intermediate_value_and_metadata| {
-                                intermediate_value_and_metadata.intermediate_value.clone()
-                            }),
+                            .cloned(),
                         lockable_internals_read_guard.already_computed_values.len(),
                     )?,
                 ))))
@@ -891,11 +884,12 @@ impl<'a> ComputationContext<'a> {
         &self,
         nodes_and_computation_contexts_iterator: N,
         nodes_count: usize,
-    ) -> Result<Vec<IntermediateValueAndMetadata>>
+    ) -> Result<Vector<IntermediateValueAndMetadata>>
     where
         N: Iterator<Item = (Option<&'a Node>, Cow<'a, Constants>)>,
     {
-        let mut result = vec![IntermediateValueAndMetadata::default(); nodes_count];
+        let initial_element = Arc::new(IntermediateValueAndMetadata::default());
+        let mut result = vec![initial_element; nodes_count];
         let complex_elements = nodes_and_computation_contexts_iterator
             .enumerate()
             .filter_map(
@@ -908,10 +902,10 @@ impl<'a> ComputationContext<'a> {
                                         Arc<Option<intermediate_representation::Value>>,
                                         Arc<Option<Value>>,
                                     >(value.clone())
-                                })
-                                .into(),
+                                }),
                                 r#type: node.r#type.clone(),
-                            };
+                            }
+                            .into();
                             None
                         }
                         Content::Constant(constant_name_clustered_index) => {
@@ -925,23 +919,25 @@ impl<'a> ComputationContext<'a> {
                 },
             )
             .collect::<Vec<_>>();
-        Ok(match complex_elements.len() {
-            0 => result,
-            1 => {
-                let (element_index, (node, constants)) =
-                    complex_elements.into_iter().next().unwrap();
-                result[element_index] = self.compute_node(node, &constants)?;
-                result
-            }
-            2.. => {
-                let result_mutex = Mutex::new(result);
-                self.process_in_parallel(
-                    &complex_elements,
-                    &|(node, constants)| self.compute_node(node, &constants),
-                    &result_mutex,
-                )?;
-                result_mutex.into_inner()
-            }
+        Ok(Vector {
+            inner: match complex_elements.len() {
+                0 => result,
+                1 => {
+                    let (element_index, (node, constants)) =
+                        complex_elements.into_iter().next().unwrap();
+                    result[element_index] = self.compute_node(node, &constants)?;
+                    result
+                }
+                2.. => {
+                    let result_mutex = Mutex::new(result);
+                    self.process_in_parallel(
+                        &complex_elements,
+                        &|(node, constants)| self.compute_node(node, &constants),
+                        &result_mutex,
+                    )?;
+                    result_mutex.into_inner()
+                }
+            },
         })
     }
 
@@ -949,7 +945,7 @@ impl<'a> ComputationContext<'a> {
         &self,
         node: &Arc<Node>,
         constants: &Constants,
-    ) -> Result<Arc<IntermediateValue>> {
+    ) -> Result<Arc<IntermediateValueAndMetadata>> {
         Ok(match node.content {
             Content::Sequence(_)
             | Content::Fold { .. }
@@ -957,13 +953,16 @@ impl<'a> ComputationContext<'a> {
             | Content::UserFunctionCall { .. }
             | Content::FromAt { .. }
             | Content::Scope { .. }
-            | Content::Match { .. } => IntermediateValue::LazyValue(LazyValue {
-                node: node.clone(),
-                constants: constants.clone(),
-                computed: Arc::new(Mutex::new(None)),
-            })
+            | Content::Match { .. } => IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::LazyValue(LazyValue {
+                    node: node.clone(),
+                    constants: constants.clone(),
+                    computed: Arc::new(Mutex::new(None)),
+                }),
+                r#type: node.r#type.clone(),
+            }
             .into(),
-            _ => self.compute_node(node, constants)?.intermediate_value,
+            _ => self.compute_node(node, constants)?,
         })
     }
 
@@ -971,7 +970,7 @@ impl<'a> ComputationContext<'a> {
         &self,
         node: &Node,
         constants: &Constants,
-    ) -> Result<IntermediateValueAndMetadata> {
+    ) -> Result<Arc<IntermediateValueAndMetadata>> {
         match &node.content {
             Content::Tuple(tuple) => {
                 let mut result = Vector::default();
@@ -979,7 +978,7 @@ impl<'a> ComputationContext<'a> {
                     result.push(self.compute_or_lazy(element, constants)?);
                 }
                 Ok(IntermediateValueAndMetadata {
-                    intermediate_value: IntermediateValue::Tuple(result).into(),
+                    intermediate_value: IntermediateValue::Tuple(result),
                     r#type: concrete_or_else(&node.r#type, || {
                         Type::Tuple(
                             tuple
@@ -988,7 +987,8 @@ impl<'a> ComputationContext<'a> {
                                 .collect(),
                         )
                     }),
-                })
+                }
+                .into())
             }
             Content::Scope {
                 constants: scope_constants,
@@ -997,11 +997,7 @@ impl<'a> ComputationContext<'a> {
                 let mut result_constants = constants.clone();
                 for constant_definition in scope_constants {
                     result_constants[constant_definition.name_clustered_index] =
-                        Some(IntermediateValueAndMetadata {
-                            intermediate_value: self
-                                .compute_or_lazy(&constant_definition.node, constants)?,
-                            r#type: constant_definition.node.r#type.clone(),
-                        });
+                        Some(self.compute_or_lazy(&constant_definition.node, constants)?);
                 }
                 self.compute_node(compute, &result_constants)
             }
@@ -1016,7 +1012,7 @@ impl<'a> ComputationContext<'a> {
                     intermediate_value: IntermediateValue::Value(
                         Some(Value::Number(
                             self.unroll_intermediate_value(
-                                &self.compute_node(argument, constants)?.intermediate_value,
+                                &self.compute_node(argument, constants)?,
                             )?
                             .as_ref()
                             .as_ref()
@@ -1033,15 +1029,15 @@ impl<'a> ComputationContext<'a> {
                             ),
                         ))
                         .into(),
-                    )
-                    .into(),
+                    ),
                     r#type: Type::Number,
-                }),
+                }
+                .into()),
                 EmbeddedFunction::IsSorted(argument) => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         Some(Value::Bool(
                             self.unroll_intermediate_value(
-                                &self.compute_node(argument, constants)?.intermediate_value,
+                                &self.compute_node(argument, constants)?,
                             )?
                             .as_ref()
                             .as_ref()
@@ -1052,10 +1048,10 @@ impl<'a> ComputationContext<'a> {
                             .is_sorted(),
                         ))
                         .into(),
-                    )
-                    .into(),
+                    ),
                     r#type: Type::Bool,
-                }),
+                }
+                .into()),
                 EmbeddedFunction::StandardInput => {
                     let mut result = String::new();
                     std::io::stdin()
@@ -1066,17 +1062,15 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::String(ropey::Rope::from(result))).into(),
-                        )
-                        .into(),
+                        ),
                         r#type: Type::String,
-                    })
+                    }
+                    .into())
                 }
                 EmbeddedFunction::ParseYaml(argument) => {
                     let result_value = serde_saphyr::from_str::<Option<Value>>(
                         &self
-                            .unroll_intermediate_value(
-                                &self.compute_node(argument, constants)?.intermediate_value,
-                            )?
+                            .unroll_intermediate_value(&self.compute_node(argument, constants)?)?
                             .as_ref()
                             .as_ref()
                             .unwrap()
@@ -1089,14 +1083,14 @@ impl<'a> ComputationContext<'a> {
                     })?;
                     let r#type = Value::r#type(&result_value);
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(result_value.into()).into(),
+                        intermediate_value: IntermediateValue::Value(result_value.into()),
                         r#type,
-                    })
+                    }
+                    .into())
                 }
                 EmbeddedFunction::KeyValuePairs(argument) => {
-                    let unrolled_argument = self.unroll_intermediate_value(
-                        &self.compute_node(argument, constants)?.intermediate_value,
-                    )?;
+                    let unrolled_argument =
+                        self.unroll_intermediate_value(&self.compute_node(argument, constants)?)?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Tuple({
@@ -1124,8 +1118,7 @@ impl<'a> ComputationContext<'a> {
                                 result
                             }))
                             .into(),
-                        )
-                        .into(),
+                        ),
                         r#type: concrete_or_else(&node.r#type, || {
                             Type::Tuple(
                                 unrolled_argument
@@ -1141,7 +1134,8 @@ impl<'a> ComputationContext<'a> {
                                     .collect(),
                             )
                         }),
-                    })
+                    }
+                    .into())
                 }
                 EmbeddedFunction::Flatten(argument) => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
@@ -1149,7 +1143,7 @@ impl<'a> ComputationContext<'a> {
                             let mut result = Vector::default();
                             for list in self
                                 .unroll_intermediate_value(
-                                    &self.compute_node(argument, constants)?.intermediate_value,
+                                    &self.compute_node(argument, constants)?,
                                 )?
                                 .as_ref()
                                 .as_ref()
@@ -1171,22 +1165,25 @@ impl<'a> ComputationContext<'a> {
                             result
                         }))
                         .into(),
-                    )
-                    .into(),
+                    ),
                     r#type: node.r#type.clone(),
-                }),
+                }
+                .into()),
             },
             Content::UserFunctionCall { arguments, body } => {
                 let mut result_constants = constants.clone();
                 for (constant_name_clustered_index, computed_constant) in arguments
                     .iter()
                     .map(|constant_definition| constant_definition.name_clustered_index)
-                    .zip(self.compute_nodes(
-                        arguments.iter().map(|constant_definition| {
-                            (Some(&*constant_definition.node), Cow::Borrowed(constants))
-                        }),
-                        arguments.len(),
-                    )?)
+                    .zip(
+                        self.compute_nodes(
+                            arguments.iter().map(|constant_definition| {
+                                (Some(&*constant_definition.node), Cow::Borrowed(constants))
+                            }),
+                            arguments.len(),
+                        )?
+                        .inner,
+                    )
                 {
                     result_constants[constant_name_clustered_index] = Some(computed_constant);
                 }
@@ -1255,9 +1252,7 @@ impl<'a> ComputationContext<'a> {
                                 RangeBound::Static(None) => 0,
                                 RangeBound::Dynamic(from_node) => {
                                     self.unroll_intermediate_value(
-                                        &self
-                                            .compute_node(from_node, constants)?
-                                            .intermediate_value,
+                                        &self.compute_node(from_node, constants)?,
                                     )?
                                     .as_ref()
                                     .as_ref()
@@ -1274,7 +1269,7 @@ impl<'a> ComputationContext<'a> {
                                 RangeBound::Static(None) => 0,
                                 RangeBound::Dynamic(to_node) => {
                                     self.unroll_intermediate_value(
-                                        &self.compute_node(to_node, constants)?.intermediate_value,
+                                        &self.compute_node(to_node, constants)?,
                                     )?
                                     .as_ref()
                                     .as_ref()
@@ -1287,11 +1282,8 @@ impl<'a> ComputationContext<'a> {
                                 }
                             };
                             let result_elements = self
-                                .get_range_from_intermediate_value(
-                                    &std::mem::take(&mut result),
-                                    from_number,
-                                    to_number,
-                                )?
+                                .get_range_from_intermediate_value(&result, from_number, to_number)?
+                                .inner
                                 .into_iter()
                                 .collect::<Vec<_>>();
                             let r#type = Type::Tuple(
@@ -1302,23 +1294,16 @@ impl<'a> ComputationContext<'a> {
                                     .collect(),
                             );
                             result = IntermediateValueAndMetadata {
-                                intermediate_value: IntermediateValue::Tuple(
-                                    Vector::new_from_iter(
-                                        result_elements
-                                            .into_iter()
-                                            .map(|element| element.intermediate_value),
-                                    ),
-                                )
-                                .into(),
+                                intermediate_value: IntermediateValue::Tuple(Vector {
+                                    inner: result_elements,
+                                }),
                                 r#type,
                             }
+                            .into()
                         }
                     }
                 }
-                Ok(IntermediateValueAndMetadata {
-                    intermediate_value: result.intermediate_value,
-                    r#type: result.r#type,
-                })
+                Ok(result)
             }
             Content::Match {
                 r#match,
@@ -1338,9 +1323,8 @@ impl<'a> ComputationContext<'a> {
                 if cases.len() == 1 {
                     self.compute_node(&cases.first().unwrap().node, &case_constants)
                 } else {
-                    let computed_match_unrolled_lazy_cell = LazyCell::new(|| {
-                        self.unroll_intermediate_value(&computed_match.intermediate_value)
-                    });
+                    let computed_match_unrolled_lazy_cell =
+                        LazyCell::new(|| self.unroll_intermediate_value(&computed_match));
                     for case in cases {
                         match &case.condition {
                             Condition::Type(expected_type) => {
@@ -1350,9 +1334,7 @@ impl<'a> ComputationContext<'a> {
                             }
                             Condition::Value(expected_value_node) => {
                                 let computed_expected_value = self.unroll_intermediate_value(
-                                    &self
-                                        .compute_node(expected_value_node, constants)?
-                                        .intermediate_value,
+                                    &self.compute_node(expected_value_node, constants)?,
                                 )?;
                                 if &computed_expected_value == {
                                     match &*computed_match_unrolled_lazy_cell {
@@ -1369,9 +1351,8 @@ impl<'a> ComputationContext<'a> {
                 }
             }
             Content::Map(intermediate_representation_content) => {
-                let computed_map = Box::new(
-                    self.compute_node(&intermediate_representation_content.map, constants)?,
-                );
+                let computed_map =
+                    self.compute_node(&intermediate_representation_content.map, constants)?;
                 let mut throughs_option = None;
                 for (map_concrete_type, throughs) in intermediate_representation_content
                     .map_concrete_type_and_throughs
@@ -1401,10 +1382,10 @@ impl<'a> ComputationContext<'a> {
                         lockable_internals: Arc::new(RwLock::new(MapLockableInternals {
                             elements_taken_for_computation: BTreeMap::new(),
                         })),
-                    })
-                    .into(),
+                    }),
                     r#type,
-                })
+                }
+                .into())
             }
             Content::Filter(intermediate_representation_content) => {
                 let computed_filter = Box::new(
@@ -1433,20 +1414,18 @@ impl<'a> ComputationContext<'a> {
                     intermediate_value: IntermediateValue::Filter(Filter {
                         intermediate_representation_content: intermediate_representation_content
                             .clone(),
-                        computed_filter: Box::new(self.compute_node(
-                            &intermediate_representation_content.filter,
-                            constants,
-                        )?),
+                        computed_filter: self
+                            .compute_node(&intermediate_representation_content.filter, constants)?,
                         throughs: throughs_option.unwrap(),
                         constants: constants.clone(),
                         lockable_internals: Arc::new(RwLock::new(FilterLockableInternals {
                             already_processed_values_count: 0,
                             already_computed_values: Vec::new(),
                         })),
-                    })
-                    .into(),
+                    }),
                     r#type,
-                })
+                }
+                .into())
             }
             Content::Fold {
                 fold,
@@ -1455,9 +1434,8 @@ impl<'a> ComputationContext<'a> {
                 accumulating_in_constant_name_clustered_index,
                 fold_concrete_type_and_throughs,
             } => {
-                let computed_fold = self.unroll_intermediate_value(
-                    &self.compute_node(fold, constants)?.intermediate_value,
-                )?;
+                let computed_fold =
+                    self.unroll_intermediate_value(&self.compute_node(fold, constants)?)?;
                 let computed_fold_array =
                     computed_fold.as_ref().as_ref().unwrap().as_tuple().unwrap();
                 let mut result = self.compute_node(starting_with, constants)?;
@@ -1471,12 +1449,13 @@ impl<'a> ComputationContext<'a> {
                     Throughs::Array(through_node) => {
                         for element in computed_fold_array.inner.iter() {
                             let mut through_constants = constants.clone();
-                            through_constants[*fold_constant_name_clustered_index] =
-                                Some(IntermediateValueAndMetadata {
-                                    intermediate_value: IntermediateValue::Value(element.clone())
-                                        .into(),
+                            through_constants[*fold_constant_name_clustered_index] = Some(
+                                IntermediateValueAndMetadata {
+                                    intermediate_value: IntermediateValue::Value(element.clone()),
                                     r#type: Value::r#type(element),
-                                });
+                                }
+                                .into(),
+                            );
                             through_constants[*accumulating_in_constant_name_clustered_index] =
                                 Some(result.clone());
                             result = self.compute_node(&through_node, &through_constants)?;
@@ -1489,12 +1468,13 @@ impl<'a> ComputationContext<'a> {
                         for (element_index, element) in computed_fold_array.inner.iter().enumerate()
                         {
                             let mut through_constants = constants.clone();
-                            through_constants[*fold_constant_name_clustered_index] =
-                                Some(IntermediateValueAndMetadata {
-                                    intermediate_value: IntermediateValue::Value(element.clone())
-                                        .into(),
+                            through_constants[*fold_constant_name_clustered_index] = Some(
+                                IntermediateValueAndMetadata {
+                                    intermediate_value: IntermediateValue::Value(element.clone()),
                                     r#type: node.r#type.clone(),
-                                });
+                                }
+                                .into(),
+                            );
                             through_constants[*accumulating_in_constant_name_clustered_index] =
                                 Some(result.clone());
                             result = self.compute_node(
@@ -1524,10 +1504,10 @@ impl<'a> ComputationContext<'a> {
                             next_constants,
                             already_computed_values: [computed_starting_with].into(),
                         })),
-                    })
-                    .into(),
+                    }),
                     r#type: node.r#type.clone(),
-                })
+                }
+                .into())
             }
             Content::Object(object) => {
                 let mut result = containers::Object::default();
@@ -1535,9 +1515,10 @@ impl<'a> ComputationContext<'a> {
                     result.insert(key.clone(), self.compute_or_lazy(value, constants)?);
                 }
                 Ok(IntermediateValueAndMetadata {
-                    intermediate_value: IntermediateValue::Object(result).into(),
+                    intermediate_value: IntermediateValue::Object(result),
                     r#type: node.r#type.clone(),
-                })
+                }
+                .into())
             }
             Content::Value(value) => Ok(IntermediateValueAndMetadata {
                 intermediate_value: unsafe {
@@ -1545,10 +1526,10 @@ impl<'a> ComputationContext<'a> {
                         Arc<Option<intermediate_representation::Value>>,
                         Arc<Option<Value>>,
                     >(value.clone()))
-                    .into()
                 },
                 r#type: node.r#type.clone(),
-            }),
+            }
+            .into()),
         }
     }
 }
