@@ -218,6 +218,7 @@ struct ComputationContext<'a> {
     computer_config: &'a ComputerConfig,
     intermediate_representation: &'a IntermediateRepresentation,
     functions_results_cache: &'a Arc<RwLock<HashMap<u128, Arc<IntermediateValueAndMetadata>>>>,
+    compiled_regexes_cache: &'a Arc<RwLock<HashMap<String, Arc<Regex>>>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -239,6 +240,7 @@ impl Computer {
             computer_config: &self.config,
             intermediate_representation,
             functions_results_cache: &Arc::new(RwLock::new(HashMap::default())),
+            compiled_regexes_cache: &Arc::new(RwLock::new(HashMap::default())),
         };
         let constants = Constants::from_iter(std::iter::repeat_n(
             None,
@@ -262,6 +264,18 @@ where
 }
 
 impl<'a> ComputationContext<'a> {
+    fn compile_regex(&self, source: &String) -> Result<Arc<Regex>> {
+        if let Some(result) = self.compiled_regexes_cache.read().get(source) {
+            Ok(result.clone())
+        } else {
+            let result = Arc::new(Regex::new(source)?);
+            self.compiled_regexes_cache
+                .write()
+                .insert(source.clone(), result.clone());
+            Ok(result)
+        }
+    }
+
     fn compute_lazy_value(
         &self,
         lazy_value: &LazyValue,
@@ -1187,7 +1201,7 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Bool(
-                                Regex::new(
+                                self.compile_regex(
                                     &computed_arguments_unrolled
                                         .get(1)
                                         .unwrap()
