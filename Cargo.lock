@@ -661,6 +661,7 @@ dependencies = [
  "nanorand",
  "parking_lot",
  "pretty_assertions",
+ "regex",
  "ropey",
  "rpds",
  "serde",

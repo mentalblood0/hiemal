@@ -132,6 +132,7 @@ pub enum EmbeddedFunction {
     ParseYaml(Node),
     KeyValuePairs(Node),
     Flatten(Node),
+    IsMatch { string: Node, pattern: Node },
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

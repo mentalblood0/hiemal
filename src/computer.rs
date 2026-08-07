@@ -7,6 +7,7 @@ use anyhow::{Context, Result, anyhow};
 use dashu::Rational;
 use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -882,7 +883,7 @@ impl<'a> ComputationContext<'a> {
 
     fn compute_nodes<N>(
         &self,
-        nodes_and_computation_contexts_iterator: N,
+        nodes_and_constants: N,
         nodes_count: usize,
     ) -> Result<Vector<IntermediateValueAndMetadata>>
     where
@@ -890,7 +891,7 @@ impl<'a> ComputationContext<'a> {
     {
         let initial_element = Arc::new(IntermediateValueAndMetadata::default());
         let mut result = vec![initial_element; nodes_count];
-        let complex_elements = nodes_and_computation_contexts_iterator
+        let complex_elements = nodes_and_constants
             .enumerate()
             .filter_map(
                 |(element_index, (node_option, constants))| match node_option {
@@ -1169,6 +1170,52 @@ impl<'a> ComputationContext<'a> {
                     r#type: node.r#type.clone(),
                 }
                 .into()),
+                EmbeddedFunction::IsMatch { string, pattern } => {
+                    let computed_arguments_unrolled = self.unroll_intermediate_values(
+                        self.compute_nodes(
+                            [
+                                (Some(string), Cow::Borrowed(constants)),
+                                (Some(pattern), Cow::Borrowed(constants)),
+                            ]
+                            .into_iter(),
+                            2,
+                        )?
+                        .inner
+                        .into_iter(),
+                        2,
+                    )?;
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Bool(
+                                Regex::new(
+                                    &computed_arguments_unrolled
+                                        .get(1)
+                                        .unwrap()
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_string()
+                                        .unwrap()
+                                        .to_string(),
+                                )?
+                                .is_match(
+                                    &computed_arguments_unrolled
+                                        .get(0)
+                                        .unwrap()
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_string()
+                                        .unwrap()
+                                        .to_string(),
+                                ),
+                            ))
+                            .into(),
+                        ),
+                        r#type: Type::Bool,
+                    }
+                    .into())
+                }
             },
             Content::UserFunctionCall { arguments, body } => {
                 let mut result_constants = constants.clone();

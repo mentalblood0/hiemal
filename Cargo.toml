@@ -28,6 +28,7 @@ serde_with = "3.21.0"
 lz4_flex = "0.13.1"
 indexmap = "2.14.0"
 gxhash = { version = "3.5.0", features = ["std", "deterministic"] }
+regex = "1.13.1"
 
 [dev-dependencies]
 nanorand = "0.8"

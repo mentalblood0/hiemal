@@ -164,6 +164,8 @@ pub enum EmbeddedFunction {
     KeyValuePairs(Program),
     #[serde(rename = "flatten")]
     Flatten(Program),
+    #[serde(rename = "is match")]
+    IsMatch { string: Program, pattern: Program },
 }
 
 #[repr(u8)]
@@ -228,6 +230,12 @@ pub enum PathSegment {
     KeyValuePairs,
     #[serde(rename = "flatten")]
     Flatten,
+    #[serde(rename = "is match")]
+    IsMatch,
+    #[serde(rename = "string")]
+    String,
+    #[serde(rename = "pattern")]
+    Pattern,
     #[serde(rename = "user function call")]
     UserFunctionCall(Arc<String>),
     #[serde(rename = "object key")]

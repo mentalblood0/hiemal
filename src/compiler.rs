@@ -997,6 +997,82 @@ impl Compiler {
                         is_computable: compiled_argument.is_computable,
                     }
                 }
+                EmbeddedFunction::IsMatch { string, pattern } => {
+                    let mut is_pure = true;
+                    let mut external_constants_name_clustered_indices;
+                    let compiled_string_node = {
+                        let mut string_compilation_context = compilation_context.clone();
+                        string_compilation_context
+                            .path
+                            .0
+                            .extend([PathSegment::IsMatch.into(), PathSegment::String.into()]);
+                        let compiled_string = self.compile_with_context(
+                            string,
+                            &string_compilation_context,
+                            global_compilation_context,
+                        )?;
+                        if !compiled_string.is_computable {
+                            return Err(anyhow!(
+                                "expected computable string, found {string:#?} at {:#?}",
+                                string_compilation_context.path
+                            ));
+                        }
+                        resolve_type(
+                            &compiled_string.node.r#type,
+                            &Type::String,
+                            compilation_context,
+                        )?;
+                        is_pure &= compiled_string.is_pure;
+                        external_constants_name_clustered_indices =
+                            compiled_string.external_constants_name_clustered_indices;
+                        compiled_string.node
+                    };
+                    let compiled_pattern_node = {
+                        let mut pattern_compilation_context = compilation_context.clone();
+                        pattern_compilation_context
+                            .path
+                            .0
+                            .extend([PathSegment::IsMatch.into(), PathSegment::Pattern.into()]);
+                        let mut compiled_pattern = self.compile_with_context(
+                            pattern,
+                            &pattern_compilation_context,
+                            global_compilation_context,
+                        )?;
+                        if !compiled_pattern.is_computable {
+                            return Err(anyhow!(
+                                "expected computable pattern, found {pattern:#?} at {:#?}",
+                                pattern_compilation_context.path
+                            ));
+                        }
+                        resolve_type(
+                            &compiled_pattern.node.r#type,
+                            &Type::String,
+                            compilation_context,
+                        )?;
+                        is_pure &= compiled_pattern.is_pure;
+                        external_constants_name_clustered_indices.append(
+                            &mut compiled_pattern.external_constants_name_clustered_indices,
+                        );
+                        compiled_pattern.node
+                    };
+                    NodeAndMetadata {
+                        external_constants_name_clustered_indices,
+                        node: Node {
+                            content: Content::EmbeddedFunctionCall {
+                                path: None,
+                                embedded_function: Box::new(
+                                    intermediate_representation::EmbeddedFunction::IsMatch {
+                                        string: compiled_string_node,
+                                        pattern: compiled_pattern_node,
+                                    },
+                                ),
+                            },
+                            r#type: Type::Bool,
+                        },
+                        is_pure,
+                        is_computable: true,
+                    }
+                }
             },
             Program::Match {
                 r#match,
