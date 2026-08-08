@@ -29,7 +29,7 @@ compute:
           found:
             is match:
               string: I categorically deny having triskaidekaphobia.
-              pattern: \b\w{13}\b
+              regex: \b\w{13}\b
           expected: true
       test from at value union:
         assert equal::

@@ -1184,12 +1184,12 @@ impl<'a> ComputationContext<'a> {
                     r#type: node.r#type.clone(),
                 }
                 .into()),
-                EmbeddedFunction::IsMatch { string, pattern } => {
+                EmbeddedFunction::IsMatch { string, regex } => {
                     let computed_arguments_unrolled = self.unroll_intermediate_values(
                         self.compute_nodes(
                             [
                                 (Some(string), Cow::Borrowed(constants)),
-                                (Some(pattern), Cow::Borrowed(constants)),
+                                (Some(regex), Cow::Borrowed(constants)),
                             ]
                             .into_iter(),
                             2,

@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{Context, Error, Result, anyhow};
 use gxhash::HashMap;
+use regex::Regex;
 
 use crate::{
     computer::Computer,
@@ -19,7 +20,7 @@ use crate::{
     program::{
         self, AtSegment, Condition, EmbeddedFunction, Path, PathSegment, Program, RangeBound,
     },
-    r#type::{MaybeType, Type, TypeAtResult},
+    r#type::{Constructed, MaybeType, Type, TypeAtResult},
     value::Value,
 };
 
@@ -1010,7 +1011,7 @@ impl Compiler {
                         is_computable: compiled_argument.is_computable,
                     }
                 }
-                EmbeddedFunction::IsMatch { string, pattern } => {
+                EmbeddedFunction::IsMatch { string, regex } => {
                     let mut is_pure = true;
                     let mut external_constants_name_clustered_indices;
                     let compiled_string_node = {
@@ -1040,33 +1041,44 @@ impl Compiler {
                             compiled_string.external_constants_name_clustered_indices;
                         compiled_string.node
                     };
-                    let compiled_pattern_node = {
-                        let mut pattern_compilation_context = compilation_context.clone();
-                        pattern_compilation_context
+                    let compiled_regex_node = {
+                        let mut regex_compilation_context = compilation_context.clone();
+                        regex_compilation_context
                             .path
                             .0
-                            .extend([PathSegment::IsMatch.into(), PathSegment::Pattern.into()]);
-                        let mut compiled_pattern = self.compile_with_context(
-                            pattern,
-                            &pattern_compilation_context,
+                            .extend([PathSegment::IsMatch.into(), PathSegment::Regex.into()]);
+                        let mut compiled_regex = self.compile_with_context(
+                            regex,
+                            &regex_compilation_context,
                             global_compilation_context,
                         )?;
-                        if !compiled_pattern.is_computable {
+                        if !compiled_regex.is_computable {
                             return Err(anyhow!(
-                                "expected computable pattern, found {pattern:#?} at {:#?}",
-                                pattern_compilation_context.path
+                                "expected computable regex, found {regex:#?} at {:#?}",
+                                regex_compilation_context.path
                             ));
                         }
-                        resolve_type(
-                            &compiled_pattern.node.r#type,
-                            &Type::String,
-                            compilation_context,
-                        )?;
-                        is_pure &= compiled_pattern.is_pure;
-                        external_constants_name_clustered_indices.append(
-                            &mut compiled_pattern.external_constants_name_clustered_indices,
-                        );
-                        compiled_pattern.node
+                        if let Type::LiteralString(ref regex_literal_string) =
+                            compiled_regex.node.r#type
+                        {
+                            Regex::new(&regex_literal_string.to_string()).with_context(|| {
+                                format!(
+                                    "expected correct regex, found {regex_literal_string:?} at \
+                                     {:?}",
+                                    regex_compilation_context.path
+                                )
+                            })?;
+                        } else {
+                            resolve_type(
+                                &compiled_regex.node.r#type,
+                                &Type::Constructed(Constructed::Regex),
+                                compilation_context,
+                            )?;
+                        }
+                        is_pure &= compiled_regex.is_pure;
+                        external_constants_name_clustered_indices
+                            .append(&mut compiled_regex.external_constants_name_clustered_indices);
+                        compiled_regex.node
                     };
                     NodeAndMetadata {
                         external_constants_name_clustered_indices,
@@ -1076,7 +1088,7 @@ impl Compiler {
                                 embedded_function: Box::new(
                                     intermediate_representation::EmbeddedFunction::IsMatch {
                                         string: compiled_string_node,
-                                        pattern: compiled_pattern_node,
+                                        regex: compiled_regex_node,
                                     },
                                 ),
                             },
