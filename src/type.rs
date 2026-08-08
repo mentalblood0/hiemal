@@ -55,30 +55,63 @@ impl Hash for MaybeType {
     }
 }
 
-static CONSTRUCTED_TYPES: LazyLock<[Type; 4]> = LazyLock::new(|| {
+static CONSTRUCTED_TYPES: LazyLock<[Type; 3]> = LazyLock::new(|| {
     [
-        Type::Object(BTreeMap::from_iter([(
-            "regex".to_string().into(),
-            Type::Array(Box::new(Type::Union(BTreeSet::from_iter([
+        Type::Array(Box::new(Type::Union(BTreeSet::from_iter([
+            Type::String,
+            Type::Object(BTreeMap::from_iter([(
+                "raw string".to_string().into(),
                 Type::String,
-                Type::Constructed(Constructed::Or),
-                Type::Constructed(Constructed::Repeat),
-                Type::Constructed(Constructed::Wildcard),
-            ])))),
-        )])),
+            )])),
+            Type::Constructed(Constructed::Or),
+            Type::Constructed(Constructed::Repeat),
+            Type::LiteralString("character".into()),
+            Type::LiteralString("whitespace character".into()),
+            Type::LiteralString("non-whitespace character".into()),
+            Type::LiteralString("digit".into()),
+            Type::LiteralString("non-digit".into()),
+            Type::LiteralString("word character".into()),
+            Type::LiteralString("non-word character".into()),
+            Type::LiteralString("start of string".into()),
+            Type::LiteralString("end of string".into()),
+            Type::LiteralString("word boundary".into()),
+            Type::LiteralString("non-word boundary".into()),
+        ])))),
         Type::Object(BTreeMap::from_iter([(
             "or".to_string().into(),
             Type::Array(Box::new(Type::Constructed(Constructed::Regex))),
         )])),
-        Type::Object(BTreeMap::from_iter([
-            (
-                "repeat".to_string().into(),
-                Type::Constructed(Constructed::Regex),
-            ),
-            ("min".to_string().into(), Type::Number),
-            ("max".to_string().into(), Type::Number),
+        Type::Union(BTreeSet::from_iter([
+            Type::Object(BTreeMap::from_iter([
+                (
+                    "repeat".to_string().into(),
+                    Type::Constructed(Constructed::Regex),
+                ),
+                ("min".to_string().into(), Type::Number),
+                ("max".to_string().into(), Type::Number),
+            ])),
+            Type::Object(BTreeMap::from_iter([
+                (
+                    "repeat".to_string().into(),
+                    Type::Constructed(Constructed::Regex),
+                ),
+                ("min".to_string().into(), Type::Number),
+            ])),
+            Type::Object(BTreeMap::from_iter([
+                (
+                    "repeat".to_string().into(),
+                    Type::Constructed(Constructed::Regex),
+                ),
+                ("max".to_string().into(), Type::Number),
+            ])),
+            Type::Object(BTreeMap::from_iter([
+                (
+                    "repeat".to_string().into(),
+                    Type::Constructed(Constructed::Regex),
+                ),
+                ("exactly".to_string().into(), Type::Number),
+            ])),
         ])),
-        Type::LiteralString(".".into()),
     ]
 });
 
@@ -89,7 +122,6 @@ pub enum Constructed {
     Regex,
     Or,
     Repeat,
-    Wildcard,
 }
 
 impl Constructed {

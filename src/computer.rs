@@ -7,7 +7,7 @@ use anyhow::{Context, Result, anyhow};
 use dashu::Rational;
 use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
-use regex::Regex;
+use regex::{Regex, escape};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -264,6 +264,132 @@ where
 }
 
 impl<'a> ComputationContext<'a> {
+    fn build_regex(&self, source: &Vector<Option<Value>>) -> String {
+        let mut result = String::new();
+        for source_part in source.iter() {
+            match source_part.as_ref().as_ref().unwrap() {
+                Value::String(string) if string == "character" => {
+                    result.push('.');
+                }
+                Value::String(string) if string == "whitespace character" => {
+                    result.push_str("\\s");
+                }
+                Value::String(string) if string == "non-whitespace character" => {
+                    result.push_str("\\S");
+                }
+                Value::String(string) if string == "digit" => {
+                    result.push_str("\\d");
+                }
+                Value::String(string) if string == "non-digit" => {
+                    result.push_str("\\D");
+                }
+                Value::String(string) if string == "word character" => {
+                    result.push_str("\\w");
+                }
+                Value::String(string) if string == "non-word character" => {
+                    result.push_str("\\W");
+                }
+                Value::String(string) if string == "start of string" => {
+                    result.push('^');
+                }
+                Value::String(string) if string == "end of string" => {
+                    result.push('$');
+                }
+                Value::String(string) if string == "word boundary" => {
+                    result.push_str("\\b");
+                }
+                Value::String(string) if string == "non-word boundary" => {
+                    result.push_str("\\B");
+                }
+                Value::Object(object) => {
+                    if let Some(variants) = object.get(&"or".to_string()) {
+                        result.push_str("(:?");
+                        for variant in variants
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_tuple()
+                            .unwrap()
+                            .iter()
+                        {
+                            result += &self.build_regex(
+                                variant.as_ref().as_ref().unwrap().as_tuple().unwrap(),
+                            );
+                        }
+                        result.push(')');
+                    } else if let Some(raw_string) = object.get(&"raw_string".to_string()) {
+                        result.push_str(&escape(
+                            &raw_string
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_string()
+                                .unwrap()
+                                .to_string(),
+                        ));
+                    } else if let (Some(repeat), min, max, exactly) = (
+                        object.get(&"repeat".to_string()),
+                        object.get(&"min".to_string()),
+                        object.get(&"max".to_string()),
+                        object.get(&"exactly".to_string()),
+                    ) {
+                        result
+                            .push_str(&self.build_regex(
+                                repeat.as_ref().as_ref().unwrap().as_tuple().unwrap(),
+                            ));
+                        result.push('{');
+                        if let Some(exactly) = exactly {
+                            result.push_str(
+                                &(exactly
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_number()
+                                    .unwrap()
+                                    .to_f64()
+                                    .value() as i64)
+                                    .max(0)
+                                    .to_string(),
+                            );
+                        } else {
+                            let min_number = if let Some(min) = min {
+                                (min.as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_number()
+                                    .unwrap()
+                                    .to_f64()
+                                    .value() as i64)
+                                    .max(0)
+                            } else {
+                                0
+                            };
+                            result.push_str(&min_number.to_string());
+                            result.push(',');
+                            if let Some(max) = max {
+                                result.push_str(
+                                    &(max
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_number()
+                                        .unwrap()
+                                        .to_f64()
+                                        .value() as i64)
+                                        .max(min_number)
+                                        .to_string(),
+                                );
+                            }
+                        }
+                        result.push('}');
+                    }
+                }
+                _ => panic!(),
+            }
+        }
+        result
+    }
+
     fn compile_regex(&self, source: &String) -> Result<Arc<Regex>> {
         if let Some(result) = self.compiled_regexes_cache.read().get(source) {
             Ok(result.clone())
@@ -1198,31 +1324,32 @@ impl<'a> ComputationContext<'a> {
                         .into_iter(),
                         2,
                     )?;
+                    let computed_string = computed_arguments_unrolled
+                        .get(0)
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .to_string();
+                    let computed_regex = computed_arguments_unrolled
+                        .get(1)
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap();
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Bool(
-                                self.compile_regex(
-                                    &computed_arguments_unrolled
-                                        .get(1)
-                                        .unwrap()
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_string()
-                                        .unwrap()
-                                        .to_string(),
-                                )?
-                                .is_match(
-                                    &computed_arguments_unrolled
-                                        .get(0)
-                                        .unwrap()
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_string()
-                                        .unwrap()
-                                        .to_string(),
-                                ),
+                                self.compile_regex(&if let Value::String(computed_regex_string) =
+                                    computed_regex
+                                {
+                                    computed_regex_string.to_string()
+                                } else {
+                                    self.build_regex(computed_regex.as_tuple().unwrap())
+                                })?
+                                .is_match(&computed_string),
                             ))
                             .into(),
                         ),

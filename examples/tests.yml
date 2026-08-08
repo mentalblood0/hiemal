@@ -24,6 +24,17 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test is match runtime regex building:
+        assert equal::
+          found:
+            is match:
+              string: I categorically deny having triskaidekaphobia.
+              regex:
+                - word boundary
+                - repeat: [word character]
+                  exactly: 13
+                - word boundary
+          expected: true
       test is match:
         assert equal::
           found:

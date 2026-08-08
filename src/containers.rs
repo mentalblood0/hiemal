@@ -11,7 +11,7 @@ where
     K: Ord + Clone,
     V: Clone,
 {
-    inner: BTreeMap<Arc<K>, Arc<V>>,
+    pub inner: BTreeMap<Arc<K>, Arc<V>>,
 }
 
 impl<K, V> Object<K, V>
