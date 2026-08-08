@@ -66,6 +66,19 @@ fn resolve_type(
                     }
                 }
             }
+            (Type::Constructed(got_constructed), Type::Constructed(expected_constructed)) => {
+                resolve_type(
+                    got_constructed.inner(),
+                    expected_constructed.inner(),
+                    compilation_context,
+                )
+            }
+            (Type::Constructed(got_constructed), _) => {
+                resolve_type(got_constructed.inner(), expected_type, compilation_context)
+            }
+            (_, Type::Constructed(expected_constructed)) => {
+                resolve_type(got_type, expected_constructed.inner(), compilation_context)
+            }
             (Type::Array(got_element_type), Type::Array(expected_element_type)) => {
                 let mut inner_compilation_context = compilation_context.clone();
                 inner_compilation_context

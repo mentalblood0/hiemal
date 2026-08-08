@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     hash::{Hash, Hasher},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use anyhow::{Result, anyhow};
@@ -55,6 +55,49 @@ impl Hash for MaybeType {
     }
 }
 
+static CONSTRUCTED_TYPES: LazyLock<[Type; 4]> = LazyLock::new(|| {
+    [
+        Type::Object(BTreeMap::from_iter([(
+            "regex".to_string().into(),
+            Type::Array(Box::new(Type::Union(BTreeSet::from_iter([
+                Type::String,
+                Type::Constructed(Constructed::Or),
+                Type::Constructed(Constructed::Repeat),
+                Type::Constructed(Constructed::Wildcard),
+            ])))),
+        )])),
+        Type::Object(BTreeMap::from_iter([(
+            "or".to_string().into(),
+            Type::Array(Box::new(Type::Constructed(Constructed::Regex))),
+        )])),
+        Type::Object(BTreeMap::from_iter([
+            (
+                "repeat".to_string().into(),
+                Type::Constructed(Constructed::Regex),
+            ),
+            ("min".to_string().into(), Type::Number),
+            ("max".to_string().into(), Type::Number),
+        ])),
+        Type::LiteralString(".".into()),
+    ]
+});
+
+#[repr(u8)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Constructed {
+    #[default]
+    Regex,
+    Or,
+    Repeat,
+    Wildcard,
+}
+
+impl Constructed {
+    pub fn inner(&self) -> &Type {
+        CONSTRUCTED_TYPES.get(self.clone() as u8 as usize).unwrap()
+    }
+}
+
 #[repr(u8)]
 #[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Type {
@@ -83,6 +126,8 @@ pub enum Type {
     LiteralFalse,
     #[serde(rename = "literal string")]
     LiteralString(#[serde(deserialize_with = "deserialize_rope")] ropey::Rope),
+    #[serde(rename = "constructed")]
+    Constructed(Constructed),
     #[serde(skip_deserializing)]
     Unknown(MaybeType),
 }
@@ -121,6 +166,8 @@ pub enum KnownType {
         )]
         ropey::Rope,
     ),
+    #[serde(rename = "constructed")]
+    Constructed(Constructed),
 }
 
 impl Serialize for Type {
@@ -179,6 +226,7 @@ impl<'a> Type {
                 inner_types.values().all(|value_type| value_type.is_known())
             }
             Type::Union(union_types) => union_types.iter().all(|union_type| union_type.is_known()),
+            Type::Constructed(constructed) => constructed.inner().is_known(),
             _ => true,
         }
     }
@@ -193,6 +241,7 @@ impl<'a> Type {
                 .values()
                 .all(|value_type| value_type.is_concrete()),
             Type::Union(_) | Type::Any | Type::Unknown(_) => false,
+            Type::Constructed(constructed) => constructed.inner().is_concrete(),
             _ => true,
         }
     }
@@ -224,6 +273,15 @@ impl<'a> Type {
         } else {
             match (self, other) {
                 (Type::Any, _) | (Type::String, Type::LiteralString(_)) => true,
+                (Type::Constructed(self_constructed), Type::Constructed(other_constructed)) => {
+                    self_constructed.inner().contains(other_constructed.inner())
+                }
+                (Type::Constructed(self_constructed), _) => {
+                    self_constructed.inner().contains(other)
+                }
+                (_, Type::Constructed(other_constructed)) => {
+                    self.contains(other_constructed.inner())
+                }
                 (Type::Union(self_union_types), Type::Union(other_union_types)) => {
                     if self_union_types.is_superset(other_union_types) {
                         true
@@ -305,6 +363,7 @@ impl<'a> Type {
 
     pub fn flatten(&self) -> Result<Type> {
         match self {
+            Type::Constructed(constructed) => constructed.inner().flatten(),
             Type::Union(self_union_types) => {
                 let mut result_union_types = BTreeSet::new();
                 for self_union_type in self_union_types {
@@ -418,6 +477,7 @@ impl<'a> Type {
 
     pub fn at(self, at_segment: &ValuePathSegment) -> Result<TypeAtResult> {
         match (self, at_segment) {
+            (Type::Constructed(constructed), _) => constructed.inner().clone().at(at_segment),
             (Type::Union(union_types), _) => {
                 let mut result_types = BTreeSet::new();
                 for union_type in union_types {
@@ -572,6 +632,7 @@ impl<'a> Type {
 
     pub fn union_types(&'a self) -> Box<dyn Iterator<Item = &'a Type> + 'a> {
         match self {
+            Type::Constructed(constructed) => constructed.inner().union_types(),
             Type::Union(union_types) => Box::new(union_types.iter()),
             _ => Box::new([self].into_iter()),
         }
@@ -579,6 +640,7 @@ impl<'a> Type {
 
     pub fn union_types_len(&'a self) -> usize {
         match self {
+            Type::Constructed(constructed) => constructed.inner().union_types_len(),
             Type::Union(union_types) => union_types.len(),
             _ => 1,
         }
@@ -599,6 +661,17 @@ impl<'a> Type {
                 (Type::String, Type::LiteralString(literal_string))
                 | (Type::LiteralString(literal_string), Type::String) => {
                     Some(Type::LiteralString(literal_string.clone()))
+                }
+                (Type::Constructed(self_constructed), Type::Constructed(other_constructed)) => {
+                    self_constructed
+                        .inner()
+                        .intersection(other_constructed.inner())
+                }
+                (Type::Constructed(self_constructed), _) => {
+                    self_constructed.inner().intersection(other)
+                }
+                (_, Type::Constructed(other_constructed)) => {
+                    self.intersection(other_constructed.inner())
                 }
                 (Type::Union(self_union_types), Type::Union(other_union_types)) => {
                     let result = self_union_types
