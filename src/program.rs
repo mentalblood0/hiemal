@@ -166,6 +166,8 @@ pub enum EmbeddedFunction {
     Flatten(Program),
     #[serde(rename = "is match")]
     IsMatch { string: Program, regex: Program },
+    #[serde(rename = "match groups")]
+    MatchGroups { string: Program, regex: Program },
 }
 
 #[repr(u8)]
@@ -232,6 +234,8 @@ pub enum PathSegment {
     Flatten,
     #[serde(rename = "is match")]
     IsMatch,
+    #[serde(rename = "match groups")]
+    MatchGroups,
     #[serde(rename = "string")]
     String,
     #[serde(rename = "regex")]

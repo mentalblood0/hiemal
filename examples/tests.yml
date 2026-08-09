@@ -24,6 +24,21 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test match groups:
+        assert equal::
+          found:
+            from:
+              match groups:
+                string: I categorically deny having triskaidekaphobia.
+                regex:
+                  - word boundary
+                  - group:
+                    - repeat: [word character]
+                      exactly: 13
+                    name: horror
+                  - word boundary
+            at: [horror]
+          expected: categorically
       test is match runtime regex building:
         assert equal::
           found:

@@ -133,6 +133,7 @@ pub enum EmbeddedFunction {
     KeyValuePairs(Node),
     Flatten(Node),
     IsMatch { string: Node, regex: Node },
+    MatchGroups { string: Node, regex: Node },
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

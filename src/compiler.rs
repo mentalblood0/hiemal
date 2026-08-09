@@ -86,11 +86,11 @@ fn resolve_type(
                     .path
                     .0
                     .push(Arc::new(PathSegment::ArrayIndex(0)));
-                resolve_type(
+                Ok(Type::Array(Box::new(resolve_type(
                     got_element_type,
                     expected_element_type,
                     &inner_compilation_context,
-                )
+                )?)))
             }
             (Type::Array(got_element_type), Type::Tuple(expected_elements_types)) => {
                 let mut result_union_types = BTreeSet::new();
@@ -127,6 +127,18 @@ fn resolve_type(
                     }
                 }
                 Ok(Type::Object(result_inner_types))
+            }
+            (Type::GenericObject(got_value_type), Type::GenericObject(expected_value_type)) => {
+                let mut inner_compilation_context = compilation_context.clone();
+                inner_compilation_context
+                    .path
+                    .0
+                    .push(Arc::new(PathSegment::ArrayIndex(0)));
+                Ok(Type::Array(Box::new(resolve_type(
+                    got_value_type,
+                    expected_value_type,
+                    &inner_compilation_context,
+                )?)))
             }
             (Type::Union(got_union_types), Type::Union(expected_union_types)) => {
                 let mut result_union_types = BTreeSet::new();
@@ -1093,6 +1105,93 @@ impl Compiler {
                                 ),
                             },
                             r#type: Type::Bool,
+                        },
+                        is_pure,
+                        is_computable: true,
+                    }
+                }
+                EmbeddedFunction::MatchGroups { string, regex } => {
+                    let mut is_pure = true;
+                    let mut external_constants_name_clustered_indices;
+                    let compiled_string_node = {
+                        let mut string_compilation_context = compilation_context.clone();
+                        string_compilation_context
+                            .path
+                            .0
+                            .extend([PathSegment::IsMatch.into(), PathSegment::String.into()]);
+                        let compiled_string = self.compile_with_context(
+                            string,
+                            &string_compilation_context,
+                            global_compilation_context,
+                        )?;
+                        if !compiled_string.is_computable {
+                            return Err(anyhow!(
+                                "expected computable string, found {string:#?} at {:#?}",
+                                string_compilation_context.path
+                            ));
+                        }
+                        resolve_type(
+                            &compiled_string.node.r#type,
+                            &Type::String,
+                            compilation_context,
+                        )?;
+                        is_pure &= compiled_string.is_pure;
+                        external_constants_name_clustered_indices =
+                            compiled_string.external_constants_name_clustered_indices;
+                        compiled_string.node
+                    };
+                    let compiled_regex_node = {
+                        let mut regex_compilation_context = compilation_context.clone();
+                        regex_compilation_context
+                            .path
+                            .0
+                            .extend([PathSegment::IsMatch.into(), PathSegment::Regex.into()]);
+                        let mut compiled_regex = self.compile_with_context(
+                            regex,
+                            &regex_compilation_context,
+                            global_compilation_context,
+                        )?;
+                        if !compiled_regex.is_computable {
+                            return Err(anyhow!(
+                                "expected computable regex, found {regex:#?} at {:#?}",
+                                regex_compilation_context.path
+                            ));
+                        }
+                        if let Type::LiteralString(ref regex_literal_string) =
+                            compiled_regex.node.r#type
+                        {
+                            Regex::new(&regex_literal_string.to_string()).with_context(|| {
+                                format!(
+                                    "expected correct regex, found {regex_literal_string:?} at \
+                                     {:?}",
+                                    regex_compilation_context.path
+                                )
+                            })?;
+                        } else {
+                            resolve_type(
+                                &compiled_regex.node.r#type,
+                                &Type::Constructed(Constructed::Regex),
+                                compilation_context,
+                            )?;
+                        }
+                        is_pure &= compiled_regex.is_pure;
+                        external_constants_name_clustered_indices
+                            .append(&mut compiled_regex.external_constants_name_clustered_indices);
+                        compiled_regex.node
+                    };
+                    NodeAndMetadata {
+                        external_constants_name_clustered_indices,
+                        node: Node {
+                            content: Content::EmbeddedFunctionCall {
+                                path: None,
+                                embedded_function: Box::new(
+                                    intermediate_representation::EmbeddedFunction::MatchGroups {
+                                        string: compiled_string_node,
+                                        regex: compiled_regex_node,
+                                    },
+                                ),
+                            },
+                            r#type: Type::GenericObject(Box::new(Type::String)),
                         },
                         is_pure,
                         is_computable: true,

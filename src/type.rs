@@ -55,7 +55,7 @@ impl Hash for MaybeType {
     }
 }
 
-static CONSTRUCTED_TYPES: LazyLock<[Type; 3]> = LazyLock::new(|| {
+static CONSTRUCTED_TYPES: LazyLock<[Type; 4]> = LazyLock::new(|| {
     [
         Type::Array(Box::new(Type::Union(BTreeSet::from_iter([
             Type::String,
@@ -65,6 +65,7 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 3]> = LazyLock::new(|| {
             )])),
             Type::Constructed(Constructed::Or),
             Type::Constructed(Constructed::Repeat),
+            Type::Constructed(Constructed::Group),
             Type::LiteralString("character".into()),
             Type::LiteralString("whitespace character".into()),
             Type::LiteralString("non-whitespace character".into()),
@@ -112,6 +113,13 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 3]> = LazyLock::new(|| {
                 ("exactly".to_string().into(), Type::Number),
             ])),
         ])),
+        Type::Object(BTreeMap::from_iter([
+            (
+                "group".to_string().into(),
+                Type::Constructed(Constructed::Regex),
+            ),
+            ("name".to_string().into(), Type::String),
+        ])),
     ]
 });
 
@@ -122,6 +130,7 @@ pub enum Constructed {
     Regex,
     Or,
     Repeat,
+    Group,
 }
 
 impl Constructed {
@@ -147,6 +156,8 @@ pub enum Type {
     Tuple(Vec<Type>),
     #[serde(rename = "object")]
     Object(BTreeMap<Arc<String>, Type>),
+    #[serde(rename = "generic object")]
+    GenericObject(Box<Type>),
     #[serde(rename = "union")]
     Union(BTreeSet<Type>),
     #[default]
@@ -181,6 +192,8 @@ pub enum KnownType {
     Tuple(Vec<Type>),
     #[serde(rename = "object")]
     Object(BTreeMap<Arc<String>, Type>),
+    #[serde(rename = "generic object")]
+    GenericObject(Box<Type>),
     #[serde(rename = "union")]
     Union(BTreeSet<Type>),
     #[default]
@@ -257,6 +270,7 @@ impl<'a> Type {
             Type::Object(inner_types) => {
                 inner_types.values().all(|value_type| value_type.is_known())
             }
+            Type::GenericObject(value_type) => value_type.is_known(),
             Type::Union(union_types) => union_types.iter().all(|union_type| union_type.is_known()),
             Type::Constructed(constructed) => constructed.inner().is_known(),
             _ => true,
@@ -272,6 +286,7 @@ impl<'a> Type {
             Type::Object(inner_types) => inner_types
                 .values()
                 .all(|value_type| value_type.is_concrete()),
+            Type::GenericObject(value_type) => value_type.is_concrete(),
             Type::Union(_) | Type::Any | Type::Unknown(_) => false,
             Type::Constructed(constructed) => constructed.inner().is_concrete(),
             _ => true,
@@ -387,6 +402,19 @@ impl<'a> Type {
                         }
                     }
                     true
+                }
+                (Type::Object(self_inner_types), Type::GenericObject(other_value_type)) => {
+                    self_inner_types
+                        .values()
+                        .all(|self_value_type| self_value_type.contains(other_value_type))
+                }
+                (Type::GenericObject(self_value_type), Type::Object(other_inner_types)) => {
+                    other_inner_types
+                        .values()
+                        .all(|other_value_type| self_value_type.contains(other_value_type))
+                }
+                (Type::GenericObject(self_value_type), Type::GenericObject(other_value_type)) => {
+                    self_value_type.contains(other_value_type)
                 }
                 _ => false,
             }
@@ -631,6 +659,9 @@ impl<'a> Type {
                     ))
                 }
             }
+            (Type::GenericObject(object_value_type), ValuePathSegment::ObjectKey(_)) => {
+                Ok(TypeAtResult::Single(*object_value_type))
+            }
             (self_, _) => Err(anyhow!("can not get from {self_:#?} at {at_segment:?}",)),
         }
     }
@@ -784,7 +815,30 @@ impl<'a> Type {
                             return None;
                         }
                     }
+                    if result_inner_types.is_empty() {
+                        None
+                    } else {
+                        Some(Type::Object(result_inner_types))
+                    }
+                }
+                (Type::Object(self_inner_types), Type::GenericObject(other_value_type))
+                | (Type::GenericObject(other_value_type), Type::Object(self_inner_types)) => {
+                    let mut result_inner_types = BTreeMap::new();
+                    for (self_key, self_value_type) in self_inner_types.iter() {
+                        if let Some(values_types_intersection) =
+                            self_value_type.intersection(other_value_type)
+                        {
+                            result_inner_types.insert(self_key.clone(), values_types_intersection);
+                        }
+                    }
                     Some(Type::Object(result_inner_types))
+                }
+                (Type::GenericObject(self_value_type), Type::GenericObject(other_value_type)) => {
+                    self_value_type.intersection(other_value_type).map(
+                        |values_types_intersection| {
+                            Type::GenericObject(Box::new(values_types_intersection))
+                        },
+                    )
                 }
                 _ => None,
             }

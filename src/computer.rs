@@ -327,6 +327,25 @@ impl<'a> ComputationContext<'a> {
                                 .unwrap()
                                 .to_string(),
                         ));
+                    } else if let (Some(group), Some(name)) = (
+                        object.get(&"group".to_string()),
+                        object.get(&"name".to_string()),
+                    ) {
+                        result.push_str("(?P<");
+                        result.push_str(
+                            &name
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_string()
+                                .unwrap()
+                                .to_string(),
+                        );
+                        result.push('>');
+                        result.push_str(
+                            &self.build_regex(group.as_ref().as_ref().unwrap().as_tuple().unwrap()),
+                        );
+                        result.push(')');
                     } else if let (Some(repeat), min, max, exactly) = (
                         object.get(&"repeat".to_string()),
                         object.get(&"min".to_string()),
@@ -492,6 +511,19 @@ impl<'a> ComputationContext<'a> {
         key: &String,
     ) -> Result<Option<Arc<IntermediateValueAndMetadata>>> {
         match &intermediate_value_and_metadata.intermediate_value {
+            IntermediateValue::Value(value_arc) => match &**value_arc {
+                Some(Value::Object(object)) => Ok(object.get(key).cloned().map(|value| {
+                    IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(value.clone()),
+                        r#type: Value::r#type(&value),
+                    }
+                    .into()
+                })),
+                unexpected_value => Err(anyhow!(
+                    "expected tuple, sequence, map or filter, found {:#?}",
+                    unexpected_value
+                )),
+            },
             IntermediateValue::Object(object) => Ok(object.get(key).cloned()),
             IntermediateValue::LazyValue(lazy_value) => {
                 self.with_computed_lazy_value(lazy_value, |computed_lazy_value| {
@@ -1356,6 +1388,72 @@ impl<'a> ComputationContext<'a> {
                         r#type: Type::Bool,
                     }
                     .into())
+                }
+                EmbeddedFunction::MatchGroups { string, regex } => {
+                    let computed_arguments_unrolled = self.unroll_intermediate_values(
+                        self.compute_nodes(
+                            [
+                                (Some(string), Cow::Borrowed(constants)),
+                                (Some(regex), Cow::Borrowed(constants)),
+                            ]
+                            .into_iter(),
+                            2,
+                        )?
+                        .inner
+                        .into_iter(),
+                        2,
+                    )?;
+                    let computed_string = computed_arguments_unrolled
+                        .get(0)
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .to_string();
+                    let computed_regex = computed_arguments_unrolled
+                        .get(1)
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap();
+                    let compiled_regex =
+                        self.compile_regex(&if let Value::String(computed_regex_string) =
+                            computed_regex
+                        {
+                            computed_regex_string.to_string()
+                        } else {
+                            self.build_regex(computed_regex.as_tuple().unwrap())
+                        })?;
+                    if let Some(captures) = compiled_regex.captures(&computed_string) {
+                        Ok(IntermediateValueAndMetadata {
+                            intermediate_value: IntermediateValue::Value(
+                                Some(Value::Object(Object::new_from_iter(
+                                    compiled_regex.capture_names().flatten().filter_map(|name| {
+                                        captures.name(name).map(|match_obj| {
+                                            (
+                                                name.to_string().into(),
+                                                Some(Value::String(match_obj.as_str().into()))
+                                                    .into(),
+                                            )
+                                        })
+                                    }),
+                                )))
+                                .into(),
+                            ),
+                            r#type: Type::Bool,
+                        }
+                        .into())
+                    } else {
+                        Ok(IntermediateValueAndMetadata {
+                            intermediate_value: IntermediateValue::Value(
+                                Some(Value::Object(Object::default())).into(),
+                            ),
+                            r#type: Type::Bool,
+                        }
+                        .into())
+                    }
                 }
             },
             Content::UserFunctionCall { arguments, body } => {
