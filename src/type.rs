@@ -560,13 +560,17 @@ impl<'a> Type {
         }
     }
 
-    pub fn at(self, at_segment: &ValuePathSegment) -> Result<TypeAtResult> {
+    pub fn at(self, at_segment: &ValuePathSegment) -> Result<(TypeAtResult, bool)> {
         match (self, at_segment) {
             (Type::Constructed(constructed), _) => constructed.inner().clone().at(at_segment),
             (Type::Union(union_types), _) => {
                 let mut result_types = BTreeSet::new();
+                let mut runtime_error_is_possible = false;
                 for union_type in union_types {
-                    match union_type.at(at_segment)? {
+                    let (mut union_type_at_result, union_type_runtime_error_is_possible) =
+                        union_type.at(at_segment)?;
+                    runtime_error_is_possible |= union_type_runtime_error_is_possible;
+                    match union_type_at_result {
                         TypeAtResult::Single(result_type) => {
                             result_types.insert(result_type);
                         }
@@ -575,10 +579,13 @@ impl<'a> Type {
                         }
                     }
                 }
-                Ok(TypeAtResult::Multiple(result_types))
+                Ok((
+                    TypeAtResult::Multiple(result_types),
+                    runtime_error_is_possible,
+                ))
             }
             (Type::Array(element_type), ValuePathSegment::ArrayIndex(_)) => {
-                Ok(TypeAtResult::Single(*element_type))
+                Ok((TypeAtResult::Single(*element_type), true))
             }
             (Type::Tuple(mut elements_types), ValuePathSegment::ArrayIndex(tuple_index)) => {
                 if *tuple_index >= elements_types.len() {
@@ -590,7 +597,10 @@ impl<'a> Type {
                         elements_types_len
                     ));
                 }
-                Ok(TypeAtResult::Single(elements_types.remove(*tuple_index)))
+                Ok((
+                    TypeAtResult::Single(elements_types.remove(*tuple_index)),
+                    false,
+                ))
             }
             (Type::Array(element_type), ValuePathSegment::ArrayRange { from, to }) => {
                 if let (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) =
@@ -605,12 +615,12 @@ impl<'a> Type {
                 if let (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) =
                     (&**from, &**to)
                 {
-                    Ok(TypeAtResult::Single(Type::Tuple(vec![
-                        *element_type;
-                        to - from
-                    ])))
+                    Ok((
+                        TypeAtResult::Single(Type::Tuple(vec![*element_type; to - from])),
+                        false,
+                    ))
                 } else {
-                    Ok(TypeAtResult::Single(Type::Array(element_type)))
+                    Ok((TypeAtResult::Single(Type::Array(element_type)), false))
                 }
             }
             (Type::Tuple(elements_types), ValuePathSegment::ArrayRange { from, to }) => {
@@ -644,39 +654,47 @@ impl<'a> Type {
                     ));
                 }
                 match (&**from, &**to) {
-                    (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) => {
-                        Ok(TypeAtResult::Single(Type::Tuple(Vec::from_iter(
+                    (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) => Ok((
+                        TypeAtResult::Single(Type::Tuple(Vec::from_iter(
                             elements_types.into_iter().skip(*from).take(to - from),
-                        ))))
-                    }
-                    (RangeBound::Static(Some(from)), RangeBound::Static(None)) => {
-                        Ok(TypeAtResult::Single(Type::Tuple(Vec::from_iter(
+                        ))),
+                        false,
+                    )),
+                    (RangeBound::Static(Some(from)), RangeBound::Static(None)) => Ok((
+                        TypeAtResult::Single(Type::Tuple(Vec::from_iter(
                             elements_types.into_iter().skip(*from),
-                        ))))
-                    }
-                    (RangeBound::Static(None), RangeBound::Static(Some(to))) => {
-                        Ok(TypeAtResult::Single(Type::Tuple(Vec::from_iter(
+                        ))),
+                        false,
+                    )),
+                    (RangeBound::Static(None), RangeBound::Static(Some(to))) => Ok((
+                        TypeAtResult::Single(Type::Tuple(Vec::from_iter(
                             elements_types.into_iter().take(*to),
-                        ))))
-                    }
-                    (RangeBound::Static(Some(from)), RangeBound::Dynamic(_)) => {
-                        Ok(TypeAtResult::Single(Type::Array(Box::new(Type::Union(
+                        ))),
+                        false,
+                    )),
+                    (RangeBound::Static(Some(from)), RangeBound::Dynamic(_)) => Ok((
+                        TypeAtResult::Single(Type::Array(Box::new(Type::Union(
                             BTreeSet::from_iter(elements_types.into_iter().skip(*from)),
-                        )))))
-                    }
-                    (RangeBound::Dynamic(_), RangeBound::Static(Some(to))) => {
-                        Ok(TypeAtResult::Single(Type::Array(Box::new(Type::Union(
+                        )))),
+                        false,
+                    )),
+                    (RangeBound::Dynamic(_), RangeBound::Static(Some(to))) => Ok((
+                        TypeAtResult::Single(Type::Array(Box::new(Type::Union(
                             BTreeSet::from_iter(elements_types.into_iter().take(*to)),
-                        )))))
-                    }
-                    _ => Ok(TypeAtResult::Single(Type::Array(Box::new(Type::Union(
-                        BTreeSet::from_iter(elements_types),
-                    ))))),
+                        )))),
+                        false,
+                    )),
+                    _ => Ok((
+                        TypeAtResult::Single(Type::Array(Box::new(Type::Union(
+                            BTreeSet::from_iter(elements_types),
+                        )))),
+                        false,
+                    )),
                 }
             }
             (Type::Object(mut object_inner_types), ValuePathSegment::ObjectKey(object_key)) => {
                 if let Some(inner_type) = object_inner_types.remove(object_key) {
-                    Ok(TypeAtResult::Single(inner_type))
+                    Ok((TypeAtResult::Single(inner_type), false))
                 } else {
                     Err(anyhow!(
                         "can not get from {:#?} at {at_segment:?} because no key {object_key:?}",
@@ -685,15 +703,15 @@ impl<'a> Type {
                 }
             }
             (Type::GenericObject(object_value_type), ValuePathSegment::ObjectKey(_)) => {
-                Ok(TypeAtResult::Single(*object_value_type))
+                Ok((TypeAtResult::Single(*object_value_type), true))
             }
             (self_, _) => Err(anyhow!("can not get from {self_:#?} at {at_segment:?}",)),
         }
     }
 
-    pub fn at_path(self, path: &[ValuePathSegment]) -> Result<TypeAtResult> {
+    pub fn at_path(self, path: &[ValuePathSegment]) -> Result<(TypeAtResult, bool)> {
         if let Some(first_path_segment) = path.first() {
-            let self_at = self.at(first_path_segment)?;
+            let (self_at, mut runtime_error_is_possible) = self.at(first_path_segment)?;
             match self_at {
                 TypeAtResult::Single(intermediate_result) => {
                     intermediate_result.at_path(&path[1..])
@@ -701,7 +719,12 @@ impl<'a> Type {
                 TypeAtResult::Multiple(intermediate_results) => {
                     let mut results = BTreeSet::new();
                     for intermediate_result in intermediate_results {
-                        match intermediate_result.at_path(&path[1..])? {
+                        let (
+                            intermediate_result_type_at_result,
+                            intermediate_result_runtime_error_is_possible,
+                        ) = intermediate_result.at_path(&path[1..])?;
+                        runtime_error_is_possible |= intermediate_result_runtime_error_is_possible;
+                        match intermediate_result_type_at_result {
                             TypeAtResult::Single(result) => {
                                 results.insert(result);
                             }
@@ -710,11 +733,11 @@ impl<'a> Type {
                             }
                         }
                     }
-                    Ok(TypeAtResult::Multiple(results))
+                    Ok((TypeAtResult::Multiple(results), runtime_error_is_possible))
                 }
             }
         } else {
-            Ok(TypeAtResult::Single(self))
+            Ok((TypeAtResult::Single(self), false))
         }
     }
 

@@ -14,10 +14,6 @@ functions:
         match:
           from: _
           at: [1]
-          default:
-            error:
-              expected: tuple with second element
-              found: _
         cases:
           - [ok, false]
           - [{ object: { error: any } }, true]
@@ -121,12 +117,10 @@ compute:
                                   - extra_data_value_
                                   - from: _
                                     at: [0]
-                                    default: ""
                               group:
                                 - repeat:
                                     - from: _
                                       at: [1]
-                                      default: non-whitespace character
                                   min: 1
                       - { repeat: [whitespace character], min: 0 }
                       - raw string: "]"
@@ -372,7 +366,6 @@ compute:
                   through:
                     from: { constant: numbers }
                     at: [[_, { sum: [_, { constant: slice length }] }]]
-                    default: []
                 at: [[1, { constant: slices amount }]]
             expected:
               from:
@@ -384,7 +377,6 @@ compute:
                     starting with: _
                     next: { sum: [_, 1] }
                   at: [[0, { constant: slice length }]]
-                  default: []
               at: [[1, { constant: slices amount }]]
       test map lazy:
         assert equal::
@@ -523,7 +515,7 @@ compute:
                 - [{ tuple: [string, number] }, it's a number]
                 - [{ tuple: [string, string] }, it's a string]
                 - - { tuple: [string, { array: number }] }
-                  - map: { from: { constant: matched }, at: [1], default: [1, 0, 3] }
+                  - map: { from: { constant: matched }, at: [1] }
                     as: element from matched
                     through:
                       sum: [{ constant: element from matched }, 1]

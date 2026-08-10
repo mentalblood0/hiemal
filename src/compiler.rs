@@ -773,8 +773,8 @@ impl Compiler {
                     &default_compilation_context,
                     global_compilation_context,
                 )?;
-                let r#type = Type::from(BTreeSet::from_iter([
-                    match compiled_extracted_from
+                let (compiled_extracted_from_type_at_result, runtime_type_error_is_possible) =
+                    compiled_extracted_from
                         .node
                         .r#type
                         .clone()
@@ -784,12 +784,20 @@ impl Compiler {
                                 "expected value with path {value_path:#?}, found {:#?} at {:#?}",
                                 compiled_extracted_from.node.r#type, compilation_context.path
                             )
-                        })? {
+                        })?;
+                let compiled_extracted_from_type_at_result_as_type =
+                    match compiled_extracted_from_type_at_result {
                         TypeAtResult::Single(r#type) => r#type,
                         TypeAtResult::Multiple(union_types) => Type::Union(union_types),
-                    },
-                    compiled_default.node.r#type.clone(),
-                ]));
+                    };
+                let r#type = if runtime_type_error_is_possible {
+                    Type::from(BTreeSet::from_iter([
+                        compiled_extracted_from_type_at_result_as_type,
+                        compiled_default.node.r#type.clone(),
+                    ]))
+                } else {
+                    compiled_extracted_from_type_at_result_as_type
+                };
                 NodeAndMetadata {
                     node: Node {
                         content: Content::FromAt {
