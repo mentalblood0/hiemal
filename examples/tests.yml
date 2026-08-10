@@ -14,6 +14,10 @@ functions:
         match:
           from: _
           at: [1]
+          default:
+            error:
+              expected: tuple with second element
+              found: _
         cases:
           - [ok, false]
           - [{object: {error: any}}, true]
@@ -27,7 +31,7 @@ compute:
       test match groups:
         assert equal::
           found:
-            from:
+            match:
               match groups:
                 string: I categorically deny having triskaidekaphobia.
                 regex:
@@ -37,7 +41,11 @@ compute:
                       exactly: 13
                     name: horror
                   - word boundary
-            at: [horror]
+            as: match groups result
+            cases:
+              - [null, null]
+              - [{generic object: string}, {from: {constant: match groups result}, at: [horror], default: null}]
+            default: null
           expected: categorically
       test is match runtime regex building:
         assert equal::
@@ -74,6 +82,7 @@ compute:
                             - [number, { b: null, p: s }]
                             - [any, { b: 3, t: s }]
               at: [a, 2, b]
+              default: null
             cases:
               - [string, false]
               - [null, false]
@@ -142,6 +151,7 @@ compute:
                 at: [0]
               second: 1
             at: ["second"]
+            default: null
           expected: 1
       test lazy tuple:
         assert equal::
@@ -155,6 +165,7 @@ compute:
                 at: [0]
               - 1
             at: [1]
+            default: null
           expected: 1
       test filter simple:
         assert equal::
@@ -165,6 +176,7 @@ compute:
                 next: { sum: [_, 1] }
               through: { is sorted: [5, _] }
             at: [[0, 3]]
+            default: null
           expected: [5, 6, 7]
       test match sequence:
         assert equal::
@@ -228,7 +240,9 @@ compute:
                   through:
                     from: { constant: numbers }
                     at: [[_, { sum: [_, { constant: slice length }] }]]
+                    default: []
                 at: [[1, { constant: slices amount }]]
+                default: null
             expected:
               from:
                 map:
@@ -239,7 +253,9 @@ compute:
                     starting with: _
                     next: { sum: [_, 1] }
                   at: [[0, { constant: slice length }]]
+                  default: []
               at: [[1, { constant: slices amount }]]
+              default: null
       test map lazy:
         assert equal::
           found:
@@ -249,6 +265,7 @@ compute:
                 next: { sum: [_, 1] }
               through: { sum: [_, 2] }
             at: [[2, 5]]
+            default: null
           expected: [5, 6, 7]
       test sequence simple:
         assert equal::
@@ -257,6 +274,7 @@ compute:
               starting with: 1
               next: { sum: [_, 1] }
             at: [[0, 3]]
+            default: null
           expected: [1, 2, 3]
       test function as argument:
         assert equal::
@@ -377,7 +395,7 @@ compute:
                 - [{ tuple: [string, number] }, it's a number]
                 - [{ tuple: [string, string] }, it's a string]
                 - - { tuple: [string, { array: number }] }
-                  - map: { from: { constant: matched }, at: [1] }
+                  - map: { from: { constant: matched }, at: [1], default: [1, 0, 3] }
                     as: element from matched
                     through:
                       sum: [{ constant: element from matched }, 1]
@@ -493,6 +511,7 @@ compute:
             from:
               a: [1, 2, { b: 3 }]
             at: [a, 2, b]
+            default: null
           expected: 3
       test from at value range from static to static:
         assert equal::
@@ -500,6 +519,7 @@ compute:
             from:
               a: [1, 2, { b: 3 }, 4]
             at: [a, [1, 3]]
+            default: null
           expected: [2, { b: 3 }]
       test from at value range from static to dynamic:
         assert equal::
@@ -507,6 +527,7 @@ compute:
             from:
               a: [1, 2, { b: 3 }, 4]
             at: [a, [1, { sum: [2, 1] }]]
+            default: null
           expected: [2, { b: 3 }]
       test from at value range from dynamic to dynamic:
         assert equal::
@@ -514,6 +535,7 @@ compute:
             from:
               a: [1, 2, { b: 3 }, 4]
             at: [a, [{ sum: [1, 0] }, { sum: [2, 1] }]]
+            default: null
           expected: [2, { b: 3 }]
       test from at value range from dynamic to dynamic out of range:
         assert equal::
@@ -521,6 +543,7 @@ compute:
             from:
               a: [1, 2, { b: 3 }, 4]
             at: [a, [{ sum: [-5, -10] }, { sum: [5, 10] }]]
+            default: null
           expected: [1, 2, { b: 3 }, 4]
       test from at function:
         assert equal::
@@ -529,6 +552,7 @@ compute:
               fibonacci::
                 from: examples/fibonacci.yml
                 at: [functions, { object key: "fibonacci:" }]
+                default: null
             compute:
               fibonacci:: 10
           expected: 55
@@ -537,6 +561,7 @@ compute:
           found:
             from: examples/fibonacci.yml
             at: [compute, { object key: "fibonacci:" }]
+            default: null
           expected: 24
       test from at default argument:
         assert equal::
@@ -545,6 +570,7 @@ compute:
               f::
                 from: _
                 at: [1]
+                default: null
             compute:
               f:: [1, 2]
           expected: 2

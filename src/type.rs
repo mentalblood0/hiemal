@@ -247,7 +247,27 @@ impl From<BTreeSet<Type>> for Type {
             }
             match union_types.len() {
                 1 => union_types.into_iter().next().unwrap(),
-                _ => Type::Union(union_types),
+                _ => {
+                    if union_types
+                        .iter()
+                        .all(|union_type| !matches!(union_type, Type::Union(_)))
+                    {
+                        Type::Union(union_types)
+                    } else {
+                        let mut result_union_types = BTreeSet::new();
+                        for union_type in union_types.into_iter() {
+                            match union_type {
+                                Type::Union(mut inner_union_types) => {
+                                    result_union_types.append(&mut inner_union_types)
+                                }
+                                non_union_type => {
+                                    result_union_types.insert(non_union_type);
+                                }
+                            }
+                        }
+                        Type::Union(result_union_types)
+                    }
+                }
             }
         }
     }
@@ -360,10 +380,9 @@ impl<'a> Type {
                         false
                     }
                 }
-                (self_type, Type::Union(other_union_types)) => {
-                    other_union_types.len() == 1
-                        && self_type.contains(other_union_types.iter().next().unwrap())
-                }
+                (self_type, Type::Union(other_union_types)) => other_union_types
+                    .iter()
+                    .all(|other_union_type| self_type.contains(other_union_type)),
                 (Type::Bool, Type::LiteralTrue | Type::LiteralFalse) => true,
                 (
                     Type::Tuple(self_tuple_elements_types),

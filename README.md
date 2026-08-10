@@ -48,6 +48,7 @@ functions:
   fibonacci::
     from: examples/fibonacci.yml
     at: [functions, { object key: "fibonacci:" }]
+    default: null
 compute:
   fibonacci:: 10
 ```
@@ -56,12 +57,14 @@ compute:
 from:
   a: [1, 2, { b: 3 }]
 at: [a, 2, b]
+default: null
 ```
 
 ```yaml
 from:
   a: [1, 2, { b: 3 }, 4]
 at: [a, [1, { sum: [2, 1] }]]
+default: null
 ```
 
 #### constant
@@ -74,10 +77,10 @@ compute:
 ```
 
 ```yaml
-constants:
-  c: 1
+functions:
+  f:: _
 compute:
-  _
+  f:: 1
 ```
 
 #### functions constants compute
@@ -172,6 +175,7 @@ from:
   starting with: 1
   next: { sum: [_, 1] }
 at: [[0, 3]]
+default: null
 ```
 
 #### map as through
@@ -201,7 +205,7 @@ through:
     - [{ tuple: [string, number] }, it's a number]
     - [{ tuple: [string, string] }, it's a string]
     - - { tuple: [string, { array: number }] }
-      - map: { from: { constant: matched }, at: [1] }
+      - map: { from: { constant: matched }, at: [1], default: [1, 0, 3] }
         as: element from matched
         through:
           sum: [{ constant: element from matched }, 1]
@@ -232,6 +236,7 @@ from:
     next: { sum: [_, 1] }
   through: { is sorted: [5, _] }
 at: [[0, 3]]
+default: null
 ```
 
 ```yaml

@@ -651,7 +651,7 @@ impl Compiler {
                 compilation_context,
                 global_compilation_context,
             )?,
-            Program::FromAt { from, at } => {
+            Program::FromAt { from, at, default } => {
                 let (extracted_from, first_non_program_path_segment_index_option) =
                     process_from_at_program_path_part(
                         from,
@@ -763,25 +763,39 @@ impl Compiler {
                 } else {
                     vec![]
                 };
-                let r#type = match compiled_extracted_from
-                    .node
-                    .r#type
-                    .clone()
-                    .at_path(&value_path)
-                    .with_context(|| {
-                        format!(
-                            "expected value with path {value_path:#?}, found {:#?} at {:#?}",
-                            compiled_extracted_from.node.r#type, compilation_context.path
-                        )
-                    })? {
-                    TypeAtResult::Single(r#type) => r#type,
-                    TypeAtResult::Multiple(union_types) => Type::Union(union_types),
-                };
+                let mut default_compilation_context = compilation_context.clone();
+                default_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::Default.into()]);
+                let compiled_default = self.compile_with_context(
+                    default,
+                    &default_compilation_context,
+                    global_compilation_context,
+                )?;
+                let r#type = Type::from(BTreeSet::from_iter([
+                    match compiled_extracted_from
+                        .node
+                        .r#type
+                        .clone()
+                        .at_path(&value_path)
+                        .with_context(|| {
+                            format!(
+                                "expected value with path {value_path:#?}, found {:#?} at {:#?}",
+                                compiled_extracted_from.node.r#type, compilation_context.path
+                            )
+                        })? {
+                        TypeAtResult::Single(r#type) => r#type,
+                        TypeAtResult::Multiple(union_types) => Type::Union(union_types),
+                    },
+                    compiled_default.node.r#type.clone(),
+                ]));
                 NodeAndMetadata {
                     node: Node {
                         content: Content::FromAt {
                             from: Box::new(compiled_extracted_from.node),
                             value_path_segments: value_path,
+                            default: Box::new(compiled_default.node),
                         },
                         r#type,
                     },
@@ -1191,7 +1205,10 @@ impl Compiler {
                                     },
                                 ),
                             },
-                            r#type: Type::GenericObject(Box::new(Type::String)),
+                            r#type: Type::Union(BTreeSet::from_iter([
+                                Type::GenericObject(Box::new(Type::String)),
+                                Type::Null,
+                            ])),
                         },
                         is_pure,
                         is_computable: true,

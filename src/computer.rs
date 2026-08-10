@@ -1427,30 +1427,26 @@ impl<'a> ComputationContext<'a> {
                             self.build_regex(computed_regex.as_tuple().unwrap())
                         })?;
                     if let Some(captures) = compiled_regex.captures(&computed_string) {
+                        let result_value = Some(Value::Object(Object::new_from_iter(
+                            compiled_regex.capture_names().flatten().filter_map(|name| {
+                                captures.name(name).map(|match_obj| {
+                                    (
+                                        name.to_string().into(),
+                                        Some(Value::String(match_obj.as_str().into())).into(),
+                                    )
+                                })
+                            }),
+                        )));
+                        let r#type = Value::r#type(&result_value);
                         Ok(IntermediateValueAndMetadata {
-                            intermediate_value: IntermediateValue::Value(
-                                Some(Value::Object(Object::new_from_iter(
-                                    compiled_regex.capture_names().flatten().filter_map(|name| {
-                                        captures.name(name).map(|match_obj| {
-                                            (
-                                                name.to_string().into(),
-                                                Some(Value::String(match_obj.as_str().into()))
-                                                    .into(),
-                                            )
-                                        })
-                                    }),
-                                )))
-                                .into(),
-                            ),
-                            r#type: Type::Bool,
+                            intermediate_value: IntermediateValue::Value(result_value.into()),
+                            r#type,
                         }
                         .into())
                     } else {
                         Ok(IntermediateValueAndMetadata {
-                            intermediate_value: IntermediateValue::Value(
-                                Some(Value::Object(Object::default())).into(),
-                            ),
-                            r#type: Type::Bool,
+                            intermediate_value: IntermediateValue::Value(None.into()),
+                            r#type: Type::Null,
                         }
                         .into())
                     }
@@ -1506,28 +1502,28 @@ impl<'a> ComputationContext<'a> {
             Content::FromAt {
                 from,
                 value_path_segments,
+                default,
             } => {
                 let mut result = self.compute_node(from, constants)?;
                 for path_segment in value_path_segments {
                     match path_segment {
                         ValuePathSegment::ArrayIndex(array_index) => {
-                            result = std::mem::take(
-                                &mut self
-                                    .get_from_intermediate_value(&result, *array_index)?
-                                    .with_context(|| {
-                                        format!(
-                                            "expected array with element at index {array_index}, \
-                                             found array {result:#?}"
-                                        )
-                                    })?,
-                            )
+                            if let Some(new_result) =
+                                &mut self.get_from_intermediate_value(&result, *array_index)?
+                            {
+                                result = std::mem::take(new_result);
+                            } else {
+                                return self.compute_node(default, constants);
+                            }
                         }
                         ValuePathSegment::ObjectKey(object_key) => {
-                            result = std::mem::take(
-                                &mut self
-                                    .get_by_key_from_intermediate_value(&result, object_key)?
-                                    .unwrap(),
-                            )
+                            if let Some(new_result) =
+                                &mut self.get_by_key_from_intermediate_value(&result, object_key)?
+                            {
+                                result = std::mem::take(new_result);
+                            } else {
+                                return self.compute_node(default, constants);
+                            }
                         }
                         ValuePathSegment::ArrayRange {
                             from: range_from,

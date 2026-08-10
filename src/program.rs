@@ -26,6 +26,7 @@ pub enum Program {
     FromAt {
         from: From,
         at: Vec<AtSegment>,
+        default: Box<Program>,
     },
     EmbeddedFunction(Box<EmbeddedFunction>),
     Match {
@@ -179,6 +180,8 @@ pub enum PathSegment {
     From,
     #[serde(rename = "at")]
     At,
+    #[serde(rename = "default")]
+    Default,
     #[serde(rename = "match")]
     Match,
     #[serde(rename = "map")]

@@ -73,6 +73,7 @@ pub enum Content {
     FromAt {
         from: Box<Node>,
         value_path_segments: Vec<ValuePathSegment>,
+        default: Box<Node>,
     },
     Match {
         r#match: Box<Node>,
