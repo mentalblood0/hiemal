@@ -55,7 +55,7 @@ impl Hash for MaybeType {
     }
 }
 
-static CONSTRUCTED_TYPES: LazyLock<[Type; 4]> = LazyLock::new(|| {
+static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
     [
         Type::Array(Box::new(Type::Union(BTreeSet::from_iter([
             Type::String,
@@ -63,7 +63,8 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 4]> = LazyLock::new(|| {
                 "raw string".to_string().into(),
                 Type::String,
             )])),
-            Type::Constructed(Constructed::Or),
+            Type::Constructed(Constructed::OneOf),
+            Type::Constructed(Constructed::CharacterExceptFromString),
             Type::Constructed(Constructed::Repeat),
             Type::Constructed(Constructed::Group),
             Type::LiteralString("character".into()),
@@ -79,8 +80,12 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 4]> = LazyLock::new(|| {
             Type::LiteralString("non-word boundary".into()),
         ])))),
         Type::Object(BTreeMap::from_iter([(
-            "or".to_string().into(),
+            "one of".to_string().into(),
             Type::Array(Box::new(Type::Constructed(Constructed::Regex))),
+        )])),
+        Type::Object(BTreeMap::from_iter([(
+            "character except from string".to_string().into(),
+            Type::String,
         )])),
         Type::Union(BTreeSet::from_iter([
             Type::Object(BTreeMap::from_iter([
@@ -128,7 +133,8 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 4]> = LazyLock::new(|| {
 pub enum Constructed {
     #[default]
     Regex,
-    Or,
+    OneOf,
+    CharacterExceptFromString,
     Repeat,
     Group,
 }

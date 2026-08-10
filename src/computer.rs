@@ -1,5 +1,6 @@
 use std::cell::LazyCell;
 use std::collections::BTreeMap;
+use std::str::FromStr;
 use std::sync::LazyLock;
 use std::{borrow::Cow, hash::Hash, hash::Hasher, io::Read, sync::Arc};
 
@@ -312,22 +313,41 @@ impl<'a> ComputationContext<'a> {
                         result_string.push_str("\\B");
                     }
                     Value::Object(object) => {
-                        if let Some(variants) = object.get(&"or".to_string()) {
-                            result_string.push_str("(:?");
-                            for variant in variants
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_tuple()
-                                .unwrap()
-                                .iter()
-                            {
-                                result_string += &self.build_regex(
-                                    variant.as_ref().as_ref().unwrap().as_tuple().unwrap(),
-                                );
-                            }
+                        if let Some(variants) = object.get(&"one of".to_string()) {
+                            result_string.push_str("(?:");
+                            result_string.push_str(
+                                &variants
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_tuple()
+                                    .unwrap()
+                                    .iter()
+                                    .map(|variant| {
+                                        self.build_regex(
+                                            variant.as_ref().as_ref().unwrap().as_tuple().unwrap(),
+                                        )
+                                    })
+                                    .map(|string_arc| (*string_arc).clone())
+                                    .collect::<Vec<_>>()
+                                    .join("|"),
+                            );
                             result_string.push(')');
-                        } else if let Some(raw_string) = object.get(&"raw_string".to_string()) {
+                        } else if let Some(string_of_characters_to_except) =
+                            object.get(&"character except from string".to_string())
+                        {
+                            result_string.push_str("[^");
+                            result_string.push_str(&escape(
+                                &string_of_characters_to_except
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_string()
+                                    .unwrap()
+                                    .to_string(),
+                            ));
+                            result_string.push(']');
+                        } else if let Some(raw_string) = object.get(&"raw string".to_string()) {
                             result_string.push_str(&escape(
                                 &raw_string
                                     .as_ref()
@@ -364,10 +384,11 @@ impl<'a> ComputationContext<'a> {
                             object.get(&"max".to_string()),
                             object.get(&"exactly".to_string()),
                         ) {
+                            result_string.push_str("(?:");
                             result_string.push_str(&self.build_regex(
                                 repeat.as_ref().as_ref().unwrap().as_tuple().unwrap(),
                             ));
-                            result_string.push('{');
+                            result_string.push_str("){");
                             if let Some(exactly) = exactly {
                                 result_string.push_str(
                                     &(exactly
@@ -413,6 +434,8 @@ impl<'a> ComputationContext<'a> {
                                 }
                             }
                             result_string.push('}');
+                        } else {
+                            panic!()
                         }
                     }
                     _ => panic!(),
@@ -1402,7 +1425,17 @@ impl<'a> ComputationContext<'a> {
                                 captures.name(name).map(|match_obj| {
                                     (
                                         name.to_string().into(),
-                                        Some(Value::String(match_obj.as_str().into())).into(),
+                                        Some({
+                                            let matched = match_obj.as_str();
+                                            if let Ok(matched_as_number) =
+                                                dashu::Rational::from_str(matched)
+                                            {
+                                                Value::Number(matched_as_number)
+                                            } else {
+                                                Value::String(matched.into())
+                                            }
+                                        })
+                                        .into(),
                                     )
                                 })
                             }),

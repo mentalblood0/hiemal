@@ -1119,7 +1119,10 @@ impl Compiler {
                                 ),
                             },
                             r#type: Type::Union(BTreeSet::from_iter([
-                                Type::GenericObject(Box::new(Type::String)),
+                                Type::GenericObject(Box::new(Type::Union(BTreeSet::from_iter([
+                                    Type::String,
+                                    Type::Number,
+                                ])))),
                                 Type::Null,
                             ])),
                         },
