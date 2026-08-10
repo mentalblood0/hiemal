@@ -132,12 +132,10 @@ through:
                       - extra_data_value_
                       - from: _
                         at: [0]
-                        default: ""
                   group:
                     - repeat:
                         - from: _
                           at: [1]
-                          default: non-whitespace character
                       min: 1
           - { repeat: [whitespace character], min: 0 }
           - raw string: "]"
@@ -155,7 +153,6 @@ functions:
   fibonacci::
     from: examples/fibonacci.yml
     at: [functions, { object key: "fibonacci:" }]
-    default: null
 compute:
   fibonacci:: 10
 ```
@@ -164,14 +161,12 @@ compute:
 from:
   a: [1, 2, { b: 3 }]
 at: [a, 2, b]
-default: null
 ```
 
 ```yaml
 from:
   a: [1, 2, { b: 3 }, 4]
 at: [a, [1, { sum: [2, 1] }]]
-default: null
 ```
 
 #### constant
@@ -282,7 +277,6 @@ from:
   starting with: 1
   next: { sum: [_, 1] }
 at: [[0, 3]]
-default: null
 ```
 
 #### map as through
@@ -312,7 +306,7 @@ through:
     - [{ tuple: [string, number] }, it's a number]
     - [{ tuple: [string, string] }, it's a string]
     - - { tuple: [string, { array: number }] }
-      - map: { from: { constant: matched }, at: [1], default: [1, 0, 3] }
+      - map: { from: { constant: matched }, at: [1] }
         as: element from matched
         through:
           sum: [{ constant: element from matched }, 1]
@@ -343,7 +337,6 @@ from:
     next: { sum: [_, 1] }
   through: { is sorted: [5, _] }
 at: [[0, 3]]
-default: null
 ```
 
 ```yaml
