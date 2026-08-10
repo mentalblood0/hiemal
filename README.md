@@ -11,6 +11,7 @@
 - lazy evaluation: constants, arrays/tuples, objects, sequence, map and filter
 - pure user functions results caching
 - numbers are arbitrary size rational
+- typechecked runtime regex building
 
 ## Installation
 
@@ -37,7 +38,140 @@ hiemal examples/include.yml
 - flatten: [[1, a], [3], [4, b, 6]]
 - standard input
 - parse yaml: "[1, 2, string, 3, 4]"
+- match groups:
+    string: I categorically deny having triskaidekaphobia.
+    regex: \b\w{13}\b
+- match groups:
+    string: I categorically deny having triskaidekaphobia.
+    regex:
+      - word boundary
+      - group:
+          - repeat: [word character]
+            exactly: 13
+        name: horror
+      - word boundary
 ```
+
+<details>
+  <summary>more complex regex example</summary>
+
+```yaml
+map:
+  - 2026-08-10 14:23:45.123  INFO  auth_service - User login successful [user_id=12345]
+  - 2026-08-10 14:24:01.456  ERROR  database.core - Connection timeout (ERR-502) [retry_count=3]
+  - 2026-08-10 14:25:10.789  WARN  cache.redis - Memory usage high [threshold=85%]
+  - 2026-08-10 14:26:30.012  DEBUG  api.v2.handler - Processing request [endpoint=/users]
+  - 2026-08-10 14:27:15.678  ERROR  auth.service - ERROR invalid token (ERR-401) [user_id=abc123]
+through:
+  match groups:
+    string: _
+    regex:
+      - start of string
+      - name: timestamp
+        group:
+          - repeat:
+              - digit
+            exactly: 4
+          - raw string: "-"
+          - repeat:
+              - digit
+            exactly: 2
+          - raw string: "-"
+          - repeat:
+              - digit
+            exactly: 2
+          - whitespace character
+          - repeat:
+              - digit
+            exactly: 2
+          - raw string: ":"
+          - repeat:
+              - digit
+            exactly: 2
+          - raw string: ":"
+          - repeat:
+              - digit
+            exactly: 2
+          - raw string: .
+          - repeat: [digit]
+            exactly: 3
+      - repeat: [whitespace character]
+        min: 2
+      - name: log_level
+        group:
+          - one of:
+              - [{ raw string: INFO }]
+              - [{ raw string: WARN }]
+              - [{ raw string: ERROR }]
+              - [{ raw string: DEBUG }]
+      - repeat: [whitespace character]
+        min: 1
+      - name: module
+        group:
+          - repeat: [word character]
+            min: 1
+          - repeat:
+              - character
+              - repeat: [word character]
+                min: 1
+            min: 0
+      - repeat: [whitespace character]
+        min: 0
+      - raw string: "-"
+      - repeat: [whitespace character]
+        min: 0
+      - name: message
+        group:
+          - repeat:
+              - character except from string: "(["
+            min: 0
+      - repeat: [whitespace character]
+        min: 0
+      - repeat:
+          - repeat: [whitespace character]
+            min: 1
+          - raw string: (ERR-
+          - name: error_code
+            group:
+              - repeat: [digit]
+                exactly: 3
+          - raw string: )
+        max: 1
+      - repeat: [whitespace character]
+        min: 0
+      - repeat:
+          - raw string: "["
+          - repeat: [whitespace character]
+            min: 0
+          - name: extra_data_key
+            group:
+              - repeat: [word character]
+                min: 1
+          - repeat: [whitespace character]
+            min: 0
+          - raw string: =
+          - repeat: [whitespace character]
+            min: 0
+          - one of:
+              - - name: extra_data_value_number
+                  group:
+                      - repeat: [digit]
+                        min: 1
+              - - name: extra_data_value_word
+                  group:
+                    - repeat: [word character]
+                      min: 1
+              - - name: extra_data_value_string
+                  group:
+                    - repeat: [non-whitespace character]
+                      min: 1
+          - repeat: [whitespace character]
+            min: 0
+          - raw string: "]"
+        max: 1
+      - end of string
+```
+</details>
 
 ### Clauses
 
