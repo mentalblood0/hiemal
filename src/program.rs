@@ -170,8 +170,6 @@ pub enum EmbeddedFunction {
     KeyValuePairs(Program),
     #[serde(rename = "flatten")]
     Flatten(Program),
-    #[serde(rename = "is match")]
-    IsMatch { string: Program, regex: Program },
     #[serde(rename = "match groups")]
     MatchGroups { string: Program, regex: Program },
 }
@@ -240,8 +238,6 @@ pub enum PathSegment {
     KeyValuePairs,
     #[serde(rename = "flatten")]
     Flatten,
-    #[serde(rename = "is match")]
-    IsMatch,
     #[serde(rename = "match groups")]
     MatchGroups,
     #[serde(rename = "string")]

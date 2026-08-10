@@ -20,11 +20,19 @@ functions:
               found: _
         cases:
           - [ok, false]
-          - [{object: {error: any}}, true]
+          - [{ object: { error: any } }, true]
     as: _
     cases:
       - [[], ok]
       - [any, _]
+  is match::
+    match:
+      match groups:
+        string: { constant: string }
+        regex: { constant: regex }
+    cases:
+      - [null, false]
+      - [any, true]
 compute:
   tests report::
     key-value pairs:
@@ -44,12 +52,12 @@ compute:
             as: match groups result
             cases:
               - [null, null]
-              - [{generic object: string}, {from: {constant: match groups result}, at: [horror] }]
+              - [{ generic object: string }, { from: { constant: match groups result }, at: [horror] }]
           expected: categorically
       test is match runtime regex building:
         assert equal::
           found:
-            is match:
+            is match::
               string: I categorically deny having triskaidekaphobia.
               regex:
                 - word boundary
@@ -60,7 +68,7 @@ compute:
       test is match:
         assert equal::
           found:
-            is match:
+            is match::
               string: I categorically deny having triskaidekaphobia.
               regex: \b\w{13}\b
           expected: true

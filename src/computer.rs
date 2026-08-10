@@ -1359,53 +1359,6 @@ impl<'a> ComputationContext<'a> {
                     r#type: node.r#type.clone(),
                 }
                 .into()),
-                EmbeddedFunction::IsMatch { string, regex } => {
-                    let computed_arguments_unrolled = self.unroll_intermediate_values(
-                        self.compute_nodes(
-                            [
-                                (Some(string), Cow::Borrowed(constants)),
-                                (Some(regex), Cow::Borrowed(constants)),
-                            ]
-                            .into_iter(),
-                            2,
-                        )?
-                        .inner
-                        .into_iter(),
-                        2,
-                    )?;
-                    let computed_string = computed_arguments_unrolled
-                        .get(0)
-                        .unwrap()
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_string()
-                        .unwrap()
-                        .to_string();
-                    let computed_regex = computed_arguments_unrolled
-                        .get(1)
-                        .unwrap()
-                        .as_ref()
-                        .as_ref()
-                        .unwrap();
-                    Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bool(
-                                self.compile_regex(
-                                    &*if let Value::String(computed_regex_string) = computed_regex {
-                                        Arc::new(computed_regex_string.to_string())
-                                    } else {
-                                        self.build_regex(computed_regex.as_tuple().unwrap())
-                                    },
-                                )?
-                                .is_match(&computed_string),
-                            ))
-                            .into(),
-                        ),
-                        r#type: Type::Bool,
-                    }
-                    .into())
-                }
                 EmbeddedFunction::MatchGroups { string, regex } => {
                     let computed_arguments_unrolled = self.unroll_intermediate_values(
                         self.compute_nodes(

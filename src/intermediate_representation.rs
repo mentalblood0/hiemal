@@ -133,7 +133,6 @@ pub enum EmbeddedFunction {
     ParseYaml(Node),
     KeyValuePairs(Node),
     Flatten(Node),
-    IsMatch { string: Node, regex: Node },
     MatchGroups { string: Node, regex: Node },
 }
 
