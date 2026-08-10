@@ -26,6 +26,7 @@ pub enum Program {
     FromAt {
         from: From,
         at: Vec<AtSegment>,
+        #[serde(default = "default_from_at_default")]
         default: Box<Program>,
     },
     EmbeddedFunction(Box<EmbeddedFunction>),
@@ -83,6 +84,10 @@ pub fn default_starting_with() -> Box<Program> {
 
 pub fn default_match_as() -> Option<Arc<String>> {
     None
+}
+
+pub fn default_from_at_default() -> Box<Program> {
+    Box::new(Program::Value(None.into()))
 }
 
 pub fn default_map_as() -> Arc<String> {
