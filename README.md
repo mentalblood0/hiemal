@@ -69,104 +69,77 @@ through:
       - start of string
       - name: timestamp
         group:
-          - repeat:
-              - digit
-            exactly: 4
+          - { repeat: [digit], exactly: 4 }
           - raw string: "-"
-          - repeat:
-              - digit
-            exactly: 2
+          - { repeat: [digit], exactly: 2 }
           - raw string: "-"
-          - repeat:
-              - digit
-            exactly: 2
+          - { repeat: [digit], exactly: 2 }
           - whitespace character
-          - repeat:
-              - digit
-            exactly: 2
+          - { repeat: [digit], exactly: 2 }
           - raw string: ":"
-          - repeat:
-              - digit
-            exactly: 2
+          - { repeat: [digit], exactly: 2 }
           - raw string: ":"
-          - repeat:
-              - digit
-            exactly: 2
+          - { repeat: [digit], exactly: 2 }
           - raw string: .
-          - repeat: [digit]
-            exactly: 3
-      - repeat: [whitespace character]
-        min: 2
+          - { repeat: [digit], exactly: 3 }
+      - { repeat: [whitespace character], min: 2 }
       - name: log_level
         group:
           - one of:
-              - [{ raw string: INFO }]
-              - [{ raw string: WARN }]
-              - [{ raw string: ERROR }]
-              - [{ raw string: DEBUG }]
-      - repeat: [whitespace character]
-        min: 1
+              map: { constant: log levels }
+              through: [{ raw string: _ }]
+      - { repeat: [whitespace character], min: 1 }
       - name: module
         group:
-          - repeat: [word character]
-            min: 1
+          - { repeat: [word character], min: 1 }
           - repeat:
               - character
-              - repeat: [word character]
-                min: 1
+              - { repeat: [word character], min: 1 }
             min: 0
-      - repeat: [whitespace character]
-        min: 0
+      - { repeat: [whitespace character], min: 0 }
       - raw string: "-"
-      - repeat: [whitespace character]
-        min: 0
+      - { repeat: [whitespace character], min: 0 }
       - name: message
         group:
-          - repeat:
-              - character except from string: "(["
-            min: 0
-      - repeat: [whitespace character]
-        min: 0
+          - { repeat: [{ character except from string: "([" }], min: 0 }
+      - { repeat: [whitespace character], min: 0 }
       - repeat:
-          - repeat: [whitespace character]
-            min: 1
+          - { repeat: [whitespace character], min: 1 }
           - raw string: (ERR-
           - name: error_code
             group:
-              - repeat: [digit]
-                exactly: 3
+              - { repeat: [digit], exactly: 3 }
           - raw string: )
         max: 1
-      - repeat: [whitespace character]
-        min: 0
+      - { repeat: [whitespace character], min: 0 }
       - repeat:
           - raw string: "["
-          - repeat: [whitespace character]
-            min: 0
+          - { repeat: [whitespace character], min: 0 }
           - name: extra_data_key
             group:
-              - repeat: [word character]
-                min: 1
-          - repeat: [whitespace character]
-            min: 0
+              - { repeat: [word character], min: 1 }
+          - { repeat: [whitespace character], min: 0 }
           - raw string: =
-          - repeat: [whitespace character]
-            min: 0
+          - { repeat: [whitespace character], min: 0 }
           - one of:
-              - - name: extra_data_value_number
+              map:
+                - [number, digit]
+                - [word, word character]
+                - [string, non-whitespace character]
+              through:
+                - name:
+                    concat:
+                      - extra_data_value_
+                      - from: _
+                        at: [0]
+                        default: ""
                   group:
-                      - repeat: [digit]
-                        min: 1
-              - - name: extra_data_value_word
-                  group:
-                    - repeat: [word character]
+                    - repeat:
+                        - from: _
+                          at: [1]
+                          default: non-whitespace character
                       min: 1
-              - - name: extra_data_value_string
-                  group:
-                    - repeat: [non-whitespace character]
-                      min: 1
-          - repeat: [whitespace character]
-            min: 0
+          - { repeat: [whitespace character], min: 0 }
           - raw string: "]"
         max: 1
       - end of string

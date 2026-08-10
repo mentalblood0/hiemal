@@ -845,6 +845,46 @@ impl Compiler {
                         is_computable: true,
                     }
                 }
+                EmbeddedFunction::Concat(argument) => {
+                    let mut argument_compilation_context = compilation_context.clone();
+                    argument_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::Concat.into()]);
+                    let compiled_argument = self.compile_with_context(
+                        argument,
+                        &argument_compilation_context,
+                        global_compilation_context,
+                    )?;
+                    if !compiled_argument.is_computable {
+                        return Err(anyhow!(
+                            "expected computable argument, found {argument:#?} at {:#?}",
+                            argument_compilation_context.path
+                        ));
+                    }
+                    resolve_type(
+                        &compiled_argument.node.r#type,
+                        &Type::Array(Box::new(Type::String)),
+                        compilation_context,
+                    )?;
+                    NodeAndMetadata {
+                        external_constants_name_clustered_indices: compiled_argument
+                            .external_constants_name_clustered_indices,
+                        node: Node {
+                            content: Content::EmbeddedFunctionCall {
+                                path: None,
+                                embedded_function: Box::new(
+                                    intermediate_representation::EmbeddedFunction::Concat(
+                                        compiled_argument.node,
+                                    ),
+                                ),
+                            },
+                            r#type: Type::String,
+                        },
+                        is_pure: compiled_argument.is_pure,
+                        is_computable: true,
+                    }
+                }
                 EmbeddedFunction::IsSorted(argument) => {
                     let mut argument_compilation_context = compilation_context.clone();
                     argument_compilation_context

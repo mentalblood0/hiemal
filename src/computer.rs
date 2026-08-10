@@ -1246,6 +1246,35 @@ impl<'a> ComputationContext<'a> {
                     r#type: Type::Number,
                 }
                 .into()),
+                EmbeddedFunction::Concat(argument) => {
+                    let mut result_rope = ropey::Rope::default();
+                    for appendix in self
+                        .unroll_intermediate_value(&self.compute_node(argument, constants)?)?
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_tuple()
+                        .unwrap()
+                        .iter()
+                    {
+                        result_rope.append(
+                            appendix
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_string()
+                                .unwrap()
+                                .clone(),
+                        );
+                    }
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::String(result_rope)).into(),
+                        ),
+                        r#type: Type::Number,
+                    }
+                    .into())
+                }
                 EmbeddedFunction::IsSorted(argument) => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         Some(Value::Bool(

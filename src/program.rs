@@ -172,6 +172,8 @@ pub enum EmbeddedFunction {
     Flatten(Program),
     #[serde(rename = "match groups")]
     MatchGroups { string: Program, regex: Program },
+    #[serde(rename = "concat")]
+    Concat(Program),
 }
 
 #[repr(u8)]
@@ -240,6 +242,8 @@ pub enum PathSegment {
     Flatten,
     #[serde(rename = "match groups")]
     MatchGroups,
+    #[serde(rename = "concat")]
+    Concat,
     #[serde(rename = "string")]
     String,
     #[serde(rename = "regex")]
