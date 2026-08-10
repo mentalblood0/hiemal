@@ -218,6 +218,7 @@ struct ComputationContext<'a> {
     computer_config: &'a ComputerConfig,
     intermediate_representation: &'a IntermediateRepresentation,
     functions_results_cache: &'a Arc<RwLock<HashMap<u128, Arc<IntermediateValueAndMetadata>>>>,
+    built_regexes_cache: &'a Arc<RwLock<HashMap<u128, Arc<String>>>>,
     compiled_regexes_cache: &'a Arc<RwLock<HashMap<String, Arc<Regex>>>>,
 }
 
@@ -240,6 +241,7 @@ impl Computer {
             computer_config: &self.config,
             intermediate_representation,
             functions_results_cache: &Arc::new(RwLock::new(HashMap::default())),
+            built_regexes_cache: &Arc::new(RwLock::new(HashMap::default())),
             compiled_regexes_cache: &Arc::new(RwLock::new(HashMap::default())),
         };
         let constants = Constants::from_iter(std::iter::repeat_n(
@@ -264,130 +266,111 @@ where
 }
 
 impl<'a> ComputationContext<'a> {
-    fn build_regex(&self, source: &Vector<Option<Value>>) -> String {
-        let mut result = String::new();
-        for source_part in source.iter() {
-            match source_part.as_ref().as_ref().unwrap() {
-                Value::String(string) if string == "character" => {
-                    result.push('.');
-                }
-                Value::String(string) if string == "whitespace character" => {
-                    result.push_str("\\s");
-                }
-                Value::String(string) if string == "non-whitespace character" => {
-                    result.push_str("\\S");
-                }
-                Value::String(string) if string == "digit" => {
-                    result.push_str("\\d");
-                }
-                Value::String(string) if string == "non-digit" => {
-                    result.push_str("\\D");
-                }
-                Value::String(string) if string == "word character" => {
-                    result.push_str("\\w");
-                }
-                Value::String(string) if string == "non-word character" => {
-                    result.push_str("\\W");
-                }
-                Value::String(string) if string == "start of string" => {
-                    result.push('^');
-                }
-                Value::String(string) if string == "end of string" => {
-                    result.push('$');
-                }
-                Value::String(string) if string == "word boundary" => {
-                    result.push_str("\\b");
-                }
-                Value::String(string) if string == "non-word boundary" => {
-                    result.push_str("\\B");
-                }
-                Value::Object(object) => {
-                    if let Some(variants) = object.get(&"or".to_string()) {
-                        result.push_str("(:?");
-                        for variant in variants
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_tuple()
-                            .unwrap()
-                            .iter()
-                        {
-                            result += &self.build_regex(
-                                variant.as_ref().as_ref().unwrap().as_tuple().unwrap(),
-                            );
-                        }
-                        result.push(')');
-                    } else if let Some(raw_string) = object.get(&"raw_string".to_string()) {
-                        result.push_str(&escape(
-                            &raw_string
+    fn build_regex(&self, source: &Vector<Option<Value>>) -> Arc<String> {
+        let source_hash = {
+            let mut hasher = gxhash::GxHasher::default();
+            source.hash(&mut hasher);
+            hasher.finish_u128()
+        };
+        if let Some(result) = self.built_regexes_cache.read().get(&source_hash) {
+            result.clone()
+        } else {
+            let mut result_string = String::new();
+            for source_part in source.iter() {
+                match source_part.as_ref().as_ref().unwrap() {
+                    Value::String(string) if string == "character" => {
+                        result_string.push('.');
+                    }
+                    Value::String(string) if string == "whitespace character" => {
+                        result_string.push_str("\\s");
+                    }
+                    Value::String(string) if string == "non-whitespace character" => {
+                        result_string.push_str("\\S");
+                    }
+                    Value::String(string) if string == "digit" => {
+                        result_string.push_str("\\d");
+                    }
+                    Value::String(string) if string == "non-digit" => {
+                        result_string.push_str("\\D");
+                    }
+                    Value::String(string) if string == "word character" => {
+                        result_string.push_str("\\w");
+                    }
+                    Value::String(string) if string == "non-word character" => {
+                        result_string.push_str("\\W");
+                    }
+                    Value::String(string) if string == "start of string" => {
+                        result_string.push('^');
+                    }
+                    Value::String(string) if string == "end of string" => {
+                        result_string.push('$');
+                    }
+                    Value::String(string) if string == "word boundary" => {
+                        result_string.push_str("\\b");
+                    }
+                    Value::String(string) if string == "non-word boundary" => {
+                        result_string.push_str("\\B");
+                    }
+                    Value::Object(object) => {
+                        if let Some(variants) = object.get(&"or".to_string()) {
+                            result_string.push_str("(:?");
+                            for variant in variants
                                 .as_ref()
                                 .as_ref()
                                 .unwrap()
-                                .as_string()
+                                .as_tuple()
                                 .unwrap()
-                                .to_string(),
-                        ));
-                    } else if let (Some(group), Some(name)) = (
-                        object.get(&"group".to_string()),
-                        object.get(&"name".to_string()),
-                    ) {
-                        result.push_str("(?P<");
-                        result.push_str(
-                            &name
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap()
-                                .to_string(),
-                        );
-                        result.push('>');
-                        result.push_str(
-                            &self.build_regex(group.as_ref().as_ref().unwrap().as_tuple().unwrap()),
-                        );
-                        result.push(')');
-                    } else if let (Some(repeat), min, max, exactly) = (
-                        object.get(&"repeat".to_string()),
-                        object.get(&"min".to_string()),
-                        object.get(&"max".to_string()),
-                        object.get(&"exactly".to_string()),
-                    ) {
-                        result
-                            .push_str(&self.build_regex(
-                                repeat.as_ref().as_ref().unwrap().as_tuple().unwrap(),
+                                .iter()
+                            {
+                                result_string += &self.build_regex(
+                                    variant.as_ref().as_ref().unwrap().as_tuple().unwrap(),
+                                );
+                            }
+                            result_string.push(')');
+                        } else if let Some(raw_string) = object.get(&"raw_string".to_string()) {
+                            result_string.push_str(&escape(
+                                &raw_string
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_string()
+                                    .unwrap()
+                                    .to_string(),
                             ));
-                        result.push('{');
-                        if let Some(exactly) = exactly {
-                            result.push_str(
-                                &(exactly
+                        } else if let (Some(group), Some(name)) = (
+                            object.get(&"group".to_string()),
+                            object.get(&"name".to_string()),
+                        ) {
+                            result_string.push_str("(?P<");
+                            result_string.push_str(
+                                &name
                                     .as_ref()
                                     .as_ref()
                                     .unwrap()
-                                    .as_number()
+                                    .as_string()
                                     .unwrap()
-                                    .to_f64()
-                                    .value() as i64)
-                                    .max(0)
                                     .to_string(),
                             );
-                        } else {
-                            let min_number = if let Some(min) = min {
-                                (min.as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_number()
-                                    .unwrap()
-                                    .to_f64()
-                                    .value() as i64)
-                                    .max(0)
-                            } else {
-                                0
-                            };
-                            result.push_str(&min_number.to_string());
-                            result.push(',');
-                            if let Some(max) = max {
-                                result.push_str(
-                                    &(max
+                            result_string.push('>');
+                            result_string.push_str(
+                                &self.build_regex(
+                                    group.as_ref().as_ref().unwrap().as_tuple().unwrap(),
+                                ),
+                            );
+                            result_string.push(')');
+                        } else if let (Some(repeat), min, max, exactly) = (
+                            object.get(&"repeat".to_string()),
+                            object.get(&"min".to_string()),
+                            object.get(&"max".to_string()),
+                            object.get(&"exactly".to_string()),
+                        ) {
+                            result_string.push_str(&self.build_regex(
+                                repeat.as_ref().as_ref().unwrap().as_tuple().unwrap(),
+                            ));
+                            result_string.push('{');
+                            if let Some(exactly) = exactly {
+                                result_string.push_str(
+                                    &(exactly
                                         .as_ref()
                                         .as_ref()
                                         .unwrap()
@@ -395,18 +378,52 @@ impl<'a> ComputationContext<'a> {
                                         .unwrap()
                                         .to_f64()
                                         .value() as i64)
-                                        .max(min_number)
+                                        .max(0)
                                         .to_string(),
                                 );
+                            } else {
+                                let min_number = if let Some(min) = min {
+                                    (min.as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_number()
+                                        .unwrap()
+                                        .to_f64()
+                                        .value() as i64)
+                                        .max(0)
+                                } else {
+                                    0
+                                };
+                                result_string.push_str(&min_number.to_string());
+                                result_string.push(',');
+                                if let Some(max) = max {
+                                    result_string.push_str(
+                                        &(max
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            as i64)
+                                            .max(min_number)
+                                            .to_string(),
+                                    );
+                                }
                             }
+                            result_string.push('}');
                         }
-                        result.push('}');
                     }
+                    _ => panic!(),
                 }
-                _ => panic!(),
             }
+            let result = Arc::new(result_string);
+            self.built_regexes_cache
+                .write()
+                .insert(source_hash, result.clone());
+            result
         }
-        result
     }
 
     fn compile_regex(&self, source: &String) -> Result<Arc<Regex>> {
@@ -1374,13 +1391,13 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Bool(
-                                self.compile_regex(&if let Value::String(computed_regex_string) =
-                                    computed_regex
-                                {
-                                    computed_regex_string.to_string()
-                                } else {
-                                    self.build_regex(computed_regex.as_tuple().unwrap())
-                                })?
+                                self.compile_regex(
+                                    &*if let Value::String(computed_regex_string) = computed_regex {
+                                        Arc::new(computed_regex_string.to_string())
+                                    } else {
+                                        self.build_regex(computed_regex.as_tuple().unwrap())
+                                    },
+                                )?
                                 .is_match(&computed_string),
                             ))
                             .into(),
@@ -1419,10 +1436,10 @@ impl<'a> ComputationContext<'a> {
                         .as_ref()
                         .unwrap();
                     let compiled_regex =
-                        self.compile_regex(&if let Value::String(computed_regex_string) =
+                        self.compile_regex(&*if let Value::String(computed_regex_string) =
                             computed_regex
                         {
-                            computed_regex_string.to_string()
+                            Arc::new(computed_regex_string.to_string())
                         } else {
                             self.build_regex(computed_regex.as_tuple().unwrap())
                         })?;
