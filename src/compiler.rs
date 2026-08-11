@@ -2231,12 +2231,9 @@ impl Compiler {
                                         global_compilation_context.constants[**constant_index]
                                             .hash(&mut hasher);
                                     }
-                                    for available_function_name_and_available_function in
-                                        body_compilation_context.available_functions.iter()
-                                    {
-                                        available_function_name_and_available_function
-                                            .hash(&mut hasher);
-                                    }
+                                    body_compilation_context
+                                        .available_functions
+                                        .hash(&mut hasher);
                                     hasher.finish_u128()
                                 };
                                 if let Some(cached_compiled_function) = global_compilation_context
