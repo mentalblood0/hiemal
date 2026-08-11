@@ -1041,7 +1041,7 @@ impl<'a> ComputationContext<'a> {
                                         Some(computed_map_element);
                                     (
                                         match &map.throughs {
-                                            Throughs::Array(node) => Some(&**node),
+                                            Throughs::Array(node) => Some(node),
                                             Throughs::Tuple {
                                                 nodes_indexes,
                                                 nodes,
@@ -1099,7 +1099,7 @@ impl<'a> ComputationContext<'a> {
         nodes_count: usize,
     ) -> Result<Vector<IntermediateValueAndMetadata>>
     where
-        N: Iterator<Item = (Option<&'a Node>, Cow<'a, Constants>)>,
+        N: Iterator<Item = (Option<&'a Arc<Node>>, Cow<'a, Constants>)>,
     {
         let initial_element = Arc::new(IntermediateValueAndMetadata::default());
         let mut result = vec![initial_element; nodes_count];
@@ -1492,7 +1492,7 @@ impl<'a> ComputationContext<'a> {
                     .zip(
                         self.compute_nodes(
                             arguments.iter().map(|constant_definition| {
-                                (Some(&*constant_definition.node), Cow::Borrowed(constants))
+                                (Some(&constant_definition.node), Cow::Borrowed(constants))
                             }),
                             arguments.len(),
                         )?

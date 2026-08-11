@@ -29,7 +29,7 @@ pub enum Value {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct IntermediateRepresentation {
-    pub root: Node,
+    pub root: Arc<Node>,
     pub user_functions: Vec<UserFunction>,
     pub unique_constants_names_count: usize,
 }
@@ -44,13 +44,13 @@ pub struct Node {
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum Condition {
     Type(Type),
-    Value(Node),
+    Value(Arc<Node>),
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct Case {
     pub condition: Condition,
-    pub node: Node,
+    pub node: Arc<Node>,
 }
 
 #[repr(u8)]
@@ -59,7 +59,7 @@ pub enum Content {
     Tuple(Vec<Arc<Node>>),
     Scope {
         constants: Vec<ConstantDefinition>,
-        compute: Box<Node>,
+        compute: Arc<Node>,
     },
     Constant(usize),
     EmbeddedFunctionCall {
@@ -71,21 +71,21 @@ pub enum Content {
         body: usize,
     },
     FromAt {
-        from: Box<Node>,
+        from: Arc<Node>,
         value_path_segments: Vec<ValuePathSegment>,
-        default: Box<Node>,
+        default: Arc<Node>,
     },
     Match {
-        r#match: Box<Node>,
+        r#match: Arc<Node>,
         cases: Vec<Case>,
         match_constant_name_clustered_index_option: Option<usize>,
     },
     Map(Arc<Map>),
     Filter(Arc<Filter>),
     Fold {
-        fold: Box<Node>,
+        fold: Arc<Node>,
         fold_constant_name_clustered_index: usize,
-        starting_with: Box<Node>,
+        starting_with: Arc<Node>,
         accumulating_in_constant_name_clustered_index: usize,
         fold_concrete_type_and_throughs: Vec<(Type, Throughs)>,
     },
@@ -96,51 +96,51 @@ pub enum Content {
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct Map {
-    pub map: Box<Node>,
+    pub map: Arc<Node>,
     pub map_concrete_type_and_throughs: Vec<(Type, Throughs)>,
     pub map_constant_name_clustered_index: usize,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct Filter {
-    pub filter: Box<Node>,
+    pub filter: Arc<Node>,
     pub filter_concrete_type_and_throughs: Vec<(Type, Throughs)>,
     pub filter_constant_name_clustered_index: usize,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct Sequence {
-    pub starting_with: Box<Node>,
+    pub starting_with: Arc<Node>,
     pub current_constant_name_clustered_index: usize,
     pub next: Arc<Node>,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum Throughs {
-    Array(Box<Node>),
+    Array(Arc<Node>),
     Tuple {
         nodes_indexes: Vec<usize>,
-        nodes: Vec<Node>,
+        nodes: Vec<Arc<Node>>,
     },
 }
 
 #[repr(u8)]
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum EmbeddedFunction {
-    Sum(Node),
-    IsSorted(Node),
+    Sum(Arc<Node>),
+    IsSorted(Arc<Node>),
     StandardInput,
-    ParseYaml(Node),
-    KeyValuePairs(Node),
-    Flatten(Node),
-    MatchGroups { string: Node, regex: Node },
-    Concat(Node),
+    ParseYaml(Arc<Node>),
+    KeyValuePairs(Arc<Node>),
+    Flatten(Arc<Node>),
+    MatchGroups { string: Arc<Node>, regex: Arc<Node> },
+    Concat(Arc<Node>),
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct UserFunction {
     pub external_constants_name_clustered_indices: Vec<usize>,
-    pub node: Node,
+    pub node: Arc<Node>,
     pub is_pure: bool,
 }
 
@@ -155,7 +155,7 @@ pub struct ConstantDefinition {
 #[serde(untagged)]
 pub enum RangeBound {
     Static(Option<usize>),
-    Dynamic(Node),
+    Dynamic(Arc<Node>),
 }
 
 impl Default for RangeBound {
