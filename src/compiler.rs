@@ -238,7 +238,7 @@ struct UserFunctionCallDefinition {
     is_pure: bool,
 }
 
-#[derive(Default, Clone, Hash)]
+#[derive(Default, Clone, Hash, Debug)]
 struct ConstantMetadata {
     r#type: Type,
     is_computable: bool,
@@ -2137,34 +2137,18 @@ impl Compiler {
                             if let Some(function_body) =
                                 compilation_context.available_functions.get(function_name)
                             {
-                                let function_instance_hash = {
-                                    let mut hasher = gxhash::GxHasher::default();
-                                    function_body.hash(&mut hasher);
-                                    for constant_index in
-                                        compilation_context.available_constants.values()
-                                    {
-                                        global_compilation_context.constants[**constant_index]
-                                            .hash(&mut hasher);
-                                    }
-                                    hasher.finish_u128()
-                                };
-                                if let Some(cached_compiled_function) = global_compilation_context
-                                    .compiled_functions_cache
-                                    .get(&function_instance_hash)
-                                {
-                                    return Ok(cached_compiled_function.clone());
-                                } else {
-                                    let mut arguments_is_pure = true;
-                                    let mut arguments_is_computable = true;
-                                    let mut body_compilation_context = compilation_context.clone();
-                                    body_compilation_context.path.0.extend([
-                                        PathSegment::UserFunctionCall(function_name.clone()).into(),
-                                    ]);
-                                    let arguments_iterator = match &**function_argument {
-                                        Program::Object(function_arguments) => {
-                                            let arguments_iterator: Box<
-                                                dyn Iterator<Item = (Arc<String>, Arc<Program>)>,
-                                            > = if function_arguments.len() > 1 {
+                                let mut arguments_is_pure = true;
+                                let mut arguments_is_computable = true;
+                                let mut body_compilation_context = compilation_context.clone();
+                                body_compilation_context.path.0.extend([
+                                    PathSegment::UserFunctionCall(function_name.clone()).into(),
+                                ]);
+                                let arguments_iterator = match &**function_argument {
+                                    Program::Object(function_arguments) => {
+                                        let arguments_iterator: Box<
+                                            dyn Iterator<Item = (Arc<String>, Arc<Program>)>,
+                                        > =
+                                            if function_arguments.len() > 1 {
                                                 Box::new(function_arguments.iter().map(
                                                     |(key, value)| (key.clone(), value.clone()),
                                                 ))
@@ -2177,72 +2161,90 @@ impl Compiler {
                                                     .into_iter(),
                                                 )
                                             };
-                                            arguments_iterator
-                                        }
-                                        _ => Box::new(
-                                            [(
-                                                DEFAULT_ARGUMENT_NAME.to_string().into(),
-                                                function_argument.clone(),
-                                            )]
-                                            .into_iter(),
-                                        ),
-                                    };
-                                    let mut new_constants_definitions = Vec::new();
-                                    let mut result_external_constants_name_clustered_indices =
-                                        BTreeSet::new();
-                                    for (function_argument_name, function_argument_body) in
                                         arguments_iterator
-                                    {
-                                        if function_argument_name.ends_with(":") {
-                                            body_compilation_context.available_functions.extend(
-                                                [(function_argument_name, function_argument_body)]
-                                                    .into_iter(),
-                                            );
-                                        } else {
-                                            let mut argument_compilation_context =
-                                                compilation_context.clone();
-                                            argument_compilation_context.path.0.extend([
-                                                PathSegment::UserFunctionCall(
-                                                    function_name.clone(),
-                                                )
-                                                .into(),
-                                                PathSegment::Argument(
-                                                    function_argument_name.clone(),
-                                                )
-                                                .into(),
-                                            ]);
-                                            let compiled_constant = self.compile_with_context(
-                                                &function_argument_body,
-                                                &argument_compilation_context,
-                                                global_compilation_context,
-                                            )?;
-                                            result_external_constants_name_clustered_indices
-                                                .append(
-                                                    &mut compiled_constant
-                                                        .external_constants_name_clustered_indices
-                                                        .clone(),
-                                                );
-                                            let constant_definition = self.define_constant(
-                                                function_argument_name.clone(),
-                                                ConstantMetadata {
-                                                    r#type: compiled_constant.node.r#type.clone(),
-                                                    is_computable: compiled_constant.is_computable,
-                                                },
-                                                &mut body_compilation_context,
-                                                global_compilation_context,
-                                            );
-                                            new_constants_definitions.push(
-                                                intermediate_representation::ConstantDefinition {
-                                                    name_clustered_index: constant_definition
-                                                        .name_clustered_index,
-                                                    node: compiled_constant.node.clone(),
-                                                },
-                                            );
-                                            arguments_is_pure &= compiled_constant.is_pure;
-                                            arguments_is_computable &=
-                                                compiled_constant.is_computable;
-                                        }
                                     }
+                                    _ => Box::new(
+                                        [(
+                                            DEFAULT_ARGUMENT_NAME.to_string().into(),
+                                            function_argument.clone(),
+                                        )]
+                                        .into_iter(),
+                                    ),
+                                };
+                                let mut new_constants_definitions = Vec::new();
+                                let mut result_external_constants_name_clustered_indices =
+                                    BTreeSet::new();
+                                for (function_argument_name, function_argument_body) in
+                                    arguments_iterator
+                                {
+                                    if function_argument_name.ends_with(":") {
+                                        body_compilation_context.available_functions.extend(
+                                            [(function_argument_name, function_argument_body)]
+                                                .into_iter(),
+                                        );
+                                    } else {
+                                        let mut argument_compilation_context =
+                                            compilation_context.clone();
+                                        argument_compilation_context.path.0.extend([
+                                            PathSegment::UserFunctionCall(function_name.clone())
+                                                .into(),
+                                            PathSegment::Argument(function_argument_name.clone())
+                                                .into(),
+                                        ]);
+                                        let compiled_constant = self.compile_with_context(
+                                            &function_argument_body,
+                                            &argument_compilation_context,
+                                            global_compilation_context,
+                                        )?;
+                                        result_external_constants_name_clustered_indices.append(
+                                            &mut compiled_constant
+                                                .external_constants_name_clustered_indices
+                                                .clone(),
+                                        );
+                                        let constant_definition = self.define_constant(
+                                            function_argument_name.clone(),
+                                            ConstantMetadata {
+                                                r#type: compiled_constant.node.r#type.clone(),
+                                                is_computable: compiled_constant.is_computable,
+                                            },
+                                            &mut body_compilation_context,
+                                            global_compilation_context,
+                                        );
+                                        new_constants_definitions.push(
+                                            intermediate_representation::ConstantDefinition {
+                                                name_clustered_index: constant_definition
+                                                    .name_clustered_index,
+                                                node: compiled_constant.node.clone(),
+                                            },
+                                        );
+                                        arguments_is_pure &= compiled_constant.is_pure;
+                                        arguments_is_computable &= compiled_constant.is_computable;
+                                    }
+                                }
+                                let instantiated_function_hash = {
+                                    let mut hasher = gxhash::GxHasher::default();
+                                    function_body.hash(&mut hasher);
+                                    for (constant_name, constant_index) in
+                                        body_compilation_context.available_constants.iter()
+                                    {
+                                        constant_name.hash(&mut hasher);
+                                        global_compilation_context.constants[**constant_index]
+                                            .hash(&mut hasher);
+                                    }
+                                    for available_function_name_and_available_function in
+                                        body_compilation_context.available_functions.iter()
+                                    {
+                                        available_function_name_and_available_function
+                                            .hash(&mut hasher);
+                                    }
+                                    hasher.finish_u128()
+                                };
+                                if let Some(cached_compiled_function) = global_compilation_context
+                                    .compiled_functions_cache
+                                    .get(&instantiated_function_hash)
+                                {
+                                    return Ok(cached_compiled_function.clone());
+                                } else {
                                     let function_body_as_maybe_compiled_program =
                                         MaybeCompiledProgram::from(function_body);
                                     if compilation_context
@@ -2338,7 +2340,7 @@ impl Compiler {
                                         });
                                         global_compilation_context
                                             .compiled_functions_cache
-                                            .insert(function_instance_hash, result.clone());
+                                            .insert(instantiated_function_hash, result.clone());
                                         return Ok(result);
                                     }
                                 }
