@@ -714,7 +714,14 @@ impl<'a> Type {
             let (self_at, mut runtime_error_is_possible) = self.at(first_path_segment)?;
             match self_at {
                 TypeAtResult::Single(intermediate_result) => {
-                    intermediate_result.at_path(&path[1..])
+                    let (
+                        intermediate_result_type_at_result,
+                        intermediate_result_runtime_error_is_possible,
+                    ) = intermediate_result.at_path(&path[1..])?;
+                    Ok((
+                        intermediate_result_type_at_result,
+                        runtime_error_is_possible || intermediate_result_runtime_error_is_possible,
+                    ))
                 }
                 TypeAtResult::Multiple(intermediate_results) => {
                     let mut results = BTreeSet::new();
