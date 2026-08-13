@@ -85,7 +85,7 @@ fn resolve_type(
                 inner_compilation_context
                     .path
                     .0
-                    .push(Arc::new(PathSegment::ArrayIndex(0)));
+                    .push(PathSegment::ArrayIndex(0));
                 Ok(Type::Array(Box::new(resolve_type(
                     got_element_type,
                     expected_element_type,
@@ -133,7 +133,7 @@ fn resolve_type(
                 inner_compilation_context
                     .path
                     .0
-                    .push(Arc::new(PathSegment::ArrayIndex(0)));
+                    .push(PathSegment::ArrayIndex(0));
                 Ok(Type::Array(Box::new(resolve_type(
                     got_value_type,
                     expected_value_type,
@@ -502,7 +502,7 @@ impl Compiler {
                     element_compilation_context
                         .path
                         .0
-                        .extend([PathSegment::ArrayIndex(element_index).into()]);
+                        .extend([PathSegment::ArrayIndex(element_index)]);
                     let compiled_element = self.compile_with_context(
                         element,
                         &element_compilation_context,
@@ -540,7 +540,7 @@ impl Compiler {
                 compute_compilation_context
                     .path
                     .0
-                    .extend([PathSegment::Compute.into()]);
+                    .extend([PathSegment::Compute]);
                 let mut new_constants = Vec::with_capacity(constants.len());
                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();
                 let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
@@ -549,8 +549,8 @@ impl Compiler {
                 for (constant_name, constant_compute_body) in constants.iter() {
                     let mut constant_compilation_context = compilation_context.clone();
                     constant_compilation_context.path.0.extend([
-                        PathSegment::Constants.into(),
-                        PathSegment::Constant(constant_name.clone()).into(),
+                        PathSegment::Constants,
+                        PathSegment::Constant(constant_name.clone()),
                     ]);
                     let compiled_constant = self.compile_with_context(
                         constant_compute_body,
@@ -583,8 +583,8 @@ impl Compiler {
                     if !function_name.ends_with(":") {
                         let mut function_compilation_context = compilation_context.clone();
                         function_compilation_context.path.0.extend([
-                            PathSegment::Functions.into(),
-                            PathSegment::Function(function_name.clone()).into(),
+                            PathSegment::Functions,
+                            PathSegment::Function(function_name.clone()),
                         ]);
                         return Err(anyhow!(
                             "expected function named {:?}, found function named {function_name:?} \
@@ -686,7 +686,7 @@ impl Compiler {
                 from_program_compilation_context
                     .path
                     .0
-                    .extend([PathSegment::From.into()]);
+                    .extend([PathSegment::From]);
                 let compiled_extracted_from = self.compile_with_context(
                     &extracted_from,
                     &from_program_compilation_context,
@@ -794,7 +794,7 @@ impl Compiler {
                 default_compilation_context
                     .path
                     .0
-                    .extend([PathSegment::Default.into()]);
+                    .extend([PathSegment::Default]);
                 let compiled_default = self.compile_with_context(
                     default,
                     &default_compilation_context,
@@ -847,7 +847,7 @@ impl Compiler {
                     argument_compilation_context
                         .path
                         .0
-                        .extend([PathSegment::Sum.into()]);
+                        .extend([PathSegment::Sum]);
                     let compiled_argument = self.compile_with_context(
                         argument,
                         &argument_compilation_context,
@@ -890,7 +890,7 @@ impl Compiler {
                     argument_compilation_context
                         .path
                         .0
-                        .extend([PathSegment::Concat.into()]);
+                        .extend([PathSegment::Concat]);
                     let compiled_argument = self.compile_with_context(
                         argument,
                         &argument_compilation_context,
@@ -933,7 +933,7 @@ impl Compiler {
                     argument_compilation_context
                         .path
                         .0
-                        .extend([PathSegment::IsSorted.into()]);
+                        .extend([PathSegment::IsSorted]);
                     let compiled_argument = self.compile_with_context(
                         argument,
                         &argument_compilation_context,
@@ -975,12 +975,11 @@ impl Compiler {
                     external_constants_name_clustered_indices: BTreeSet::new(),
                     node: Node {
                         content: Content::EmbeddedFunctionCall {
-                            path: Some(Path(
+                            path: Some(
                                 compilation_context
                                     .path
-                                    .0
-                                    .extended([PathSegment::StandardInput.into()]),
-                            )),
+                                    .extended([PathSegment::StandardInput]),
+                            ),
                             embedded_function: Box::new(
                                 intermediate_representation::EmbeddedFunction::StandardInput,
                             ),
@@ -997,7 +996,7 @@ impl Compiler {
                     argument_compilation_context
                         .path
                         .0
-                        .extend([PathSegment::ParseYaml.into()]);
+                        .extend([PathSegment::ParseYaml]);
                     let compiled_argument = self.compile_with_context(
                         argument,
                         &argument_compilation_context,
@@ -1020,12 +1019,9 @@ impl Compiler {
                             .clone(),
                         node: Node {
                             content: Content::EmbeddedFunctionCall {
-                                path: Some(Path(
-                                    compilation_context
-                                        .path
-                                        .0
-                                        .extended([PathSegment::ParseYaml.into()]),
-                                )),
+                                path: Some(
+                                    compilation_context.path.extended([PathSegment::ParseYaml]),
+                                ),
                                 embedded_function: Box::new(
                                     intermediate_representation::EmbeddedFunction::ParseYaml(
                                         compiled_argument.node.clone(),
@@ -1045,7 +1041,7 @@ impl Compiler {
                     argument_compilation_context
                         .path
                         .0
-                        .extend([PathSegment::KeyValuePairs.into()]);
+                        .extend([PathSegment::KeyValuePairs]);
                     let compiled_argument = self.compile_with_context(
                         argument,
                         &argument_compilation_context,
@@ -1092,7 +1088,7 @@ impl Compiler {
                     argument_compilation_context
                         .path
                         .0
-                        .extend([PathSegment::Flatten.into()]);
+                        .extend([PathSegment::Flatten]);
                     let compiled_argument = self.compile_with_context(
                         argument,
                         &argument_compilation_context,
@@ -1139,7 +1135,7 @@ impl Compiler {
                         string_compilation_context
                             .path
                             .0
-                            .extend([PathSegment::MatchGroups.into(), PathSegment::String.into()]);
+                            .extend([PathSegment::MatchGroups, PathSegment::String]);
                         let compiled_string = self.compile_with_context(
                             string,
                             &string_compilation_context,
@@ -1167,7 +1163,7 @@ impl Compiler {
                         regex_compilation_context
                             .path
                             .0
-                            .extend([PathSegment::MatchGroups.into(), PathSegment::Regex.into()]);
+                            .extend([PathSegment::MatchGroups, PathSegment::Regex]);
                         let compiled_regex = self.compile_with_context(
                             regex,
                             &regex_compilation_context,
@@ -1243,7 +1239,7 @@ impl Compiler {
                 match_compilation_context
                     .path
                     .0
-                    .extend([PathSegment::Match.into()]);
+                    .extend([PathSegment::Match]);
                 let compiled_match = self.compile_with_context(
                     r#match,
                     &match_compilation_context,
@@ -1289,10 +1285,10 @@ impl Compiler {
                     };
                 for (case_index, (case_condition, case)) in cases.iter().enumerate() {
                     let mut case_compilation_context = compilation_context.clone();
-                    case_compilation_context.path.0.extend([
-                        PathSegment::Cases.into(),
-                        PathSegment::Case(case_index).into(),
-                    ]);
+                    case_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::Cases, PathSegment::Case(case_index)]);
                     match case_condition {
                         Condition::Type(refined_match_type) => {
                             if compiled_match
@@ -1435,10 +1431,7 @@ impl Compiler {
             }
             Program::Map { map, r#as, through } => {
                 let mut map_compilation_context = compilation_context.clone();
-                map_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::Map.into()]);
+                map_compilation_context.path.0.extend([PathSegment::Map]);
                 let compiled_map = self.compile_with_context(
                     map,
                     &map_compilation_context,
@@ -1495,9 +1488,10 @@ impl Compiler {
                                     } else {
                                         let mut through_compilation_context =
                                             compilation_context.clone();
-                                        through_compilation_context.path.0.extend([
-                                            PathSegment::Through(element_type_index).into(),
-                                        ]);
+                                        through_compilation_context
+                                            .path
+                                            .0
+                                            .extend([PathSegment::Through(element_type_index)]);
                                         self.define_constant(
                                             r#as.clone(),
                                             ConstantMetadata {
@@ -1551,7 +1545,7 @@ impl Compiler {
                                 through_compilation_context
                                     .path
                                     .0
-                                    .extend([PathSegment::Through(0).into()]);
+                                    .extend([PathSegment::Through(0)]);
                                 self.define_constant(
                                     r#as.clone(),
                                     ConstantMetadata {
@@ -1614,7 +1608,7 @@ impl Compiler {
                 filter_compilation_context
                     .path
                     .0
-                    .extend([PathSegment::Filter.into()]);
+                    .extend([PathSegment::Filter]);
                 let compiled_filter = self.compile_with_context(
                     filter,
                     &filter_compilation_context,
@@ -1657,7 +1651,7 @@ impl Compiler {
                                     through_compilation_context
                                         .path
                                         .0
-                                        .extend([PathSegment::Through(element_type_index).into()]);
+                                        .extend([PathSegment::Through(element_type_index)]);
                                     self.define_constant(
                                         r#as.clone(),
                                         ConstantMetadata {
@@ -1714,7 +1708,7 @@ impl Compiler {
                                 through_compilation_context
                                     .path
                                     .0
-                                    .extend([PathSegment::Through(0).into()]);
+                                    .extend([PathSegment::Through(0)]);
                                 self.define_constant(
                                     r#as.clone(),
                                     ConstantMetadata {
@@ -1779,10 +1773,7 @@ impl Compiler {
                 through,
             } => {
                 let mut fold_compilation_context = compilation_context.clone();
-                fold_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::Fold.into()]);
+                fold_compilation_context.path.0.extend([PathSegment::Fold]);
                 let compiled_fold = self.compile_with_context(
                     fold,
                     &fold_compilation_context,
@@ -1802,7 +1793,7 @@ impl Compiler {
                 starting_with_compilation_context
                     .path
                     .0
-                    .extend([PathSegment::StartingWith.into()]);
+                    .extend([PathSegment::StartingWith]);
                 let compiled_starting_with = self.compile_with_context(
                     starting_with,
                     &starting_with_compilation_context,
@@ -1875,7 +1866,7 @@ impl Compiler {
                                         through_compilation_context
                                             .path
                                             .0
-                                            .extend([PathSegment::Through(current_type_index).into()]);
+                                            .extend([PathSegment::Through(current_type_index)]);
                                         self.define_constant(
                                             r#as.clone(),
                                             ConstantMetadata {
@@ -1942,7 +1933,7 @@ impl Compiler {
                                 through_compilation_context
                                     .path
                                     .0
-                                    .extend([PathSegment::Through(0).into()]);
+                                    .extend([PathSegment::Through(0)]);
                                 let starting_with_type = compiled_starting_with.node.r#type.clone();
                                 self.define_constant(
                                     r#as.clone(),
@@ -2018,7 +2009,7 @@ impl Compiler {
                 metaprogram_compilation_context
                     .path
                     .0
-                    .extend([PathSegment::Metaprogram.into()]);
+                    .extend([PathSegment::Metaprogram]);
                 let compiled_metaprogram =
                     Arc::new(self.compile(metaprogram).with_context(|| {
                         format!(
@@ -2051,7 +2042,7 @@ impl Compiler {
                 starting_with_compilation_context
                     .path
                     .0
-                    .extend([PathSegment::StartingWith.into()]);
+                    .extend([PathSegment::StartingWith]);
                 let compiled_starting_with = self.compile_with_context(
                     starting_with,
                     &starting_with_compilation_context,
@@ -2061,10 +2052,7 @@ impl Compiler {
                     .external_constants_name_clustered_indices
                     .clone();
                 let mut next_compilation_context = compilation_context.clone();
-                next_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::Next.into()]);
+                next_compilation_context.path.0.extend([PathSegment::Next]);
                 let current_constant_name_clustered_index = self
                     .define_constant(
                         r#as.clone(),
@@ -2095,7 +2083,7 @@ impl Compiler {
                 while_compilation_context
                     .path
                     .0
-                    .extend([PathSegment::While.into()]);
+                    .extend([PathSegment::While]);
                 self.define_constant(
                     r#as.clone(),
                     ConstantMetadata {
@@ -2150,9 +2138,10 @@ impl Compiler {
                                 let mut arguments_is_pure = true;
                                 let mut arguments_is_computable = true;
                                 let mut body_compilation_context = compilation_context.clone();
-                                body_compilation_context.path.0.extend([
-                                    PathSegment::UserFunctionCall(function_name.clone()).into(),
-                                ]);
+                                body_compilation_context
+                                    .path
+                                    .0
+                                    .extend([PathSegment::UserFunctionCall(function_name.clone())]);
                                 let arguments_iterator = match &**function_argument {
                                     Program::Object(function_arguments) => {
                                         let arguments_iterator: Box<
@@ -2196,10 +2185,8 @@ impl Compiler {
                                         let mut argument_compilation_context =
                                             compilation_context.clone();
                                         argument_compilation_context.path.0.extend([
-                                            PathSegment::UserFunctionCall(function_name.clone())
-                                                .into(),
-                                            PathSegment::Argument(function_argument_name.clone())
-                                                .into(),
+                                            PathSegment::UserFunctionCall(function_name.clone()),
+                                            PathSegment::Argument(function_argument_name.clone()),
                                         ]);
                                         let compiled_constant = self.compile_with_context(
                                             &function_argument_body,
@@ -2412,7 +2399,7 @@ impl Compiler {
                     object_value_compilation_context
                         .path
                         .0
-                        .extend([PathSegment::ObjectKey(object_key.clone()).into()]);
+                        .extend([PathSegment::ObjectKey(object_key.clone())]);
                     let compiled_object_value = self.compile_with_context(
                         object_value,
                         &object_value_compilation_context,

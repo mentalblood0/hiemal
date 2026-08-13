@@ -3,9 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{
-    containers::Vector, default_argument_name::DEFAULT_ARGUMENT_NAME, r#type::Type, value::Value,
-};
+use crate::{default_argument_name::DEFAULT_ARGUMENT_NAME, r#type::Type, value::Value};
 
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
@@ -255,4 +253,17 @@ pub enum PathSegment {
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Hash, Debug)]
-pub struct Path(pub Vector<PathSegment>);
+pub struct Path(pub Vec<PathSegment>);
+
+impl Path {
+    pub fn extended<A>(&self, addition: A) -> Self
+    where
+        A: IntoIterator<Item = PathSegment>,
+    {
+        let mut result = self.clone();
+        for addition_element in addition {
+            result.0.push(addition_element);
+        }
+        result
+    }
+}
