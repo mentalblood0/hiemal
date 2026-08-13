@@ -28,7 +28,7 @@ use crate::{
 struct CompilationContext {
     path: Path,
     available_functions: Object<String, Program>,
-    available_constants: Object<String, usize>,
+    available_constants: HashMap<Arc<String>, usize>,
     entered_user_functions: Set<Program>,
 }
 
@@ -464,7 +464,7 @@ impl Compiler {
         };
         compilation_context
             .available_constants
-            .insert(name, Arc::new(result.index));
+            .insert(name, result.index);
         result
     }
 
@@ -638,7 +638,7 @@ impl Compiler {
                     compilation_context.available_constants.get(constant_name)
                 {
                     let constant_metadata =
-                        global_compilation_context.constants[**constant_index].clone();
+                        global_compilation_context.constants[*constant_index].clone();
                     let name_clustered_constant_index = *global_compilation_context
                         .constants_names_to_name_clustered_constants_indices
                         .get(constant_name)
@@ -2225,7 +2225,7 @@ impl Compiler {
                                         body_compilation_context.available_constants.iter()
                                     {
                                         constant_name.hash(&mut hasher);
-                                        global_compilation_context.constants[**constant_index]
+                                        global_compilation_context.constants[*constant_index]
                                             .hash(&mut hasher);
                                     }
                                     body_compilation_context
