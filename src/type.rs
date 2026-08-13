@@ -314,7 +314,7 @@ pub enum TypeAtResult {
 impl<'a> Type {
     pub fn is_known(&self) -> bool {
         match self {
-            Type::Unknown(_) => false,
+            Type::Unknown(maybe_type) => maybe_type.lockable_internals.read().is_some(),
             Type::Array(element_type) => element_type.is_known(),
             Type::Tuple(elements_types) => elements_types
                 .iter()
