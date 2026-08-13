@@ -141,13 +141,6 @@ impl Value {
         }
     }
 
-    pub fn as_tuple_mut(&mut self) -> Option<&mut Vector<Option<Value>>> {
-        match self {
-            Value::Tuple(result) => Some(result),
-            _ => None,
-        }
-    }
-
     pub fn as_object(&self) -> Option<&Object<String, Option<Value>>> {
         match self {
             Value::Object(result) => Some(result),
@@ -169,14 +162,21 @@ impl Value {
                 Value::String(string) => Type::LiteralString(string.clone()),
                 Value::Bool(true) => Type::LiteralTrue,
                 Value::Bool(false) => Type::LiteralFalse,
-                Value::Tuple(tuple) => {
-                    Type::Tuple(tuple.iter().map(|element| Value::r#type(element)).collect())
-                }
-                Value::Object(object) => Type::Object(BTreeMap::from_iter(
-                    object
+                Value::Tuple(tuple) => Type::Tuple(
+                    tuple
                         .iter()
-                        .map(|(key, value)| (key.clone(), Value::r#type(value))),
-                )),
+                        .map(|element| Value::r#type(element))
+                        .collect::<Vec<_>>()
+                        .into(),
+                ),
+                Value::Object(object) => Type::Object(
+                    BTreeMap::from_iter(
+                        object
+                            .iter()
+                            .map(|(key, value)| (key.clone(), Value::r#type(value))),
+                    )
+                    .into(),
+                ),
             },
             None => Type::Null,
         }

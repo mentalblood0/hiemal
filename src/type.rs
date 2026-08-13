@@ -57,74 +57,100 @@ impl Hash for MaybeType {
 
 static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
     [
-        Type::Array(Box::new(Type::Union(BTreeSet::from_iter([
-            Type::String,
-            Type::Object(BTreeMap::from_iter([(
-                "raw string".to_string().into(),
+        Type::Array(Box::new(Type::Union(
+            BTreeSet::from_iter([
                 Type::String,
-            )])),
-            Type::Constructed(Constructed::OneOf),
-            Type::Constructed(Constructed::CharacterExceptFromString),
-            Type::Constructed(Constructed::Repeat),
-            Type::Constructed(Constructed::Group),
-            Type::LiteralString("character".into()),
-            Type::LiteralString("whitespace character".into()),
-            Type::LiteralString("non-whitespace character".into()),
-            Type::LiteralString("digit".into()),
-            Type::LiteralString("non-digit".into()),
-            Type::LiteralString("word character".into()),
-            Type::LiteralString("non-word character".into()),
-            Type::LiteralString("start of string".into()),
-            Type::LiteralString("end of string".into()),
-            Type::LiteralString("word boundary".into()),
-            Type::LiteralString("non-word boundary".into()),
-        ])))),
-        Type::Object(BTreeMap::from_iter([(
-            "one of".to_string().into(),
-            Type::Array(Box::new(Type::Constructed(Constructed::Regex))),
-        )])),
-        Type::Object(BTreeMap::from_iter([(
-            "character except from string".to_string().into(),
-            Type::String,
-        )])),
-        Type::Union(BTreeSet::from_iter([
-            Type::Object(BTreeMap::from_iter([
+                Type::Object(
+                    BTreeMap::from_iter([("raw string".to_string().into(), Type::String)]).into(),
+                ),
+                Type::Constructed(Constructed::OneOf),
+                Type::Constructed(Constructed::CharacterExceptFromString),
+                Type::Constructed(Constructed::Repeat),
+                Type::Constructed(Constructed::Group),
+                Type::LiteralString("character".into()),
+                Type::LiteralString("whitespace character".into()),
+                Type::LiteralString("non-whitespace character".into()),
+                Type::LiteralString("digit".into()),
+                Type::LiteralString("non-digit".into()),
+                Type::LiteralString("word character".into()),
+                Type::LiteralString("non-word character".into()),
+                Type::LiteralString("start of string".into()),
+                Type::LiteralString("end of string".into()),
+                Type::LiteralString("word boundary".into()),
+                Type::LiteralString("non-word boundary".into()),
+            ])
+            .into(),
+        ))),
+        Type::Object(
+            BTreeMap::from_iter([(
+                "one of".to_string().into(),
+                Type::Array(Box::new(Type::Constructed(Constructed::Regex))),
+            )])
+            .into(),
+        ),
+        Type::Object(
+            BTreeMap::from_iter([(
+                "character except from string".to_string().into(),
+                Type::String,
+            )])
+            .into(),
+        ),
+        Type::Union(
+            BTreeSet::from_iter([
+                Type::Object(
+                    BTreeMap::from_iter([
+                        (
+                            "repeat".to_string().into(),
+                            Type::Constructed(Constructed::Regex),
+                        ),
+                        ("min".to_string().into(), Type::Number),
+                        ("max".to_string().into(), Type::Number),
+                    ])
+                    .into(),
+                ),
+                Type::Object(
+                    BTreeMap::from_iter([
+                        (
+                            "repeat".to_string().into(),
+                            Type::Constructed(Constructed::Regex),
+                        ),
+                        ("min".to_string().into(), Type::Number),
+                    ])
+                    .into(),
+                ),
+                Type::Object(
+                    BTreeMap::from_iter([
+                        (
+                            "repeat".to_string().into(),
+                            Type::Constructed(Constructed::Regex),
+                        ),
+                        ("max".to_string().into(), Type::Number),
+                    ])
+                    .into(),
+                ),
+                Type::Object(
+                    BTreeMap::from_iter([
+                        (
+                            "repeat".to_string().into(),
+                            Type::Constructed(Constructed::Regex),
+                        ),
+                        ("exactly".to_string().into(), Type::Number),
+                    ])
+                    .into(),
+                ),
+            ])
+            .into(),
+        ),
+        Type::Object(
+            BTreeMap::from_iter([
                 (
-                    "repeat".to_string().into(),
+                    "group".to_string().into(),
                     Type::Constructed(Constructed::Regex),
                 ),
-                ("min".to_string().into(), Type::Number),
-                ("max".to_string().into(), Type::Number),
-            ])),
-            Type::Object(BTreeMap::from_iter([
-                (
-                    "repeat".to_string().into(),
-                    Type::Constructed(Constructed::Regex),
-                ),
-                ("min".to_string().into(), Type::Number),
-            ])),
-            Type::Object(BTreeMap::from_iter([
-                (
-                    "repeat".to_string().into(),
-                    Type::Constructed(Constructed::Regex),
-                ),
-                ("max".to_string().into(), Type::Number),
-            ])),
-            Type::Object(BTreeMap::from_iter([
-                (
-                    "repeat".to_string().into(),
-                    Type::Constructed(Constructed::Regex),
-                ),
-                ("exactly".to_string().into(), Type::Number),
-            ])),
-        ])),
-        Type::Object(BTreeMap::from_iter([
-            (
-                "group".to_string().into(),
-                Type::Constructed(Constructed::Regex),
-            ),
-            ("name".to_string().into(), Type::String),
-        ])),
+                ("name".to_string().into(), Type::String),
+            ])
+            .into(),
+        ),
     ]
 });
 
@@ -159,13 +185,13 @@ pub enum Type {
     #[serde(rename = "array")]
     Array(Box<Type>),
     #[serde(rename = "tuple")]
-    Tuple(Vec<Type>),
+    Tuple(Arc<Vec<Type>>),
     #[serde(rename = "object")]
-    Object(BTreeMap<Arc<String>, Type>),
+    Object(Arc<BTreeMap<Arc<String>, Type>>),
     #[serde(rename = "generic object")]
     GenericObject(Box<Type>),
     #[serde(rename = "union")]
-    Union(BTreeSet<Type>),
+    Union(Arc<BTreeSet<Type>>),
     #[default]
     #[serde(rename = "any")]
     Any,
@@ -195,13 +221,13 @@ pub enum KnownType {
     #[serde(rename = "array")]
     Array(Box<Type>),
     #[serde(rename = "tuple")]
-    Tuple(Vec<Type>),
+    Tuple(Arc<Vec<Type>>),
     #[serde(rename = "object")]
-    Object(BTreeMap<Arc<String>, Type>),
+    Object(Arc<BTreeMap<Arc<String>, Type>>),
     #[serde(rename = "generic object")]
     GenericObject(Box<Type>),
     #[serde(rename = "union")]
-    Union(BTreeSet<Type>),
+    Union(Arc<BTreeSet<Type>>),
     #[default]
     #[serde(rename = "any")]
     Any,
@@ -258,20 +284,20 @@ impl From<BTreeSet<Type>> for Type {
                         .iter()
                         .all(|union_type| !matches!(union_type, Type::Union(_)))
                     {
-                        Type::Union(union_types)
+                        Type::Union(union_types.into())
                     } else {
                         let mut result_union_types = BTreeSet::new();
                         for union_type in union_types.into_iter() {
                             match union_type {
-                                Type::Union(mut inner_union_types) => {
-                                    result_union_types.append(&mut inner_union_types)
+                                Type::Union(inner_union_types) => {
+                                    result_union_types.append(&mut (*inner_union_types).clone())
                                 }
                                 non_union_type => {
                                     result_union_types.insert(non_union_type);
                                 }
                             }
                         }
-                        Type::Union(result_union_types)
+                        Type::Union(result_union_types.into())
                     }
                 }
             }
@@ -326,20 +352,6 @@ impl<'a> Type {
         }
     }
 
-    pub fn as_tuple_mut(&'a mut self) -> Option<&'a mut Vec<Type>> {
-        match self {
-            Type::Tuple(result) => Some(result),
-            _ => None,
-        }
-    }
-
-    pub fn as_union_mut(&'a mut self) -> Option<&'a mut BTreeSet<Type>> {
-        match self {
-            Type::Union(result) => Some(result),
-            _ => None,
-        }
-    }
-
     pub fn contains(&self, other: &Type) -> bool {
         if self == other {
             true
@@ -359,9 +371,9 @@ impl<'a> Type {
                     if self_union_types.is_superset(other_union_types) {
                         true
                     } else {
-                        for other_union_type in other_union_types {
+                        for other_union_type in other_union_types.as_ref() {
                             let mut found_container = false;
-                            for self_union_type in self_union_types {
+                            for self_union_type in self_union_types.as_ref() {
                                 if self_union_type.contains(other_union_type) {
                                     found_container = true;
                                     break;
@@ -378,7 +390,7 @@ impl<'a> Type {
                     if self_union_types.contains(other_type) {
                         true
                     } else {
-                        for self_union_type in self_union_types {
+                        for self_union_type in self_union_types.as_ref() {
                             if self_union_type.contains(other_type) {
                                 return true;
                             }
@@ -407,7 +419,7 @@ impl<'a> Type {
                     true
                 }
                 (Type::Array(self_array_element_type), Type::Tuple(other_tuple_elements_types)) => {
-                    for other_tuple_element_type in other_tuple_elements_types {
+                    for other_tuple_element_type in other_tuple_elements_types.as_ref() {
                         if !self_array_element_type.contains(other_tuple_element_type) {
                             return false;
                         }
@@ -451,7 +463,7 @@ impl<'a> Type {
             Type::Constructed(constructed) => constructed.inner().flatten(),
             Type::Union(self_union_types) => {
                 let mut result_union_types = BTreeSet::new();
-                for self_union_type in self_union_types {
+                for self_union_type in self_union_types.as_ref() {
                     result_union_types.insert(self_union_type.flatten()?);
                 }
                 Ok(Type::from(result_union_types))
@@ -459,18 +471,20 @@ impl<'a> Type {
             Type::Array(element_type) => match &**element_type {
                 Type::Array(element_element_type) => Ok(Type::Array(element_element_type.clone())),
                 Type::Tuple(element_elements_types) => Ok(Type::Array(Box::new(Type::Union(
-                    BTreeSet::from_iter(element_elements_types.iter().cloned()),
+                    BTreeSet::from_iter(element_elements_types.iter().cloned()).into(),
                 )))),
                 Type::Union(element_union_types) => {
                     let mut result_element_union_types = BTreeSet::new();
-                    for element_union_type in element_union_types {
+                    for element_union_type in element_union_types.as_ref() {
                         match element_union_type {
                             Type::Array(element_union_element_type) => {
                                 result_element_union_types
                                     .insert(*element_union_element_type.clone());
                             }
                             Type::Tuple(element_union_elements_types) => {
-                                for element_union_element_type in element_union_elements_types {
+                                for element_union_element_type in
+                                    element_union_elements_types.as_ref()
+                                {
                                     result_element_union_types
                                         .insert(element_union_element_type.clone());
                                 }
@@ -498,31 +512,31 @@ impl<'a> Type {
                     .all(|element_type| matches!(element_type, Type::Tuple(_)))
                 {
                     let mut result_elements_types = Vec::new();
-                    for element_type in elements_types {
+                    for element_type in elements_types.as_ref() {
                         match element_type {
                             Type::Tuple(element_elements_types) => {
-                                for element_element_type in element_elements_types {
+                                for element_element_type in element_elements_types.as_ref() {
                                     result_elements_types.push(element_element_type.clone());
                                 }
                             }
                             _ => panic!(),
                         }
                     }
-                    Ok(Type::Tuple(result_elements_types))
+                    Ok(Type::Tuple(result_elements_types.into()))
                 } else {
                     let mut result_elements_types = BTreeSet::new();
-                    for element_type in elements_types {
+                    for element_type in elements_types.as_ref() {
                         match element_type {
                             Type::Array(element_element_type) => {
                                 result_elements_types.insert(*element_element_type.clone());
                             }
                             Type::Tuple(element_elements_types) => {
-                                for element_element_type in element_elements_types {
+                                for element_element_type in element_elements_types.as_ref() {
                                     result_elements_types.insert(element_element_type.clone());
                                 }
                             }
                             Type::Union(element_union_types) => {
-                                for element_union_type in element_union_types {
+                                for element_union_type in element_union_types.as_ref() {
                                     match element_union_type {
                                         Type::Array(element_union_element_type) => {
                                             result_elements_types
@@ -530,7 +544,7 @@ impl<'a> Type {
                                         }
                                         Type::Tuple(element_union_elements_types) => {
                                             for element_union_element_type in
-                                                element_union_elements_types
+                                                element_union_elements_types.as_ref()
                                             {
                                                 result_elements_types
                                                     .insert(element_union_element_type.clone());
@@ -560,13 +574,13 @@ impl<'a> Type {
         }
     }
 
-    pub fn at(self, at_segment: &ValuePathSegment) -> Result<(TypeAtResult, bool)> {
+    pub fn at(&self, at_segment: &ValuePathSegment) -> Result<(TypeAtResult, bool)> {
         match (self, at_segment) {
             (Type::Constructed(constructed), _) => constructed.inner().clone().at(at_segment),
             (Type::Union(union_types), _) => {
                 let mut result_types = BTreeSet::new();
                 let mut runtime_error_is_possible = false;
-                for union_type in union_types {
+                for union_type in union_types.as_ref() {
                     let (mut union_type_at_result, union_type_runtime_error_is_possible) =
                         union_type.at(at_segment)?;
                     runtime_error_is_possible |= union_type_runtime_error_is_possible;
@@ -585,20 +599,20 @@ impl<'a> Type {
                 ))
             }
             (Type::Array(element_type), ValuePathSegment::ArrayIndex(_)) => {
-                Ok((TypeAtResult::Single(*element_type), true))
+                Ok((TypeAtResult::Single(*element_type.clone()), true))
             }
-            (Type::Tuple(mut elements_types), ValuePathSegment::ArrayIndex(tuple_index)) => {
+            (Type::Tuple(elements_types), ValuePathSegment::ArrayIndex(tuple_index)) => {
                 if *tuple_index >= elements_types.len() {
                     let elements_types_len = elements_types.len();
                     return Err(anyhow!(
                         "can not get from {:#?} at {at_segment:?} because there is only {} \
                          elements",
-                        Type::Tuple(elements_types),
+                        Type::Tuple(elements_types.clone()),
                         elements_types_len
                     ));
                 }
                 Ok((
-                    TypeAtResult::Single(elements_types.remove(*tuple_index)),
+                    TypeAtResult::Single(elements_types.get(*tuple_index).unwrap().clone()),
                     false,
                 ))
             }
@@ -609,18 +623,23 @@ impl<'a> Type {
                 {
                     return Err(anyhow!(
                         "can not get from {:#?} at {at_segment:?}",
-                        Type::Array(element_type)
+                        Type::Array(element_type.clone())
                     ));
                 }
                 if let (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) =
                     (&**from, &**to)
                 {
                     Ok((
-                        TypeAtResult::Single(Type::Tuple(vec![*element_type; to - from])),
+                        TypeAtResult::Single(Type::Tuple(
+                            vec![*element_type.clone(); to - from].into(),
+                        )),
                         false,
                     ))
                 } else {
-                    Ok((TypeAtResult::Single(Type::Array(element_type)), false))
+                    Ok((
+                        TypeAtResult::Single(Type::Array(element_type.clone())),
+                        false,
+                    ))
                 }
             }
             (Type::Tuple(elements_types), ValuePathSegment::ArrayRange { from, to }) => {
@@ -630,7 +649,7 @@ impl<'a> Type {
                 {
                     return Err(anyhow!(
                         "can not get from {:#?} at {at_segment:?}",
-                        Type::Tuple(elements_types)
+                        Type::Tuple(elements_types.clone())
                     ));
                 }
                 if let RangeBound::Static(Some(from)) = &**from
@@ -639,7 +658,7 @@ impl<'a> Type {
                     let elements_types_len = elements_types.len();
                     return Err(anyhow!(
                         "can not get from {:#?} at {at_segment:?} because {from} >= {}",
-                        Type::Tuple(elements_types),
+                        Type::Tuple(elements_types.clone()),
                         elements_types_len
                     ));
                 }
@@ -649,61 +668,64 @@ impl<'a> Type {
                     let elements_types_len = elements_types.len();
                     return Err(anyhow!(
                         "can not get from {:#?} at {at_segment:?} because {to} > {}",
-                        Type::Tuple(elements_types),
+                        Type::Tuple(elements_types.clone()),
                         elements_types_len
                     ));
                 }
                 match (&**from, &**to) {
                     (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) => Ok((
-                        TypeAtResult::Single(Type::Tuple(Vec::from_iter(
-                            elements_types.into_iter().skip(*from).take(to - from),
-                        ))),
+                        TypeAtResult::Single(Type::Tuple(
+                            Vec::from_iter(
+                                elements_types.iter().skip(*from).take(to - from).cloned(),
+                            )
+                            .into(),
+                        )),
                         false,
                     )),
                     (RangeBound::Static(Some(from)), RangeBound::Static(None)) => Ok((
-                        TypeAtResult::Single(Type::Tuple(Vec::from_iter(
-                            elements_types.into_iter().skip(*from),
-                        ))),
+                        TypeAtResult::Single(Type::Tuple(
+                            Vec::from_iter(elements_types.iter().skip(*from).cloned()).into(),
+                        )),
                         false,
                     )),
                     (RangeBound::Static(None), RangeBound::Static(Some(to))) => Ok((
-                        TypeAtResult::Single(Type::Tuple(Vec::from_iter(
-                            elements_types.into_iter().take(*to),
-                        ))),
+                        TypeAtResult::Single(Type::Tuple(
+                            Vec::from_iter(elements_types.iter().take(*to).cloned()).into(),
+                        )),
                         false,
                     )),
                     (RangeBound::Static(Some(from)), RangeBound::Dynamic(_)) => Ok((
                         TypeAtResult::Single(Type::Array(Box::new(Type::Union(
-                            BTreeSet::from_iter(elements_types.into_iter().skip(*from)),
+                            BTreeSet::from_iter(elements_types.iter().skip(*from).cloned()).into(),
                         )))),
                         false,
                     )),
                     (RangeBound::Dynamic(_), RangeBound::Static(Some(to))) => Ok((
                         TypeAtResult::Single(Type::Array(Box::new(Type::Union(
-                            BTreeSet::from_iter(elements_types.into_iter().take(*to)),
+                            BTreeSet::from_iter(elements_types.iter().take(*to).cloned()).into(),
                         )))),
                         false,
                     )),
                     _ => Ok((
                         TypeAtResult::Single(Type::Array(Box::new(Type::Union(
-                            BTreeSet::from_iter(elements_types),
+                            BTreeSet::from_iter(elements_types.iter().cloned()).into(),
                         )))),
                         false,
                     )),
                 }
             }
-            (Type::Object(mut object_inner_types), ValuePathSegment::ObjectKey(object_key)) => {
-                if let Some(inner_type) = object_inner_types.remove(object_key) {
-                    Ok((TypeAtResult::Single(inner_type), false))
+            (Type::Object(object_inner_types), ValuePathSegment::ObjectKey(object_key)) => {
+                if let Some(inner_type) = object_inner_types.get(object_key) {
+                    Ok((TypeAtResult::Single(inner_type.clone()), false))
                 } else {
                     Err(anyhow!(
                         "can not get from {:#?} at {at_segment:?} because no key {object_key:?}",
-                        Type::Object(object_inner_types)
+                        Type::Object(object_inner_types.clone())
                     ))
                 }
             }
             (Type::GenericObject(object_value_type), ValuePathSegment::ObjectKey(_)) => {
-                Ok((TypeAtResult::Single(*object_value_type), true))
+                Ok((TypeAtResult::Single(*object_value_type.clone()), true))
             }
             (self_, _) => Err(anyhow!("can not get from {self_:#?} at {at_segment:?}",)),
         }
@@ -803,7 +825,7 @@ impl<'a> Type {
                     }
                 }
                 (Type::Union(union_types), other_type) | (other_type, Type::Union(union_types)) => {
-                    for union_type in union_types {
+                    for union_type in union_types.iter() {
                         if let Some(result) = union_type.intersection(other_type) {
                             return Some(result);
                         }
@@ -836,14 +858,14 @@ impl<'a> Type {
                                 return None;
                             }
                         }
-                        Some(Type::Tuple(result_tuple_types))
+                        Some(Type::Tuple(result_tuple_types.into()))
                     }
                 }
                 (Type::Array(array_element_type), Type::Tuple(tuple_elements_types))
                 | (Type::Tuple(tuple_elements_types), Type::Array(array_element_type)) => {
                     let mut result_tuple_elements_types =
                         Vec::with_capacity(tuple_elements_types.len());
-                    for tuple_element_type in tuple_elements_types {
+                    for tuple_element_type in tuple_elements_types.iter() {
                         if let Some(result_tuple_element_type) =
                             tuple_element_type.intersection(array_element_type)
                         {
@@ -873,7 +895,7 @@ impl<'a> Type {
                     if result_inner_types.is_empty() {
                         None
                     } else {
-                        Some(Type::Object(result_inner_types))
+                        Some(Type::Object(result_inner_types.into()))
                     }
                 }
                 (Type::Object(self_inner_types), Type::GenericObject(other_value_type))
@@ -886,7 +908,7 @@ impl<'a> Type {
                             result_inner_types.insert(self_key.clone(), values_types_intersection);
                         }
                     }
-                    Some(Type::Object(result_inner_types))
+                    Some(Type::Object(result_inner_types.into()))
                 }
                 (Type::GenericObject(self_value_type), Type::GenericObject(other_value_type)) => {
                     self_value_type.intersection(other_value_type).map(

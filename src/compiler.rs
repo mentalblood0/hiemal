@@ -94,7 +94,7 @@ fn resolve_type(
             }
             (Type::Array(got_element_type), Type::Tuple(expected_elements_types)) => {
                 let mut result_union_types = BTreeSet::new();
-                for expected_element_type in expected_elements_types {
+                for expected_element_type in expected_elements_types.iter() {
                     result_union_types.insert(resolve_type(
                         got_element_type,
                         expected_element_type,
@@ -105,18 +105,18 @@ fn resolve_type(
             }
             (Type::Tuple(got_elements_types), Type::Array(expected_element_type)) => {
                 let mut result_tuple_types = Vec::with_capacity(got_elements_types.len());
-                for got_element_type in got_elements_types {
+                for got_element_type in got_elements_types.iter() {
                     result_tuple_types.push(resolve_type(
                         got_element_type,
                         expected_element_type,
                         compilation_context,
                     )?);
                 }
-                Ok(Type::Tuple(result_tuple_types))
+                Ok(Type::Tuple(result_tuple_types.into()))
             }
             (Type::Object(got_inner_types), Type::Object(expected_inner_types)) => {
                 let mut result_inner_types = BTreeMap::new();
-                for (expected_value_key, expected_value_type) in expected_inner_types {
+                for (expected_value_key, expected_value_type) in expected_inner_types.iter() {
                     if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
                         result_inner_types.insert(
                             expected_value_key.clone(),
@@ -126,7 +126,7 @@ fn resolve_type(
                         return Err(compilation_context.error(got_type, expected_type));
                     }
                 }
-                Ok(Type::Object(result_inner_types))
+                Ok(Type::Object(result_inner_types.into()))
             }
             (Type::GenericObject(got_value_type), Type::GenericObject(expected_value_type)) => {
                 let mut inner_compilation_context = compilation_context.clone();
@@ -143,9 +143,9 @@ fn resolve_type(
             (Type::Union(got_union_types), Type::Union(expected_union_types)) => {
                 let mut result_union_types = BTreeSet::new();
                 if !got_union_types.is_subset(expected_union_types) {
-                    for one_of_got_types in got_union_types {
+                    for one_of_got_types in got_union_types.iter() {
                         let mut found = false;
-                        for one_of_expected_types in expected_union_types {
+                        for one_of_expected_types in expected_union_types.iter() {
                             if let Ok(result_union_type) = resolve_type(
                                 one_of_got_types,
                                 one_of_expected_types,
@@ -165,18 +165,18 @@ fn resolve_type(
             }
             (Type::Union(got_union_types), expected_type) => {
                 let mut result_union_types = BTreeSet::new();
-                for one_of_got_types in got_union_types {
+                for one_of_got_types in got_union_types.iter() {
                     result_union_types.insert(resolve_type(
                         one_of_got_types,
                         expected_type,
                         compilation_context,
                     )?);
                 }
-                Ok(Type::Union(result_union_types))
+                Ok(Type::Union(result_union_types.into()))
             }
             (got_type, Type::Union(expected_union_types)) => {
                 if !expected_union_types.contains(expected_type) {
-                    for one_of_expected_types in expected_union_types {
+                    for one_of_expected_types in expected_union_types.iter() {
                         if let Ok(result_type) =
                             resolve_type(got_type, one_of_expected_types, compilation_context)
                         {
@@ -478,7 +478,7 @@ impl Compiler {
                                 Some(intermediate_representation::Value::Tuple(Vector::default()))
                                     .into(),
                             ),
-                            r#type: Type::Tuple([].into()),
+                            r#type: Type::Tuple(vec![].into()),
                         }
                         .into(),
                         is_pure: true,
@@ -517,7 +517,7 @@ impl Compiler {
                         result_external_constants_name_clustered_indices,
                     node: Node {
                         content: Content::Tuple(result_content),
-                        r#type: Type::Tuple(result_elements_types),
+                        r#type: Type::Tuple(result_elements_types.into()),
                     }
                     .into(),
                     is_pure,
@@ -809,7 +809,7 @@ impl Compiler {
                 let compiled_extracted_from_type_at_result_as_type =
                     match compiled_extracted_from_type_at_result {
                         TypeAtResult::Single(r#type) => r#type,
-                        TypeAtResult::Multiple(union_types) => Type::Union(union_types),
+                        TypeAtResult::Multiple(union_types) => Type::Union(union_types.into()),
                     };
                 let r#type = if runtime_type_error_is_possible {
                     Type::from(BTreeSet::from_iter([
@@ -1065,9 +1065,9 @@ impl Compiler {
                                                 Type::Tuple(vec![
                                                     Type::String,
                                                     value.clone(),
-                                                ])
+                                                ].into())
                                             })
-                                            .collect(),
+                                            .collect::<Vec<_>>().into(),
                                     ),
                                 }.into(),
                                 is_pure: compiled_argument.is_pure,
@@ -1210,13 +1210,16 @@ impl Compiler {
                                     },
                                 ),
                             },
-                            r#type: Type::Union(BTreeSet::from_iter([
-                                Type::GenericObject(Box::new(Type::Union(BTreeSet::from_iter([
-                                    Type::String,
-                                    Type::Number,
-                                ])))),
-                                Type::Null,
-                            ])),
+                            r#type: Type::Union(
+                                BTreeSet::from_iter([
+                                    Type::GenericObject(Box::new(Type::Union(
+                                        BTreeSet::from_iter(vec![Type::String, Type::Number])
+                                            .into(),
+                                    ))),
+                                    Type::Null,
+                                ])
+                                .into(),
+                            ),
                         }
                         .into(),
                         is_pure,
@@ -1527,7 +1530,8 @@ impl Compiler {
                                         result_throughs_nodes_indexes.push(compiled_through_index);
                                     }
                                 }
-                                result_union_types.insert(Type::Tuple(result_elements_types));
+                                result_union_types
+                                    .insert(Type::Tuple(result_elements_types.into()));
                                 Throughs::Tuple {
                                     nodes_indexes: result_throughs_nodes_indexes,
                                     nodes: compiled_throughs
@@ -2123,7 +2127,7 @@ impl Compiler {
                             external_constants_name_clustered_indices: BTreeSet::new(),
                             node: Node {
                                 content: Content::Object(BTreeMap::new()),
-                                r#type: Type::Object(BTreeMap::new()),
+                                r#type: Type::Object(BTreeMap::new().into()),
                             }
                             .into(),
                             is_pure: true,
@@ -2390,7 +2394,7 @@ impl Compiler {
                         result_external_constants_name_clustered_indices,
                     node: Node {
                         content: Content::Object(result_content),
-                        r#type: Type::Object(result_inner_types),
+                        r#type: Type::Object(result_inner_types.into()),
                     }
                     .into(),
                     is_pure,

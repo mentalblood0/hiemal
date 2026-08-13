@@ -1197,7 +1197,8 @@ impl<'a> ComputationContext<'a> {
                             tuple
                                 .iter()
                                 .map(|tuple_element| tuple_element.r#type.clone())
-                                .collect(),
+                                .collect::<Vec<_>>()
+                                .into(),
                         )
                     }),
                 }
@@ -1371,9 +1372,10 @@ impl<'a> ComputationContext<'a> {
                                     .unwrap()
                                     .values()
                                     .map(|value| {
-                                        Type::Tuple(vec![Type::String, Value::r#type(value)])
+                                        Type::Tuple(vec![Type::String, Value::r#type(value)].into())
                                     })
-                                    .collect(),
+                                    .collect::<Vec<_>>()
+                                    .into(),
                             )
                         }),
                     }
@@ -1605,7 +1607,8 @@ impl<'a> ComputationContext<'a> {
                                     .iter()
                                     .map(|element| &element.r#type)
                                     .cloned()
-                                    .collect(),
+                                    .collect::<Vec<_>>()
+                                    .into(),
                             );
                             result = IntermediateValueAndMetadata {
                                 intermediate_value: IntermediateValue::Tuple(Vector {
@@ -1684,7 +1687,13 @@ impl<'a> ComputationContext<'a> {
                         Throughs::Tuple {
                             nodes_indexes: _,
                             nodes,
-                        } => Type::Tuple(nodes.iter().map(|node| node.r#type.clone()).collect()),
+                        } => Type::Tuple(
+                            nodes
+                                .iter()
+                                .map(|node| node.r#type.clone())
+                                .collect::<Vec<_>>()
+                                .into(),
+                        ),
                     });
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Map(Map {
@@ -1722,7 +1731,13 @@ impl<'a> ComputationContext<'a> {
                         Throughs::Tuple {
                             nodes_indexes: _,
                             nodes,
-                        } => Type::Tuple(nodes.iter().map(|node| node.r#type.clone()).collect()),
+                        } => Type::Tuple(
+                            nodes
+                                .iter()
+                                .map(|node| node.r#type.clone())
+                                .collect::<Vec<_>>()
+                                .into(),
+                        ),
                     });
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Filter(Filter {
