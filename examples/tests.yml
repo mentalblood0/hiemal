@@ -32,6 +32,17 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test user functions caching:
+        assert equal::
+          found:
+            functions:
+              f:: { constant: _ }
+            compute:
+              - constants: { x: 1 }
+                compute: { f:: x }
+              - constants: { x: 2 }
+                compute: { f:: x }
+          expected: [x, x]
       test from-at array requires handling default:
         assert equal::
           found:

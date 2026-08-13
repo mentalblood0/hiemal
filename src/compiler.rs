@@ -2266,37 +2266,6 @@ impl Compiler {
                                         }
                                         .into());
                                     } else {
-                                        if let Some((function_index, function_type)) =
-                                            global_compilation_context
-                                                .user_function_to_index_and_type_option
-                                                .get(&function_body_as_maybe_compiled_program)
-                                            && function_type.is_known()
-                                        {
-                                            let result = Arc::new(NodeAndMetadata {
-                                                external_constants_name_clustered_indices:
-                                                    result_external_constants_name_clustered_indices
-                                                        .clone(),
-                                                node: Node {
-                                                    content: Content::UserFunctionCall {
-                                                        arguments: new_constants_definitions,
-                                                        body: *function_index,
-                                                    },
-                                                    r#type: function_type.clone(),
-                                                }
-                                                .into(),
-                                                is_pure: arguments_is_pure
-                                                    && global_compilation_context
-                                                        .user_functions_definitions
-                                                        .get(*function_index)
-                                                        .unwrap()
-                                                        .is_pure,
-                                                is_computable: true,
-                                            });
-                                            global_compilation_context
-                                                .compiled_functions_cache
-                                                .insert(instantiated_function_hash, result.clone());
-                                            return Ok(result);
-                                        }
                                         body_compilation_context
                                             .entered_user_functions
                                             .extend([function_body.clone()]);
