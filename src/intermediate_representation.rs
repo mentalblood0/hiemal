@@ -144,8 +144,8 @@ pub enum EmbeddedFunction {
     Flatten(Arc<Node>),
     MatchGroups { string: Arc<Node>, regex: Arc<Node> },
     Concat(Arc<Node>),
-    ReadStringFromFile(Arc<Node>),
     ReadBytesFromFile(Arc<Node>),
+    StringFromBytes(Arc<Node>),
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

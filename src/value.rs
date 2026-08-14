@@ -189,6 +189,13 @@ impl Value {
         }
     }
 
+    pub fn as_bytes(&self) -> Option<&Bytes> {
+        match self {
+            Value::Bytes(result) => Some(result),
+            _ => None,
+        }
+    }
+
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Value::Bool(result) => Some(*result),

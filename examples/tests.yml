@@ -35,12 +35,13 @@ compute:
       test read from file:
         assert equal::
           found:
-            - read string from file: .gitignore
             - read bytes from file: .gitignore
+            - string from bytes:
+                read bytes from file: .gitignore
           expected:
+            - bytes: 2f7461726765740a
             - |
               /target
-            - bytes: 2f7461726765740a
       test user functions caching:
         assert equal::
           found:
