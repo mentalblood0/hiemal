@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use bytes::Bytes;
 use dashu::Rational;
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
@@ -8,6 +9,7 @@ use crate::{
     containers::{self, Vector},
     program::Path,
     r#type::Type,
+    value::{deserialize_bytes, serialize_bytes},
 };
 
 #[serde_as]
@@ -25,6 +27,13 @@ pub enum Value {
     Bool(bool),
     Tuple(Vector<Option<Value>>),
     Object(containers::Object<String, Option<Value>>),
+    Bytes(
+        #[serde(
+            deserialize_with = "deserialize_bytes",
+            serialize_with = "serialize_bytes"
+        )]
+        Bytes,
+    ),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]

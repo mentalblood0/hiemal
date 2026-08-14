@@ -1,11 +1,13 @@
 use std::{collections::BTreeMap, str::FromStr};
 
 use anyhow::Result;
+use bytes::Bytes;
 use dashu::{Decimal, Rational};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Unexpected, Visitor},
 };
+use std::fmt;
 
 use crate::{
     containers::{Object, Vector},
@@ -42,12 +44,72 @@ pub enum Value {
     Bool(bool),
     Tuple(Vector<Option<Value>>),
     Object(Object<String, Option<Value>>),
+    Bytes(
+        #[serde(
+            deserialize_with = "deserialize_bytes",
+            serialize_with = "serialize_bytes"
+        )]
+        Bytes,
+    ),
 }
 
 impl Default for Value {
     fn default() -> Self {
         Value::Bool(false)
     }
+}
+
+pub fn serialize_bytes<S>(bytes: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    use serde::ser::SerializeMap;
+
+    let hex_string = hex::encode(bytes);
+    let mut map = serializer.serialize_map(Some(1))?;
+    map.serialize_entry("bytes", &hex_string)?;
+    map.end()
+}
+
+pub fn deserialize_bytes<'de, D>(deserializer: D) -> Result<Bytes, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{Error, MapAccess, Visitor};
+
+    struct BytesVisitor;
+
+    impl<'de> Visitor<'de> for BytesVisitor {
+        type Value = Bytes;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a map with a 'bytes' key containing a hex string")
+        }
+
+        fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+        where
+            M: MapAccess<'de>,
+        {
+            let mut hex_string: Option<String> = None;
+            while let Some(key) = access.next_key::<String>()? {
+                if key == "bytes" {
+                    if hex_string.is_some() {
+                        return Err(M::Error::duplicate_field("bytes"));
+                    }
+                    hex_string = Some(access.next_value()?);
+                } else {
+                    let _: serde::de::IgnoredAny = access.next_value()?;
+                }
+            }
+            let hex_string = hex_string.ok_or_else(|| M::Error::missing_field("bytes"))?;
+            let bytes = hex::decode(&hex_string)
+                .map_err(|_| M::Error::custom("invalid hex string"))?
+                .into();
+            Ok(bytes)
+        }
+    }
+
+    deserializer.deserialize_map(BytesVisitor)
 }
 
 pub fn deserialize_rational<'de, D>(deserializer: D) -> Result<Rational, D::Error>
@@ -160,6 +222,7 @@ impl Value {
             Some(value) => match value {
                 Value::Number(_) => Type::Number,
                 Value::String(string) => Type::LiteralString(string.clone()),
+                Value::Bytes(_) => Type::Bytes,
                 Value::Bool(true) => Type::LiteralTrue,
                 Value::Bool(false) => Type::LiteralFalse,
                 Value::Tuple(tuple) => Type::Tuple(

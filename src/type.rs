@@ -201,6 +201,8 @@ pub enum Type {
     LiteralFalse,
     #[serde(rename = "literal string")]
     LiteralString(#[serde(deserialize_with = "deserialize_rope")] ropey::Rope),
+    #[serde(rename = "bytes")]
+    Bytes,
     #[serde(rename = "constructed")]
     Constructed(Constructed),
     #[serde(skip_deserializing)]
@@ -243,6 +245,8 @@ pub enum KnownType {
         )]
         ropey::Rope,
     ),
+    #[serde(rename = "bytes")]
+    Bytes,
     #[serde(rename = "constructed")]
     Constructed(Constructed),
 }

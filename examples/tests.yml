@@ -32,6 +32,12 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test bytes:
+        assert equal::
+          found:
+            bytes: "48656c6c6f20576f726c64"
+          expected:
+            bytes: "48656c6c6f20576f726c64"
       test user functions caching:
         assert equal::
           found:

@@ -29,6 +29,8 @@ lz4_flex = "0.13.1"
 indexmap = "2.14.0"
 gxhash = { version = "3.5.0", features = ["std", "deterministic"] }
 regex = "1.13.1"
+bytes = "1.12.1"
+hex = "0.4.3"
 
 [dev-dependencies]
 nanorand = "0.8"
