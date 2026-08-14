@@ -1485,6 +1485,50 @@ impl<'a> ComputationContext<'a> {
                         .into())
                     }
                 }
+                EmbeddedFunction::ReadStringFromFile(argument) => {
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::String(
+                                std::fs::read_to_string(
+                                    self.unroll_intermediate_value(
+                                        &self.compute_node(argument, constants)?,
+                                    )?
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_string()
+                                    .unwrap()
+                                    .to_string(),
+                                )?
+                                .into(),
+                            ))
+                            .into(),
+                        ),
+                        r#type: Type::String,
+                    }
+                    .into())
+                }
+                EmbeddedFunction::ReadBytesFromFile(argument) => Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Value(
+                        Some(Value::Bytes(
+                            std::fs::read(
+                                self.unroll_intermediate_value(
+                                    &self.compute_node(argument, constants)?,
+                                )?
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_string()
+                                .unwrap()
+                                .to_string(),
+                            )?
+                            .into(),
+                        ))
+                        .into(),
+                    ),
+                    r#type: Type::Bytes,
+                }
+                .into()),
             },
             Content::UserFunctionCall { arguments, body } => {
                 let mut result_constants = constants.clone();

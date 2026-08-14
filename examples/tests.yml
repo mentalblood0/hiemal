@@ -32,12 +32,15 @@ functions:
 compute:
   tests report::
     key-value pairs:
-      test bytes:
+      test read from file:
         assert equal::
           found:
-            bytes: "48656c6c6f20576f726c64"
+            - read string from file: .gitignore
+            - read bytes from file: .gitignore
           expected:
-            bytes: "48656c6c6f20576f726c64"
+            - |
+              /target
+            - bytes: 2f7461726765740a
       test user functions caching:
         assert equal::
           found:

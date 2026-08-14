@@ -68,6 +68,9 @@ pub enum Program {
         r#as: Arc<String>,
         next: Box<Program>,
     },
+    BytesValue {
+        bytes: String,
+    },
     Object(BTreeMap<Arc<String>, Arc<Program>>),
     Value(Arc<Option<Value>>),
 }
@@ -172,6 +175,10 @@ pub enum EmbeddedFunction {
     MatchGroups { string: Program, regex: Program },
     #[serde(rename = "concat")]
     Concat(Program),
+    #[serde(rename = "read string from file")]
+    ReadStringFromFile(Program),
+    #[serde(rename = "read bytes from file")]
+    ReadBytesFromFile(Program),
 }
 
 #[repr(u8)]
@@ -234,6 +241,10 @@ pub enum PathSegment {
     StandardInput,
     #[serde(rename = "parse yaml")]
     ParseYaml,
+    #[serde(rename = "read string from file")]
+    ReadStringFromFile,
+    #[serde(rename = "read bytes from file")]
+    ReadBytesFromFile,
     #[serde(rename = "key-value pairs")]
     KeyValuePairs,
     #[serde(rename = "flatten")]

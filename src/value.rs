@@ -43,7 +43,6 @@ pub enum Value {
     String(ropey::Rope),
     Bool(bool),
     Tuple(Vector<Option<Value>>),
-    Object(Object<String, Option<Value>>),
     Bytes(
         #[serde(
             deserialize_with = "deserialize_bytes",
@@ -51,6 +50,7 @@ pub enum Value {
         )]
         Bytes,
     ),
+    Object(Object<String, Option<Value>>),
 }
 
 impl Default for Value {

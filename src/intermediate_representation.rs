@@ -26,7 +26,6 @@ pub enum Value {
     ),
     Bool(bool),
     Tuple(Vector<Option<Value>>),
-    Object(containers::Object<String, Option<Value>>),
     Bytes(
         #[serde(
             deserialize_with = "deserialize_bytes",
@@ -34,6 +33,7 @@ pub enum Value {
         )]
         Bytes,
     ),
+    Object(containers::Object<String, Option<Value>>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
@@ -144,6 +144,8 @@ pub enum EmbeddedFunction {
     Flatten(Arc<Node>),
     MatchGroups { string: Arc<Node>, regex: Arc<Node> },
     Concat(Arc<Node>),
+    ReadStringFromFile(Arc<Node>),
+    ReadBytesFromFile(Arc<Node>),
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

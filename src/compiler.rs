@@ -475,6 +475,26 @@ impl Compiler {
         global_compilation_context: &mut GlobalCompilationContext,
     ) -> Result<Arc<NodeAndMetadata>> {
         Ok(match program {
+            Program::BytesValue { bytes: hex_string } => NodeAndMetadata {
+                external_constants_name_clustered_indices: BTreeSet::new(),
+                node: Node {
+                    content: Content::Value(
+                        Some(intermediate_representation::Value::Bytes(
+                            hex::decode(hex_string)
+                                .with_context(|| {
+                                    format!("expected hexadecimal string, found {hex_string:?}")
+                                })?
+                                .into(),
+                        ))
+                        .into(),
+                    ),
+                    r#type: Type::Bytes,
+                }
+                .into(),
+                is_pure: true,
+                is_computable: true,
+            }
+            .into(),
             Program::Tuple(tuple) => {
                 if tuple.is_empty() {
                     return Ok(NodeAndMetadata {
@@ -1225,6 +1245,100 @@ impl Compiler {
                         }
                         .into(),
                         is_pure,
+                        is_computable: true,
+                    }
+                    .into()
+                }
+                EmbeddedFunction::ReadStringFromFile(argument) => {
+                    let mut argument_compilation_context = compilation_context.clone();
+                    argument_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::ReadStringFromFile]);
+                    let compiled_argument = self.compile_with_context(
+                        argument,
+                        &argument_compilation_context,
+                        global_compilation_context,
+                    )?;
+                    if !compiled_argument.is_computable {
+                        return Err(anyhow!(
+                            "expected computable argument, found {argument:#?} at {:#?}",
+                            argument_compilation_context.path
+                        ));
+                    }
+                    resolve_type(
+                        &compiled_argument.node.r#type,
+                        &Type::String,
+                        &argument_compilation_context,
+                    )?;
+                    NodeAndMetadata {
+                        external_constants_name_clustered_indices: compiled_argument
+                            .external_constants_name_clustered_indices
+                            .clone(),
+                        node: Node {
+                            content: Content::EmbeddedFunctionCall {
+                                path: Some(
+                                    compilation_context
+                                        .path
+                                        .extended([PathSegment::ReadStringFromFile]),
+                                ),
+                                embedded_function: Box::new(
+                                    intermediate_representation::EmbeddedFunction::ReadStringFromFile(
+                                        compiled_argument.node.clone(),
+                                    ),
+                                ),
+                            },
+                            r#type: Type::String,
+                        }
+                        .into(),
+                        is_pure: false,
+                        is_computable: true,
+                    }
+                    .into()
+                }
+                EmbeddedFunction::ReadBytesFromFile(argument) => {
+                    let mut argument_compilation_context = compilation_context.clone();
+                    argument_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::ReadBytesFromFile]);
+                    let compiled_argument = self.compile_with_context(
+                        argument,
+                        &argument_compilation_context,
+                        global_compilation_context,
+                    )?;
+                    if !compiled_argument.is_computable {
+                        return Err(anyhow!(
+                            "expected computable argument, found {argument:#?} at {:#?}",
+                            argument_compilation_context.path
+                        ));
+                    }
+                    resolve_type(
+                        &compiled_argument.node.r#type,
+                        &Type::String,
+                        &argument_compilation_context,
+                    )?;
+                    NodeAndMetadata {
+                        external_constants_name_clustered_indices: compiled_argument
+                            .external_constants_name_clustered_indices
+                            .clone(),
+                        node: Node {
+                            content: Content::EmbeddedFunctionCall {
+                                path: Some(
+                                    compilation_context
+                                        .path
+                                        .extended([PathSegment::ReadBytesFromFile]),
+                                ),
+                                embedded_function: Box::new(
+                                    intermediate_representation::EmbeddedFunction::ReadBytesFromFile(
+                                        compiled_argument.node.clone(),
+                                    ),
+                                ),
+                            },
+                            r#type: Type::Bytes,
+                        }
+                        .into(),
+                        is_pure: false,
                         is_computable: true,
                     }
                     .into()
