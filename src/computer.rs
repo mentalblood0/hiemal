@@ -1413,22 +1413,16 @@ impl<'a> ComputationContext<'a> {
                     r#type: node.r#type.clone(),
                 }
                 .into()),
-                EmbeddedFunction::MatchGroups { string, regex } => {
-                    let computed_arguments_unrolled = self.unroll_intermediate_values(
-                        self.compute_nodes(
-                            [
-                                (Some(string), Cow::Borrowed(constants)),
-                                (Some(regex), Cow::Borrowed(constants)),
-                            ]
-                            .into_iter(),
-                            2,
-                        )?
-                        .inner
-                        .into_iter(),
-                        2,
-                    )?;
-                    let computed_string = computed_arguments_unrolled
-                        .get(0)
+                EmbeddedFunction::MatchGroups(argument) => {
+                    let computed_argument_unrolled =
+                        self.unroll_intermediate_value(&self.compute_node(argument, constants)?)?;
+                    let computed_string = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"string".to_string())
                         .unwrap()
                         .as_ref()
                         .as_ref()
@@ -1436,8 +1430,13 @@ impl<'a> ComputationContext<'a> {
                         .as_string()
                         .unwrap()
                         .to_string();
-                    let computed_regex = computed_arguments_unrolled
-                        .get(1)
+                    let computed_regex = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"regex".to_string())
                         .unwrap()
                         .as_ref()
                         .as_ref()

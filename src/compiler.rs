@@ -1147,89 +1147,74 @@ impl Compiler {
                     }
                     .into()
                 }
-                EmbeddedFunction::MatchGroups { string, regex } => {
-                    let mut is_pure = true;
-                    let mut external_constants_name_clustered_indices;
-                    let compiled_string_node = {
-                        let mut string_compilation_context = compilation_context.clone();
-                        string_compilation_context
-                            .path
-                            .0
-                            .extend([PathSegment::MatchGroups, PathSegment::String]);
-                        let compiled_string = self.compile_with_context(
-                            string,
-                            &string_compilation_context,
-                            global_compilation_context,
-                        )?;
-                        if !compiled_string.is_computable {
-                            return Err(anyhow!(
-                                "expected computable string, found {string:#?} at {:#?}",
-                                string_compilation_context.path
-                            ));
-                        }
+                EmbeddedFunction::MatchGroups(argument) => {
+                    let mut argument_compilation_context = compilation_context.clone();
+                    argument_compilation_context
+                        .path
+                        .0
+                        .extend([PathSegment::MatchGroups]);
+                    let compiled_argument = self.compile_with_context(
+                        argument,
+                        &argument_compilation_context,
+                        global_compilation_context,
+                    )?;
+                    if !compiled_argument.is_computable {
+                        return Err(anyhow!(
+                            "expected computable argument, found {argument:#?} at {:#?}",
+                            argument_compilation_context.path
+                        ));
+                    }
+                    if let Type::Object(inner_types) = &compiled_argument.node.r#type
+                        && let Some(Type::LiteralString(regex_literal_string)) =
+                            inner_types.get(&"regex".to_string())
+                    {
                         resolve_type(
-                            &compiled_string.node.r#type,
-                            &Type::String,
+                            &compiled_argument.node.r#type,
+                            &Type::Object(
+                                BTreeMap::from_iter([
+                                    ("string".to_string().into(), Type::String),
+                                    (
+                                        "regex".to_string().into(),
+                                        Type::LiteralString(regex_literal_string.clone()),
+                                    ),
+                                ])
+                                .into(),
+                            ),
                             compilation_context,
                         )?;
-                        is_pure &= compiled_string.is_pure;
-                        external_constants_name_clustered_indices = compiled_string
-                            .external_constants_name_clustered_indices
-                            .clone();
-                        compiled_string.node.clone()
-                    };
-                    let compiled_regex_node = {
-                        let mut regex_compilation_context = compilation_context.clone();
-                        regex_compilation_context
-                            .path
-                            .0
-                            .extend([PathSegment::MatchGroups, PathSegment::Regex]);
-                        let compiled_regex = self.compile_with_context(
-                            regex,
-                            &regex_compilation_context,
-                            global_compilation_context,
+                        Regex::new(&regex_literal_string.to_string()).with_context(|| {
+                            format!(
+                                "expected correct regex, found {regex_literal_string:?} at {:?}",
+                                argument_compilation_context.path
+                            )
+                        })?;
+                    } else {
+                        resolve_type(
+                            &compiled_argument.node.r#type,
+                            &Type::Object(
+                                BTreeMap::from_iter([
+                                    ("string".to_string().into(), Type::String),
+                                    (
+                                        "regex".to_string().into(),
+                                        Type::Constructed(Constructed::Regex),
+                                    ),
+                                ])
+                                .into(),
+                            ),
+                            compilation_context,
                         )?;
-                        if !compiled_regex.is_computable {
-                            return Err(anyhow!(
-                                "expected computable regex, found {regex:#?} at {:#?}",
-                                regex_compilation_context.path
-                            ));
-                        }
-                        if let Type::LiteralString(ref regex_literal_string) =
-                            compiled_regex.node.r#type
-                        {
-                            Regex::new(&regex_literal_string.to_string()).with_context(|| {
-                                format!(
-                                    "expected correct regex, found {regex_literal_string:?} at \
-                                     {:?}",
-                                    regex_compilation_context.path
-                                )
-                            })?;
-                        } else {
-                            resolve_type(
-                                &compiled_regex.node.r#type,
-                                &Type::Constructed(Constructed::Regex),
-                                compilation_context,
-                            )?;
-                        }
-                        is_pure &= compiled_regex.is_pure;
-                        external_constants_name_clustered_indices.append(
-                            &mut compiled_regex
-                                .external_constants_name_clustered_indices
-                                .clone(),
-                        );
-                        compiled_regex.node.clone()
-                    };
+                    }
                     NodeAndMetadata {
-                        external_constants_name_clustered_indices,
+                        external_constants_name_clustered_indices: compiled_argument
+                            .external_constants_name_clustered_indices
+                            .clone(),
                         node: Node {
                             content: Content::EmbeddedFunctionCall {
                                 path: None,
                                 embedded_function: Box::new(
-                                    intermediate_representation::EmbeddedFunction::MatchGroups {
-                                        string: compiled_string_node,
-                                        regex: compiled_regex_node,
-                                    },
+                                    intermediate_representation::EmbeddedFunction::MatchGroups(
+                                        compiled_argument.node.clone(),
+                                    ),
                                 ),
                             },
                             r#type: Type::Union(
@@ -1244,7 +1229,7 @@ impl Compiler {
                             ),
                         }
                         .into(),
-                        is_pure,
+                        is_pure: compiled_argument.is_pure,
                         is_computable: true,
                     }
                     .into()

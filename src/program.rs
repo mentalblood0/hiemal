@@ -172,7 +172,7 @@ pub enum EmbeddedFunction {
     #[serde(rename = "flatten")]
     Flatten(Program),
     #[serde(rename = "match groups")]
-    MatchGroups { string: Program, regex: Program },
+    MatchGroups(Program),
     #[serde(rename = "concat")]
     Concat(Program),
     #[serde(rename = "read bytes from file")]

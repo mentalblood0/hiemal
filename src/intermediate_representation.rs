@@ -142,7 +142,7 @@ pub enum EmbeddedFunction {
     ParseYaml(Arc<Node>),
     KeyValuePairs(Arc<Node>),
     Flatten(Arc<Node>),
-    MatchGroups { string: Arc<Node>, regex: Arc<Node> },
+    MatchGroups(Arc<Node>),
     Concat(Arc<Node>),
     ReadBytesFromFile(Arc<Node>),
     StringFromBytes(Arc<Node>),
