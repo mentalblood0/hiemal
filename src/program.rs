@@ -1,6 +1,9 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{MapAccess, Visitor},
+};
 use url::Url;
 
 use crate::{default_argument_name::DEFAULT_ARGUMENT_NAME, r#type::Type, value::Value};
@@ -27,7 +30,7 @@ pub enum Program {
         #[serde(default = "default_from_at_default")]
         default: Box<Program>,
     },
-    EmbeddedFunction(Box<EmbeddedFunction>),
+    EmbeddedFunctionCall(EmbeddedFunctionCall),
     Match {
         r#match: Box<Program>,
         #[serde(default = "default_match_as")]
@@ -156,29 +159,83 @@ impl Default for Program {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub struct EmbeddedFunctionCall {
+    pub embedded_function: EmbeddedFunction,
+    pub argument: Arc<Program>,
+}
+
+impl Serialize for EmbeddedFunctionCall {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(1))?;
+        map.serialize_entry(&self.embedded_function, &self.argument)?;
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct EFVisitor;
+
+        impl<'de> Visitor<'de> for EFVisitor {
+            type Value = EmbeddedFunctionCall;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a map with a single key-value pair")
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let (name, argument) = match access.next_entry()? {
+                    Some((key, value)) => (key, value),
+                    None => return Err(serde::de::Error::invalid_length(0, &self)),
+                };
+                if access.next_entry::<EmbeddedFunction, Program>()?.is_some() {
+                    return Err(serde::de::Error::invalid_length(2, &self));
+                }
+                Ok(EmbeddedFunctionCall {
+                    embedded_function: name,
+                    argument,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(EFVisitor)
+    }
+}
+
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
 pub enum EmbeddedFunction {
     #[serde(rename = "sum")]
-    Sum(Program),
+    Sum,
     #[serde(rename = "is sorted")]
-    IsSorted(Program),
+    IsSorted,
     #[serde(rename = "standard input")]
-    StandardInput,
+    ReadBytesFromStandardInput,
     #[serde(rename = "parse yaml")]
-    ParseYaml(Program),
+    ParseYaml,
     #[serde(rename = "key-value pairs")]
-    KeyValuePairs(Program),
+    KeyValuePairs,
     #[serde(rename = "flatten")]
-    Flatten(Program),
+    Flatten,
     #[serde(rename = "match groups")]
-    MatchGroups(Program),
+    MatchGroups,
     #[serde(rename = "concat")]
-    Concat(Program),
+    Concat,
     #[serde(rename = "read bytes from file")]
-    ReadBytesFromFile(Program),
+    ReadBytesFromFile,
     #[serde(rename = "string from bytes")]
-    StringFromBytes(Program),
+    StringFromBytes,
 }
 
 #[repr(u8)]
@@ -233,26 +290,8 @@ pub enum PathSegment {
     Then,
     #[serde(rename = "else")]
     Else,
-    #[serde(rename = "sum")]
-    Sum,
-    #[serde(rename = "is sorted")]
-    IsSorted,
-    #[serde(rename = "standard input")]
-    StandardInput,
-    #[serde(rename = "parse yaml")]
-    ParseYaml,
-    #[serde(rename = "read bytes from file")]
-    ReadBytesFromFile,
-    #[serde(rename = "string from bytes")]
-    StringFromBytes,
-    #[serde(rename = "key-value pairs")]
-    KeyValuePairs,
-    #[serde(rename = "flatten")]
-    Flatten,
-    #[serde(rename = "match groups")]
-    MatchGroups,
-    #[serde(rename = "concat")]
-    Concat,
+    #[serde(rename = "embedded function call")]
+    EmbeddedFunctionCall(EmbeddedFunction),
     #[serde(rename = "string")]
     String,
     #[serde(rename = "regex")]

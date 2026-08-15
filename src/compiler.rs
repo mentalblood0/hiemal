@@ -18,7 +18,8 @@ use crate::{
         ValuePathSegment,
     },
     program::{
-        self, AtSegment, Condition, EmbeddedFunction, Path, PathSegment, Program, RangeBound,
+        self, AtSegment, Condition, EmbeddedFunction, EmbeddedFunctionCall, Path, PathSegment,
+        Program, RangeBound,
     },
     r#type::{Constructed, MaybeType, Type, TypeAtResult},
     value::Value,
@@ -128,6 +129,16 @@ fn resolve_type(
                 }
                 Ok(Type::Object(result_inner_types.into()))
             }
+            (Type::Object(got_inner_types), Type::GenericObject(expected_value_type)) => {
+                let mut result_inner_types = BTreeMap::new();
+                for (got_value_key, got_value_type) in got_inner_types.iter() {
+                    result_inner_types.insert(
+                        got_value_key.clone(),
+                        resolve_type(got_value_type, expected_value_type, compilation_context)?,
+                    );
+                }
+                Ok(Type::Object(result_inner_types.into()))
+            }
             (Type::GenericObject(got_value_type), Type::GenericObject(expected_value_type)) => {
                 let mut inner_compilation_context = compilation_context.clone();
                 inner_compilation_context
@@ -187,7 +198,9 @@ fn resolve_type(
                 }
                 Ok(got_type.clone())
             }
-            (Type::LiteralString(_), Type::String) => Ok(got_type.clone()),
+            (Type::LiteralString(_), Type::String)
+            | (Type::GenericLiteralString, Type::String)
+            | (Type::LiteralString(_), Type::GenericLiteralString) => Ok(got_type.clone()),
             _ => Err(compilation_context.error(got_type, expected_type)),
         }
     }
@@ -466,6 +479,71 @@ impl Compiler {
             .available_constants
             .insert(name, result.index);
         result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn compile_embedded_function_call<F>(
+        &self,
+        compilation_context: &CompilationContext,
+        global_compilation_context: &mut GlobalCompilationContext,
+        embedded_function_call: &EmbeddedFunctionCall,
+        argument_type: &Type,
+        get_result_type_from_argument_resolved_type: &F,
+        is_pure: bool,
+        is_fallible: bool,
+    ) -> Result<Arc<NodeAndMetadata>>
+    where
+        F: Fn(&Type) -> Result<Type>,
+    {
+        let mut argument_compilation_context = compilation_context.clone();
+        argument_compilation_context
+            .path
+            .0
+            .extend([PathSegment::EmbeddedFunctionCall(
+                embedded_function_call.embedded_function,
+            )]);
+        let compiled_argument = self.compile_with_context(
+            &embedded_function_call.argument,
+            &argument_compilation_context,
+            global_compilation_context,
+        )?;
+        if !compiled_argument.is_computable {
+            return Err(anyhow!(
+                "expected computable argument, found {:#?} at {:#?}",
+                embedded_function_call.argument,
+                argument_compilation_context.path
+            ));
+        }
+        let compiled_argument_resolved_type = resolve_type(
+            &compiled_argument.node.r#type,
+            argument_type,
+            &argument_compilation_context,
+        )?;
+        Ok(NodeAndMetadata {
+            external_constants_name_clustered_indices: compiled_argument
+                .external_constants_name_clustered_indices
+                .clone(),
+            node: Node {
+                content: Content::EmbeddedFunctionCall {
+                    path_option: if is_fallible {
+                        Some(argument_compilation_context.path.clone())
+                    } else {
+                        None
+                    },
+                    embedded_function_call: intermediate_representation::EmbeddedFunctionCall {
+                        embedded_function: embedded_function_call.embedded_function,
+                        argument: compiled_argument.node.clone(),
+                    },
+                },
+                r#type: get_result_type_from_argument_resolved_type(
+                    &compiled_argument_resolved_type,
+                )?,
+            }
+            .into(),
+            is_pure: is_pure && compiled_argument.is_pure,
+            is_computable: compiled_argument.is_computable,
+        }
+        .into())
     }
 
     fn compile_with_context(
@@ -861,363 +939,139 @@ impl Compiler {
                 }
                 .into()
             }
-            Program::EmbeddedFunction(embedded_function) => match &**embedded_function {
-                EmbeddedFunction::Sum(argument) => {
-                    let mut argument_compilation_context = compilation_context.clone();
-                    argument_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::Sum]);
-                    let compiled_argument = self.compile_with_context(
-                        argument,
-                        &argument_compilation_context,
+            Program::EmbeddedFunctionCall(embedded_function_call) => {
+                match embedded_function_call.embedded_function {
+                    EmbeddedFunction::Sum => self.compile_embedded_function_call(
+                        compilation_context,
                         global_compilation_context,
-                    )?;
-                    if !compiled_argument.is_computable {
-                        return Err(anyhow!(
-                            "expected computable argument, found {argument:#?} at {:#?}",
-                            argument_compilation_context.path
-                        ));
-                    }
-                    resolve_type(
-                        &compiled_argument.node.r#type,
+                        embedded_function_call,
                         &Type::Array(Box::new(Type::Number)),
+                        &|_| Ok(Type::Number),
+                        true,
+                        false,
+                    )?,
+                    EmbeddedFunction::Concat => self.compile_embedded_function_call(
                         compilation_context,
-                    )?;
-                    NodeAndMetadata {
-                        external_constants_name_clustered_indices: compiled_argument
-                            .external_constants_name_clustered_indices
-                            .clone(),
-                        node: Node {
-                            content: Content::EmbeddedFunctionCall {
-                                path: None,
-                                embedded_function: Box::new(
-                                    intermediate_representation::EmbeddedFunction::Sum(
-                                        compiled_argument.node.clone(),
-                                    ),
-                                ),
-                            },
-                            r#type: Type::Number,
-                        }
-                        .into(),
-                        is_pure: compiled_argument.is_pure,
-                        is_computable: true,
-                    }
-                    .into()
-                }
-                EmbeddedFunction::Concat(argument) => {
-                    let mut argument_compilation_context = compilation_context.clone();
-                    argument_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::Concat]);
-                    let compiled_argument = self.compile_with_context(
-                        argument,
-                        &argument_compilation_context,
                         global_compilation_context,
-                    )?;
-                    if !compiled_argument.is_computable {
-                        return Err(anyhow!(
-                            "expected computable argument, found {argument:#?} at {:#?}",
-                            argument_compilation_context.path
-                        ));
-                    }
-                    resolve_type(
-                        &compiled_argument.node.r#type,
+                        embedded_function_call,
                         &Type::Array(Box::new(Type::String)),
+                        &|_| Ok(Type::String),
+                        true,
+                        false,
+                    )?,
+                    EmbeddedFunction::IsSorted => self.compile_embedded_function_call(
                         compilation_context,
-                    )?;
-                    NodeAndMetadata {
-                        external_constants_name_clustered_indices: compiled_argument
-                            .external_constants_name_clustered_indices
-                            .clone(),
-                        node: Node {
-                            content: Content::EmbeddedFunctionCall {
-                                path: None,
-                                embedded_function: Box::new(
-                                    intermediate_representation::EmbeddedFunction::Concat(
-                                        compiled_argument.node.clone(),
-                                    ),
-                                ),
-                            },
-                            r#type: Type::String,
-                        }
-                        .into(),
-                        is_pure: compiled_argument.is_pure,
-                        is_computable: true,
-                    }
-                    .into()
-                }
-                EmbeddedFunction::IsSorted(argument) => {
-                    let mut argument_compilation_context = compilation_context.clone();
-                    argument_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::IsSorted]);
-                    let compiled_argument = self.compile_with_context(
-                        argument,
-                        &argument_compilation_context,
                         global_compilation_context,
-                    )?;
-                    if !compiled_argument.is_computable {
-                        return Err(anyhow!(
-                            "expected computable argument, found {argument:#?} at {:#?}",
-                            argument_compilation_context.path
-                        ));
-                    }
-                    resolve_type(
-                        &compiled_argument.node.r#type,
+                        embedded_function_call,
                         &Type::Array(Box::new(Type::Any)),
-                        compilation_context,
-                    )?;
-                    NodeAndMetadata {
-                        external_constants_name_clustered_indices: compiled_argument
-                            .external_constants_name_clustered_indices
-                            .clone(),
-                        node: Node {
-                            content: Content::EmbeddedFunctionCall {
-                                path: None,
-                                embedded_function: Box::new(
-                                    intermediate_representation::EmbeddedFunction::IsSorted(
-                                        compiled_argument.node.clone(),
-                                    ),
-                                ),
+                        &|_| Ok(Type::Bool),
+                        true,
+                        false,
+                    )?,
+                    EmbeddedFunction::ReadBytesFromStandardInput => self
+                        .compile_embedded_function_call(
+                            compilation_context,
+                            global_compilation_context,
+                            embedded_function_call,
+                            &Type::Union(
+                                BTreeSet::from_iter([
+                                    Type::Number,
+                                    Type::LiteralString("all".into()),
+                                ])
+                                .into(),
+                            ),
+                            &|_| {
+                                Ok(Type::Union(
+                                    BTreeSet::from_iter([Type::Bytes, Type::Null]).into(),
+                                ))
                             },
-                            r#type: Type::Bool,
-                        }
-                        .into(),
-                        is_pure: compiled_argument.is_pure,
-                        is_computable: compiled_argument.is_computable,
-                    }
-                    .into()
-                }
-                EmbeddedFunction::StandardInput => NodeAndMetadata {
-                    external_constants_name_clustered_indices: BTreeSet::new(),
-                    node: Node {
-                        content: Content::EmbeddedFunctionCall {
-                            path: Some(
-                                compilation_context
-                                    .path
-                                    .extended([PathSegment::StandardInput]),
-                            ),
-                            embedded_function: Box::new(
-                                intermediate_representation::EmbeddedFunction::StandardInput,
-                            ),
-                        },
-                        r#type: Type::String,
-                    }
-                    .into(),
-                    is_pure: true,
-                    is_computable: true,
-                }
-                .into(),
-                EmbeddedFunction::ParseYaml(argument) => {
-                    let mut argument_compilation_context = compilation_context.clone();
-                    argument_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::ParseYaml]);
-                    let compiled_argument = self.compile_with_context(
-                        argument,
-                        &argument_compilation_context,
+                            false,
+                            false,
+                        )?,
+                    EmbeddedFunction::ParseYaml => self.compile_embedded_function_call(
+                        compilation_context,
                         global_compilation_context,
-                    )?;
-                    if !compiled_argument.is_computable {
-                        return Err(anyhow!(
-                            "expected computable argument, found {argument:#?} at {:#?}",
-                            argument_compilation_context.path
-                        ));
-                    }
-                    resolve_type(
-                        &compiled_argument.node.r#type,
+                        embedded_function_call,
                         &Type::String,
-                        &argument_compilation_context,
-                    )?;
-                    NodeAndMetadata {
-                        external_constants_name_clustered_indices: compiled_argument
-                            .external_constants_name_clustered_indices
-                            .clone(),
-                        node: Node {
-                            content: Content::EmbeddedFunctionCall {
-                                path: Some(
-                                    compilation_context.path.extended([PathSegment::ParseYaml]),
-                                ),
-                                embedded_function: Box::new(
-                                    intermediate_representation::EmbeddedFunction::ParseYaml(
-                                        compiled_argument.node.clone(),
-                                    ),
-                                ),
-                            },
-                            r#type: Type::Any,
-                        }
-                        .into(),
-                        is_pure: compiled_argument.is_pure,
-                        is_computable: true,
-                    }
-                    .into()
-                }
-                EmbeddedFunction::KeyValuePairs(argument) => {
-                    let mut argument_compilation_context = compilation_context.clone();
-                    argument_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::KeyValuePairs]);
-                    let compiled_argument = self.compile_with_context(
-                        argument,
-                        &argument_compilation_context,
-                        global_compilation_context,
-                    )?;
-                    if let Type::Object(argument_object_values_types) =
-                        compiled_argument.node.r#type.clone()
-                    {
-                        NodeAndMetadata {
-                                external_constants_name_clustered_indices: compiled_argument
-                                    .external_constants_name_clustered_indices.clone(),
-                                node: Node {
-                                    content: Content::EmbeddedFunctionCall {
-                                        path: None,
-                                        embedded_function: Box::new(
-                                            intermediate_representation::EmbeddedFunction::KeyValuePairs(
-                                                compiled_argument.node.clone(),
-                                            ),
-                                        ),
-                                    },
-                                    r#type: Type::Tuple(
-                                        argument_object_values_types.values().map(|value| {
-                                                Type::Tuple(vec![
-                                                    Type::String,
-                                                    value.clone(),
-                                                ].into())
-                                            })
-                                            .collect::<Vec<_>>().into(),
-                                    ),
-                                }.into(),
-                                is_pure: compiled_argument.is_pure,
-                                is_computable: compiled_argument.is_computable
-                            }.into()
-                    } else {
-                        return Err(anyhow!(
-                            "expected object, found {:#?} at {:#?}",
-                            compiled_argument.node.r#type,
-                            compilation_context.path
-                        ));
-                    }
-                }
-                EmbeddedFunction::Flatten(argument) => {
-                    let mut argument_compilation_context = compilation_context.clone();
-                    argument_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::Flatten]);
-                    let compiled_argument = self.compile_with_context(
-                        argument,
-                        &argument_compilation_context,
-                        global_compilation_context,
-                    )?;
-                    let compiled_argument_resolved_type = resolve_type(
-                        &compiled_argument.node.r#type,
-                        &Type::Array(Box::new(Type::Array(Box::new(Type::Any)))),
+                        &|_| Ok(Type::Any),
+                        true,
+                        true,
+                    )?,
+                    EmbeddedFunction::KeyValuePairs => self.compile_embedded_function_call(
                         compilation_context,
-                    )?;
-                    let r#type = compiled_argument_resolved_type.flatten().with_context(|| {
-                        format!(
-                            "expected flattenable type, found \
-                             {compiled_argument_resolved_type:#?} at {:#?}",
-                            compilation_context.path
-                        )
-                    })?;
-                    NodeAndMetadata {
-                        external_constants_name_clustered_indices: compiled_argument
-                            .external_constants_name_clustered_indices
-                            .clone(),
-                        node: Node {
-                            content: Content::EmbeddedFunctionCall {
-                                path: None,
-                                embedded_function: Box::new(
-                                    intermediate_representation::EmbeddedFunction::Flatten(
-                                        compiled_argument.node.clone(),
-                                    ),
-                                ),
-                            },
-                            r#type,
-                        }
-                        .into(),
-                        is_pure: compiled_argument.is_pure,
-                        is_computable: compiled_argument.is_computable,
-                    }
-                    .into()
-                }
-                EmbeddedFunction::MatchGroups(argument) => {
-                    let mut argument_compilation_context = compilation_context.clone();
-                    argument_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::MatchGroups]);
-                    let compiled_argument = self.compile_with_context(
-                        argument,
-                        &argument_compilation_context,
                         global_compilation_context,
-                    )?;
-                    if !compiled_argument.is_computable {
-                        return Err(anyhow!(
-                            "expected computable argument, found {argument:#?} at {:#?}",
-                            argument_compilation_context.path
-                        ));
-                    }
-                    if let Type::Object(inner_types) = &compiled_argument.node.r#type
-                        && let Some(Type::LiteralString(regex_literal_string)) =
-                            inner_types.get(&"regex".to_string())
-                    {
-                        resolve_type(
-                            &compiled_argument.node.r#type,
-                            &Type::Object(
-                                BTreeMap::from_iter([
-                                    ("string".to_string().into(), Type::String),
-                                    (
-                                        "regex".to_string().into(),
-                                        Type::LiteralString(regex_literal_string.clone()),
-                                    ),
-                                ])
-                                .into(),
-                            ),
-                            compilation_context,
-                        )?;
-                        Regex::new(&regex_literal_string.to_string()).with_context(|| {
-                            format!(
-                                "expected correct regex, found {regex_literal_string:?} at {:?}",
-                                argument_compilation_context.path
-                            )
-                        })?;
-                    } else {
-                        resolve_type(
-                            &compiled_argument.node.r#type,
-                            &Type::Object(
-                                BTreeMap::from_iter([
-                                    ("string".to_string().into(), Type::String),
-                                    (
-                                        "regex".to_string().into(),
-                                        Type::Constructed(Constructed::Regex),
-                                    ),
-                                ])
-                                .into(),
-                            ),
-                            compilation_context,
-                        )?;
-                    }
-                    NodeAndMetadata {
-                        external_constants_name_clustered_indices: compiled_argument
-                            .external_constants_name_clustered_indices
-                            .clone(),
-                        node: Node {
-                            content: Content::EmbeddedFunctionCall {
-                                path: None,
-                                embedded_function: Box::new(
-                                    intermediate_representation::EmbeddedFunction::MatchGroups(
-                                        compiled_argument.node.clone(),
-                                    ),
+                        embedded_function_call,
+                        &Type::GenericObject(Box::new(Type::Any)),
+                        &|compiled_argument_resolved_type| {
+                            if let Type::Object(argument_object_values_types) =
+                                compiled_argument_resolved_type.clone()
+                            {
+                                Ok(Type::Tuple(
+                                    argument_object_values_types
+                                        .values()
+                                        .map(|value| {
+                                            Type::Tuple(vec![Type::String, value.clone()].into())
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .into(),
+                                ))
+                            } else {
+                                Err(anyhow!(
+                                    "expected object, found {:#?} at {:#?}",
+                                    compiled_argument_resolved_type,
+                                    compilation_context.path
+                                ))
+                            }
+                        },
+                        true,
+                        false,
+                    )?,
+                    EmbeddedFunction::Flatten => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &Type::Array(Box::new(Type::Array(Box::new(Type::Any)))),
+                        &|compiled_argument_resolved_type| {
+                            compiled_argument_resolved_type.flatten().with_context(|| {
+                                format!(
+                                    "expected flattenable type, found \
+                                     {compiled_argument_resolved_type:#?} at {:#?}",
+                                    compilation_context.path
+                                )
+                            })
+                        },
+                        true,
+                        false,
+                    )?,
+                    EmbeddedFunction::MatchGroups => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &Type::Object(
+                            BTreeMap::from_iter([
+                                ("string".to_string().into(), Type::String),
+                                (
+                                    "regex".to_string().into(),
+                                    Type::Constructed(Constructed::Regex),
                                 ),
-                            },
-                            r#type: Type::Union(
+                            ])
+                            .into(),
+                        ),
+                        &|compiled_argument_resolved_type| {
+                            if let Type::LiteralString(regex_literal_string) =
+                                compiled_argument_resolved_type
+                            {
+                                Regex::new(&regex_literal_string.to_string()).with_context(
+                                    || {
+                                        format!(
+                                            "expected correct regex, found \
+                                             {regex_literal_string:?} at {:?}",
+                                            compilation_context.path
+                                        )
+                                    },
+                                )?;
+                            };
+                            Ok(Type::Union(
                                 BTreeSet::from_iter([
                                     Type::GenericObject(Box::new(Type::Union(
                                         BTreeSet::from_iter(vec![Type::String, Type::Number])
@@ -1226,109 +1080,39 @@ impl Compiler {
                                     Type::Null,
                                 ])
                                 .into(),
-                            ),
-                        }
-                        .into(),
-                        is_pure: compiled_argument.is_pure,
-                        is_computable: true,
-                    }
-                    .into()
-                }
-                EmbeddedFunction::ReadBytesFromFile(argument) => {
-                    let mut argument_compilation_context = compilation_context.clone();
-                    argument_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::ReadBytesFromFile]);
-                    let compiled_argument = self.compile_with_context(
-                        argument,
-                        &argument_compilation_context,
+                            ))
+                        },
+                        true,
+                        false,
+                    )?,
+                    EmbeddedFunction::ReadBytesFromFile => self.compile_embedded_function_call(
+                        compilation_context,
                         global_compilation_context,
-                    )?;
-                    if !compiled_argument.is_computable {
-                        return Err(anyhow!(
-                            "expected computable argument, found {argument:#?} at {:#?}",
-                            argument_compilation_context.path
-                        ));
-                    }
-                    resolve_type(
-                        &compiled_argument.node.r#type,
+                        embedded_function_call,
                         &Type::String,
-                        &argument_compilation_context,
-                    )?;
-                    NodeAndMetadata {
-                        external_constants_name_clustered_indices: compiled_argument
-                            .external_constants_name_clustered_indices
-                            .clone(),
-                        node: Node {
-                            content: Content::EmbeddedFunctionCall {
-                                path: Some(
-                                    compilation_context
-                                        .path
-                                        .extended([PathSegment::ReadBytesFromFile]),
-                                ),
-                                embedded_function: Box::new(
-                                    intermediate_representation::EmbeddedFunction::ReadBytesFromFile(
-                                        compiled_argument.node.clone(),
-                                    ),
-                                ),
-                            },
-                            r#type: Type::Bytes,
-                        }
-                        .into(),
-                        is_pure: false,
-                        is_computable: true,
-                    }
-                    .into()
-                }
-                EmbeddedFunction::StringFromBytes(argument) => {
-                    let mut argument_compilation_context = compilation_context.clone();
-                    argument_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::StringFromBytes]);
-                    let compiled_argument = self.compile_with_context(
-                        argument,
-                        &argument_compilation_context,
+                        &|_| {
+                            Ok(Type::Union(
+                                BTreeSet::from_iter([Type::Bytes, Type::Null]).into(),
+                            ))
+                        },
+                        false,
+                        false,
+                    )?,
+                    EmbeddedFunction::StringFromBytes => self.compile_embedded_function_call(
+                        compilation_context,
                         global_compilation_context,
-                    )?;
-                    if !compiled_argument.is_computable {
-                        return Err(anyhow!(
-                            "expected computable argument, found {argument:#?} at {:#?}",
-                            argument_compilation_context.path
-                        ));
-                    }
-                    resolve_type(
-                        &compiled_argument.node.r#type,
+                        embedded_function_call,
                         &Type::Bytes,
-                        &argument_compilation_context,
-                    )?;
-                    NodeAndMetadata {
-                        external_constants_name_clustered_indices: compiled_argument
-                            .external_constants_name_clustered_indices
-                            .clone(),
-                        node: Node {
-                            content: Content::EmbeddedFunctionCall {
-                                path: Some(
-                                    compilation_context
-                                        .path
-                                        .extended([PathSegment::StringFromBytes]),
-                                ),
-                                embedded_function: Box::new(
-                                    intermediate_representation::EmbeddedFunction::StringFromBytes(
-                                        compiled_argument.node.clone(),
-                                    ),
-                                ),
-                            },
-                            r#type: Type::String,
-                        }
-                        .into(),
-                        is_pure: true,
-                        is_computable: true,
-                    }
-                    .into()
+                        &|_| {
+                            Ok(Type::Union(
+                                BTreeSet::from_iter([Type::String, Type::Null]).into(),
+                            ))
+                        },
+                        false,
+                        false,
+                    )?,
                 }
-            },
+            }
             Program::Match {
                 r#match,
                 r#as,

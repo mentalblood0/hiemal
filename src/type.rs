@@ -57,30 +57,37 @@ impl Hash for MaybeType {
 
 static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
     [
-        Type::Array(Box::new(Type::Union(
+        Type::Union(
             BTreeSet::from_iter([
-                Type::String,
-                Type::Object(
-                    BTreeMap::from_iter([("raw string".to_string().into(), Type::String)]).into(),
-                ),
-                Type::Constructed(Constructed::OneOf),
-                Type::Constructed(Constructed::CharacterExceptFromString),
-                Type::Constructed(Constructed::Repeat),
-                Type::Constructed(Constructed::Group),
-                Type::LiteralString("character".into()),
-                Type::LiteralString("whitespace character".into()),
-                Type::LiteralString("non-whitespace character".into()),
-                Type::LiteralString("digit".into()),
-                Type::LiteralString("non-digit".into()),
-                Type::LiteralString("word character".into()),
-                Type::LiteralString("non-word character".into()),
-                Type::LiteralString("start of string".into()),
-                Type::LiteralString("end of string".into()),
-                Type::LiteralString("word boundary".into()),
-                Type::LiteralString("non-word boundary".into()),
+                Type::GenericLiteralString,
+                Type::Array(Box::new(Type::Union(
+                    BTreeSet::from_iter([
+                        Type::String,
+                        Type::Object(
+                            BTreeMap::from_iter([("raw string".to_string().into(), Type::String)])
+                                .into(),
+                        ),
+                        Type::Constructed(Constructed::OneOf),
+                        Type::Constructed(Constructed::CharacterExceptFromString),
+                        Type::Constructed(Constructed::Repeat),
+                        Type::Constructed(Constructed::Group),
+                        Type::LiteralString("character".into()),
+                        Type::LiteralString("whitespace character".into()),
+                        Type::LiteralString("non-whitespace character".into()),
+                        Type::LiteralString("digit".into()),
+                        Type::LiteralString("non-digit".into()),
+                        Type::LiteralString("word character".into()),
+                        Type::LiteralString("non-word character".into()),
+                        Type::LiteralString("start of string".into()),
+                        Type::LiteralString("end of string".into()),
+                        Type::LiteralString("word boundary".into()),
+                        Type::LiteralString("non-word boundary".into()),
+                    ])
+                    .into(),
+                ))),
             ])
             .into(),
-        ))),
+        ),
         Type::Object(
             BTreeMap::from_iter([(
                 "one of".to_string().into(),
@@ -201,6 +208,8 @@ pub enum Type {
     LiteralFalse,
     #[serde(rename = "literal string")]
     LiteralString(#[serde(deserialize_with = "deserialize_rope")] ropey::Rope),
+    #[serde(rename = "generic literal string")]
+    GenericLiteralString,
     #[serde(rename = "bytes")]
     Bytes,
     #[serde(rename = "constructed")]
@@ -361,7 +370,10 @@ impl<'a> Type {
             true
         } else {
             match (self, other) {
-                (Type::Any, _) | (Type::String, Type::LiteralString(_)) => true,
+                (Type::Any, _)
+                | (Type::String, Type::LiteralString(_))
+                | (Type::String, Type::GenericLiteralString)
+                | (Type::LiteralString(_), Type::GenericLiteralString) => true,
                 (Type::Constructed(self_constructed), Type::Constructed(other_constructed)) => {
                     self_constructed.inner().contains(other_constructed.inner())
                 }
@@ -804,6 +816,12 @@ impl<'a> Type {
                 }
                 (Type::String, Type::LiteralString(literal_string))
                 | (Type::LiteralString(literal_string), Type::String) => {
+                    Some(Type::LiteralString(literal_string.clone()))
+                }
+                (Type::String, Type::GenericLiteralString)
+                | (Type::GenericLiteralString, Type::String) => Some(Type::GenericLiteralString),
+                (Type::GenericLiteralString, Type::LiteralString(literal_string))
+                | (Type::LiteralString(literal_string), Type::GenericLiteralString) => {
                     Some(Type::LiteralString(literal_string.clone()))
                 }
                 (Type::Constructed(self_constructed), Type::Constructed(other_constructed)) => {

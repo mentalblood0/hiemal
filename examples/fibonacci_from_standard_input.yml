@@ -13,7 +13,8 @@ functions:
 compute:
   fibonacci::
     match:
-      parse yaml: standard input
+      parse yaml:
+        string from bytes: { read bytes from standard input: all }
     as: _
     cases:
       - - number

@@ -14,9 +14,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     containers::{self, Object, Vector},
     intermediate_representation::{
-        self, Condition, Content, EmbeddedFunction, IntermediateRepresentation, Node, RangeBound,
-        Throughs, ValuePathSegment,
+        self, Condition, Content, IntermediateRepresentation, Node, RangeBound, Throughs,
+        ValuePathSegment,
     },
+    program::EmbeddedFunction,
     r#type::Type,
     value::Value,
 };
@@ -1219,14 +1220,14 @@ impl<'a> ComputationContext<'a> {
                 Ok(constants[*constant_name_clustered_index].clone().unwrap())
             }
             Content::EmbeddedFunctionCall {
-                path,
-                embedded_function,
-            } => match &**embedded_function {
-                EmbeddedFunction::Sum(argument) => Ok(IntermediateValueAndMetadata {
+                path_option,
+                embedded_function_call,
+            } => match embedded_function_call.embedded_function {
+                EmbeddedFunction::Sum => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         Some(Value::Number(
                             self.unroll_intermediate_value(
-                                &self.compute_node(argument, constants)?,
+                                &self.compute_node(&embedded_function_call.argument, constants)?,
                             )?
                             .as_ref()
                             .as_ref()
@@ -1247,10 +1248,12 @@ impl<'a> ComputationContext<'a> {
                     r#type: Type::Number,
                 }
                 .into()),
-                EmbeddedFunction::Concat(argument) => {
+                EmbeddedFunction::Concat => {
                     let mut result_rope = ropey::Rope::default();
                     for appendix in self
-                        .unroll_intermediate_value(&self.compute_node(argument, constants)?)?
+                        .unroll_intermediate_value(
+                            &self.compute_node(&embedded_function_call.argument, constants)?,
+                        )?
                         .as_ref()
                         .as_ref()
                         .unwrap()
@@ -1272,15 +1275,15 @@ impl<'a> ComputationContext<'a> {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::String(result_rope)).into(),
                         ),
-                        r#type: Type::Number,
+                        r#type: Type::String,
                     }
                     .into())
                 }
-                EmbeddedFunction::IsSorted(argument) => Ok(IntermediateValueAndMetadata {
+                EmbeddedFunction::IsSorted => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         Some(Value::Bool(
                             self.unroll_intermediate_value(
-                                &self.compute_node(argument, constants)?,
+                                &self.compute_node(&embedded_function_call.argument, constants)?,
                             )?
                             .as_ref()
                             .as_ref()
@@ -1295,25 +1298,67 @@ impl<'a> ComputationContext<'a> {
                     r#type: Type::Bool,
                 }
                 .into()),
-                EmbeddedFunction::StandardInput => {
-                    let mut result = String::new();
-                    std::io::stdin()
-                        .read_to_string(&mut result)
-                        .with_context(|| {
-                            format!("can not compute embedded function at path {:#?}", path)
-                        })?;
+                EmbeddedFunction::ReadBytesFromStandardInput => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let result = if matches!(
+                        computed_argument_unrolled.as_ref().as_ref().unwrap(),
+                        Value::String(_)
+                    ) {
+                        // argument is "all"
+                        let mut result = Vec::new();
+                        if std::io::stdin().read_to_end(&mut result).is_err() {
+                            return Ok(IntermediateValueAndMetadata {
+                                intermediate_value: IntermediateValue::Value(None.into()),
+                                r#type: Type::Null,
+                            }
+                            .into());
+                        }
+                        result
+                    } else {
+                        let read_bytes_amount = (computed_argument_unrolled
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_number()
+                            .unwrap()
+                            .to_f64()
+                            .value() as i64)
+                            .max(0) as usize;
+                        let mut result = vec![0; read_bytes_amount];
+                        if std::io::stdin()
+                            .read_exact(&mut result)
+                            .with_context(|| {
+                                format!(
+                                    "can not compute embedded function at path {:#?}",
+                                    path_option
+                                )
+                            })
+                            .is_err()
+                        {
+                            return Ok(IntermediateValueAndMetadata {
+                                intermediate_value: IntermediateValue::Value(None.into()),
+                                r#type: Type::Null,
+                            }
+                            .into());
+                        };
+                        result
+                    };
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
-                            Some(Value::String(ropey::Rope::from(result))).into(),
+                            Some(Value::Bytes(result.into())).into(),
                         ),
-                        r#type: Type::String,
+                        r#type: Type::Bytes,
                     }
                     .into())
                 }
-                EmbeddedFunction::ParseYaml(argument) => {
+                EmbeddedFunction::ParseYaml => {
                     let result_value = serde_saphyr::from_str::<Option<Value>>(
                         &self
-                            .unroll_intermediate_value(&self.compute_node(argument, constants)?)?
+                            .unroll_intermediate_value(
+                                &self.compute_node(&embedded_function_call.argument, constants)?,
+                            )?
                             .as_ref()
                             .as_ref()
                             .unwrap()
@@ -1322,7 +1367,10 @@ impl<'a> ComputationContext<'a> {
                             .to_string(),
                     )
                     .with_context(|| {
-                        format!("can not compute embedded function at path {:#?}", path)
+                        format!(
+                            "can not compute embedded function at path {:#?}",
+                            path_option.as_ref().unwrap()
+                        )
                     })?;
                     let r#type = Value::r#type(&result_value);
                     Ok(IntermediateValueAndMetadata {
@@ -1331,9 +1379,10 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
-                EmbeddedFunction::KeyValuePairs(argument) => {
-                    let unrolled_argument =
-                        self.unroll_intermediate_value(&self.compute_node(argument, constants)?)?;
+                EmbeddedFunction::KeyValuePairs => {
+                    let unrolled_argument = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Tuple({
@@ -1381,41 +1430,45 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
-                EmbeddedFunction::Flatten(argument) => Ok(IntermediateValueAndMetadata {
-                    intermediate_value: IntermediateValue::Value(
-                        Some(Value::Tuple({
-                            let mut result = Vector::default();
-                            for list in self
-                                .unroll_intermediate_value(
-                                    &self.compute_node(argument, constants)?,
-                                )?
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_tuple()
-                                .unwrap()
-                                .iter()
-                            {
-                                result.append(
-                                    list.as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_tuple()
-                                        .unwrap()
-                                        .iter()
-                                        .cloned(),
-                                );
-                            }
-                            result
-                        }))
-                        .into(),
-                    ),
-                    r#type: node.r#type.clone(),
+                EmbeddedFunction::Flatten => {
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Tuple({
+                                let mut result = Vector::default();
+                                for list in self
+                                    .unroll_intermediate_value(&self.compute_node(
+                                        &embedded_function_call.argument,
+                                        constants,
+                                    )?)?
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_tuple()
+                                    .unwrap()
+                                    .iter()
+                                {
+                                    result.append(
+                                        list.as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_tuple()
+                                            .unwrap()
+                                            .iter()
+                                            .cloned(),
+                                    );
+                                }
+                                result
+                            }))
+                            .into(),
+                        ),
+                        r#type: node.r#type.clone(),
+                    }
+                    .into())
                 }
-                .into()),
-                EmbeddedFunction::MatchGroups(argument) => {
-                    let computed_argument_unrolled =
-                        self.unroll_intermediate_value(&self.compute_node(argument, constants)?)?;
+                EmbeddedFunction::MatchGroups => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
                     let computed_string = computed_argument_unrolled
                         .as_ref()
                         .as_ref()
@@ -1484,48 +1537,70 @@ impl<'a> ComputationContext<'a> {
                         .into())
                     }
                 }
-                EmbeddedFunction::ReadBytesFromFile(argument) => Ok(IntermediateValueAndMetadata {
-                    intermediate_value: IntermediateValue::Value(
-                        Some(Value::Bytes(
-                            std::fs::read(
-                                self.unroll_intermediate_value(
-                                    &self.compute_node(argument, constants)?,
-                                )?
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap()
-                                .to_string(),
-                            )?
+                EmbeddedFunction::ReadBytesFromFile => {
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Bytes(
+                                if let Ok(result) = std::fs::read(
+                                    self.unroll_intermediate_value(&self.compute_node(
+                                        &embedded_function_call.argument,
+                                        constants,
+                                    )?)?
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_string()
+                                    .unwrap()
+                                    .to_string(),
+                                ) {
+                                    result
+                                } else {
+                                    return Ok(IntermediateValueAndMetadata {
+                                        intermediate_value: IntermediateValue::Value(None.into()),
+                                        r#type: Type::Null,
+                                    }
+                                    .into());
+                                }
+                                .into(),
+                            ))
                             .into(),
-                        ))
-                        .into(),
-                    ),
-                    r#type: Type::Bytes,
+                        ),
+                        r#type: Type::Bytes,
+                    }
+                    .into())
                 }
-                .into()),
-                EmbeddedFunction::StringFromBytes(argument) => Ok(IntermediateValueAndMetadata {
-                    intermediate_value: IntermediateValue::Value(
-                        Some(Value::String(
-                            String::from_utf8(
-                                self.unroll_intermediate_value(
-                                    &self.compute_node(argument, constants)?,
-                                )?
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_bytes()
-                                .unwrap()
-                                .to_vec(),
-                            )?
+                EmbeddedFunction::StringFromBytes => {
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::String(
+                                if let Ok(result) = String::from_utf8(
+                                    self.unroll_intermediate_value(&self.compute_node(
+                                        &embedded_function_call.argument,
+                                        constants,
+                                    )?)?
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_bytes()
+                                    .unwrap()
+                                    .to_vec(),
+                                ) {
+                                    result
+                                } else {
+                                    return Ok(IntermediateValueAndMetadata {
+                                        intermediate_value: IntermediateValue::Value(None.into()),
+                                        r#type: Type::Null,
+                                    }
+                                    .into());
+                                }
+                                .into(),
+                            ))
                             .into(),
-                        ))
-                        .into(),
-                    ),
-                    r#type: Type::String,
+                        ),
+                        r#type: Type::String,
+                    }
+                    .into())
                 }
-                .into()),
             },
             Content::UserFunctionCall { arguments, body } => {
                 let mut result_constants = constants.clone();
@@ -1705,7 +1780,11 @@ impl<'a> ComputationContext<'a> {
                             }
                         }
                     }
-                    panic!("no case from {cases:#?} matches computed value");
+                    panic!(
+                        "no case from {cases:#?} matches computed value \
+                         {computed_match_unrolled_lazy_cell:#?} of type {:#?}",
+                        computed_match.r#type
+                    );
                 }
             }
             Content::Map(intermediate_representation_content) => {
@@ -1762,6 +1841,11 @@ impl<'a> ComputationContext<'a> {
                 {
                     if filter_concrete_type.contains(&computed_filter.r#type) {
                         throughs_option = Some(throughs.clone());
+                    } else {
+                        // println!(
+                        //     "{filter_concrete_type:#?} does not contain {:#?}",
+                        //     computed_filter.r#type
+                        // );
                     }
                 }
                 let r#type =

@@ -7,7 +7,7 @@ use serde_with::{DisplayFromStr, serde_as};
 
 use crate::{
     containers::{self, Vector},
-    program::Path,
+    program::{EmbeddedFunction, Path},
     r#type::Type,
     value::{deserialize_bytes, serialize_bytes},
 };
@@ -72,8 +72,8 @@ pub enum Content {
     },
     Constant(usize),
     EmbeddedFunctionCall {
-        path: Option<Path>,
-        embedded_function: Box<EmbeddedFunction>,
+        path_option: Option<Path>,
+        embedded_function_call: EmbeddedFunctionCall,
     },
     UserFunctionCall {
         arguments: Vec<ConstantDefinition>,
@@ -133,19 +133,10 @@ pub enum Throughs {
     },
 }
 
-#[repr(u8)]
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
-pub enum EmbeddedFunction {
-    Sum(Arc<Node>),
-    IsSorted(Arc<Node>),
-    StandardInput,
-    ParseYaml(Arc<Node>),
-    KeyValuePairs(Arc<Node>),
-    Flatten(Arc<Node>),
-    MatchGroups(Arc<Node>),
-    Concat(Arc<Node>),
-    ReadBytesFromFile(Arc<Node>),
-    StringFromBytes(Arc<Node>),
+pub struct EmbeddedFunctionCall {
+    pub embedded_function: EmbeddedFunction,
+    pub argument: Arc<Node>,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

@@ -37,7 +37,11 @@ compute:
           found:
             - read bytes from file: .gitignore
             - string from bytes:
-                read bytes from file: .gitignore
+                match: { read bytes from file: .gitignore }
+                as: _
+                cases:
+                  - [null, { bytes: "" }]
+                  - [bytes, _]
           expected:
             - bytes: 2f7461726765740a
             - |
