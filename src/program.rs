@@ -236,6 +236,8 @@ pub enum EmbeddedFunction {
     ReadBytesFromFile,
     #[serde(rename = "string from bytes")]
     StringFromBytes,
+    #[serde(rename = "write to file")]
+    WriteToFile,
 }
 
 #[repr(u8)]

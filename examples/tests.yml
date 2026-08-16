@@ -32,6 +32,17 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test write to file:
+        assert equal::
+          found:
+            fold:
+              - write to file:
+                  path: test write to file.txt
+                  content: lalala
+            starting with: null
+            as: _
+            through: { read bytes from file: test write to file.txt }
+          expected: { bytes: 6c616c616c61 }
       test read from file:
         assert equal::
           found:

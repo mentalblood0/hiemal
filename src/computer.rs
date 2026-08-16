@@ -1,8 +1,12 @@
-use std::cell::LazyCell;
-use std::collections::BTreeMap;
-use std::str::FromStr;
-use std::sync::LazyLock;
-use std::{borrow::Cow, hash::Hash, hash::Hasher, io::Read, sync::Arc};
+use std::{
+    borrow::Cow,
+    cell::LazyCell,
+    collections::BTreeMap,
+    hash::{Hash, Hasher},
+    io::{BufWriter, Read, Write},
+    str::FromStr,
+    sync::{Arc, LazyLock},
+};
 
 use anyhow::{Context, Result, anyhow};
 use dashu::Rational;
@@ -265,6 +269,20 @@ where
     } else {
         or_else()
     }
+}
+
+macro_rules! ok_or_return_false_value {
+    ($block:block) => {
+        if let Ok(result) = $block {
+            result
+        } else {
+            return Ok(IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Value(Some(Value::Bool(false)).into()),
+                r#type: Type::LiteralFalse,
+            }
+            .into());
+        }
+    };
 }
 
 impl<'a> ComputationContext<'a> {
@@ -1598,6 +1616,63 @@ impl<'a> ComputationContext<'a> {
                             .into(),
                         ),
                         r#type: Type::String,
+                    }
+                    .into())
+                }
+                EmbeddedFunction::WriteToFile => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let computed_path = std::path::PathBuf::from(
+                        computed_argument_unrolled
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_object()
+                            .unwrap()
+                            .get(&"path".to_string())
+                            .unwrap()
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_string()
+                            .unwrap()
+                            .to_string(),
+                    );
+                    let computed_content = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"content".to_string())
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap();
+                    if let Some(parent) = computed_path.parent() {
+                        ok_or_return_false_value!({ std::fs::create_dir_all(parent) });
+                    }
+                    match computed_content {
+                        Value::String(string) => {
+                            let file =
+                                ok_or_return_false_value!({ std::fs::File::create(computed_path) });
+                            let mut writer = BufWriter::new(file);
+                            for chunk in string.chunks() {
+                                ok_or_return_false_value!({ writer.write_all(chunk.as_bytes()) });
+                            }
+                            ok_or_return_false_value!({ writer.flush() });
+                        }
+                        Value::Bytes(bytes) => {
+                            ok_or_return_false_value!({ std::fs::write(computed_path, bytes) });
+                        }
+                        _ => panic!(),
+                    }
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Bool(true)).into(),
+                        ),
+                        r#type: Type::LiteralTrue,
                     }
                     .into())
                 }

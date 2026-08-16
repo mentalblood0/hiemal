@@ -1108,6 +1108,26 @@ impl Compiler {
                                 BTreeSet::from_iter([Type::String, Type::Null]).into(),
                             ))
                         },
+                        true,
+                        false,
+                    )?,
+                    EmbeddedFunction::WriteToFile => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &Type::Object(
+                            BTreeMap::from_iter([
+                                (
+                                    "content".to_string().into(),
+                                    Type::Union(
+                                        BTreeSet::from_iter([Type::Bytes, Type::String]).into(),
+                                    ),
+                                ),
+                                ("path".to_string().into(), Type::String),
+                            ])
+                            .into(),
+                        ),
+                        &|_| Ok(Type::Bool),
                         false,
                         false,
                     )?,

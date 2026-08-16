@@ -56,7 +56,9 @@ pub fn run(target_option: &Option<String>, output_writer: &mut impl Write) -> Re
             };
             let result = time_it!("compiled", { compiler.compile(&program)? });
             time_it!("cached", {
-                std::fs::create_dir_all(cached_intermediate_representation_path.parent().unwrap())?;
+                if let Some(parent) = cached_intermediate_representation_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
                 let mut encoder = lz4_flex::frame::FrameEncoder::new(
                     std::fs::OpenOptions::new()
                         .create(true)
