@@ -50,6 +50,18 @@ hiemal examples/include.yml
             exactly: 13
         name: horror
       - word boundary
+- read bytes from file: .gitignore
+- string from bytes:
+    match: { read bytes from file: .gitignore }
+    as: _
+    cases:
+      - [null, { bytes: "" }]
+      - [bytes, _]
+- write to file:
+    path: test write to file.txt
+    content: lalala
+- read bytes from file: test write to file.txt
+- remove file: test write to file.txt
 ```
 
 <details>
@@ -394,6 +406,29 @@ through:
       cases:
         - [number, _]
         - [string, 0]
+```
+
+#### pipe as
+
+```yaml
+pipe:
+  - { sum: [1, 2] }
+  - { sum: [_, 3] }
+  - { sum: [_, 4] }
+as: _
+```
+
+```yaml
+from:
+  pipe:
+    - starting with: 0
+      next: { sum: [_, 1] }
+    - starting with: 0
+      next: { sum: [_, { from: { constant: input }, at: [10], default: 0 }] }
+    - starting with: 0
+      next: { sum: [_, { from: { constant: input }, at: [10], default: 0 }] }
+  as: input
+at: [1]
 ```
 
 ## Name

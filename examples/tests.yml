@@ -39,8 +39,8 @@ compute:
               - write to file:
                   path: test write to file.txt
                   content: lalala
-              - { read bytes from file: test write to file.txt }
-              - - { remove file: test write to file.txt }
+              - read bytes from file: test write to file.txt
+              - - remove file: test write to file.txt
                 - _
             as: _
           expected:
