@@ -35,14 +35,40 @@ compute:
       test write to file:
         assert equal::
           found:
-            fold:
+            pipe:
               - write to file:
                   path: test write to file.txt
                   content: lalala
-            starting with: null
+              - { read bytes from file: test write to file.txt }
+              - - { remove file: test write to file.txt }
+                - _
             as: _
-            through: { read bytes from file: test write to file.txt }
-          expected: { bytes: 6c616c616c61 }
+          expected:
+            - true
+            - { bytes: 6c616c616c61 }
+      test pipe lazy:
+        assert equal::
+          found:
+            from:
+              pipe:
+                - starting with: 0
+                  next: { sum: [_, 1] }
+                - starting with: 0
+                  next: { sum: [_, { from: { constant: input }, at: [10], default: 0 }] }
+                - starting with: 0
+                  next: { sum: [_, { from: { constant: input }, at: [10], default: 0 }] }
+              as: input
+            at: [1]
+          expected: 100
+      test pipe:
+        assert equal::
+          found:
+            pipe:
+              - { sum: [1, 2] }
+              - { sum: [_, 3] }
+              - { sum: [_, 4] }
+            as: _
+          expected: 10
       test read from file:
         assert equal::
           found:

@@ -99,6 +99,10 @@ pub enum Content {
         fold_concrete_type_and_throughs: Vec<(Type, Throughs)>,
     },
     Sequence(Arc<Sequence>),
+    Pipe {
+        pipe: Vec<Arc<Node>>,
+        as_constant_name_clustered_index_option: Option<usize>,
+    },
     Object(BTreeMap<Arc<String>, Arc<Node>>),
     Value(Arc<Option<Value>>),
 }

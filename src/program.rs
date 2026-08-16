@@ -71,6 +71,11 @@ pub enum Program {
         r#as: Arc<String>,
         next: Box<Program>,
     },
+    Pipe {
+        pipe: Vec<Arc<Program>>,
+        #[serde(default = "default_pipe_as")]
+        r#as: Option<Arc<String>>,
+    },
     BytesValue {
         bytes: String,
     },
@@ -108,6 +113,10 @@ pub fn default_fold_as() -> Arc<String> {
 
 pub fn default_sequence_as() -> Arc<String> {
     DEFAULT_ARGUMENT_NAME.to_string().into()
+}
+
+pub fn default_pipe_as() -> Option<Arc<String>> {
+    None
 }
 
 #[repr(u8)]
@@ -238,6 +247,8 @@ pub enum EmbeddedFunction {
     StringFromBytes,
     #[serde(rename = "write to file")]
     WriteToFile,
+    #[serde(rename = "remove file")]
+    RemoveFile,
 }
 
 #[repr(u8)]
@@ -255,6 +266,8 @@ pub enum PathSegment {
     Match,
     #[serde(rename = "map")]
     Map,
+    #[serde(rename = "pipe")]
+    Pipe,
     #[serde(rename = "filter")]
     Filter,
     #[serde(rename = "fold")]

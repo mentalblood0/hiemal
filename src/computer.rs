@@ -271,16 +271,20 @@ where
     }
 }
 
+fn false_value() -> Result<Arc<IntermediateValueAndMetadata>> {
+    Ok(IntermediateValueAndMetadata {
+        intermediate_value: IntermediateValue::Value(Some(Value::Bool(false)).into()),
+        r#type: Type::LiteralFalse,
+    }
+    .into())
+}
+
 macro_rules! ok_or_return_false_value {
     ($block:block) => {
         if let Ok(result) = $block {
             result
         } else {
-            return Ok(IntermediateValueAndMetadata {
-                intermediate_value: IntermediateValue::Value(Some(Value::Bool(false)).into()),
-                r#type: Type::LiteralFalse,
-            }
-            .into());
+            return false_value();
         }
     };
 }
@@ -1676,6 +1680,31 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
+                EmbeddedFunction::RemoveFile => {
+                    if std::fs::remove_file(std::path::PathBuf::from(
+                        self.unroll_intermediate_value(
+                            &self.compute_node(&embedded_function_call.argument, constants)?,
+                        )?
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .to_string(),
+                    ))
+                    .is_err()
+                    {
+                        false_value()
+                    } else {
+                        Ok(IntermediateValueAndMetadata {
+                            intermediate_value: IntermediateValue::Value(
+                                Some(Value::Bool(true)).into(),
+                            ),
+                            r#type: Type::LiteralTrue,
+                        }
+                        .into())
+                    }
+                }
             },
             Content::UserFunctionCall { arguments, body } => {
                 let mut result_constants = constants.clone();
@@ -1916,11 +1945,6 @@ impl<'a> ComputationContext<'a> {
                 {
                     if filter_concrete_type.contains(&computed_filter.r#type) {
                         throughs_option = Some(throughs.clone());
-                    } else {
-                        // println!(
-                        //     "{filter_concrete_type:#?} does not contain {:#?}",
-                        //     computed_filter.r#type
-                        // );
                     }
                 }
                 let r#type =
@@ -2037,6 +2061,29 @@ impl<'a> ComputationContext<'a> {
                     r#type: node.r#type.clone(),
                 }
                 .into())
+            }
+            Content::Pipe {
+                pipe,
+                as_constant_name_clustered_index_option,
+            } => {
+                let mut previous_pipe_element_computed_option = None;
+                for pipe_element in pipe {
+                    if let Some(as_constant_name_clustered_index) =
+                        as_constant_name_clustered_index_option
+                        && let Some(previous_pipe_element_computed) =
+                            previous_pipe_element_computed_option
+                    {
+                        let mut pipe_element_constants = constants.clone();
+                        pipe_element_constants[*as_constant_name_clustered_index] =
+                            Some(previous_pipe_element_computed);
+                        previous_pipe_element_computed_option =
+                            Some(self.compute_node(pipe_element, &pipe_element_constants)?);
+                    } else {
+                        previous_pipe_element_computed_option =
+                            Some(self.compute_node(pipe_element, constants)?);
+                    };
+                }
+                Ok(previous_pipe_element_computed_option.unwrap())
             }
             Content::Object(object) => {
                 let mut result = containers::Object::default();
