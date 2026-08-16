@@ -36,7 +36,7 @@ hiemal examples/include.yml
 - is sorted: [1, 2, 3]
 - key-value pairs: {a: 1, b: 2, c: 3}
 - flatten: [[1, a], [3], [4, b, 6]]
-- standard input
+- read bytes from standard input: all
 - parse yaml: "[1, 2, string, 3, 4]"
 - match groups:
     string: I categorically deny having triskaidekaphobia.
