@@ -254,6 +254,8 @@ pub enum KnownType {
         )]
         ropey::Rope,
     ),
+    #[serde(rename = "generic literal string")]
+    GenericLiteralString,
     #[serde(rename = "bytes")]
     Bytes,
     #[serde(rename = "constructed")]
