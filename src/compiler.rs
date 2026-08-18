@@ -704,23 +704,25 @@ impl Compiler {
                     global_compilation_context,
                 )?;
                 if let Some(with_capabilities) = with_capabilities {
-                    let lacking_capabilities =
+                    let undefined_capabilities =
                         compiled_compute.node.r#type.capabilities - *with_capabilities;
-                    if !lacking_capabilities.is_empty() {
+                    if !undefined_capabilities.is_empty() {
                         return Err(anyhow!(
-                            "expected to use only capabilities {:#?}, found usage of capabilities \
-                             {lacking_capabilities:#?}",
-                            with_capabilities
+                            "expected usage of only capabilities {:#?}, found usage of undefined \
+                             capabilities {undefined_capabilities:#?} at {:#?}",
+                            with_capabilities,
+                            compute_compilation_context.path
                         ));
                     }
                 } else if let Some(without_capabilities) = without_capabilities {
-                    let lacking_capabilities =
+                    let undefined_capabilities =
                         compiled_compute.node.r#type.capabilities & *without_capabilities;
-                    if !lacking_capabilities.is_empty() {
+                    if !undefined_capabilities.is_empty() {
                         return Err(anyhow!(
-                            "expected to use any of capabilities except {:#?}, found usage of \
-                             capabilities {lacking_capabilities:#?}",
-                            without_capabilities
+                            "expected usage of any of capabilities except {:#?}, found usage of \
+                             undefined capabilities {undefined_capabilities:#?} at {:#?}",
+                            without_capabilities,
+                            compute_compilation_context.path
                         ));
                     }
                 }
