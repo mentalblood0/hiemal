@@ -147,7 +147,6 @@ pub struct EmbeddedFunctionCall {
 pub struct UserFunction {
     pub external_constants_name_clustered_indices: Vec<usize>,
     pub node: Arc<Node>,
-    pub is_pure: bool,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

@@ -210,6 +210,8 @@ pub enum Capability {
     RemoveFile,
     #[serde(rename = "read file")]
     ReadFile,
+    #[serde(rename = "read standard input")]
+    ReadStandardInput,
     #[serde(rename = "read network")]
     ReadNetwork,
     #[serde(rename = "write network")]
@@ -219,11 +221,11 @@ pub enum Capability {
 #[derive(Deserialize, Serialize, Debug, Clone, Default, Eq)]
 pub struct Type {
     #[serde(flatten)]
-    kind: TypeKind,
+    pub kind: TypeKind,
     #[serde(skip)]
-    capabilities: EnumSet<Capability>,
+    pub capabilities: EnumSet<Capability>,
     #[serde(skip)]
-    is_computable: bool,
+    pub is_computable: bool,
 }
 
 impl PartialEq for Type {
@@ -432,6 +434,22 @@ impl From<BTreeSet<Type>> for Type {
                     }
                 }
             }
+        }
+    }
+}
+
+impl From<Vec<Type>> for Type {
+    fn from(tuple_types: Vec<Type>) -> Type {
+        let mut result_capabilities = EnumSet::default();
+        let mut result_is_computable = true;
+        for union_type in tuple_types.iter() {
+            result_capabilities |= union_type.capabilities;
+            result_is_computable &= union_type.is_computable;
+        }
+        Type {
+            kind: TypeKind::Tuple(tuple_types.into()),
+            capabilities: result_capabilities,
+            is_computable: result_is_computable,
         }
     }
 }
@@ -764,6 +782,20 @@ impl<'a> TypeKind {
 }
 
 impl<'a> Type {
+    pub fn with_kind(&self, kind: TypeKind) -> Self {
+        Self {
+            kind,
+            capabilities: self.capabilities,
+            is_computable: self.is_computable,
+        }
+    }
+
+    pub fn with_intersected_properties_from(mut self, another_type: &Type) -> Self {
+        self.capabilities |= another_type.capabilities;
+        self.is_computable = self.is_computable && another_type.is_computable;
+        self
+    }
+
     pub fn flatten(&self) -> Result<Type> {
         match &self.kind {
             TypeKind::Constructed(constructed) => constructed.inner().flatten(),
@@ -773,20 +805,14 @@ impl<'a> Type {
                     result_union_types.insert(self_union_type.flatten()?);
                 }
                 let result_union_types_arc = Arc::new(result_union_types);
-                Ok((
-                    TypeKind::Union(result_union_types_arc.clone()),
-                    result_union_types_arc.iter(),
-                )
-                    .into())
+                Ok(self.with_kind(TypeKind::Union(result_union_types_arc.clone())))
             }
             TypeKind::Array(element_type) => match &element_type.kind {
-                TypeKind::Array(element_element_type) => Ok((
-                    TypeKind::Array(element_element_type.clone()),
-                    std::iter::once(&**element_element_type),
-                )
-                    .into()),
-                TypeKind::Tuple(element_elements_types) => Ok((
-                    TypeKind::Array(Box::new(
+                TypeKind::Array(element_element_type) => {
+                    Ok(self.with_kind(TypeKind::Array(element_element_type.clone())))
+                }
+                TypeKind::Tuple(element_elements_types) => {
+                    Ok(self.with_kind(TypeKind::Array(Box::new(
                         (
                             TypeKind::Union(
                                 BTreeSet::from_iter(element_elements_types.iter().cloned()).into(),
@@ -794,10 +820,8 @@ impl<'a> Type {
                             element_elements_types.iter(),
                         )
                             .into(),
-                    )),
-                    element_elements_types.iter(),
-                )
-                    .into()),
+                    ))))
+                }
                 TypeKind::Union(element_union_types) => {
                     let mut result_element_union_types = BTreeSet::new();
                     for element_union_type in element_union_types.as_ref() {
@@ -822,17 +846,9 @@ impl<'a> Type {
                             }
                         }
                     }
-                    let mut result_capabilities = EnumSet::default();
-                    let mut result_is_computable = true;
-                    for result_element_type in result_element_union_types.iter() {
-                        result_capabilities |= result_element_type.capabilities;
-                        result_is_computable &= result_element_type.is_computable;
-                    }
-                    Ok(Type {
-                        kind: TypeKind::Array(Box::new(Type::from(result_element_union_types))),
-                        capabilities: result_capabilities,
-                        is_computable: result_is_computable,
-                    })
+                    Ok(self.with_kind(TypeKind::Array(Box::new(Type::from(
+                        result_element_union_types,
+                    )))))
                 }
                 non_sequence_type => Err(anyhow!(
                     "can not flatten {self:#?} because it contains element of type \
@@ -856,11 +872,7 @@ impl<'a> Type {
                         }
                     }
                     let result_elements_types_arc = Arc::new(result_elements_types);
-                    Ok((
-                        TypeKind::Tuple(result_elements_types_arc.clone()),
-                        result_elements_types_arc.iter(),
-                    )
-                        .into())
+                    Ok(self.with_kind(TypeKind::Tuple(result_elements_types_arc.clone())))
                 } else {
                     let mut result_elements_types = BTreeSet::new();
                     for element_type in elements_types.as_ref() {
@@ -905,17 +917,11 @@ impl<'a> Type {
                             }
                         }
                     }
-                    let mut result_capabilities = EnumSet::default();
-                    let mut result_is_computable = true;
-                    for result_element_type in result_elements_types.iter() {
-                        result_capabilities |= result_element_type.capabilities;
-                        result_is_computable &= result_element_type.is_computable;
-                    }
-                    Ok(Type {
-                        kind: TypeKind::Array(Box::new(Type::from(result_elements_types))),
-                        capabilities: result_capabilities,
-                        is_computable: result_is_computable,
-                    })
+                    Ok(
+                        self.with_kind(TypeKind::Array(Box::new(Type::from(
+                            result_elements_types,
+                        )))),
+                    )
                 }
             }
             _ => Err(anyhow!("can not flatten {self:#?}")),

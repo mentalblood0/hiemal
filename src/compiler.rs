@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Error, Result, anyhow};
+use enumset::enum_set;
 use gxhash::HashMap;
 use regex::Regex;
 
@@ -21,7 +22,7 @@ use crate::{
         self, AtSegment, Condition, EmbeddedFunction, EmbeddedFunctionCall, Path, PathSegment,
         Program, RangeBound,
     },
-    r#type::{Constructed, MaybeType, Type, TypeAtResult},
+    r#type::{Capability, Constructed, MaybeType, Type, TypeAtResult, TypeKind},
     value::Value,
 };
 
@@ -34,9 +35,9 @@ struct CompilationContext {
 }
 
 impl CompilationContext {
-    fn error(&self, got_type: &Type, expected_type: &Type) -> Error {
+    fn error(&self, got_type: &Type, expected_type_kind: &TypeKind) -> Error {
         anyhow!(
-            "expected {expected_type:#?}, found {got_type:#?} at {:#?}",
+            "expected {expected_type_kind:#?}, found {got_type:#?} at {:#?}",
             self.path,
         )
     }
@@ -50,108 +51,131 @@ pub struct ConstantDefinition {
 
 fn resolve_type(
     got_type: &Type,
-    expected_type: &Type,
+    expected_type_kind: &TypeKind,
     compilation_context: &CompilationContext,
 ) -> Result<Type> {
-    if expected_type == &Type::Any || expected_type.contains(got_type) {
+    if expected_type_kind == &TypeKind::Any || expected_type_kind.contains(&got_type.kind) {
         Ok(got_type.clone())
     } else {
-        match (got_type, expected_type) {
-            (Type::Unknown(unknown_type), expected_type)
-            | (expected_type, Type::Unknown(unknown_type)) => {
+        match (&got_type.kind, expected_type_kind) {
+            (TypeKind::Unknown(unknown_type), expected_type_kind)
+            | (expected_type_kind, TypeKind::Unknown(unknown_type)) => {
                 let mut unknown_type_write_guard = unknown_type.lockable_internals.write();
                 match &*unknown_type_write_guard {
-                    Some(got_type) => resolve_type(got_type, expected_type, compilation_context),
+                    Some(got_type) => {
+                        resolve_type(got_type, expected_type_kind, compilation_context)
+                    }
                     None => {
-                        *unknown_type_write_guard = Some(expected_type.clone());
-                        Ok(expected_type.clone())
+                        let result_type = Type {
+                            kind: expected_type_kind.clone(),
+                            capabilities: got_type.capabilities.clone(),
+                            is_computable: got_type.is_computable,
+                        };
+                        *unknown_type_write_guard = Some(result_type.clone());
+                        Ok(result_type)
                     }
                 }
             }
-            (Type::Constructed(got_constructed), Type::Constructed(expected_constructed)) => {
-                resolve_type(
-                    got_constructed.inner(),
-                    expected_constructed.inner(),
-                    compilation_context,
-                )
-            }
-            (Type::Constructed(got_constructed), _) => {
-                resolve_type(got_constructed.inner(), expected_type, compilation_context)
-            }
-            (_, Type::Constructed(expected_constructed)) => {
-                resolve_type(got_type, expected_constructed.inner(), compilation_context)
-            }
-            (Type::Array(got_element_type), Type::Array(expected_element_type)) => {
+            (
+                TypeKind::Constructed(got_constructed),
+                TypeKind::Constructed(expected_constructed),
+            ) => resolve_type(
+                got_constructed.inner(),
+                &expected_constructed.inner().kind,
+                compilation_context,
+            ),
+            (TypeKind::Constructed(got_constructed), _) => resolve_type(
+                got_constructed.inner(),
+                expected_type_kind,
+                compilation_context,
+            ),
+            (_, TypeKind::Constructed(expected_constructed)) => resolve_type(
+                got_type,
+                &expected_constructed.inner().kind,
+                compilation_context,
+            ),
+            (TypeKind::Array(got_element_type), TypeKind::Array(expected_element_type)) => {
                 let mut inner_compilation_context = compilation_context.clone();
                 inner_compilation_context
                     .path
                     .0
                     .push(PathSegment::ArrayIndex(0));
-                Ok(Type::Array(Box::new(resolve_type(
+                Ok(got_type.with_kind(TypeKind::Array(Box::new(resolve_type(
                     got_element_type,
-                    expected_element_type,
+                    &expected_element_type.kind,
                     &inner_compilation_context,
-                )?)))
+                )?))))
             }
-            (Type::Array(got_element_type), Type::Tuple(expected_elements_types)) => {
+            (TypeKind::Array(got_element_type), TypeKind::Tuple(expected_elements_types)) => {
                 let mut result_union_types = BTreeSet::new();
                 for expected_element_type in expected_elements_types.iter() {
                     result_union_types.insert(resolve_type(
                         got_element_type,
-                        expected_element_type,
+                        &expected_element_type.kind,
                         compilation_context,
                     )?);
                 }
-                Ok(Type::Array(Box::new(Type::from(result_union_types))))
+                Ok(got_type.with_kind(TypeKind::Array(Box::new(Type::from(result_union_types)))))
             }
-            (Type::Tuple(got_elements_types), Type::Array(expected_element_type)) => {
+            (TypeKind::Tuple(got_elements_types), TypeKind::Array(expected_element_type)) => {
                 let mut result_tuple_types = Vec::with_capacity(got_elements_types.len());
                 for got_element_type in got_elements_types.iter() {
                     result_tuple_types.push(resolve_type(
                         got_element_type,
-                        expected_element_type,
+                        &expected_element_type.kind,
                         compilation_context,
                     )?);
                 }
-                Ok(Type::Tuple(result_tuple_types.into()))
+                Ok(got_type.with_kind(TypeKind::Tuple(result_tuple_types.into())))
             }
-            (Type::Object(got_inner_types), Type::Object(expected_inner_types)) => {
+            (TypeKind::Object(got_inner_types), TypeKind::Object(expected_inner_types)) => {
                 let mut result_inner_types = BTreeMap::new();
                 for (expected_value_key, expected_value_type) in expected_inner_types.iter() {
                     if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
                         result_inner_types.insert(
                             expected_value_key.clone(),
-                            resolve_type(got_value_type, expected_value_type, compilation_context)?,
+                            resolve_type(
+                                got_value_type,
+                                &expected_value_type.kind,
+                                compilation_context,
+                            )?,
                         );
                     } else {
-                        return Err(compilation_context.error(got_type, expected_type));
+                        return Err(compilation_context.error(got_type, expected_type_kind));
                     }
                 }
-                Ok(Type::Object(result_inner_types.into()))
+                Ok(got_type.with_kind(TypeKind::Object(result_inner_types.into())))
             }
-            (Type::Object(got_inner_types), Type::GenericObject(expected_value_type)) => {
+            (TypeKind::Object(got_inner_types), TypeKind::GenericObject(expected_value_type)) => {
                 let mut result_inner_types = BTreeMap::new();
                 for (got_value_key, got_value_type) in got_inner_types.iter() {
                     result_inner_types.insert(
                         got_value_key.clone(),
-                        resolve_type(got_value_type, expected_value_type, compilation_context)?,
+                        resolve_type(
+                            got_value_type,
+                            &expected_value_type.kind,
+                            compilation_context,
+                        )?,
                     );
                 }
-                Ok(Type::Object(result_inner_types.into()))
+                Ok(got_type.with_kind(TypeKind::Object(result_inner_types.into())))
             }
-            (Type::GenericObject(got_value_type), Type::GenericObject(expected_value_type)) => {
+            (
+                TypeKind::GenericObject(got_value_type),
+                TypeKind::GenericObject(expected_value_type),
+            ) => {
                 let mut inner_compilation_context = compilation_context.clone();
                 inner_compilation_context
                     .path
                     .0
                     .push(PathSegment::ArrayIndex(0));
-                Ok(Type::Array(Box::new(resolve_type(
+                Ok(got_type.with_kind(TypeKind::Array(Box::new(resolve_type(
                     got_value_type,
-                    expected_value_type,
+                    &expected_value_type.kind,
                     &inner_compilation_context,
-                )?)))
+                )?))))
             }
-            (Type::Union(got_union_types), Type::Union(expected_union_types)) => {
+            (TypeKind::Union(got_union_types), TypeKind::Union(expected_union_types)) => {
                 let mut result_union_types = BTreeSet::new();
                 if !got_union_types.is_subset(expected_union_types) {
                     for one_of_got_types in got_union_types.iter() {
@@ -159,7 +183,7 @@ fn resolve_type(
                         for one_of_expected_types in expected_union_types.iter() {
                             if let Ok(result_union_type) = resolve_type(
                                 one_of_got_types,
-                                one_of_expected_types,
+                                &one_of_expected_types.kind,
                                 compilation_context,
                             ) {
                                 result_union_types.insert(result_union_type);
@@ -168,40 +192,40 @@ fn resolve_type(
                             }
                         }
                         if !found {
-                            return Err(compilation_context.error(got_type, expected_type));
+                            return Err(compilation_context.error(got_type, expected_type_kind));
                         }
                     }
                 }
                 Ok(Type::from(result_union_types))
             }
-            (Type::Union(got_union_types), expected_type) => {
+            (TypeKind::Union(got_union_types), _) => {
                 let mut result_union_types = BTreeSet::new();
                 for one_of_got_types in got_union_types.iter() {
                     result_union_types.insert(resolve_type(
                         one_of_got_types,
-                        expected_type,
+                        expected_type_kind,
                         compilation_context,
                     )?);
                 }
-                Ok(Type::Union(result_union_types.into()))
+                Ok(got_type.with_kind(TypeKind::Union(result_union_types.into())))
             }
-            (got_type, Type::Union(expected_union_types)) => {
-                if !expected_union_types.contains(expected_type) {
+            (_, TypeKind::Union(expected_union_types)) => {
+                if !expected_union_types.contains(&expected_type_kind.clone().into()) {
                     for one_of_expected_types in expected_union_types.iter() {
                         if let Ok(result_type) =
-                            resolve_type(got_type, one_of_expected_types, compilation_context)
+                            resolve_type(got_type, &one_of_expected_types.kind, compilation_context)
                         {
                             return Ok(result_type);
                         }
                     }
-                    return Err(compilation_context.error(got_type, expected_type));
+                    return Err(compilation_context.error(got_type, expected_type_kind));
                 }
                 Ok(got_type.clone())
             }
-            (Type::LiteralString(_), Type::String)
-            | (Type::GenericLiteralString, Type::String)
-            | (Type::LiteralString(_), Type::GenericLiteralString) => Ok(got_type.clone()),
-            _ => Err(compilation_context.error(got_type, expected_type)),
+            (TypeKind::LiteralString(_), TypeKind::String)
+            | (TypeKind::GenericLiteralString, TypeKind::String)
+            | (TypeKind::LiteralString(_), TypeKind::GenericLiteralString) => Ok(got_type.clone()),
+            _ => Err(compilation_context.error(got_type, expected_type_kind)),
         }
     }
 }
@@ -210,7 +234,6 @@ fn resolve_type(
 struct NodeAndMetadata {
     node: Arc<Node>,
     external_constants_name_clustered_indices: BTreeSet<usize>,
-    is_pure: bool,
 }
 
 #[derive(Clone, Debug, Eq, Default)]
@@ -253,7 +276,6 @@ impl From<Arc<Program>> for MaybeCompiledProgram {
 struct UserFunctionCallDefinition {
     external_constants_name_clustered_indices: Vec<usize>,
     body: MaybeCompiledProgram,
-    is_pure: bool,
 }
 
 #[derive(Default, Clone, Hash, Debug)]
@@ -432,7 +454,6 @@ impl Compiler {
                     external_constants_name_clustered_indices: user_function_definition
                         .external_constants_name_clustered_indices,
                     node: user_function_definition.body.node.unwrap().clone(),
-                    is_pure: user_function_definition.is_pure,
                 })
                 .collect(),
             unique_constants_names_count: global_compilation_context
@@ -482,9 +503,8 @@ impl Compiler {
         compilation_context: &CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
         embedded_function_call: &EmbeddedFunctionCall,
-        argument_type: &Type,
+        argument_type_kind: &TypeKind,
         get_result_type_from_argument_resolved_type: &F,
-        is_pure: bool,
         is_fallible: bool,
     ) -> Result<Arc<NodeAndMetadata>>
     where
@@ -504,7 +524,7 @@ impl Compiler {
         )?;
         let compiled_argument_resolved_type = resolve_type(
             &compiled_argument.node.r#type,
-            argument_type,
+            &argument_type_kind,
             &argument_compilation_context,
         )?;
         Ok(NodeAndMetadata {
@@ -528,7 +548,6 @@ impl Compiler {
                 )?,
             }
             .into(),
-            is_pure: is_pure && compiled_argument.is_pure,
         }
         .into())
     }
@@ -553,10 +572,9 @@ impl Compiler {
                         ))
                         .into(),
                     ),
-                    r#type: Type::Bytes,
+                    r#type: TypeKind::Bytes.into(),
                 }
                 .into(),
-                is_pure: true,
             }
             .into(),
             Program::Tuple(tuple) => {
@@ -568,17 +586,15 @@ impl Compiler {
                                 Some(intermediate_representation::Value::Tuple(Vector::default()))
                                     .into(),
                             ),
-                            r#type: Type::Tuple(vec![].into()),
+                            r#type: TypeKind::Tuple(vec![].into()).into(),
                         }
                         .into(),
-                        is_pure: true,
                     }
                     .into());
                 }
                 let mut result_content = Vec::with_capacity(tuple.len());
                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();
                 let mut result_elements_types = Vec::with_capacity(tuple.len());
-                let mut is_pure = true;
                 for (element_index, element) in tuple.iter().enumerate() {
                     let mut element_compilation_context = compilation_context.clone();
                     element_compilation_context
@@ -597,17 +613,15 @@ impl Compiler {
                             .external_constants_name_clustered_indices
                             .clone(),
                     );
-                    is_pure &= compiled_element.is_pure;
                 }
                 NodeAndMetadata {
                     external_constants_name_clustered_indices:
                         result_external_constants_name_clustered_indices,
                     node: Node {
                         content: Content::Tuple(result_content),
-                        r#type: Type::Tuple(result_elements_types.into()),
+                        r#type: result_elements_types.into(),
                     }
                     .into(),
-                    is_pure,
                 }
                 .into()
             }
@@ -624,7 +638,6 @@ impl Compiler {
                 let mut new_constants = Vec::with_capacity(constants.len());
                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();
                 let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
-                let mut is_pure = true;
                 for (constant_name, constant_compute_body) in constants.iter() {
                     let mut constant_compilation_context = compilation_context.clone();
                     constant_compilation_context.path.0.extend([
@@ -654,7 +667,6 @@ impl Compiler {
                         name_clustered_index: constant_definition.name_clustered_index,
                         node: compiled_constant.node.clone(),
                     });
-                    is_pure &= compiled_constant.is_pure;
                 }
                 for (function_name, function_body) in functions.iter() {
                     if !function_name.ends_with(":") {
@@ -689,7 +701,6 @@ impl Compiler {
                 }
                 result_external_constants_name_clustered_indices
                     .append(&mut compiled_compute_external_constants_name_clustered_indices);
-                is_pure &= compiled_compute.is_pure;
                 let result_type = compiled_compute.node.r#type.clone();
                 NodeAndMetadata {
                     external_constants_name_clustered_indices:
@@ -702,7 +713,6 @@ impl Compiler {
                         r#type: result_type,
                     }
                     .into(),
-                    is_pure,
                 }
                 .into()
             }
@@ -727,7 +737,6 @@ impl Compiler {
                             r#type: constant_metadata.r#type,
                         }
                         .into(),
-                        is_pure: true,
                     }
                     .into()
                 } else {
@@ -766,7 +775,6 @@ impl Compiler {
                     &from_program_compilation_context,
                     global_compilation_context,
                 )?;
-                let mut is_pure = compiled_extracted_from.is_pure;
                 let mut external_constants_name_clustered_indices = compiled_extracted_from
                     .external_constants_name_clustered_indices
                     .clone();
@@ -801,10 +809,9 @@ impl Compiler {
                                                     )?;
                                                 resolve_type(
                                                     &compiled_from_dynamic.node.r#type,
-                                                    &Type::Number,
+                                                    &TypeKind::Number,
                                                     compilation_context,
                                                 )?;
-                                                is_pure &= compiled_from_dynamic.is_pure;
                                                 external_constants_name_clustered_indices.append(
                                                     &mut compiled_from_dynamic
                                                         .external_constants_name_clustered_indices
@@ -832,10 +839,9 @@ impl Compiler {
                                                     )?;
                                                 resolve_type(
                                                     &compiled_to_dynamic.node.r#type,
-                                                    &Type::Number,
+                                                    &TypeKind::Number,
                                                     compilation_context,
                                                 )?;
-                                                is_pure &= compiled_to_dynamic.is_pure;
                                                 external_constants_name_clustered_indices.append(
                                                     &mut compiled_to_dynamic
                                                         .external_constants_name_clustered_indices
@@ -885,7 +891,7 @@ impl Compiler {
                 let compiled_extracted_from_type_at_result_as_type =
                     match compiled_extracted_from_type_at_result {
                         TypeAtResult::Single(r#type) => r#type,
-                        TypeAtResult::Multiple(union_types) => Type::Union(union_types.into()),
+                        TypeAtResult::Multiple(union_types) => union_types.into(),
                     };
                 let r#type = if runtime_type_error_is_possible {
                     Type::from(BTreeSet::from_iter([
@@ -906,7 +912,6 @@ impl Compiler {
                     }
                     .into(),
                     external_constants_name_clustered_indices,
-                    is_pure,
                 }
                 .into()
             }
@@ -916,27 +921,30 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &Type::Array(Box::new(Type::Number)),
-                        &|_| Ok(Type::Number),
-                        true,
+                        &TypeKind::Array(Box::new(TypeKind::Number.into())),
+                        &|compiled_argument_resolved_type| {
+                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Number))
+                        },
                         false,
                     )?,
                     EmbeddedFunction::Concat => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &Type::Array(Box::new(Type::String)),
-                        &|_| Ok(Type::String),
-                        true,
+                        &TypeKind::Array(Box::new(TypeKind::String.into())),
+                        &|compiled_argument_resolved_type| {
+                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::String))
+                        },
                         false,
                     )?,
                     EmbeddedFunction::IsSorted => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &Type::Array(Box::new(Type::Any)),
-                        &|_| Ok(Type::Bool),
-                        true,
+                        &TypeKind::Array(Box::new(TypeKind::Any.into())),
+                        &|compiled_argument_resolved_type| {
+                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Bool))
+                        },
                         false,
                     )?,
                     EmbeddedFunction::ReadBytesFromStandardInput => self
@@ -944,48 +952,79 @@ impl Compiler {
                             compilation_context,
                             global_compilation_context,
                             embedded_function_call,
-                            &Type::Union(
+                            &TypeKind::Union(
                                 BTreeSet::from_iter([
-                                    Type::Number,
-                                    Type::LiteralString("all".into()),
+                                    TypeKind::Number.into(),
+                                    TypeKind::LiteralString("all".into()).into(),
                                 ])
                                 .into(),
                             ),
-                            &|_| {
-                                Ok(Type::Union(
-                                    BTreeSet::from_iter([Type::Bytes, Type::Null]).into(),
-                                ))
+                            &|compiled_argument_resolved_type| {
+                                Ok(Type {
+                                    kind: TypeKind::Union(
+                                        BTreeSet::from_iter([
+                                            Type {
+                                                kind: TypeKind::Bytes,
+                                                capabilities: enum_set!(
+                                                    Capability::ReadStandardInput
+                                                ),
+                                                is_computable: true,
+                                            }
+                                            .with_intersected_properties_from(
+                                                compiled_argument_resolved_type,
+                                            ),
+                                            Type {
+                                                kind: TypeKind::Null,
+                                                capabilities: enum_set!(
+                                                    Capability::ReadStandardInput
+                                                ),
+                                                is_computable: true,
+                                            }
+                                            .with_intersected_properties_from(
+                                                compiled_argument_resolved_type,
+                                            ),
+                                        ])
+                                        .into(),
+                                    ),
+                                    capabilities: enum_set!(Capability::ReadFile)
+                                        | compiled_argument_resolved_type.capabilities,
+                                    is_computable: true
+                                        && compiled_argument_resolved_type.is_computable,
+                                })
                             },
-                            false,
                             false,
                         )?,
                     EmbeddedFunction::ParseYaml => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &Type::String,
-                        &|_| Ok(Type::Any),
-                        true,
+                        &TypeKind::String,
+                        &|compiled_argument_resolved_type| {
+                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Any))
+                        },
                         true,
                     )?,
                     EmbeddedFunction::KeyValuePairs => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &Type::GenericObject(Box::new(Type::Any)),
+                        &TypeKind::GenericObject(Box::new(TypeKind::Any.into())),
                         &|compiled_argument_resolved_type| {
-                            if let Type::Object(argument_object_values_types) =
-                                compiled_argument_resolved_type.clone()
+                            if let TypeKind::Object(argument_object_values_types) =
+                                &compiled_argument_resolved_type.kind
                             {
-                                Ok(Type::Tuple(
+                                Ok(compiled_argument_resolved_type.with_kind(TypeKind::Tuple(
                                     argument_object_values_types
                                         .values()
                                         .map(|value| {
-                                            Type::Tuple(vec![Type::String, value.clone()].into())
+                                            TypeKind::Tuple(
+                                                vec![TypeKind::String.into(), value.clone()].into(),
+                                            )
+                                            .into()
                                         })
                                         .collect::<Vec<_>>()
                                         .into(),
-                                ))
+                                )))
                             } else {
                                 Err(anyhow!(
                                     "expected object, found {:#?} at {:#?}",
@@ -994,14 +1033,15 @@ impl Compiler {
                                 ))
                             }
                         },
-                        true,
                         false,
                     )?,
                     EmbeddedFunction::Flatten => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &Type::Array(Box::new(Type::Array(Box::new(Type::Any)))),
+                        &TypeKind::Array(Box::new(
+                            TypeKind::Array(Box::new(TypeKind::Any.into())).into(),
+                        )),
                         &|compiled_argument_resolved_type| {
                             compiled_argument_resolved_type.flatten().with_context(|| {
                                 format!(
@@ -1011,26 +1051,25 @@ impl Compiler {
                                 )
                             })
                         },
-                        true,
                         false,
                     )?,
                     EmbeddedFunction::MatchGroups => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &Type::Object(
+                        &TypeKind::Object(
                             BTreeMap::from_iter([
-                                ("string".to_string().into(), Type::String),
+                                ("string".to_string().into(), TypeKind::String.into()),
                                 (
                                     "regex".to_string().into(),
-                                    Type::Constructed(Constructed::Regex),
+                                    TypeKind::Constructed(Constructed::Regex).into(),
                                 ),
                             ])
                             .into(),
                         ),
                         &|compiled_argument_resolved_type| {
-                            if let Type::LiteralString(regex_literal_string) =
-                                compiled_argument_resolved_type
+                            if let TypeKind::LiteralString(regex_literal_string) =
+                                &compiled_argument_resolved_type.kind
                             {
                                 Regex::new(&regex_literal_string.to_string()).with_context(
                                     || {
@@ -1042,73 +1081,125 @@ impl Compiler {
                                     },
                                 )?;
                             };
-                            Ok(Type::Union(
+                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
                                 BTreeSet::from_iter([
-                                    Type::GenericObject(Box::new(Type::Union(
-                                        BTreeSet::from_iter(vec![Type::String, Type::Number])
-                                            .into(),
-                                    ))),
-                                    Type::Null,
+                                    compiled_argument_resolved_type.with_kind(
+                                        TypeKind::GenericObject(Box::new(
+                                            compiled_argument_resolved_type.with_kind(
+                                                TypeKind::Union(
+                                                    BTreeSet::from_iter(vec![
+                                                        compiled_argument_resolved_type
+                                                            .with_kind(TypeKind::String),
+                                                        compiled_argument_resolved_type
+                                                            .with_kind(TypeKind::Number),
+                                                    ])
+                                                    .into(),
+                                                ),
+                                            ),
+                                        )),
+                                    ),
+                                    compiled_argument_resolved_type.with_kind(TypeKind::Null),
                                 ])
                                 .into(),
-                            ))
+                            )))
                         },
-                        true,
                         false,
                     )?,
                     EmbeddedFunction::ReadBytesFromFile => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &Type::String,
-                        &|_| {
-                            Ok(Type::Union(
-                                BTreeSet::from_iter([Type::Bytes, Type::Null]).into(),
-                            ))
+                        &TypeKind::String,
+                        &|compiled_argument_resolved_type| {
+                            Ok(Type {
+                                kind: TypeKind::Union(
+                                    BTreeSet::from_iter([
+                                        Type {
+                                            kind: TypeKind::Bytes,
+                                            capabilities: enum_set!(Capability::ReadFile),
+                                            is_computable: true,
+                                        }
+                                        .with_intersected_properties_from(
+                                            compiled_argument_resolved_type,
+                                        ),
+                                        Type {
+                                            kind: TypeKind::Null,
+                                            capabilities: enum_set!(Capability::ReadFile),
+                                            is_computable: true,
+                                        }
+                                        .with_intersected_properties_from(
+                                            compiled_argument_resolved_type,
+                                        ),
+                                    ])
+                                    .into(),
+                                ),
+                                capabilities: enum_set!(Capability::ReadFile),
+                                is_computable: true,
+                            }
+                            .with_intersected_properties_from(compiled_argument_resolved_type))
                         },
-                        false,
                         false,
                     )?,
                     EmbeddedFunction::StringFromBytes => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &Type::Bytes,
-                        &|_| {
-                            Ok(Type::Union(
-                                BTreeSet::from_iter([Type::String, Type::Null]).into(),
-                            ))
+                        &TypeKind::Bytes,
+                        &|compiled_argument_resolved_type| {
+                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
+                                BTreeSet::from_iter([
+                                    compiled_argument_resolved_type.with_kind(TypeKind::String),
+                                    compiled_argument_resolved_type.with_kind(TypeKind::Null),
+                                ])
+                                .into(),
+                            )))
                         },
-                        true,
                         false,
                     )?,
                     EmbeddedFunction::WriteToFile => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &Type::Object(
+                        &TypeKind::Object(
                             BTreeMap::from_iter([
                                 (
                                     "content".to_string().into(),
-                                    Type::Union(
-                                        BTreeSet::from_iter([Type::Bytes, Type::String]).into(),
-                                    ),
+                                    TypeKind::Union(
+                                        BTreeSet::from_iter([
+                                            TypeKind::Bytes.into(),
+                                            TypeKind::String.into(),
+                                        ])
+                                        .into(),
+                                    )
+                                    .into(),
                                 ),
-                                ("path".to_string().into(), Type::String),
+                                ("path".to_string().into(), TypeKind::String.into()),
                             ])
                             .into(),
                         ),
-                        &|_| Ok(Type::Bool),
-                        false,
+                        &|compiled_argument_resolved_type| {
+                            Ok(Type {
+                                kind: TypeKind::Bool,
+                                capabilities: enum_set!(Capability::OverwriteFile),
+                                is_computable: true,
+                            }
+                            .with_intersected_properties_from(compiled_argument_resolved_type))
+                        },
                         false,
                     )?,
                     EmbeddedFunction::RemoveFile => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &Type::String,
-                        &|_| Ok(Type::Bool),
-                        false,
+                        &TypeKind::String,
+                        &|compiled_argument_resolved_type| {
+                            Ok(Type {
+                                kind: TypeKind::Bool,
+                                capabilities: enum_set!(Capability::RemoveFile),
+                                is_computable: true,
+                            }
+                            .with_intersected_properties_from(compiled_argument_resolved_type))
+                        },
                         false,
                     )?,
                 }
@@ -1128,7 +1219,7 @@ impl Compiler {
                     &match_compilation_context,
                     global_compilation_context,
                 )?;
-                if !compiled_match.node.r#type.is_known() {
+                if !compiled_match.node.r#type.kind.is_known() {
                     return Err(anyhow!(
                         "expected match of known type, found {:#?} at {:#?}",
                         compiled_match.node.r#type,
@@ -1140,7 +1231,6 @@ impl Compiler {
                 let mut result_external_constants_name_clustered_indices = compiled_match
                     .external_constants_name_clustered_indices
                     .clone();
-                let mut case_is_pure = true;
                 let mut covered_types = BTreeSet::new();
                 let match_constant_name_clustered_index_option =
                     if let Some(match_constant_name) = r#as {
@@ -1170,7 +1260,8 @@ impl Compiler {
                             if compiled_match
                                 .node
                                 .r#type
-                                .intersection(refined_match_type)
+                                .kind
+                                .intersection(&refined_match_type.kind)
                                 .is_none()
                             {
                                 continue;
@@ -1198,7 +1289,6 @@ impl Compiler {
                             );
                             covered_types.insert(refined_match_type.clone());
 
-                            case_is_pure &= compiled_case.is_pure;
                             result_cases.push(Case {
                                 condition: intermediate_representation::Condition::Type(
                                     refined_match_type.clone(),
@@ -1216,7 +1306,8 @@ impl Compiler {
                             if compiled_match
                                 .node
                                 .r#type
-                                .intersection(&refined_match_type)
+                                .kind
+                                .intersection(&refined_match_type.kind)
                                 .is_none()
                             {
                                 continue;
@@ -1243,15 +1334,14 @@ impl Compiler {
                                     .clone(),
                             );
                             if matches!(
-                                refined_match_type,
-                                Type::LiteralTrue
-                                    | Type::LiteralFalse
-                                    | Type::LiteralString(_)
-                                    | Type::Null
+                                refined_match_type.kind,
+                                TypeKind::LiteralTrue
+                                    | TypeKind::LiteralFalse
+                                    | TypeKind::LiteralString(_)
+                                    | TypeKind::Null
                             ) {
                                 covered_types.insert(refined_match_type);
                             }
-                            case_is_pure &= compiled_condition.is_pure && compiled_case.is_pure;
                             result_cases.push(Case {
                                 condition: intermediate_representation::Condition::Value(
                                     compiled_condition.node.clone(),
@@ -1262,7 +1352,7 @@ impl Compiler {
                     }
                 }
                 let covered = Type::from(covered_types);
-                if !covered.contains(&compiled_match.node.r#type) {
+                if !covered.kind.contains(&compiled_match.node.r#type.kind) {
                     return Err(anyhow!(
                         "expected coverage for {:#?}, found coverage only for {covered:#?} at \
                          {:#?}",
@@ -1290,7 +1380,6 @@ impl Compiler {
                         .into(),
                         external_constants_name_clustered_indices:
                             result_external_constants_name_clustered_indices,
-                        is_pure: compiled_match.is_pure && case_is_pure,
                     }
                     .into(),
                 }
@@ -1306,7 +1395,6 @@ impl Compiler {
                 let mut result_external_constants_name_clustered_indices = compiled_map
                     .external_constants_name_clustered_indices
                     .clone();
-                let mut is_pure = compiled_map.is_pure;
                 let map_constant_name_clustered_index = if let Some(result) =
                     global_compilation_context
                         .constants_names_to_name_clustered_constants_indices
@@ -1324,8 +1412,8 @@ impl Compiler {
                 for map_concrete_type in compiled_map.node.r#type.union_types() {
                     map_concrete_type_and_throughs.push((
                         map_concrete_type.clone(),
-                        match map_concrete_type {
-                            Type::Tuple(map_tuple_elements_types) => {
+                        match &map_concrete_type.kind {
+                            TypeKind::Tuple(map_tuple_elements_types) => {
                                 let mut result_elements_types =
                                     Vec::with_capacity(map_tuple_elements_types.len());
                                 let mut result_throughs_nodes_indexes =
@@ -1384,7 +1472,6 @@ impl Compiler {
                                                         .external_constants_name_clustered_indices
                                                         .clone(),
                                                 );
-                                                is_pure &= compiled_through.is_pure;
                                                 compiled_throughs.insert(compiled_through);
                                                 compiled_throughs.len() - 1
                                             };
@@ -1393,8 +1480,7 @@ impl Compiler {
                                         result_throughs_nodes_indexes.push(compiled_through_index);
                                     }
                                 }
-                                result_union_types
-                                    .insert(Type::Tuple(result_elements_types.into()));
+                                result_union_types.insert(Type::from(result_elements_types));
                                 Throughs::Tuple {
                                     nodes_indexes: result_throughs_nodes_indexes,
                                     nodes: compiled_throughs
@@ -1403,7 +1489,7 @@ impl Compiler {
                                         .collect(),
                                 }
                             }
-                            Type::Array(map_array_element_type) => {
+                            TypeKind::Array(map_array_element_type) => {
                                 let mut through_compilation_context = compilation_context.clone();
                                 through_compilation_context
                                     .path
@@ -1427,10 +1513,9 @@ impl Compiler {
                                         .external_constants_name_clustered_indices
                                         .clone(),
                                 );
-                                is_pure &= compiled_through.is_pure;
-                                result_union_types.insert(Type::Array(Box::new(
-                                    compiled_through.node.r#type.clone(),
-                                )));
+                                result_union_types.insert(map_concrete_type.with_kind(
+                                    TypeKind::Array(Box::new(compiled_through.node.r#type.clone())),
+                                ));
                                 Throughs::Array(compiled_through.node.clone())
                             }
                             _ => {
@@ -1455,7 +1540,6 @@ impl Compiler {
                     .into(),
                     external_constants_name_clustered_indices:
                         result_external_constants_name_clustered_indices,
-                    is_pure,
                 }
                 .into()
             }
@@ -1477,7 +1561,6 @@ impl Compiler {
                 let mut result_external_constants_name_clustered_indices = compiled_filter
                     .external_constants_name_clustered_indices
                     .clone();
-                let mut is_pure = compiled_filter.is_pure;
                 let filter_constant_name_clustered_index = if let Some(result) =
                     global_compilation_context
                         .constants_names_to_name_clustered_constants_indices
@@ -1495,8 +1578,8 @@ impl Compiler {
                 for filter_concrete_type in compiled_filter.node.r#type.union_types() {
                     filter_concrete_type_and_throughs.push((
                         filter_concrete_type.clone(),
-                        match filter_concrete_type {
-                            Type::Tuple(filter_tuple_elements_types) => {
+                        match &filter_concrete_type.kind {
+                            TypeKind::Tuple(filter_tuple_elements_types) => {
                                 let mut result_throughs_nodes_indexes =
                                     Vec::with_capacity(filter_tuple_elements_types.len());
                                 let mut compiled_throughs: indexmap::IndexSet<
@@ -1526,7 +1609,7 @@ impl Compiler {
                                     )?;
                                     resolve_type(
                                         &compiled_through.node.r#type,
-                                        &Type::Bool,
+                                        &TypeKind::Bool,
                                         compilation_context,
                                     )?;
                                     let compiled_through_index =
@@ -1541,17 +1624,16 @@ impl Compiler {
                                                         .external_constants_name_clustered_indices
                                                         .clone(),
                                                 );
-                                            is_pure &= compiled_through.is_pure;
                                             compiled_throughs.insert(compiled_through);
                                             compiled_throughs.len() - 1
                                         };
                                     result_throughs_nodes_indexes.push(compiled_through_index);
                                 }
-                                result_union_types.insert(Type::Array(Box::new(Type::from(
-                                    BTreeSet::from_iter(
+                                result_union_types.insert(filter_concrete_type.with_kind(
+                                    TypeKind::Array(Box::new(Type::from(BTreeSet::from_iter(
                                         filter_tuple_elements_types.iter().cloned(),
-                                    ),
-                                ))));
+                                    )))),
+                                ));
                                 Throughs::Tuple {
                                     nodes_indexes: result_throughs_nodes_indexes,
                                     nodes: compiled_throughs
@@ -1560,7 +1642,7 @@ impl Compiler {
                                         .collect(),
                                 }
                             }
-                            Type::Array(filter_array_element_type) => {
+                            TypeKind::Array(filter_array_element_type) => {
                                 let mut through_compilation_context = compilation_context.clone();
                                 through_compilation_context
                                     .path
@@ -1581,7 +1663,7 @@ impl Compiler {
                                 )?;
                                 resolve_type(
                                     &compiled_through.node.r#type,
-                                    &Type::Bool,
+                                    &TypeKind::Bool,
                                     compilation_context,
                                 )?;
                                 result_external_constants_name_clustered_indices.extend(
@@ -1589,7 +1671,6 @@ impl Compiler {
                                         .external_constants_name_clustered_indices
                                         .clone(),
                                 );
-                                is_pure &= compiled_through.is_pure;
                                 result_union_types.insert(filter_concrete_type.clone());
                                 Throughs::Array(compiled_through.node.clone())
                             }
@@ -1615,7 +1696,6 @@ impl Compiler {
                     .into(),
                     external_constants_name_clustered_indices:
                         result_external_constants_name_clustered_indices,
-                    is_pure,
                 }
                 .into()
             }
@@ -1636,7 +1716,6 @@ impl Compiler {
                 let mut result_external_constants_name_clustered_indices = compiled_fold
                     .external_constants_name_clustered_indices
                     .clone();
-                let mut is_pure = compiled_fold.is_pure;
                 let mut starting_with_compilation_context = compilation_context.clone();
                 starting_with_compilation_context
                     .path
@@ -1652,7 +1731,6 @@ impl Compiler {
                         .external_constants_name_clustered_indices
                         .clone(),
                 );
-                is_pure &= compiled_starting_with.is_pure;
                 let fold_constant_name_clustered_index = if let Some(result) =
                     global_compilation_context
                         .constants_names_to_name_clustered_constants_indices
@@ -1682,8 +1760,8 @@ impl Compiler {
                 for fold_concrete_type in compiled_fold.node.r#type.union_types() {
                     fold_concrete_type_and_throughs.push((
                         fold_concrete_type.clone(),
-                        match &fold_concrete_type {
-                            Type::Tuple(fold_tuple_elements_types) => {
+                        match &fold_concrete_type.kind {
+                            TypeKind::Tuple(fold_tuple_elements_types) => {
                                 let mut result_type = compiled_starting_with.node.r#type.clone();
                                 let mut result_throughs_nodes_indexes =
                                     Vec::with_capacity(fold_tuple_elements_types.len());
@@ -1741,7 +1819,6 @@ impl Compiler {
                                                     .external_constants_name_clustered_indices
                                                     .clone(),
                                             );
-                                            is_pure &= compiled_through.is_pure;
                                             compiled_throughs.insert(compiled_through);
                                             compiled_throughs.len() - 1
                                         };
@@ -1762,7 +1839,7 @@ impl Compiler {
                                         .collect(),
                                 }
                             }
-                            Type::Array(fold_array_element_type) => {
+                            TypeKind::Array(fold_array_element_type) => {
                                 let mut through_compilation_context = compilation_context.clone();
                                 through_compilation_context
                                     .path
@@ -1792,12 +1869,11 @@ impl Compiler {
                                 )?;
                                 let compiled_through_resolved_type = resolve_type(
                                     &compiled_through.node.r#type,
-                                    &starting_with_type,
+                                    &starting_with_type.kind,
                                     &through_compilation_context,
                                 )?;
                                 result_external_constants_name_clustered_indices
                                     .extend(compiled_through.external_constants_name_clustered_indices.clone());
-                                is_pure &= compiled_through.is_pure;
                                 result_union_types.insert(compiled_through_resolved_type);
                                 Throughs::Array(compiled_through.node.clone())
                             }
@@ -1825,7 +1901,6 @@ impl Compiler {
                     .into(),
                     external_constants_name_clustered_indices:
                         result_external_constants_name_clustered_indices,
-                    is_pure,
                 }
                 .into()
             }
@@ -1900,7 +1975,7 @@ impl Compiler {
                 );
                 resolve_type(
                     &compiled_next.node.r#type,
-                    &compiled_starting_with.node.r#type,
+                    &compiled_starting_with.node.r#type.kind,
                     &next_compilation_context,
                 )?;
                 let mut while_compilation_context = compilation_context.clone();
@@ -1926,12 +2001,15 @@ impl Compiler {
                                 next: compiled_next.node.clone(),
                             },
                         )),
-                        r#type: Type::Array(Box::new(starting_with_type)),
+                        r#type: (
+                            TypeKind::Array(Box::new(starting_with_type.clone())),
+                            [starting_with_type, compiled_next.node.r#type.clone()].iter(),
+                        )
+                            .into(),
                     }
                     .into(),
                     external_constants_name_clustered_indices:
                         result_external_constants_name_clustered_indices,
-                    is_pure: compiled_starting_with.is_pure & compiled_next.is_pure,
                 }
                 .into()
             }
@@ -1944,7 +2022,6 @@ impl Compiler {
                 }
                 let mut compiled_pipe_elements = Vec::with_capacity(pipe.len());
                 let mut compiled_previous_pipe_element_option: Option<Arc<NodeAndMetadata>> = None;
-                let mut is_pure = true;
                 let mut as_constant_name_clustered_index_option = None;
                 for (pipe_element_index, pipe_element) in pipe.iter().enumerate() {
                     let mut pipe_element_compilation_context = compilation_context.clone();
@@ -1973,7 +2050,6 @@ impl Compiler {
                         &pipe_element_compilation_context,
                         global_compilation_context,
                     )?;
-                    is_pure &= compiled_pipe_element.is_pure;
                     compiled_previous_pipe_element_option = Some(compiled_pipe_element.clone());
                     compiled_pipe_elements.push(compiled_pipe_element);
                 }
@@ -2005,7 +2081,6 @@ impl Compiler {
                             result
                         },
                     ),
-                    is_pure,
                 }
                 .into()
             }
@@ -2016,10 +2091,9 @@ impl Compiler {
                             external_constants_name_clustered_indices: BTreeSet::new(),
                             node: Node {
                                 content: Content::Object(BTreeMap::new()),
-                                r#type: Type::Object(BTreeMap::new().into()),
+                                r#type: TypeKind::Object(BTreeMap::new().into()).into(),
                             }
                             .into(),
-                            is_pure: true,
                         }
                         .into());
                     }
@@ -2029,7 +2103,6 @@ impl Compiler {
                             if let Some(function_body) =
                                 compilation_context.available_functions.get(function_name)
                             {
-                                let mut arguments_is_pure = true;
                                 let mut body_compilation_context = compilation_context.clone();
                                 body_compilation_context
                                     .path
@@ -2106,7 +2179,6 @@ impl Compiler {
                                                 node: compiled_constant.node.clone(),
                                             },
                                         );
-                                        arguments_is_pure &= compiled_constant.is_pure;
                                     }
                                 }
                                 let instantiated_function_hash = {
@@ -2152,7 +2224,6 @@ impl Compiler {
                                                 r#type: function_type.clone(),
                                             }
                                             .into(),
-                                            is_pure: arguments_is_pure,
                                         }
                                         .into());
                                     } else {
@@ -2168,7 +2239,6 @@ impl Compiler {
                                                 ),
                                                 body: function_body_as_maybe_compiled_program
                                                     .clone(),
-                                                is_pure: arguments_is_pure,
                                             },
                                         );
                                         global_compilation_context
@@ -2177,7 +2247,7 @@ impl Compiler {
                                                 function_body_as_maybe_compiled_program.clone(),
                                                 (
                                                     function_index,
-                                                    Type::Unknown(MaybeType::default()),
+                                                    TypeKind::Unknown(MaybeType::default()).into(),
                                                 ),
                                             );
                                         let compiled_function = self.compile_with_context(
@@ -2204,7 +2274,6 @@ impl Compiler {
                                                     .program,
                                                 node: Some(compiled_function.node.clone()),
                                             },
-                                            is_pure: compiled_function.is_pure,
                                         };
                                         result_external_constants_name_clustered_indices.append(
                                             &mut compiled_function
@@ -2223,7 +2292,6 @@ impl Compiler {
                                                 r#type: compiled_function.node.r#type.clone(),
                                             }
                                             .into(),
-                                            is_pure: arguments_is_pure && compiled_function.is_pure,
                                         });
                                         global_compilation_context
                                             .compiled_functions_cache
@@ -2249,7 +2317,6 @@ impl Compiler {
                 let mut result_inner_types = BTreeMap::new();
                 let mut result_content = BTreeMap::new();
                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-                let mut is_pure = true;
                 for (object_key, object_value) in object.iter() {
                     let mut object_value_compilation_context = compilation_context.clone();
                     object_value_compilation_context
@@ -2271,17 +2338,20 @@ impl Compiler {
                         compiled_object_value.node.r#type.clone(),
                     );
                     result_content.insert(object_key.clone(), compiled_object_value.node.clone());
-                    is_pure &= compiled_object_value.is_pure;
                 }
+                let result_inner_types_arc = Arc::new(result_inner_types);
                 NodeAndMetadata {
                     external_constants_name_clustered_indices:
                         result_external_constants_name_clustered_indices,
                     node: Node {
                         content: Content::Object(result_content),
-                        r#type: Type::Object(result_inner_types.into()),
+                        r#type: (
+                            TypeKind::Object(result_inner_types_arc.clone()),
+                            result_inner_types_arc.values(),
+                        )
+                            .into(),
                     }
                     .into(),
-                    is_pure,
                 }
                 .into()
             }
@@ -2297,7 +2367,6 @@ impl Compiler {
                     r#type: Value::r#type(value_option),
                 }
                 .into(),
-                is_pure: true,
             }
             .into(),
         })
