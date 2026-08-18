@@ -6,13 +6,14 @@ use dashu::{Decimal, Rational};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Unexpected, Visitor},
+    ser::SerializeMap,
 };
 use std::fmt;
 
 use crate::{
     containers::{Object, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
-    r#type::Type,
+    r#type::TypeKind,
 };
 
 pub fn serialize_rope<S>(rope: &ropey::Rope, serializer: S) -> Result<S::Ok, S::Error>
@@ -63,8 +64,6 @@ pub fn serialize_bytes<S>(bytes: &Bytes, serializer: S) -> Result<S::Ok, S::Erro
 where
     S: Serializer,
 {
-    use serde::ser::SerializeMap;
-
     let hex_string = hex::encode(bytes);
     let mut map = serializer.serialize_map(Some(1))?;
     map.serialize_entry("bytes", &hex_string)?;
@@ -224,31 +223,31 @@ impl Value {
         }
     }
 
-    pub fn r#type(value_option: &Option<Value>) -> Type {
+    pub fn type_kind(value_option: &Option<Value>) -> TypeKind {
         match value_option {
             Some(value) => match value {
-                Value::Number(_) => Type::Number,
-                Value::String(string) => Type::LiteralString(string.clone()),
-                Value::Bytes(_) => Type::Bytes,
-                Value::Bool(true) => Type::LiteralTrue,
-                Value::Bool(false) => Type::LiteralFalse,
-                Value::Tuple(tuple) => Type::Tuple(
+                Value::Number(_) => TypeKind::Number,
+                Value::String(string) => TypeKind::LiteralString(string.clone()),
+                Value::Bytes(_) => TypeKind::Bytes,
+                Value::Bool(true) => TypeKind::LiteralTrue,
+                Value::Bool(false) => TypeKind::LiteralFalse,
+                Value::Tuple(tuple) => TypeKind::Tuple(
                     tuple
                         .iter()
-                        .map(|element| Value::r#type(element))
+                        .map(|element| Value::type_kind(element).into())
                         .collect::<Vec<_>>()
                         .into(),
                 ),
-                Value::Object(object) => Type::Object(
+                Value::Object(object) => TypeKind::Object(
                     BTreeMap::from_iter(
                         object
                             .iter()
-                            .map(|(key, value)| (key.clone(), Value::r#type(value))),
+                            .map(|(key, value)| (key.clone(), Value::type_kind(value).into())),
                     )
                     .into(),
                 ),
             },
-            None => Type::Null,
+            None => TypeKind::Null,
         }
     }
 }

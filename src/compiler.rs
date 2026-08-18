@@ -2364,7 +2364,7 @@ impl Compiler {
                             Arc<Option<intermediate_representation::Value>>,
                         >(value_option.clone())
                     }),
-                    r#type: Value::r#type(value_option),
+                    r#type: Value::type_kind(value_option).into(),
                 }
                 .into(),
             }

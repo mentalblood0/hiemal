@@ -22,7 +22,7 @@ use crate::{
         ValuePathSegment,
     },
     program::EmbeddedFunction,
-    r#type::Type,
+    r#type::TypeKind,
     value::Value,
 };
 
@@ -216,7 +216,7 @@ impl Default for IntermediateValue {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 struct IntermediateValueAndMetadata {
     intermediate_value: IntermediateValue,
-    r#type: Type,
+    type_kind: TypeKind,
 }
 
 #[derive(Clone, Debug)]
@@ -260,9 +260,9 @@ impl Computer {
     }
 }
 
-fn concrete_or_else<F>(concrete: &Type, or_else: F) -> Type
+fn concrete_or_else<F>(concrete: &TypeKind, or_else: F) -> TypeKind
 where
-    F: Fn() -> Type,
+    F: Fn() -> TypeKind,
 {
     if concrete.is_concrete() {
         concrete.clone()
@@ -274,7 +274,7 @@ where
 fn false_value() -> Result<Arc<IntermediateValueAndMetadata>> {
     Ok(IntermediateValueAndMetadata {
         intermediate_value: IntermediateValue::Value(Some(Value::Bool(false)).into()),
-        r#type: Type::LiteralFalse,
+        type_kind: TypeKind::LiteralFalse,
     }
     .into())
 }
@@ -578,7 +578,7 @@ impl<'a> ComputationContext<'a> {
                 Some(Value::Object(object)) => Ok(object.get(key).cloned().map(|value| {
                     IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(value.clone()),
-                        r#type: Value::r#type(&value),
+                        type_kind: Value::type_kind(&value),
                     }
                     .into()
                 })),
@@ -672,9 +672,9 @@ impl<'a> ComputationContext<'a> {
                 .into_iter()
                 .next()),
             IntermediateValue::Value(value_arc) => {
-                let element_type = match &intermediate_value_and_metadata.r#type {
-                    Type::Array(element_type) => *element_type.clone(),
-                    Type::Tuple(elements_types) => {
+                let element_type = match &intermediate_value_and_metadata.type_kind {
+                    TypeKind::Array(element_type) => *element_type.clone(),
+                    TypeKind::Tuple(elements_types) => {
                         if let Some(result_type) = elements_types.get(index) {
                             result_type.clone()
                         } else {
@@ -687,7 +687,7 @@ impl<'a> ComputationContext<'a> {
                     Some(Value::Tuple(list)) => Ok(list.get(index).cloned().map(|element| {
                         IntermediateValueAndMetadata {
                             intermediate_value: IntermediateValue::Value(element),
-                            r#type: element_type,
+                            type_kind: element_type.kind,
                         }
                         .into()
                     })),
@@ -872,9 +872,9 @@ impl<'a> ComputationContext<'a> {
                 })
             }
             IntermediateValue::Value(value_arc) => {
-                let elements_types = match &intermediate_value_and_metadata.r#type {
-                    Type::Array(element_type) => [*element_type.clone()].to_vec(),
-                    Type::Tuple(elements_types) => elements_types
+                let elements_types = match &intermediate_value_and_metadata.type_kind {
+                    TypeKind::Array(element_type) => [*element_type.clone()].to_vec(),
+                    TypeKind::Tuple(elements_types) => elements_types
                         .iter()
                         .skip(from)
                         .take(to - from)
@@ -893,7 +893,7 @@ impl<'a> ComputationContext<'a> {
                             .map(|(value, r#type)| {
                                 IntermediateValueAndMetadata {
                                     intermediate_value: IntermediateValue::Value(value),
-                                    r#type: r#type.clone(),
+                                    type_kind: r#type.kind.clone(),
                                 }
                                 .into()
                             })
@@ -980,7 +980,7 @@ impl<'a> ComputationContext<'a> {
                 |(element_index, intermediate_value)| match &*intermediate_value {
                     IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(value),
-                        r#type: _,
+                        type_kind: _,
                     } => {
                         result[element_index] = Some(value.clone());
                         None
@@ -1024,11 +1024,11 @@ impl<'a> ComputationContext<'a> {
         match &**intermediate_value {
             &IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Value(ref result),
-                r#type: _,
+                type_kind: _,
             } => Ok(result.clone()),
             &IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Tuple(ref intermediate_values_list),
-                r#type: _,
+                type_kind: _,
             } => Ok(Some(Value::Tuple(self.unroll_intermediate_values(
                 intermediate_values_list.inner.iter().cloned(),
                 intermediate_values_list.len(),
@@ -1036,7 +1036,7 @@ impl<'a> ComputationContext<'a> {
             .into()),
             &IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Object(ref object),
-                r#type: _,
+                type_kind: _,
             } => Ok(Some(Value::Object(Object::new_from_iter(
                 object.keys().cloned().zip(
                     self.unroll_intermediate_values(object.values().cloned(), object.len())?
@@ -1046,7 +1046,7 @@ impl<'a> ComputationContext<'a> {
             .into()),
             &IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Map(ref map),
-                r#type: _,
+                type_kind: _,
             } => {
                 let computed_map_range =
                     self.get_range_from_intermediate_value(&map.computed_map, 0, usize::MAX)?;
@@ -1088,11 +1088,11 @@ impl<'a> ComputationContext<'a> {
             }
             &IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::LazyValue(ref lazy_value),
-                r#type: _,
+                type_kind: _,
             } => self.unroll_intermediate_value(&self.compute_lazy_value(lazy_value)?),
             &IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Filter(ref filter),
-                r#type: _,
+                type_kind: _,
             } => {
                 {
                     let mut lockable_internals_write_guard = filter.lockable_internals.write();
@@ -1139,7 +1139,7 @@ impl<'a> ComputationContext<'a> {
                                         Arc<Option<Value>>,
                                     >(value.clone())
                                 }),
-                                r#type: node.r#type.clone(),
+                                type_kind: node.r#type.kind.clone(),
                             }
                             .into();
                             None
@@ -1195,7 +1195,7 @@ impl<'a> ComputationContext<'a> {
                     constants: constants.clone(),
                     computed: Arc::new(Mutex::new(None)),
                 }),
-                r#type: node.r#type.clone(),
+                type_kind: node.r#type.kind.clone(),
             }
             .into(),
             _ => self.compute_node(node, constants)?,
@@ -1215,8 +1215,8 @@ impl<'a> ComputationContext<'a> {
                 }
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Tuple(result),
-                    r#type: concrete_or_else(&node.r#type, || {
-                        Type::Tuple(
+                    type_kind: concrete_or_else(&node.r#type.kind, || {
+                        TypeKind::Tuple(
                             tuple
                                 .iter()
                                 .map(|tuple_element| tuple_element.r#type.clone())
@@ -1267,7 +1267,7 @@ impl<'a> ComputationContext<'a> {
                         ))
                         .into(),
                     ),
-                    r#type: Type::Number,
+                    type_kind: TypeKind::Number,
                 }
                 .into()),
                 EmbeddedFunction::Concat => {
@@ -1297,7 +1297,7 @@ impl<'a> ComputationContext<'a> {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::String(result_rope)).into(),
                         ),
-                        r#type: Type::String,
+                        type_kind: TypeKind::String,
                     }
                     .into())
                 }
@@ -1317,7 +1317,7 @@ impl<'a> ComputationContext<'a> {
                         ))
                         .into(),
                     ),
-                    r#type: Type::Bool,
+                    type_kind: TypeKind::Bool,
                 }
                 .into()),
                 EmbeddedFunction::ReadBytesFromStandardInput => {
@@ -1333,7 +1333,7 @@ impl<'a> ComputationContext<'a> {
                         if std::io::stdin().read_to_end(&mut result).is_err() {
                             return Ok(IntermediateValueAndMetadata {
                                 intermediate_value: IntermediateValue::Value(None.into()),
-                                r#type: Type::Null,
+                                type_kind: TypeKind::Null,
                             }
                             .into());
                         }
@@ -1361,7 +1361,7 @@ impl<'a> ComputationContext<'a> {
                         {
                             return Ok(IntermediateValueAndMetadata {
                                 intermediate_value: IntermediateValue::Value(None.into()),
-                                r#type: Type::Null,
+                                type_kind: TypeKind::Null,
                             }
                             .into());
                         };
@@ -1371,7 +1371,7 @@ impl<'a> ComputationContext<'a> {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Bytes(result.into())).into(),
                         ),
-                        r#type: Type::Bytes,
+                        type_kind: TypeKind::Bytes,
                     }
                     .into())
                 }
@@ -1394,10 +1394,10 @@ impl<'a> ComputationContext<'a> {
                             path_option.as_ref().unwrap()
                         )
                     })?;
-                    let r#type = Value::r#type(&result_value);
+                    let r#type = Value::type_kind(&result_value);
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(result_value.into()),
-                        r#type,
+                        type_kind: r#type,
                     }
                     .into())
                 }
@@ -1433,8 +1433,8 @@ impl<'a> ComputationContext<'a> {
                             }))
                             .into(),
                         ),
-                        r#type: concrete_or_else(&node.r#type, || {
-                            Type::Tuple(
+                        type_kind: concrete_or_else(&node.r#type.kind, || {
+                            TypeKind::Tuple(
                                 unrolled_argument
                                     .as_ref()
                                     .as_ref()
@@ -1443,7 +1443,13 @@ impl<'a> ComputationContext<'a> {
                                     .unwrap()
                                     .values()
                                     .map(|value| {
-                                        Type::Tuple(vec![Type::String, Value::r#type(value)].into())
+                                        node.r#type.with_kind(TypeKind::Tuple(
+                                            vec![
+                                                node.r#type.with_kind(TypeKind::String),
+                                                Value::type_kind(value).into(),
+                                            ]
+                                            .into(),
+                                        ))
                                     })
                                     .collect::<Vec<_>>()
                                     .into(),
@@ -1483,7 +1489,7 @@ impl<'a> ComputationContext<'a> {
                             }))
                             .into(),
                         ),
-                        r#type: node.r#type.clone(),
+                        type_kind: node.r#type.kind.clone(),
                     }
                     .into())
                 }
@@ -1545,16 +1551,16 @@ impl<'a> ComputationContext<'a> {
                                 })
                             }),
                         )));
-                        let r#type = Value::r#type(&result_value);
+                        let r#type = Value::type_kind(&result_value);
                         Ok(IntermediateValueAndMetadata {
                             intermediate_value: IntermediateValue::Value(result_value.into()),
-                            r#type,
+                            type_kind: r#type,
                         }
                         .into())
                     } else {
                         Ok(IntermediateValueAndMetadata {
                             intermediate_value: IntermediateValue::Value(None.into()),
-                            r#type: Type::Null,
+                            type_kind: TypeKind::Null,
                         }
                         .into())
                     }
@@ -1579,7 +1585,7 @@ impl<'a> ComputationContext<'a> {
                                 } else {
                                     return Ok(IntermediateValueAndMetadata {
                                         intermediate_value: IntermediateValue::Value(None.into()),
-                                        r#type: Type::Null,
+                                        type_kind: TypeKind::Null,
                                     }
                                     .into());
                                 }
@@ -1587,7 +1593,7 @@ impl<'a> ComputationContext<'a> {
                             ))
                             .into(),
                         ),
-                        r#type: Type::Bytes,
+                        type_kind: TypeKind::Bytes,
                     }
                     .into())
                 }
@@ -1611,7 +1617,7 @@ impl<'a> ComputationContext<'a> {
                                 } else {
                                     return Ok(IntermediateValueAndMetadata {
                                         intermediate_value: IntermediateValue::Value(None.into()),
-                                        r#type: Type::Null,
+                                        type_kind: TypeKind::Null,
                                     }
                                     .into());
                                 }
@@ -1619,7 +1625,7 @@ impl<'a> ComputationContext<'a> {
                             ))
                             .into(),
                         ),
-                        r#type: Type::String,
+                        type_kind: TypeKind::String,
                     }
                     .into())
                 }
@@ -1676,7 +1682,7 @@ impl<'a> ComputationContext<'a> {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Bool(true)).into(),
                         ),
-                        r#type: Type::LiteralTrue,
+                        type_kind: TypeKind::LiteralTrue,
                     }
                     .into())
                 }
@@ -1700,7 +1706,7 @@ impl<'a> ComputationContext<'a> {
                             intermediate_value: IntermediateValue::Value(
                                 Some(Value::Bool(true)).into(),
                             ),
-                            r#type: Type::LiteralTrue,
+                            type_kind: TypeKind::LiteralTrue,
                         }
                         .into())
                     }
@@ -1724,7 +1730,9 @@ impl<'a> ComputationContext<'a> {
                     result_constants[constant_name_clustered_index] = Some(computed_constant);
                 }
                 let user_function = &self.intermediate_representation.user_functions[*body];
-                if self.computer_config.user_functions_caching && user_function.is_pure {
+                if self.computer_config.user_functions_caching
+                    && node.r#type.capabilities.is_empty()
+                {
                     let function_call_identifier = {
                         let mut hasher = gxhash::GxHasher::default();
                         for constant_name_clustered_index in
@@ -1822,11 +1830,10 @@ impl<'a> ComputationContext<'a> {
                                 .inner
                                 .into_iter()
                                 .collect::<Vec<_>>();
-                            let r#type = Type::Tuple(
+                            let r#type = TypeKind::Tuple(
                                 result_elements
                                     .iter()
-                                    .map(|element| &element.r#type)
-                                    .cloned()
+                                    .map(|element| element.type_kind.clone().into())
                                     .collect::<Vec<_>>()
                                     .into(),
                             );
@@ -1834,7 +1841,7 @@ impl<'a> ComputationContext<'a> {
                                 intermediate_value: IntermediateValue::Tuple(Vector {
                                     inner: result_elements,
                                 }),
-                                r#type,
+                                type_kind: r#type,
                             }
                             .into()
                         }
@@ -1865,7 +1872,7 @@ impl<'a> ComputationContext<'a> {
                     for case in cases {
                         match &case.condition {
                             Condition::Type(expected_type) => {
-                                if expected_type.contains(&computed_match.r#type) {
+                                if expected_type.kind.contains(&computed_match.type_kind) {
                                     return self.compute_node(&case.node, &case_constants);
                                 }
                             }
@@ -1887,7 +1894,7 @@ impl<'a> ComputationContext<'a> {
                     panic!(
                         "no case from {cases:#?} matches computed value \
                          {computed_match_unrolled_lazy_cell:#?} of type {:#?}",
-                        computed_match.r#type
+                        computed_match.type_kind
                     );
                 }
             }
@@ -1899,26 +1906,27 @@ impl<'a> ComputationContext<'a> {
                     .map_concrete_type_and_throughs
                     .iter()
                 {
-                    if map_concrete_type.contains(&computed_map.r#type) {
+                    if map_concrete_type.kind.contains(&computed_map.type_kind) {
                         throughs_option = Some(throughs.clone());
                     }
                 }
-                let r#type =
-                    concrete_or_else(&node.r#type, || match throughs_option.as_ref().unwrap() {
+                let r#type = concrete_or_else(&node.r#type.kind, || {
+                    match throughs_option.as_ref().unwrap() {
                         Throughs::Array(through_node) => {
-                            Type::Array(Box::new(through_node.r#type.clone()))
+                            TypeKind::Array(Box::new(through_node.r#type.clone()))
                         }
                         Throughs::Tuple {
                             nodes_indexes: _,
                             nodes,
-                        } => Type::Tuple(
+                        } => TypeKind::Tuple(
                             nodes
                                 .iter()
                                 .map(|node| node.r#type.clone())
                                 .collect::<Vec<_>>()
                                 .into(),
                         ),
-                    });
+                    }
+                });
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Map(Map {
                         intermediate_representation_content: intermediate_representation_content
@@ -1930,7 +1938,7 @@ impl<'a> ComputationContext<'a> {
                             elements_taken_for_computation: BTreeMap::new(),
                         })),
                     }),
-                    r#type,
+                    type_kind: r#type,
                 }
                 .into())
             }
@@ -1943,26 +1951,30 @@ impl<'a> ComputationContext<'a> {
                     .filter_concrete_type_and_throughs
                     .iter()
                 {
-                    if filter_concrete_type.contains(&computed_filter.r#type) {
+                    if filter_concrete_type
+                        .kind
+                        .contains(&computed_filter.type_kind)
+                    {
                         throughs_option = Some(throughs.clone());
                     }
                 }
-                let r#type =
-                    concrete_or_else(&node.r#type, || match throughs_option.as_ref().unwrap() {
+                let r#type = concrete_or_else(&node.r#type.kind, || {
+                    match throughs_option.as_ref().unwrap() {
                         Throughs::Array(through_node) => {
-                            Type::Array(Box::new(through_node.r#type.clone()))
+                            TypeKind::Array(Box::new(through_node.r#type.clone()))
                         }
                         Throughs::Tuple {
                             nodes_indexes: _,
                             nodes,
-                        } => Type::Tuple(
+                        } => TypeKind::Tuple(
                             nodes
                                 .iter()
                                 .map(|node| node.r#type.clone())
                                 .collect::<Vec<_>>()
                                 .into(),
                         ),
-                    });
+                    }
+                });
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Filter(Filter {
                         intermediate_representation_content: intermediate_representation_content
@@ -1976,7 +1988,7 @@ impl<'a> ComputationContext<'a> {
                             already_computed_values: Vec::new(),
                         })),
                     }),
-                    r#type,
+                    type_kind: r#type,
                 }
                 .into())
             }
@@ -1994,7 +2006,10 @@ impl<'a> ComputationContext<'a> {
                 let mut result = self.compute_node(starting_with, constants)?;
                 let mut throughs_option = None;
                 for (fold_concrete_type, throughs) in fold_concrete_type_and_throughs.iter() {
-                    if fold_concrete_type.contains(&Value::r#type(&computed_fold)) {
+                    if fold_concrete_type
+                        .kind
+                        .contains(&Value::type_kind(&computed_fold))
+                    {
                         throughs_option = Some(throughs.clone());
                     }
                 }
@@ -2005,7 +2020,7 @@ impl<'a> ComputationContext<'a> {
                             through_constants[*fold_constant_name_clustered_index] = Some(
                                 IntermediateValueAndMetadata {
                                     intermediate_value: IntermediateValue::Value(element.clone()),
-                                    r#type: Value::r#type(element),
+                                    type_kind: Value::type_kind(element),
                                 }
                                 .into(),
                             );
@@ -2024,7 +2039,7 @@ impl<'a> ComputationContext<'a> {
                             through_constants[*fold_constant_name_clustered_index] = Some(
                                 IntermediateValueAndMetadata {
                                     intermediate_value: IntermediateValue::Value(element.clone()),
-                                    r#type: node.r#type.clone(),
+                                    type_kind: node.r#type.kind.clone(),
                                 }
                                 .into(),
                             );
@@ -2058,7 +2073,7 @@ impl<'a> ComputationContext<'a> {
                             already_computed_values: [computed_starting_with].into(),
                         })),
                     }),
-                    r#type: node.r#type.clone(),
+                    type_kind: node.r#type.kind.clone(),
                 }
                 .into())
             }
@@ -2092,7 +2107,7 @@ impl<'a> ComputationContext<'a> {
                 }
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Object(result),
-                    r#type: node.r#type.clone(),
+                    type_kind: node.r#type.kind.clone(),
                 }
                 .into())
             }
@@ -2103,7 +2118,7 @@ impl<'a> ComputationContext<'a> {
                         Arc<Option<Value>>,
                     >(value.clone()))
                 },
-                r#type: node.r#type.clone(),
+                type_kind: node.r#type.kind.clone(),
             }
             .into()),
         }

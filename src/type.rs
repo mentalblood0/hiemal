@@ -196,9 +196,8 @@ impl Constructed {
     }
 }
 
-#[repr(u8)]
-#[derive(EnumSetType, Deserialize, Debug, PartialOrd, Ord, Hash)]
-#[enumset(repr = "u8")]
+#[derive(EnumSetType, Serialize, Deserialize, Debug, PartialOrd, Ord, Hash)]
+#[enumset(serialize_repr = "u8")]
 pub enum Capability {
     #[serde(rename = "append to file")]
     AppendToFile,
@@ -219,12 +218,11 @@ pub enum Capability {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Default, Eq)]
+#[serde(from = "TypeKind")]
+#[serde(into = "TypeKind")]
 pub struct Type {
-    #[serde(flatten)]
     pub kind: TypeKind,
-    #[serde(skip)]
     pub capabilities: EnumSet<Capability>,
-    #[serde(skip)]
     pub is_computable: bool,
 }
 
@@ -259,6 +257,12 @@ impl From<TypeKind> for Type {
             capabilities: EnumSet::default(),
             is_computable: true,
         }
+    }
+}
+
+impl From<Type> for TypeKind {
+    fn from(r#type: Type) -> Self {
+        r#type.kind
     }
 }
 
@@ -333,13 +337,13 @@ pub enum KnownTypeKind {
     #[serde(rename = "array")]
     Array(Box<TypeKind>),
     #[serde(rename = "tuple")]
-    Tuple(Arc<Vec<TypeKind>>),
+    Tuple(Arc<Vec<Type>>),
     #[serde(rename = "object")]
-    Object(Arc<BTreeMap<Arc<String>, TypeKind>>),
+    Object(Arc<BTreeMap<Arc<String>, Type>>),
     #[serde(rename = "generic object")]
-    GenericObject(Box<TypeKind>),
+    GenericObject(Box<Type>),
     #[serde(rename = "union")]
-    Union(Arc<BTreeSet<TypeKind>>),
+    Union(Arc<BTreeSet<Type>>),
     #[default]
     #[serde(rename = "any")]
     Any,
@@ -460,7 +464,7 @@ pub enum TypeAtResult {
     Multiple(BTreeSet<Type>),
 }
 
-impl<'a> TypeKind {
+impl TypeKind {
     pub fn is_known(&self) -> bool {
         match self {
             TypeKind::Unknown(maybe_type) => maybe_type.lockable_internals.read().is_some(),

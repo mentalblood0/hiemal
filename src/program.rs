@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
+    Deserialize, Deserializer, Serialize,
     de::{MapAccess, Visitor},
 };
 use url::Url;
@@ -9,7 +9,7 @@ use url::Url;
 use crate::{default_argument_name::DEFAULT_ARGUMENT_NAME, r#type::Type, value::Value};
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Program {
     Tuple(Vec<Program>),
@@ -120,7 +120,7 @@ pub fn default_pipe_as() -> Option<Arc<String>> {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Condition {
     Type(Type),
@@ -128,14 +128,14 @@ pub enum Condition {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 pub enum DefaultArgument {
     #[serde(rename = "_")]
     Underline,
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum From {
     DefaultArgument(DefaultArgument),
@@ -145,7 +145,7 @@ pub enum From {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum RangeBound {
     Static(Option<usize>),
@@ -153,7 +153,7 @@ pub enum RangeBound {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum AtSegment {
     ProgramPathSegment(PathSegment),
@@ -174,17 +174,16 @@ pub struct EmbeddedFunctionCall {
     pub argument: Arc<Program>,
 }
 
-impl Serialize for EmbeddedFunctionCall {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(1))?;
-        map.serialize_entry(&self.embedded_function, &self.argument)?;
-        map.end()
-    }
-}
+// impl Serialize for EmbeddedFunctionCall {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         let mut map = serializer.serialize_map(Some(1))?;
+//         map.serialize_entry(&self.embedded_function, &self.argument)?;
+//         map.end()
+//     }
+// }
 
 impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
