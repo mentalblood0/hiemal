@@ -639,7 +639,8 @@ impl Compiler {
                 if with_capabilities.is_some() && without_capabilities.is_some() {
                     return Err(anyhow!(
                         "expected either `with capabilities` or `without capabilities` to be \
-                         specified"
+                         specified at {:#?}",
+                        compilation_context.path
                     ));
                 }
                 let mut compute_compilation_context = compilation_context.clone();
