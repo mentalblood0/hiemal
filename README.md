@@ -6,6 +6,7 @@
 - static type checking without annotations
 - tuples, union types, heterogenous fold
 - match clause exhaustiveness checking
+- capabilities
 - pass-by-value, strings and containers are cheap to clone
 - parallel execution
 - lazy evaluation: constants, arrays/tuples, objects, sequence, map and filter
@@ -198,7 +199,7 @@ compute:
   f:: 1
 ```
 
-#### functions constants compute
+#### functions constants with capabilities without capabilities compute
 
 ```yaml
 functions:
@@ -242,6 +243,44 @@ compute:
     function:: { sum: [_, 1] }
     argument: 1
 ```
+
+```yaml
+with capabilities:
+  - remove file
+  - read file
+compute:
+  pipe:
+    - write to file:
+        path: test write to file.txt
+        content: lalala
+    - read bytes from file: test write to file.txt
+    - - remove file: test write to file.txt
+      - _
+  as: _
+```
+
+```yaml
+without capabilities:
+  - remove file
+compute:
+  pipe:
+    - write to file:
+        path: test write to file.txt
+        content: lalala
+    - read bytes from file: test write to file.txt
+  as: _
+```
+
+available capabilities:
+
+- append to file
+- create file
+- overwrite file
+- remove file
+- read file
+- read standard input
+- read network
+- write network
 
 #### match cases
 

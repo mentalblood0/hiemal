@@ -349,6 +349,8 @@ fn process_from_at_program_path_part(
                             functions,
                             constants,
                             compute: _,
+                            with_capabilities: _,
+                            without_capabilities: _,
                         },
                         PathSegment::Functions | PathSegment::Constants,
                     ) => {
@@ -400,6 +402,8 @@ fn process_from_at_program_path_part(
                             functions: _,
                             constants: _,
                             compute,
+                            with_capabilities: _,
+                            without_capabilities: _,
                         },
                         PathSegment::Compute,
                     ) => {
@@ -629,7 +633,15 @@ impl Compiler {
                 functions,
                 constants,
                 compute,
+                with_capabilities,
+                without_capabilities,
             } => {
+                if with_capabilities.is_some() && without_capabilities.is_some() {
+                    return Err(anyhow!(
+                        "expected either `with capabilities` or `without capabilities` to be \
+                         specified"
+                    ));
+                }
                 let mut compute_compilation_context = compilation_context.clone();
                 compute_compilation_context
                     .path
@@ -691,6 +703,27 @@ impl Compiler {
                     &compute_compilation_context,
                     global_compilation_context,
                 )?;
+                if let Some(with_capabilities) = with_capabilities {
+                    let lacking_capabilities =
+                        compiled_compute.node.r#type.capabilities - *with_capabilities;
+                    if !lacking_capabilities.is_empty() {
+                        return Err(anyhow!(
+                            "expected to use only capabilities {:#?}, found usage of capabilities \
+                             {lacking_capabilities:#?}",
+                            with_capabilities
+                        ));
+                    }
+                } else if let Some(without_capabilities) = without_capabilities {
+                    let lacking_capabilities =
+                        compiled_compute.node.r#type.capabilities & *without_capabilities;
+                    if !lacking_capabilities.is_empty() {
+                        return Err(anyhow!(
+                            "expected to use any of capabilities except {:#?}, found usage of \
+                             capabilities {lacking_capabilities:#?}",
+                            without_capabilities
+                        ));
+                    }
+                }
                 let mut compiled_compute_external_constants_name_clustered_indices =
                     compiled_compute
                         .external_constants_name_clustered_indices

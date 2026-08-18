@@ -1,4 +1,3 @@
-#![recursion_limit = "256"]
 use std::{
     hash::Hash,
     io::{BufReader, Write},

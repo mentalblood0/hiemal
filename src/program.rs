@@ -1,12 +1,17 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use enumset::EnumSet;
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{MapAccess, Visitor},
 };
 use url::Url;
 
-use crate::{default_argument_name::DEFAULT_ARGUMENT_NAME, r#type::Type, value::Value};
+use crate::{
+    default_argument_name::DEFAULT_ARGUMENT_NAME,
+    r#type::{Capability, Type},
+    value::Value,
+};
 
 #[repr(u8)]
 #[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
@@ -18,6 +23,10 @@ pub enum Program {
         functions: BTreeMap<Arc<String>, Arc<Program>>,
         #[serde(default)]
         constants: BTreeMap<Arc<String>, Arc<Program>>,
+        #[serde(default, rename = "with capabilities")]
+        with_capabilities: Option<EnumSet<Capability>>,
+        #[serde(default, rename = "without capabilities")]
+        without_capabilities: Option<EnumSet<Capability>>,
         compute: Arc<Program>,
     },
     Constant {

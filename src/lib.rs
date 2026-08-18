@@ -1,4 +1,3 @@
-#![recursion_limit = "256"]
 #![allow(clippy::mutable_key_type)]
 pub mod compiler;
 pub mod computer;

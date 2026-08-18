@@ -197,7 +197,7 @@ impl Constructed {
 }
 
 #[derive(EnumSetType, Serialize, Deserialize, Debug, PartialOrd, Ord, Hash)]
-#[enumset(serialize_repr = "u8")]
+#[enumset(serialize_repr = "list")]
 pub enum Capability {
     #[serde(rename = "append to file")]
     AppendToFile,

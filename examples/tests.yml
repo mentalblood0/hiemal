@@ -35,14 +35,18 @@ compute:
       test write to file:
         assert equal::
           found:
-            pipe:
-              - write to file:
-                  path: test write to file.txt
-                  content: lalala
-              - read bytes from file: test write to file.txt
-              - - remove file: test write to file.txt
-                - _
-            as: _
+            with capabilities:
+              - remove file
+              - read file
+            compute:
+              pipe:
+                - write to file:
+                    path: test write to file.txt
+                    content: lalala
+                - read bytes from file: test write to file.txt
+                - - remove file: test write to file.txt
+                  - _
+              as: _
           expected:
             - true
             - { bytes: 6c616c616c61 }
