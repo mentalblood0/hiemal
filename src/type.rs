@@ -224,7 +224,7 @@ pub struct TypeProperties {
 }
 
 impl TypeProperties {
-    pub fn intersected(&self, another_type_properties: &TypeProperties) -> TypeProperties {
+    pub fn unified(&self, another_type_properties: &TypeProperties) -> TypeProperties {
         Self {
             capabilities: self.capabilities | another_type_properties.capabilities,
             is_computable: self.is_computable && another_type_properties.is_computable,
@@ -244,7 +244,7 @@ where
     fn from(type_properties_iterator: I) -> Self {
         let mut result = TypeProperties::default();
         for type_properties in type_properties_iterator {
-            result = result.intersected(type_properties);
+            result = result.unified(type_properties);
         }
         result
     }
@@ -812,8 +812,8 @@ impl<'a> Type {
         }
     }
 
-    pub fn with_intersected_properties_from(mut self, another_type: &Type) -> Self {
-        self.properties = self.properties.intersected(&another_type.properties);
+    pub fn with_unified_properties_from(mut self, another_type: &Type) -> Self {
+        self.properties = self.properties.unified(&another_type.properties);
         self
     }
 

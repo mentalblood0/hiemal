@@ -1011,7 +1011,7 @@ impl Compiler {
                                                     ),
                                                     is_computable: true,
                                                 }
-                                                .intersected(
+                                                .unified(
                                                     &compiled_argument_resolved_type.properties,
                                                 ),
                                             },
@@ -1023,7 +1023,7 @@ impl Compiler {
                                                     ),
                                                     is_computable: true,
                                                 }
-                                                .intersected(
+                                                .unified(
                                                     &compiled_argument_resolved_type.properties,
                                                 ),
                                             },
@@ -1034,7 +1034,7 @@ impl Compiler {
                                         capabilities: enum_set!(Capability::ReadStandardInput),
                                         is_computable: true,
                                     }
-                                    .intersected(&compiled_argument_resolved_type.properties),
+                                    .unified(&compiled_argument_resolved_type.properties),
                                 })
                             },
                             false,
@@ -1165,9 +1165,7 @@ impl Compiler {
                                                 capabilities: enum_set!(Capability::ReadFile),
                                                 is_computable: true,
                                             }
-                                            .intersected(
-                                                &compiled_argument_resolved_type.properties,
-                                            ),
+                                            .unified(&compiled_argument_resolved_type.properties),
                                         },
                                         Type {
                                             kind: TypeKind::Null,
@@ -1175,9 +1173,7 @@ impl Compiler {
                                                 capabilities: enum_set!(Capability::ReadFile),
                                                 is_computable: true,
                                             }
-                                            .intersected(
-                                                &compiled_argument_resolved_type.properties,
-                                            ),
+                                            .unified(&compiled_argument_resolved_type.properties),
                                         },
                                     ])
                                     .into(),
@@ -1186,7 +1182,7 @@ impl Compiler {
                                     capabilities: enum_set!(Capability::ReadFile),
                                     is_computable: true,
                                 }
-                                .intersected(&compiled_argument_resolved_type.properties),
+                                .unified(&compiled_argument_resolved_type.properties),
                             })
                         },
                         false,
@@ -1235,7 +1231,7 @@ impl Compiler {
                                     capabilities: enum_set!(Capability::CreateFile),
                                     is_computable: true,
                                 }
-                                .intersected(&compiled_argument_resolved_type.properties),
+                                .unified(&compiled_argument_resolved_type.properties),
                             })
                         },
                         false,
@@ -1268,7 +1264,7 @@ impl Compiler {
                                     capabilities: enum_set!(Capability::OverwriteFile),
                                     is_computable: true,
                                 }
-                                .intersected(&compiled_argument_resolved_type.properties),
+                                .unified(&compiled_argument_resolved_type.properties),
                             })
                         },
                         false,
@@ -1285,7 +1281,7 @@ impl Compiler {
                                     capabilities: enum_set!(Capability::RemoveFile),
                                     is_computable: true,
                                 }
-                                .intersected(&compiled_argument_resolved_type.properties),
+                                .unified(&compiled_argument_resolved_type.properties),
                             })
                         },
                         false,
@@ -1779,7 +1775,8 @@ impl Compiler {
                             filter_concrete_type_and_throughs,
                             filter_constant_name_clustered_index,
                         })),
-                        r#type: Type::from(result_union_types),
+                        r#type: Type::from(result_union_types)
+                            .with_unified_properties_from(&compiled_filter.node.r#type),
                     }
                     .into(),
                     external_constants_name_clustered_indices:
@@ -2148,7 +2145,7 @@ impl Compiler {
                                 .node
                                 .r#type
                                 .clone()
-                                .with_intersected_properties_from(&r#type.unwrap()),
+                                .with_unified_properties_from(&r#type.unwrap()),
                         )
                     }
                     compiled_pipe_elements.push(compiled_pipe_element);
