@@ -39,10 +39,10 @@ hiemal examples/include.yml
 - flatten: [[1, a], [3], [4, b, 6]]
 - read bytes from standard input: all
 - parse yaml: "[1, 2, string, 3, 4]"
-- match groups:
+- match regex:
     string: I categorically deny having triskaidekaphobia.
     regex: \b\w{13}\b
-- match groups:
+- match regex:
     string: I categorically deny having triskaidekaphobia.
     regex:
       - word boundary
@@ -82,7 +82,7 @@ compute:
     - 2026-08-10 14:26:30.012  DEBUG  api.v2.handler - Processing request [endpoint=/users]
     - 2026-08-10 14:27:15.678  ERROR  auth.service - ERROR invalid token (ERR-401) [user_id=abc123]
   through:
-    match groups:
+    match regex:
       string: _
       regex:
         - start of string
