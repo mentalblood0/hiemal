@@ -186,6 +186,14 @@ from:
 at: [a, [1, { sum: [2, 1] }]]
 ```
 
+```yaml
+constants:
+  _: abcd
+compute:
+    from: _
+    at: [[1, 3]]
+```
+
 #### constant
 
 ```yaml
