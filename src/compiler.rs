@@ -661,7 +661,6 @@ impl Compiler {
                         &constant_compilation_context,
                         global_compilation_context,
                     )?;
-                    result_type_properties.intersect(&compiled_constant.node.r#type.properties);
                     result_external_constants_name_clustered_indices.append(
                         &mut compiled_constant
                             .external_constants_name_clustered_indices

@@ -32,6 +32,18 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test lazy constant:
+        assert equal::
+          found:
+            forbid:
+              - read file
+            compute:
+              constants:
+                _:
+                  read bytes from file: p
+              compute:
+                null
+          expected: null
       test from at string:
         assert equal::
           found:
