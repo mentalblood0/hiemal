@@ -1619,7 +1619,8 @@ impl Compiler {
                             map_concrete_type_and_throughs,
                             map_constant_name_clustered_index,
                         })),
-                        r#type: Type::from(result_union_types),
+                        r#type: Type::from(result_union_types)
+                            .with_unified_properties_from(&compiled_map.node.r#type),
                     }
                     .into(),
                     external_constants_name_clustered_indices:
@@ -1981,7 +1982,8 @@ impl Compiler {
                             accumulating_in_constant_name_clustered_index,
                             fold_concrete_type_and_throughs,
                         },
-                        r#type: Type::from(result_union_types),
+                        r#type: Type::from(result_union_types)
+                            .with_unified_properties_from(&compiled_fold.node.r#type),
                     }
                     .into(),
                     external_constants_name_clustered_indices:
