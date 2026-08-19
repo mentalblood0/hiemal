@@ -58,11 +58,14 @@ hiemal examples/include.yml
     cases:
       - [null, { bytes: "" }]
       - [bytes, _]
-- write to file:
-    path: test write to file.txt
-    content: lalala
-- read bytes from file: test write to file.txt
-- remove file: test write to file.txt
+- create file:
+    path: test overwrite file.txt
+    content: a
+- overwrite file:
+    path: test overwrite file.txt
+    content: b
+- read bytes from file: test overwrite file.txt
+- remove file: test overwrite file.txt
 ```
 
 <details>
@@ -250,11 +253,11 @@ allow:
   - read file
 compute:
   pipe:
-    - write to file:
-        path: test write to file.txt
+    - overwrite file:
+        path: test overwrite file.txt
         content: lalala
-    - read bytes from file: test write to file.txt
-    - - remove file: test write to file.txt
+    - read bytes from file: test overwrite file.txt
+    - - remove file: test overwrite file.txt
       - _
   as: _
 ```
@@ -264,10 +267,10 @@ forbid:
   - remove file
 compute:
   pipe:
-    - write to file:
-        path: test write to file.txt
+    - overwrite file:
+        path: test overwrite file.txt
         content: lalala
-    - read bytes from file: test write to file.txt
+    - read bytes from file: test overwrite file.txt
   as: _
 ```
 

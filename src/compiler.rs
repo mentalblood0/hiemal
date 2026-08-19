@@ -703,25 +703,25 @@ impl Compiler {
                     &compute_compilation_context,
                     global_compilation_context,
                 )?;
-                if let Some(with_capabilities) = with_capabilities {
+                if let Some(allow) = with_capabilities {
                     let used_not_allowed_capabilities =
-                        compiled_compute.node.r#type.capabilities - *with_capabilities;
+                        compiled_compute.node.r#type.capabilities - *allow;
                     if !used_not_allowed_capabilities.is_empty() {
                         return Err(anyhow!(
                             "expected usage of only capabilities {:#?}, found usage of not \
                              allowed capabilities {used_not_allowed_capabilities:#?} at {:#?}",
-                            with_capabilities,
+                            allow,
                             compute_compilation_context.path
                         ));
                     }
-                } else if let Some(without_capabilities) = without_capabilities {
+                } else if let Some(forbid) = without_capabilities {
                     let used_forbidden_capabilities =
-                        compiled_compute.node.r#type.capabilities & *without_capabilities;
+                        compiled_compute.node.r#type.capabilities & *forbid;
                     if !used_forbidden_capabilities.is_empty() {
                         return Err(anyhow!(
                             "expected usage of any of capabilities except {:#?}, found usage of \
                              forbidden capabilities {used_forbidden_capabilities:#?} at {:#?}",
-                            without_capabilities,
+                            forbid,
                             compute_compilation_context.path
                         ));
                     }
@@ -1021,11 +1021,10 @@ impl Compiler {
                                         ])
                                         .into(),
                                     ),
-                                    capabilities: enum_set!(Capability::ReadFile)
-                                        | compiled_argument_resolved_type.capabilities,
-                                    is_computable: true
-                                        && compiled_argument_resolved_type.is_computable,
-                                })
+                                    capabilities: enum_set!(Capability::ReadFile),
+                                    is_computable: true,
+                                }
+                                .with_intersected_properties_from(compiled_argument_resolved_type))
                             },
                             false,
                         )?,
@@ -1191,7 +1190,38 @@ impl Compiler {
                         },
                         false,
                     )?,
-                    EmbeddedFunction::WriteToFile => self.compile_embedded_function_call(
+                    EmbeddedFunction::CreateFile => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &TypeKind::Object(
+                            BTreeMap::from_iter([
+                                (
+                                    "content".to_string().into(),
+                                    TypeKind::Union(
+                                        BTreeSet::from_iter([
+                                            TypeKind::Bytes.into(),
+                                            TypeKind::String.into(),
+                                        ])
+                                        .into(),
+                                    )
+                                    .into(),
+                                ),
+                                ("path".to_string().into(), TypeKind::String.into()),
+                            ])
+                            .into(),
+                        ),
+                        &|compiled_argument_resolved_type| {
+                            Ok(Type {
+                                kind: TypeKind::Bool,
+                                capabilities: enum_set!(Capability::CreateFile),
+                                is_computable: true,
+                            }
+                            .with_intersected_properties_from(compiled_argument_resolved_type))
+                        },
+                        false,
+                    )?,
+                    EmbeddedFunction::OverwriteFile => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
@@ -2058,6 +2088,7 @@ impl Compiler {
                 let mut compiled_pipe_elements = Vec::with_capacity(pipe.len());
                 let mut compiled_previous_pipe_element_option: Option<Arc<NodeAndMetadata>> = None;
                 let mut as_constant_name_clustered_index_option = None;
+                let mut r#type = None;
                 for (pipe_element_index, pipe_element) in pipe.iter().enumerate() {
                     let mut pipe_element_compilation_context = compilation_context.clone();
                     pipe_element_compilation_context.path.0.extend([
@@ -2086,6 +2117,17 @@ impl Compiler {
                         global_compilation_context,
                     )?;
                     compiled_previous_pipe_element_option = Some(compiled_pipe_element.clone());
+                    if r#type.is_none() {
+                        r#type = Some(compiled_pipe_element.node.r#type.clone());
+                    } else {
+                        r#type = Some(
+                            compiled_pipe_element
+                                .node
+                                .r#type
+                                .clone()
+                                .with_intersected_properties_from(&r#type.unwrap()),
+                        )
+                    }
                     compiled_pipe_elements.push(compiled_pipe_element);
                 }
                 NodeAndMetadata {
@@ -2097,12 +2139,7 @@ impl Compiler {
                                 .collect(),
                             as_constant_name_clustered_index_option,
                         },
-                        r#type: compiled_previous_pipe_element_option
-                            .as_ref()
-                            .unwrap()
-                            .node
-                            .r#type
-                            .clone(),
+                        r#type: r#type.unwrap(),
                     }
                     .into(),
                     external_constants_name_clustered_indices: compiled_pipe_elements.iter().fold(

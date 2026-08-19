@@ -32,24 +32,32 @@ functions:
 compute:
   tests report::
     key-value pairs:
-      test write to file:
+      test files:
         assert equal::
           found:
             allow:
-              - remove file
+              - create file
+              - overwrite file
               - read file
+              - remove file
             compute:
               pipe:
-                - write to file:
-                    path: test write to file.txt
-                    content: lalala
-                - read bytes from file: test write to file.txt
-                - - remove file: test write to file.txt
-                  - _
+                - create file:
+                    path: test files.txt
+                    content: a
+                - overwrite file:
+                    path: test files.txt
+                    content: b
+                - create file:
+                    path: test files.txt
+                    content: c
+                - read bytes from file: test files.txt
+                - - _
+                  - remove file: test files.txt
               as: _
           expected:
+            - { bytes: "62" }
             - true
-            - { bytes: 6c616c616c61 }
       test pipe lazy:
         assert equal::
           found:

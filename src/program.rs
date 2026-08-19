@@ -253,8 +253,10 @@ pub enum EmbeddedFunction {
     ReadBytesFromFile,
     #[serde(rename = "string from bytes")]
     StringFromBytes,
-    #[serde(rename = "write to file")]
-    WriteToFile,
+    #[serde(rename = "overwrite file")]
+    OverwriteFile,
+    #[serde(rename = "create file")]
+    CreateFile,
     #[serde(rename = "remove file")]
     RemoveFile,
 }

@@ -1629,7 +1629,7 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
-                EmbeddedFunction::WriteToFile => {
+                EmbeddedFunction::OverwriteFile => {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,
                     )?;
@@ -1710,6 +1710,67 @@ impl<'a> ComputationContext<'a> {
                         }
                         .into())
                     }
+                }
+                EmbeddedFunction::CreateFile => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let computed_path = std::path::PathBuf::from(
+                        computed_argument_unrolled
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_object()
+                            .unwrap()
+                            .get(&"path".to_string())
+                            .unwrap()
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_string()
+                            .unwrap()
+                            .to_string(),
+                    );
+                    let computed_content = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"content".to_string())
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap();
+                    if let Some(parent) = computed_path.parent() {
+                        ok_or_return_false_value!({ std::fs::create_dir_all(parent) });
+                    }
+                    let file = ok_or_return_false_value!({
+                        std::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&computed_path)
+                    });
+                    let mut writer = BufWriter::new(file);
+                    match computed_content {
+                        Value::String(string) => {
+                            for chunk in string.chunks() {
+                                ok_or_return_false_value!({ writer.write_all(chunk.as_bytes()) });
+                            }
+                        }
+                        Value::Bytes(bytes) => {
+                            ok_or_return_false_value!({ writer.write_all(bytes) });
+                        }
+                        _ => panic!(),
+                    }
+                    ok_or_return_false_value!({ writer.flush() });
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Bool(true)).into(),
+                        ),
+                        type_kind: TypeKind::LiteralTrue,
+                    }
+                    .into())
                 }
             },
             Content::UserFunctionCall { arguments, body } => {
