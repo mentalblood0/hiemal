@@ -1983,7 +1983,8 @@ impl Compiler {
                             fold_concrete_type_and_throughs,
                         },
                         r#type: Type::from(result_union_types)
-                            .with_unified_properties_from(&compiled_fold.node.r#type),
+                            .with_unified_properties_from(&compiled_fold.node.r#type)
+                            .with_unified_properties_from(&compiled_starting_with.node.r#type),
                     }
                     .into(),
                     external_constants_name_clustered_indices:
