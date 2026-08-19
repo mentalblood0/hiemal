@@ -649,6 +649,7 @@ impl Compiler {
                 let mut new_constants = Vec::with_capacity(constants.len());
                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();
                 let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
+                let mut result_type_properties = TypeProperties::default();
                 for (constant_name, constant_compute_body) in constants.iter() {
                     let mut constant_compilation_context = compilation_context.clone();
                     constant_compilation_context.path.0.extend([
@@ -660,6 +661,7 @@ impl Compiler {
                         &constant_compilation_context,
                         global_compilation_context,
                     )?;
+                    result_type_properties.intersect(&compiled_constant.node.r#type.properties);
                     result_external_constants_name_clustered_indices.append(
                         &mut compiled_constant
                             .external_constants_name_clustered_indices
@@ -702,6 +704,7 @@ impl Compiler {
                     &compute_compilation_context,
                     global_compilation_context,
                 )?;
+                result_type_properties.intersect(&compiled_compute.node.r#type.properties);
                 if let Some(allow) = with_capabilities {
                     let used_not_allowed_capabilities =
                         compiled_compute.node.r#type.properties.capabilities - *allow;
@@ -735,7 +738,7 @@ impl Compiler {
                 }
                 result_external_constants_name_clustered_indices
                     .append(&mut compiled_compute_external_constants_name_clustered_indices);
-                let result_type = compiled_compute.node.r#type.clone();
+                let result_type_kind = compiled_compute.node.r#type.kind.clone();
                 NodeAndMetadata {
                     external_constants_name_clustered_indices:
                         result_external_constants_name_clustered_indices,
@@ -744,7 +747,10 @@ impl Compiler {
                             constants: new_constants,
                             compute: compiled_compute.node.clone(),
                         },
-                        r#type: result_type,
+                        r#type: Type {
+                            kind: result_type_kind,
+                            properties: result_type_properties,
+                        },
                     }
                     .into(),
                 }

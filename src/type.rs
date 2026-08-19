@@ -230,6 +230,11 @@ impl TypeProperties {
             is_computable: self.is_computable && another_type_properties.is_computable,
         }
     }
+
+    pub fn intersect(&mut self, another_type_properties: &TypeProperties) {
+        self.capabilities |= another_type_properties.capabilities;
+        self.is_computable = self.is_computable && another_type_properties.is_computable;
+    }
 }
 
 impl<'a, I> From<I> for TypeProperties
