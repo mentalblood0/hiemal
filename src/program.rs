@@ -183,17 +183,6 @@ pub struct EmbeddedFunctionCall {
     pub argument: Arc<Program>,
 }
 
-// impl Serialize for EmbeddedFunctionCall {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         let mut map = serializer.serialize_map(Some(1))?;
-//         map.serialize_entry(&self.embedded_function, &self.argument)?;
-//         map.end()
-//     }
-// }
-
 impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

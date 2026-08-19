@@ -1888,25 +1888,49 @@ impl<'a> ComputationContext<'a> {
                                     .max(0f64) as usize
                                 }
                             };
-                            let result_elements = self
-                                .get_range_from_intermediate_value(&result, from_number, to_number)?
-                                .inner
-                                .into_iter()
-                                .collect::<Vec<_>>();
-                            let r#type = TypeKind::Tuple(
-                                result_elements
-                                    .iter()
-                                    .map(|element| element.type_kind.clone().into())
-                                    .collect::<Vec<_>>()
-                                    .into(),
-                            );
-                            result = IntermediateValueAndMetadata {
-                                intermediate_value: IntermediateValue::Tuple(Vector {
-                                    inner: result_elements,
-                                }),
-                                type_kind: r#type,
+                            if result.type_kind.contains(&TypeKind::GenericLiteralString) {
+                                let string_value: ropey::Rope = self
+                                    .unroll_intermediate_value(&result)?
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_string()
+                                    .unwrap()
+                                    .get_slice(from_number..to_number)
+                                    .unwrap_or_else(|| "".into())
+                                    .into();
+                                result = IntermediateValueAndMetadata {
+                                    intermediate_value: IntermediateValue::Value(
+                                        Some(Value::String(string_value.clone())).into(),
+                                    ),
+                                    type_kind: TypeKind::LiteralString(string_value),
+                                }
+                                .into();
+                            } else {
+                                let result_elements = self
+                                    .get_range_from_intermediate_value(
+                                        &result,
+                                        from_number,
+                                        to_number,
+                                    )?
+                                    .inner
+                                    .into_iter()
+                                    .collect::<Vec<_>>();
+                                let r#type = TypeKind::Tuple(
+                                    result_elements
+                                        .iter()
+                                        .map(|element| element.type_kind.clone().into())
+                                        .collect::<Vec<_>>()
+                                        .into(),
+                                );
+                                result = IntermediateValueAndMetadata {
+                                    intermediate_value: IntermediateValue::Tuple(Vector {
+                                        inner: result_elements,
+                                    }),
+                                    type_kind: r#type,
+                                }
+                                .into();
                             }
-                            .into()
                         }
                     }
                 }

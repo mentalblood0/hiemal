@@ -991,6 +991,46 @@ impl<'a> Type {
                     false,
                 ))
             }
+            (
+                TypeKind::LiteralString(self_literal_string),
+                ValuePathSegment::ArrayRange { from, to },
+            ) => {
+                if let (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) =
+                    (&**from, &**to)
+                    && from > to
+                {
+                    return Err(anyhow!("can not get from string at {at_segment:?}",));
+                }
+                if let (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) =
+                    (&**from, &**to)
+                {
+                    Ok((
+                        TypeAtResult::Single(
+                            self.with_kind(TypeKind::LiteralString(
+                                self_literal_string
+                                    .get_slice(from..to)
+                                    .unwrap_or_else(|| "".into())
+                                    .into(),
+                            )),
+                        ),
+                        false,
+                    ))
+                } else {
+                    Ok((
+                        TypeAtResult::Single(self.with_kind(TypeKind::String)),
+                        false,
+                    ))
+                }
+            }
+            (TypeKind::String, ValuePathSegment::ArrayRange { from, to }) => {
+                if let (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) =
+                    (&**from, &**to)
+                    && from > to
+                {
+                    return Err(anyhow!("can not get from string at {at_segment:?}",));
+                }
+                Ok((TypeAtResult::Single(self.clone()), false))
+            }
             (TypeKind::Array(element_type), ValuePathSegment::ArrayRange { from, to }) => {
                 if let (RangeBound::Static(Some(from)), RangeBound::Static(Some(to))) =
                     (&**from, &**to)

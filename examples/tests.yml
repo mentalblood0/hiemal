@@ -32,6 +32,15 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test from at string:
+        assert equal::
+          found:
+            constants:
+              _: abcd
+            compute:
+                from: _
+                at: [[1, 3]]
+          expected: bc
       test files:
         assert equal::
           found:
