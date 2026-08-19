@@ -23,7 +23,7 @@ functions:
       - [any, _]
   is match::
     match:
-      match groups:
+      match regex:
         string: { constant: string }
         regex: { constant: regex }
     cases:
@@ -130,7 +130,7 @@ compute:
                     - [null, true]
               - [any, true]
           expected: true
-      test match groups complex:
+      test match regex complex:
         assert equal::
           found:
             constants:
@@ -143,7 +143,7 @@ compute:
                 - 2026-08-10 14:26:30.012  DEBUG  api.v2.handler - Processing request [endpoint=/users]
                 - 2026-08-10 14:27:15.678  ERROR  auth.service - ERROR invalid token (ERR-401) [user_id=abc123]
               through:
-                match groups:
+                match regex:
                   string: _
                   regex:
                     - start of string
@@ -220,43 +220,58 @@ compute:
                       max: 1
                     - end of string
           expected:
-            - extra_data_key: user_id
-              extra_data_value_number: "12345"
-              log_level: INFO
-              message: "User login successful "
-              module: auth_service
-              timestamp: 2026-08-10 14:23:45.123
-            - error_code: "502"
-              extra_data_key: retry_count
-              extra_data_value_number: "3"
-              log_level: ERROR
-              message: Connection timeout
-              module: database.core
-              timestamp: 2026-08-10 14:24:01.456
-            - extra_data_key: threshold
-              extra_data_value_string: 85%
-              log_level: WARN
-              message: "Memory usage high "
-              module: cache.redis
-              timestamp: 2026-08-10 14:25:10.789
-            - extra_data_key: endpoint
-              extra_data_value_string: /users
-              log_level: DEBUG
-              message: "Processing request "
-              module: api.v2.handler
-              timestamp: 2026-08-10 14:26:30.012
-            - error_code: "401"
-              extra_data_key: user_id
-              extra_data_value_word: abc123
-              log_level: ERROR
-              message: ERROR invalid token
-              module: auth.service
-              timestamp: 2026-08-10 14:27:15.678
-      test match groups:
+            - groups:
+                extra_data_key: user_id
+                extra_data_value_number: "12345"
+                log_level: INFO
+                message: "User login successful "
+                module: auth_service
+                timestamp: 2026-08-10 14:23:45.123
+              start: 0
+              end: 83
+            - groups:
+                error_code: "502"
+                extra_data_key: retry_count
+                extra_data_value_number: "3"
+                log_level: ERROR
+                message: Connection timeout
+                module: database.core
+                timestamp: 2026-08-10 14:24:01.456
+              start: 0
+              end: 92
+            - groups:
+                extra_data_key: threshold
+                extra_data_value_string: 85%
+                log_level: WARN
+                message: "Memory usage high "
+                module: cache.redis
+                timestamp: 2026-08-10 14:25:10.789
+              start: 0
+              end: 78
+            - groups:
+                extra_data_key: endpoint
+                extra_data_value_string: /users
+                log_level: DEBUG
+                message: "Processing request "
+                module: api.v2.handler
+                timestamp: 2026-08-10 14:26:30.012
+              start: 0
+              end: 85
+            - groups:
+                error_code: "401"
+                extra_data_key: user_id
+                extra_data_value_word: abc123
+                log_level: ERROR
+                message: ERROR invalid token
+                module: auth.service
+                timestamp: 2026-08-10 14:27:15.678
+              start: 0
+              end: 93
+      test match regex:
         assert equal::
           found:
             match:
-              match groups:
+              match regex:
                 string: I categorically deny having triskaidekaphobia.
                 regex:
                   - word boundary
@@ -265,10 +280,10 @@ compute:
                         exactly: 13
                     name: horror
                   - word boundary
-            as: match groups result
+            as: match regex result
             cases:
               - [null, null]
-              - [{ generic object: { union: [string, number] } }, { from: { constant: match groups result }, at: [horror] }]
+              - [any, { from: { constant: match regex result }, at: [groups, horror] }]
           expected: categorically
       test is match runtime regex building:
         assert equal::

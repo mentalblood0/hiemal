@@ -647,6 +647,45 @@ impl TypeKind {
         }
     }
 
+    pub fn substraction(&self, other: &TypeKind) -> Option<TypeKind> {
+        if self == other {
+            None
+        } else {
+            match (self, other) {
+                (TypeKind::Bool, TypeKind::LiteralTrue) => Some(TypeKind::LiteralFalse),
+                (TypeKind::Bool, TypeKind::LiteralFalse) => Some(TypeKind::LiteralTrue),
+                (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
+                    let result = self_union_types
+                        .difference(other_union_types)
+                        .cloned()
+                        .collect::<BTreeSet<_>>();
+                    if result.is_empty() {
+                        None
+                    } else {
+                        Some(TypeKind::Union(result.into()))
+                    }
+                }
+                (TypeKind::Union(self_union_types), _) => {
+                    if self_union_types.contains(&(*other).clone().into()) {
+                        let mut result_union_types = (**self_union_types).clone();
+                        result_union_types.remove(&(*other).clone().into());
+                        Some(TypeKind::Union(result_union_types.into()))
+                    } else {
+                        Some(self.clone())
+                    }
+                }
+                (_, TypeKind::Union(other_union_types)) => {
+                    if other_union_types.contains(&(*other).clone().into()) {
+                        None
+                    } else {
+                        Some(self.clone())
+                    }
+                }
+                _ => Some(self.clone()),
+            }
+        }
+    }
+
     pub fn intersection(&self, other: &TypeKind) -> Option<TypeKind> {
         if self == other {
             Some(self.clone())

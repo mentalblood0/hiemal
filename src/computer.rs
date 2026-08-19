@@ -1493,7 +1493,7 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
-                EmbeddedFunction::MatchGroups => {
+                EmbeddedFunction::MatchRegex => {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,
                     )?;
@@ -1532,24 +1532,45 @@ impl<'a> ComputationContext<'a> {
                         })?;
                     if let Some(captures) = compiled_regex.captures(&computed_string) {
                         let result_value = Some(Value::Object(Object::new_from_iter(
-                            compiled_regex.capture_names().flatten().filter_map(|name| {
-                                captures.name(name).map(|match_obj| {
-                                    (
-                                        name.to_string().into(),
-                                        Some({
-                                            let matched = match_obj.as_str();
-                                            if let Ok(matched_as_number) =
-                                                dashu::Rational::from_str(matched)
-                                            {
-                                                Value::Number(matched_as_number)
-                                            } else {
-                                                Value::String(matched.into())
-                                            }
-                                        })
+                            [
+                                (
+                                    "groups".to_string().into(),
+                                    Some(Value::Object(Object::new_from_iter(
+                                        compiled_regex.capture_names().flatten().filter_map(
+                                            |name| {
+                                                captures.name(name).map(|match_obj| {
+                                                    (
+                                                        name.to_string().into(),
+                                                        Some({
+                                                            let matched = match_obj.as_str();
+                                                            if let Ok(matched_as_number) =
+                                                                dashu::Rational::from_str(matched)
+                                                            {
+                                                                Value::Number(matched_as_number)
+                                                            } else {
+                                                                Value::String(matched.into())
+                                                            }
+                                                        })
+                                                        .into(),
+                                                    )
+                                                })
+                                            },
+                                        ),
+                                    )))
+                                    .into(),
+                                ),
+                                (
+                                    "start".to_string().into(),
+                                    Some(Value::Number(captures.get(0).unwrap().start().into()))
                                         .into(),
-                                    )
-                                })
-                            }),
+                                ),
+                                (
+                                    "end".to_string().into(),
+                                    Some(Value::Number(captures.get(0).unwrap().end().into()))
+                                        .into(),
+                                ),
+                            ]
+                            .into_iter(),
                         )));
                         let r#type = Value::type_kind(&result_value);
                         Ok(IntermediateValueAndMetadata {

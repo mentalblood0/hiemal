@@ -234,8 +234,8 @@ pub enum EmbeddedFunction {
     KeyValuePairs,
     #[serde(rename = "flatten")]
     Flatten,
-    #[serde(rename = "match groups")]
-    MatchGroups,
+    #[serde(rename = "match regex")]
+    MatchRegex,
     #[serde(rename = "concat")]
     Concat,
     #[serde(rename = "read bytes from file")]

@@ -1098,58 +1098,79 @@ impl Compiler {
                         },
                         false,
                     )?,
-                    EmbeddedFunction::MatchGroups => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        &TypeKind::Object(
-                            BTreeMap::from_iter([
-                                ("string".to_string().into(), TypeKind::String.into()),
-                                (
-                                    "regex".to_string().into(),
-                                    TypeKind::Constructed(Constructed::Regex).into(),
-                                ),
-                            ])
-                            .into(),
-                        ),
-                        &|compiled_argument_resolved_type| {
-                            if let TypeKind::LiteralString(regex_literal_string) =
-                                &compiled_argument_resolved_type.kind
-                            {
-                                Regex::new(&regex_literal_string.to_string()).with_context(
-                                    || {
-                                        format!(
-                                            "expected correct regex, found \
-                                             {regex_literal_string:?} at {:?}",
-                                            compilation_context.path
-                                        )
-                                    },
-                                )?;
-                            };
-                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
-                                BTreeSet::from_iter([
-                                    compiled_argument_resolved_type.with_kind(
-                                        TypeKind::GenericObject(Box::new(
-                                            compiled_argument_resolved_type.with_kind(
-                                                TypeKind::Union(
-                                                    BTreeSet::from_iter(vec![
-                                                        compiled_argument_resolved_type
-                                                            .with_kind(TypeKind::String),
-                                                        compiled_argument_resolved_type
-                                                            .with_kind(TypeKind::Number),
-                                                    ])
-                                                    .into(),
-                                                ),
-                                            ),
-                                        )),
+                    EmbeddedFunction::MatchRegex => {
+                        self.compile_embedded_function_call(
+                            compilation_context,
+                            global_compilation_context,
+                            embedded_function_call,
+                            &TypeKind::Object(
+                                BTreeMap::from_iter([
+                                    ("string".to_string().into(), TypeKind::String.into()),
+                                    (
+                                        "regex".to_string().into(),
+                                        TypeKind::Constructed(Constructed::Regex).into(),
                                     ),
-                                    compiled_argument_resolved_type.with_kind(TypeKind::Null),
                                 ])
                                 .into(),
-                            )))
-                        },
-                        false,
-                    )?,
+                            ),
+                            &|compiled_argument_resolved_type| {
+                                if let TypeKind::LiteralString(regex_literal_string) =
+                                    &compiled_argument_resolved_type.kind
+                                {
+                                    Regex::new(&regex_literal_string.to_string()).with_context(
+                                        || {
+                                            format!(
+                                                "expected correct regex, found \
+                                                 {regex_literal_string:?} at {:?}",
+                                                compilation_context.path
+                                            )
+                                        },
+                                    )?;
+                                };
+                                Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
+                                    BTreeSet::from_iter([
+                                        compiled_argument_resolved_type.with_kind(
+                                            TypeKind::Object(
+                                                BTreeMap::from_iter([
+                                                    (
+                                                        "groups".to_string().into(),
+                                                        compiled_argument_resolved_type.with_kind(
+                                                            TypeKind::GenericObject(Box::new(
+                                                                compiled_argument_resolved_type
+                                                                    .with_kind(TypeKind::Union(
+                                                                        BTreeSet::from_iter(vec![
+                                                                compiled_argument_resolved_type
+                                                                    .with_kind(TypeKind::String),
+                                                                compiled_argument_resolved_type
+                                                                    .with_kind(TypeKind::Number),
+                                                            ])
+                                                                        .into(),
+                                                                    )),
+                                                            )),
+                                                        ),
+                                                    ),
+                                                    (
+                                                        "start".to_string().into(),
+                                                        compiled_argument_resolved_type
+                                                            .with_kind(TypeKind::Number),
+                                                    ),
+                                                    (
+                                                        "end".to_string().into(),
+                                                        compiled_argument_resolved_type
+                                                            .with_kind(TypeKind::Number),
+                                                    ),
+                                                ])
+                                                .into(),
+                                            ),
+                                        ),
+                                        compiled_argument_resolved_type.with_kind(TypeKind::Null),
+                                    ])
+                                    .into(),
+                                )))
+                            },
+                            false,
+                        )?
+                    }
                     EmbeddedFunction::ReadBytesFromFile => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
@@ -1315,7 +1336,9 @@ impl Compiler {
                 let mut result_external_constants_name_clustered_indices = compiled_match
                     .external_constants_name_clustered_indices
                     .clone();
-                let mut covered_types = BTreeSet::new();
+                let mut current_match_type_kind_option =
+                    Some(compiled_match.node.r#type.kind.clone());
+                let mut covered_types_kinds = BTreeSet::new();
                 let match_constant_name_clustered_index_option =
                     if let Some(match_constant_name) = r#as {
                         Some(
@@ -1339,103 +1362,108 @@ impl Compiler {
                         .path
                         .0
                         .extend([PathSegment::Cases, PathSegment::Case(case_index)]);
-                    match case_condition {
-                        Condition::Type(refined_match_type) => {
-                            if compiled_match
-                                .node
-                                .r#type
-                                .kind
-                                .intersection(&refined_match_type.kind)
-                                .is_none()
-                            {
-                                continue;
-                            };
-                            if let Some(match_constant_name) = r#as {
-                                self.define_constant(
-                                    match_constant_name.clone(),
-                                    ConstantMetadata {
-                                        r#type: refined_match_type.clone(),
-                                    },
-                                    &mut case_compilation_context,
-                                    global_compilation_context,
-                                );
-                            };
-                            let compiled_case = self.compile_with_context(
-                                case,
-                                &case_compilation_context,
-                                global_compilation_context,
-                            )?;
-                            result_types.insert(compiled_case.node.r#type.clone());
-                            result_external_constants_name_clustered_indices.append(
-                                &mut compiled_case
-                                    .external_constants_name_clustered_indices
-                                    .clone(),
-                            );
-                            covered_types.insert(refined_match_type.clone());
-
-                            result_cases.push(Case {
-                                condition: intermediate_representation::Condition::Type(
-                                    refined_match_type.clone(),
-                                ),
-                                node: compiled_case.node.clone(),
-                            });
-                        }
-                        Condition::Value(condition) => {
-                            let compiled_condition = self.compile_with_context(
-                                condition,
-                                &case_compilation_context,
-                                global_compilation_context,
-                            )?;
-                            let refined_match_type = compiled_condition.node.r#type.clone();
-                            if compiled_match
-                                .node
-                                .r#type
-                                .kind
-                                .intersection(&refined_match_type.kind)
-                                .is_none()
-                            {
-                                continue;
-                            };
-                            if let Some(match_constant_name) = r#as {
-                                self.define_constant(
-                                    match_constant_name.clone(),
-                                    ConstantMetadata {
-                                        r#type: refined_match_type.clone(),
-                                    },
-                                    &mut case_compilation_context,
-                                    global_compilation_context,
-                                );
+                    if let Some(ref current_match_type_kind) = current_match_type_kind_option {
+                        match case_condition {
+                            Condition::Type(case_match_type) => {
+                                if let Some(refined_match_type_kind) =
+                                    current_match_type_kind.intersection(&case_match_type.kind)
+                                {
+                                    if let Some(match_constant_name) = r#as {
+                                        self.define_constant(
+                                            match_constant_name.clone(),
+                                            ConstantMetadata {
+                                                r#type: compiled_match
+                                                    .node
+                                                    .r#type
+                                                    .with_kind(refined_match_type_kind),
+                                            },
+                                            &mut case_compilation_context,
+                                            global_compilation_context,
+                                        );
+                                    };
+                                    let compiled_case = self.compile_with_context(
+                                        case,
+                                        &case_compilation_context,
+                                        global_compilation_context,
+                                    )?;
+                                    result_types.insert(compiled_case.node.r#type.clone());
+                                    result_external_constants_name_clustered_indices.append(
+                                        &mut compiled_case
+                                            .external_constants_name_clustered_indices
+                                            .clone(),
+                                    );
+                                    current_match_type_kind_option =
+                                        current_match_type_kind.substraction(&case_match_type.kind);
+                                    covered_types_kinds.insert(case_match_type.kind.clone());
+                                    result_cases.push(Case {
+                                        condition: intermediate_representation::Condition::Type(
+                                            case_match_type.clone(),
+                                        ),
+                                        node: compiled_case.node.clone(),
+                                    });
+                                }
                             }
-                            let compiled_case = self.compile_with_context(
-                                case,
-                                &case_compilation_context,
-                                global_compilation_context,
-                            )?;
-                            result_types.insert(compiled_case.node.r#type.clone());
-                            result_external_constants_name_clustered_indices.append(
-                                &mut compiled_case
-                                    .external_constants_name_clustered_indices
-                                    .clone(),
-                            );
-                            if matches!(
-                                refined_match_type.kind,
-                                TypeKind::LiteralTrue
-                                    | TypeKind::LiteralFalse
-                                    | TypeKind::LiteralString(_)
-                                    | TypeKind::Null
-                            ) {
-                                covered_types.insert(refined_match_type);
+                            Condition::Value(condition) => {
+                                let compiled_condition = self.compile_with_context(
+                                    condition,
+                                    &case_compilation_context,
+                                    global_compilation_context,
+                                )?;
+                                if let Some(refined_match_type_kind) = compiled_match
+                                    .node
+                                    .r#type
+                                    .kind
+                                    .intersection(&compiled_condition.node.r#type.kind)
+                                {
+                                    if let Some(match_constant_name) = r#as {
+                                        self.define_constant(
+                                            match_constant_name.clone(),
+                                            ConstantMetadata {
+                                                r#type: refined_match_type_kind.clone().into(),
+                                            },
+                                            &mut case_compilation_context,
+                                            global_compilation_context,
+                                        );
+                                    }
+                                    let compiled_case = self.compile_with_context(
+                                        case,
+                                        &case_compilation_context,
+                                        global_compilation_context,
+                                    )?;
+                                    result_types.insert(compiled_case.node.r#type.clone());
+                                    result_external_constants_name_clustered_indices.append(
+                                        &mut compiled_case
+                                            .external_constants_name_clustered_indices
+                                            .clone(),
+                                    );
+                                    if matches!(
+                                        refined_match_type_kind,
+                                        TypeKind::LiteralTrue
+                                            | TypeKind::LiteralFalse
+                                            | TypeKind::LiteralString(_)
+                                            | TypeKind::Null
+                                    ) {
+                                        current_match_type_kind_option = current_match_type_kind
+                                            .substraction(&refined_match_type_kind);
+                                        covered_types_kinds.insert(refined_match_type_kind);
+                                    }
+                                    result_cases.push(Case {
+                                        condition: intermediate_representation::Condition::Value(
+                                            compiled_condition.node.clone(),
+                                        ),
+                                        node: compiled_case.node.clone(),
+                                    });
+                                }
                             }
-                            result_cases.push(Case {
-                                condition: intermediate_representation::Condition::Value(
-                                    compiled_condition.node.clone(),
-                                ),
-                                node: compiled_case.node.clone(),
-                            });
                         }
                     }
                 }
-                let covered = Type::from(covered_types);
+                let covered = Type::from(
+                    covered_types_kinds
+                        .iter()
+                        .map(|kind| kind.clone().into())
+                        .collect::<BTreeSet<_>>(),
+                );
                 if !covered.kind.contains(&compiled_match.node.r#type.kind) {
                     return Err(anyhow!(
                         "expected coverage for {:#?}, found coverage only for {covered:#?} at \
