@@ -349,8 +349,8 @@ fn process_from_at_program_path_part(
                             functions,
                             constants,
                             compute: _,
-                            with_capabilities: _,
-                            without_capabilities: _,
+                            allow: _,
+                            forbid: _,
                         },
                         PathSegment::Functions | PathSegment::Constants,
                     ) => {
@@ -402,8 +402,8 @@ fn process_from_at_program_path_part(
                             functions: _,
                             constants: _,
                             compute,
-                            with_capabilities: _,
-                            without_capabilities: _,
+                            allow: _,
+                            forbid: _,
                         },
                         PathSegment::Compute,
                     ) => {
@@ -633,13 +633,12 @@ impl Compiler {
                 functions,
                 constants,
                 compute,
-                with_capabilities,
-                without_capabilities,
+                allow: with_capabilities,
+                forbid: without_capabilities,
             } => {
                 if with_capabilities.is_some() && without_capabilities.is_some() {
                     return Err(anyhow!(
-                        "expected either `with capabilities` or `without capabilities` to be \
-                         specified at {:#?}",
+                        "expected either `allow` or `forbid` to be specified at {:#?}",
                         compilation_context.path
                     ));
                 }
@@ -705,23 +704,23 @@ impl Compiler {
                     global_compilation_context,
                 )?;
                 if let Some(with_capabilities) = with_capabilities {
-                    let undefined_capabilities =
+                    let used_not_allowed_capabilities =
                         compiled_compute.node.r#type.capabilities - *with_capabilities;
-                    if !undefined_capabilities.is_empty() {
+                    if !used_not_allowed_capabilities.is_empty() {
                         return Err(anyhow!(
-                            "expected usage of only capabilities {:#?}, found usage of undefined \
-                             capabilities {undefined_capabilities:#?} at {:#?}",
+                            "expected usage of only capabilities {:#?}, found usage of not \
+                             allowed capabilities {used_not_allowed_capabilities:#?} at {:#?}",
                             with_capabilities,
                             compute_compilation_context.path
                         ));
                     }
                 } else if let Some(without_capabilities) = without_capabilities {
-                    let undefined_capabilities =
+                    let used_forbidden_capabilities =
                         compiled_compute.node.r#type.capabilities & *without_capabilities;
-                    if !undefined_capabilities.is_empty() {
+                    if !used_forbidden_capabilities.is_empty() {
                         return Err(anyhow!(
                             "expected usage of any of capabilities except {:#?}, found usage of \
-                             undefined capabilities {undefined_capabilities:#?} at {:#?}",
+                             forbidden capabilities {used_forbidden_capabilities:#?} at {:#?}",
                             without_capabilities,
                             compute_compilation_context.path
                         ));

@@ -6,7 +6,7 @@
 - static type checking without annotations
 - tuples, union types, heterogenous fold
 - match clause exhaustiveness checking
-- capabilities
+- capabilities restrictions checking
 - pass-by-value, strings and containers are cheap to clone
 - parallel execution
 - lazy evaluation: constants, arrays/tuples, objects, sequence, map and filter
@@ -199,7 +199,7 @@ compute:
   f:: 1
 ```
 
-#### functions constants with capabilities without capabilities compute
+#### functions constants allow forbid compute
 
 ```yaml
 functions:
@@ -245,7 +245,7 @@ compute:
 ```
 
 ```yaml
-with capabilities:
+allow:
   - remove file
   - read file
 compute:
@@ -260,7 +260,7 @@ compute:
 ```
 
 ```yaml
-without capabilities:
+forbid:
   - remove file
 compute:
   pipe:

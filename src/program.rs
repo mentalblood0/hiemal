@@ -23,10 +23,10 @@ pub enum Program {
         functions: BTreeMap<Arc<String>, Arc<Program>>,
         #[serde(default)]
         constants: BTreeMap<Arc<String>, Arc<Program>>,
-        #[serde(default, rename = "with capabilities")]
-        with_capabilities: Option<EnumSet<Capability>>,
-        #[serde(default, rename = "without capabilities")]
-        without_capabilities: Option<EnumSet<Capability>>,
+        #[serde(default, rename = "allow")]
+        allow: Option<EnumSet<Capability>>,
+        #[serde(default, rename = "forbid")]
+        forbid: Option<EnumSet<Capability>>,
         compute: Arc<Program>,
     },
     Constant {
