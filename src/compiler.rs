@@ -22,7 +22,7 @@ use crate::{
         self, AtSegment, Condition, EmbeddedFunction, EmbeddedFunctionCall, Path, PathSegment,
         Program, RangeBound,
     },
-    r#type::{Capability, Constructed, MaybeType, Type, TypeAtResult, TypeKind},
+    r#type::{Capability, Constructed, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties},
     value::Value,
 };
 
@@ -68,8 +68,7 @@ fn resolve_type(
                     None => {
                         let result_type = Type {
                             kind: expected_type_kind.clone(),
-                            capabilities: got_type.capabilities.clone(),
-                            is_computable: got_type.is_computable,
+                            properties: got_type.properties.clone(),
                         };
                         *unknown_type_write_guard = Some(result_type.clone());
                         Ok(result_type)
@@ -528,7 +527,7 @@ impl Compiler {
         )?;
         let compiled_argument_resolved_type = resolve_type(
             &compiled_argument.node.r#type,
-            &argument_type_kind,
+            argument_type_kind,
             &argument_compilation_context,
         )?;
         Ok(NodeAndMetadata {
@@ -705,7 +704,7 @@ impl Compiler {
                 )?;
                 if let Some(allow) = with_capabilities {
                     let used_not_allowed_capabilities =
-                        compiled_compute.node.r#type.capabilities - *allow;
+                        compiled_compute.node.r#type.properties.capabilities - *allow;
                     if !used_not_allowed_capabilities.is_empty() {
                         return Err(anyhow!(
                             "expected usage of only capabilities {:#?}, found usage of not \
@@ -716,7 +715,7 @@ impl Compiler {
                     }
                 } else if let Some(forbid) = without_capabilities {
                     let used_forbidden_capabilities =
-                        compiled_compute.node.r#type.capabilities & *forbid;
+                        compiled_compute.node.r#type.properties.capabilities & *forbid;
                     if !used_forbidden_capabilities.is_empty() {
                         return Err(anyhow!(
                             "expected usage of any of capabilities except {:#?}, found usage of \
@@ -1000,31 +999,37 @@ impl Compiler {
                                         BTreeSet::from_iter([
                                             Type {
                                                 kind: TypeKind::Bytes,
-                                                capabilities: enum_set!(
-                                                    Capability::ReadStandardInput
+                                                properties: TypeProperties {
+                                                    capabilities: enum_set!(
+                                                        Capability::ReadStandardInput
+                                                    ),
+                                                    is_computable: true,
+                                                }
+                                                .intersected(
+                                                    &compiled_argument_resolved_type.properties,
                                                 ),
-                                                is_computable: true,
-                                            }
-                                            .with_intersected_properties_from(
-                                                compiled_argument_resolved_type,
-                                            ),
+                                            },
                                             Type {
                                                 kind: TypeKind::Null,
-                                                capabilities: enum_set!(
-                                                    Capability::ReadStandardInput
+                                                properties: TypeProperties {
+                                                    capabilities: enum_set!(
+                                                        Capability::ReadStandardInput
+                                                    ),
+                                                    is_computable: true,
+                                                }
+                                                .intersected(
+                                                    &compiled_argument_resolved_type.properties,
                                                 ),
-                                                is_computable: true,
-                                            }
-                                            .with_intersected_properties_from(
-                                                compiled_argument_resolved_type,
-                                            ),
+                                            },
                                         ])
                                         .into(),
                                     ),
-                                    capabilities: enum_set!(Capability::ReadFile),
-                                    is_computable: true,
-                                }
-                                .with_intersected_properties_from(compiled_argument_resolved_type))
+                                    properties: TypeProperties {
+                                        capabilities: enum_set!(Capability::ReadStandardInput),
+                                        is_computable: true,
+                                    }
+                                    .intersected(&compiled_argument_resolved_type.properties),
+                                })
                             },
                             false,
                         )?,
@@ -1150,27 +1155,33 @@ impl Compiler {
                                     BTreeSet::from_iter([
                                         Type {
                                             kind: TypeKind::Bytes,
-                                            capabilities: enum_set!(Capability::ReadFile),
-                                            is_computable: true,
-                                        }
-                                        .with_intersected_properties_from(
-                                            compiled_argument_resolved_type,
-                                        ),
+                                            properties: TypeProperties {
+                                                capabilities: enum_set!(Capability::ReadFile),
+                                                is_computable: true,
+                                            }
+                                            .intersected(
+                                                &compiled_argument_resolved_type.properties,
+                                            ),
+                                        },
                                         Type {
                                             kind: TypeKind::Null,
-                                            capabilities: enum_set!(Capability::ReadFile),
-                                            is_computable: true,
-                                        }
-                                        .with_intersected_properties_from(
-                                            compiled_argument_resolved_type,
-                                        ),
+                                            properties: TypeProperties {
+                                                capabilities: enum_set!(Capability::ReadFile),
+                                                is_computable: true,
+                                            }
+                                            .intersected(
+                                                &compiled_argument_resolved_type.properties,
+                                            ),
+                                        },
                                     ])
                                     .into(),
                                 ),
-                                capabilities: enum_set!(Capability::ReadFile),
-                                is_computable: true,
-                            }
-                            .with_intersected_properties_from(compiled_argument_resolved_type))
+                                properties: TypeProperties {
+                                    capabilities: enum_set!(Capability::ReadFile),
+                                    is_computable: true,
+                                }
+                                .intersected(&compiled_argument_resolved_type.properties),
+                            })
                         },
                         false,
                     )?,
@@ -1214,10 +1225,12 @@ impl Compiler {
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
                                 kind: TypeKind::Bool,
-                                capabilities: enum_set!(Capability::CreateFile),
-                                is_computable: true,
-                            }
-                            .with_intersected_properties_from(compiled_argument_resolved_type))
+                                properties: TypeProperties {
+                                    capabilities: enum_set!(Capability::CreateFile),
+                                    is_computable: true,
+                                }
+                                .intersected(&compiled_argument_resolved_type.properties),
+                            })
                         },
                         false,
                     )?,
@@ -1245,10 +1258,12 @@ impl Compiler {
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
                                 kind: TypeKind::Bool,
-                                capabilities: enum_set!(Capability::OverwriteFile),
-                                is_computable: true,
-                            }
-                            .with_intersected_properties_from(compiled_argument_resolved_type))
+                                properties: TypeProperties {
+                                    capabilities: enum_set!(Capability::OverwriteFile),
+                                    is_computable: true,
+                                }
+                                .intersected(&compiled_argument_resolved_type.properties),
+                            })
                         },
                         false,
                     )?,
@@ -1260,10 +1275,12 @@ impl Compiler {
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
                                 kind: TypeKind::Bool,
-                                capabilities: enum_set!(Capability::RemoveFile),
-                                is_computable: true,
-                            }
-                            .with_intersected_properties_from(compiled_argument_resolved_type))
+                                properties: TypeProperties {
+                                    capabilities: enum_set!(Capability::RemoveFile),
+                                    is_computable: true,
+                                }
+                                .intersected(&compiled_argument_resolved_type.properties),
+                            })
                         },
                         false,
                     )?,
@@ -2292,6 +2309,10 @@ impl Compiler {
                                                 content: Content::UserFunctionCall {
                                                     arguments: new_constants_definitions,
                                                     body: *function_index,
+                                                    arguments_is_pure: function_type
+                                                        .properties
+                                                        .capabilities
+                                                        .is_empty(),
                                                 },
                                                 r#type: function_type.clone(),
                                             }
@@ -2360,6 +2381,12 @@ impl Compiler {
                                                 content: Content::UserFunctionCall {
                                                     arguments: new_constants_definitions,
                                                     body: function_index,
+                                                    arguments_is_pure: compiled_function
+                                                        .node
+                                                        .r#type
+                                                        .properties
+                                                        .capabilities
+                                                        .is_empty(),
                                                 },
                                                 r#type: compiled_function.node.r#type.clone(),
                                             }

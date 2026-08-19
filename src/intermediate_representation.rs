@@ -78,6 +78,7 @@ pub enum Content {
     UserFunctionCall {
         arguments: Vec<ConstantDefinition>,
         body: usize,
+        arguments_is_pure: bool,
     },
     FromAt {
         from: Arc<Node>,

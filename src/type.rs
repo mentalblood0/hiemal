@@ -217,13 +217,40 @@ pub enum Capability {
     WriteNetwork,
 }
 
+#[derive(Serialize, Deserialize, Debug, PartialOrd, Ord, Hash, PartialEq, Eq, Default, Clone)]
+pub struct TypeProperties {
+    pub capabilities: EnumSet<Capability>,
+    pub is_computable: bool,
+}
+
+impl TypeProperties {
+    pub fn intersected(&self, another_type_properties: &TypeProperties) -> TypeProperties {
+        Self {
+            capabilities: self.capabilities | another_type_properties.capabilities,
+            is_computable: self.is_computable && another_type_properties.is_computable,
+        }
+    }
+}
+
+impl<'a, I> From<I> for TypeProperties
+where
+    I: Iterator<Item = &'a TypeProperties>,
+{
+    fn from(type_properties_iterator: I) -> Self {
+        let mut result = TypeProperties::default();
+        for type_properties in type_properties_iterator {
+            result = result.intersected(type_properties);
+        }
+        result
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone, Default, Eq)]
 #[serde(from = "TypeKind")]
 #[serde(into = "TypeKind")]
 pub struct Type {
     pub kind: TypeKind,
-    pub capabilities: EnumSet<Capability>,
-    pub is_computable: bool,
+    pub properties: TypeProperties,
 }
 
 impl PartialEq for Type {
@@ -254,8 +281,10 @@ impl From<TypeKind> for Type {
     fn from(type_kind: TypeKind) -> Self {
         Self {
             kind: type_kind,
-            capabilities: EnumSet::default(),
-            is_computable: true,
+            properties: TypeProperties {
+                capabilities: EnumSet::default(),
+                is_computable: true,
+            },
         }
     }
 }
@@ -271,16 +300,13 @@ where
     I: Iterator<Item = &'a Type>,
 {
     fn from(type_kind_and_inner_types: (TypeKind, I)) -> Self {
-        let mut result = Self {
+        Self {
             kind: type_kind_and_inner_types.0,
-            capabilities: EnumSet::default(),
-            is_computable: true,
-        };
-        for inner_type in type_kind_and_inner_types.1 {
-            result.capabilities |= inner_type.capabilities;
-            result.is_computable &= inner_type.is_computable;
+            properties: type_kind_and_inner_types
+                .1
+                .map(|r#type| &r#type.properties)
+                .into(),
         }
-        result
     }
 }
 
@@ -425,16 +451,10 @@ impl From<BTreeSet<Type>> for Type {
             match union_types.len() {
                 1 => union_types.into_iter().next().unwrap(),
                 _ => {
-                    let mut result_capabilities = EnumSet::default();
-                    let mut result_is_computable = true;
-                    for union_type in union_types.iter() {
-                        result_capabilities |= union_type.capabilities;
-                        result_is_computable &= union_type.is_computable;
-                    }
+                    let properties = union_types.iter().map(|r#type| &r#type.properties).into();
                     Type {
                         kind: TypeKind::Union(union_types.into()),
-                        capabilities: result_capabilities,
-                        is_computable: result_is_computable,
+                        properties,
                     }
                 }
             }
@@ -444,16 +464,10 @@ impl From<BTreeSet<Type>> for Type {
 
 impl From<Vec<Type>> for Type {
     fn from(tuple_types: Vec<Type>) -> Type {
-        let mut result_capabilities = EnumSet::default();
-        let mut result_is_computable = true;
-        for union_type in tuple_types.iter() {
-            result_capabilities |= union_type.capabilities;
-            result_is_computable &= union_type.is_computable;
-        }
+        let properties = tuple_types.iter().map(|r#type| &r#type.properties).into();
         Type {
             kind: TypeKind::Tuple(tuple_types.into()),
-            capabilities: result_capabilities,
-            is_computable: result_is_computable,
+            properties,
         }
     }
 }
@@ -789,14 +803,12 @@ impl<'a> Type {
     pub fn with_kind(&self, kind: TypeKind) -> Self {
         Self {
             kind,
-            capabilities: self.capabilities,
-            is_computable: self.is_computable,
+            properties: self.properties.clone(),
         }
     }
 
     pub fn with_intersected_properties_from(mut self, another_type: &Type) -> Self {
-        self.capabilities |= another_type.capabilities;
-        self.is_computable = self.is_computable && another_type.is_computable;
+        self.properties = self.properties.intersected(&another_type.properties);
         self
     }
 

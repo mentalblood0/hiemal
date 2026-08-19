@@ -1773,7 +1773,11 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
             },
-            Content::UserFunctionCall { arguments, body } => {
+            Content::UserFunctionCall {
+                arguments,
+                body,
+                arguments_is_pure,
+            } => {
                 let mut result_constants = constants.clone();
                 for (constant_name_clustered_index, computed_constant) in arguments
                     .iter()
@@ -1791,9 +1795,7 @@ impl<'a> ComputationContext<'a> {
                     result_constants[constant_name_clustered_index] = Some(computed_constant);
                 }
                 let user_function = &self.intermediate_representation.user_functions[*body];
-                if self.computer_config.user_functions_caching
-                    && node.r#type.capabilities.is_empty()
-                {
+                if self.computer_config.user_functions_caching && *arguments_is_pure {
                     let function_call_identifier = {
                         let mut hasher = gxhash::GxHasher::default();
                         for constant_name_clustered_index in
