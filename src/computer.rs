@@ -40,7 +40,7 @@ static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
 
 #[derive(Clone, Debug)]
 struct SequenceLockableInternals {
-    next_node: Arc<Node>,
+    current_concrete_type_and_next: Arc<Vec<(TypeKind, Arc<Node>)>>,
     next_constants: Constants,
     already_computed_values: Vec<Arc<IntermediateValueAndMetadata>>,
 }
@@ -517,10 +517,24 @@ impl<'a> ComputationContext<'a> {
             SequenceLockableInternals,
         >,
     ) -> Result<()> {
-        let next = self.compute_node(
-            &lockable_internals_write_guard.next_node,
-            &lockable_internals_write_guard.next_constants,
-        )?;
+        let next_node = lockable_internals_write_guard
+            .current_concrete_type_and_next
+            .iter()
+            .find_map(|(current_concrete_type_kind, possible_next_node)| {
+                if current_concrete_type_kind.contains(
+                    &lockable_internals_write_guard
+                        .already_computed_values
+                        .last()
+                        .unwrap()
+                        .type_kind,
+                ) {
+                    Some(possible_next_node)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let next = self.compute_node(next_node, &lockable_internals_write_guard.next_constants)?;
         lockable_internals_write_guard.next_constants[sequence
             .intermediate_representation_content
             .current_constant_name_clustered_index] = Some(next.clone());
@@ -1188,7 +1202,6 @@ impl<'a> ComputationContext<'a> {
             | Content::EmbeddedFunctionCall { .. }
             | Content::UserFunctionCall { .. }
             | Content::FromAt { .. }
-            | Content::Scope { .. }
             | Content::Match { .. } => IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::LazyValue(LazyValue {
                     node: node.clone(),
@@ -1854,8 +1867,14 @@ impl<'a> ComputationContext<'a> {
                 for path_segment in value_path_segments {
                     match path_segment {
                         ValuePathSegment::ArrayIndex(array_index) => {
-                            if let Some(new_result) =
-                                &mut self.get_from_intermediate_value(&result, *array_index)?
+                            if let Some(new_result) = &mut self
+                                .get_from_intermediate_value(&result, *array_index)
+                                .with_context(|| {
+                                    format!(
+                                        "can not get element by index {array_index} from\n{}",
+                                        serde_saphyr::to_string(&result.type_kind).unwrap()
+                                    )
+                                })?
                             {
                                 result = std::mem::take(new_result);
                             } else {
@@ -1863,8 +1882,14 @@ impl<'a> ComputationContext<'a> {
                             }
                         }
                         ValuePathSegment::ObjectKey(object_key) => {
-                            if let Some(new_result) =
-                                &mut self.get_by_key_from_intermediate_value(&result, object_key)?
+                            if let Some(new_result) = &mut self
+                                .get_by_key_from_intermediate_value(&result, object_key)
+                                .with_context(|| {
+                                    format!(
+                                        "can not get value by key {object_key:?} from\n{}",
+                                        serde_saphyr::to_string(&result.type_kind).unwrap()
+                                    )
+                                })?
                             {
                                 result = std::mem::take(new_result);
                             } else {
@@ -1933,7 +1958,13 @@ impl<'a> ComputationContext<'a> {
                                         &result,
                                         from_number,
                                         to_number,
-                                    )?
+                                    )
+                                    .with_context(|| {
+                                        format!(
+                                            "can not get slice by range from\n{}",
+                                            serde_saphyr::to_string(&result.type_kind).unwrap()
+                                        )
+                                    })?
                                     .inner
                                     .into_iter()
                                     .collect::<Vec<_>>();
@@ -2176,7 +2207,9 @@ impl<'a> ComputationContext<'a> {
                         intermediate_representation_content: intermediate_representation_content
                             .clone(),
                         lockable_internals: Arc::new(RwLock::new(SequenceLockableInternals {
-                            next_node: intermediate_representation_content.next.clone(),
+                            current_concrete_type_and_next: intermediate_representation_content
+                                .current_concrete_type_kind_and_next
+                                .clone(),
                             next_constants,
                             already_computed_values: [computed_starting_with].into(),
                         })),

@@ -276,7 +276,7 @@ pub enum PathSegment {
     #[serde(rename = "starting from")]
     StartingWith,
     #[serde(rename = "next")]
-    Next,
+    Next(Type),
     #[serde(rename = "while")]
     While,
     #[serde(rename = "through")]
@@ -306,8 +306,6 @@ pub enum PathSegment {
     Else,
     #[serde(rename = "embedded function call")]
     EmbeddedFunctionCall(EmbeddedFunction),
-    #[serde(rename = "string")]
-    String,
     #[serde(rename = "regex")]
     Regex,
     #[serde(rename = "user function call")]

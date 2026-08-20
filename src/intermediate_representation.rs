@@ -8,7 +8,7 @@ use serde_with::{DisplayFromStr, serde_as};
 use crate::{
     containers::{self, Vector},
     program::{EmbeddedFunction, Path},
-    r#type::Type,
+    r#type::{Type, TypeKind},
     value::{deserialize_bytes, serialize_bytes},
 };
 
@@ -126,7 +126,7 @@ pub struct Filter {
 pub struct Sequence {
     pub starting_with: Arc<Node>,
     pub current_constant_name_clustered_index: usize,
-    pub next: Arc<Node>,
+    pub current_concrete_type_kind_and_next: Arc<Vec<(TypeKind, Arc<Node>)>>,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
@@ -173,8 +173,11 @@ impl Default for RangeBound {
 #[repr(u8)]
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum ValuePathSegment {
+    #[serde(rename = "array index")]
     ArrayIndex(usize),
+    #[serde(rename = "object key")]
     ObjectKey(String),
+    #[serde(rename = "array range")]
     ArrayRange {
         from: Box<RangeBound>,
         to: Box<RangeBound>,

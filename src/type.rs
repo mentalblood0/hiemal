@@ -217,21 +217,41 @@ pub enum Capability {
     WriteNetwork,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialOrd, Ord, Hash, PartialEq, Eq, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialOrd, Ord, Hash, PartialEq, Eq, Clone)]
 pub struct TypeProperties {
     pub capabilities: EnumSet<Capability>,
     pub is_computable: bool,
 }
 
-impl TypeProperties {
-    pub fn unified(&self, another_type_properties: &TypeProperties) -> TypeProperties {
+impl Default for TypeProperties {
+    fn default() -> Self {
+        Self {
+            capabilities: EnumSet::default(),
+            is_computable: true,
+        }
+    }
+}
+
+impl<'a> TypeProperties {
+    pub fn unified(&self, another_type_properties: &TypeProperties) -> Self {
         Self {
             capabilities: self.capabilities | another_type_properties.capabilities,
             is_computable: self.is_computable && another_type_properties.is_computable,
         }
     }
 
-    pub fn intersect(&mut self, another_type_properties: &TypeProperties) {
+    pub fn unified_all<I>(&'a self, another_types_properties: I) -> Self
+    where
+        I: Iterator<Item = &'a TypeProperties>,
+    {
+        let mut result = self.clone();
+        for another_type_properties in another_types_properties {
+            result.unify(another_type_properties);
+        }
+        result
+    }
+
+    pub fn unify(&mut self, another_type_properties: &TypeProperties) {
         self.capabilities |= another_type_properties.capabilities;
         self.is_computable = self.is_computable && another_type_properties.is_computable;
     }
@@ -250,7 +270,7 @@ where
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, Default, Eq)]
+#[derive(Deserialize, Serialize, Clone, Default, Eq, Debug)]
 #[serde(from = "TypeKind")]
 #[serde(into = "TypeKind")]
 pub struct Type {
@@ -315,7 +335,7 @@ where
     }
 }
 
-#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum TypeKind {
     #[serde(rename = "number")]
     Number,
@@ -355,7 +375,7 @@ pub enum TypeKind {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum KnownTypeKind {
     #[serde(rename = "number")]
     Number,

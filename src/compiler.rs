@@ -5,9 +5,10 @@ use std::{
 };
 
 use anyhow::{Context, Error, Result, anyhow};
-use enumset::enum_set;
+use enumset::{EnumSet, enum_set};
 use gxhash::HashMap;
 use regex::Regex;
+use serde::Serialize;
 
 use crate::{
     computer::Computer,
@@ -34,11 +35,31 @@ struct CompilationContext {
     entered_user_functions: Set<Program>,
 }
 
+#[derive(Serialize)]
+struct CompilationTypeError<'a, G, E>
+where
+    G: Serialize,
+    E: Serialize,
+{
+    got: &'a G,
+    expected: &'a E,
+    r#at: &'a Path,
+}
+
 impl CompilationContext {
-    fn error(&self, got_type: &Type, expected_type_kind: &TypeKind) -> Error {
+    fn error<'a, G, E>(&self, got: &'a G, expected: &'a E) -> Error
+    where
+        G: Serialize,
+        E: Serialize,
+    {
         anyhow!(
-            "expected {expected_type_kind:#?}, found {got_type:#?} at {:#?}",
-            self.path,
+            "{}",
+            serde_saphyr::to_string(&CompilationTypeError {
+                got,
+                expected,
+                r#at: &self.path
+            })
+            .unwrap()
         )
     }
 }
@@ -569,7 +590,7 @@ impl Compiler {
                         Some(intermediate_representation::Value::Bytes(
                             hex::decode(hex_string)
                                 .with_context(|| {
-                                    format!("expected hexadecimal string, found {hex_string:?}")
+                                    compilation_context.error(hex_string, &"hexadecimal string")
                                 })?
                                 .into(),
                         ))
@@ -632,13 +653,13 @@ impl Compiler {
                 functions,
                 constants,
                 compute,
-                allow: with_capabilities,
-                forbid: without_capabilities,
+                allow,
+                forbid,
             } => {
-                if with_capabilities.is_some() && without_capabilities.is_some() {
-                    return Err(anyhow!(
-                        "expected either `allow` or `forbid` to be specified at {:#?}",
-                        compilation_context.path
+                if allow.is_some() && forbid.is_some() {
+                    return Err(compilation_context.error(
+                        &BTreeMap::from_iter([("allow", &allow), ("forbid", &forbid)]),
+                        &"either `allow` or `forbid`",
                     ));
                 }
                 let mut compute_compilation_context = compilation_context.clone();
@@ -687,11 +708,9 @@ impl Compiler {
                             PathSegment::Functions,
                             PathSegment::Function(function_name.clone()),
                         ]);
-                        return Err(anyhow!(
-                            "expected function named {:?}, found function named {function_name:?} \
-                             at {:#?}",
-                            format!("{function_name}:"),
-                            function_compilation_context.path
+                        return Err(function_compilation_context.error(
+                            &format!("function named {function_name:?}"),
+                            &format!("function named {:?}", format!("{function_name}:")),
                         ));
                     }
                     compute_compilation_context
@@ -703,27 +722,21 @@ impl Compiler {
                     &compute_compilation_context,
                     global_compilation_context,
                 )?;
-                result_type_properties.intersect(&compiled_compute.node.r#type.properties);
-                if let Some(allow) = with_capabilities {
+                result_type_properties.unify(&compiled_compute.node.r#type.properties);
+                if let Some(allow) = allow {
                     let used_not_allowed_capabilities =
                         compiled_compute.node.r#type.properties.capabilities - *allow;
                     if !used_not_allowed_capabilities.is_empty() {
-                        return Err(anyhow!(
-                            "expected usage of only capabilities {:#?}, found usage of not \
-                             allowed capabilities {used_not_allowed_capabilities:#?} at {:#?}",
-                            allow,
-                            compute_compilation_context.path
-                        ));
+                        return Err(compute_compilation_context
+                            .error(&used_not_allowed_capabilities, allow));
                     }
-                } else if let Some(forbid) = without_capabilities {
+                } else if let Some(forbid) = forbid {
                     let used_forbidden_capabilities =
                         compiled_compute.node.r#type.properties.capabilities & *forbid;
                     if !used_forbidden_capabilities.is_empty() {
-                        return Err(anyhow!(
-                            "expected usage of any of capabilities except {:#?}, found usage of \
-                             forbidden capabilities {used_forbidden_capabilities:#?} at {:#?}",
-                            forbid,
-                            compute_compilation_context.path
+                        return Err(compute_compilation_context.error(
+                            &used_forbidden_capabilities,
+                            &EnumSet::default().difference(*forbid),
                         ));
                     }
                 }
@@ -779,14 +792,12 @@ impl Compiler {
                     }
                     .into()
                 } else {
-                    return Err(anyhow!(
-                        "expected one of available constants {:#?}, found {constant_name:?} at \
-                         {:#?}",
-                        compilation_context
+                    return Err(compilation_context.error(
+                        constant_name,
+                        &compilation_context
                             .available_constants
                             .keys()
                             .collect::<Vec<_>>(),
-                        compilation_context.path,
                     ));
                 }
             }
@@ -922,9 +933,9 @@ impl Compiler {
                         .clone()
                         .at_path(&value_path)
                         .with_context(|| {
-                            format!(
-                                "expected value with path {value_path:#?}, found {:#?} at {:#?}",
-                                compiled_extracted_from.node.r#type, compilation_context.path
+                            compilation_context.error(
+                                &compiled_extracted_from.node.r#type.kind,
+                                &BTreeMap::from_iter([("value with path", &value_path)]),
                             )
                         })?;
                 let compiled_extracted_from_type_at_result_as_type =
@@ -1070,11 +1081,8 @@ impl Compiler {
                                         .into(),
                                 )))
                             } else {
-                                Err(anyhow!(
-                                    "expected object, found {:#?} at {:#?}",
-                                    compiled_argument_resolved_type,
-                                    compilation_context.path
-                                ))
+                                Err(compilation_context
+                                    .error(compiled_argument_resolved_type, &"object"))
                             }
                         },
                         false,
@@ -1088,88 +1096,85 @@ impl Compiler {
                         )),
                         &|compiled_argument_resolved_type| {
                             compiled_argument_resolved_type.flatten().with_context(|| {
-                                format!(
-                                    "expected flattenable type, found \
-                                     {compiled_argument_resolved_type:#?} at {:#?}",
-                                    compilation_context.path
-                                )
+                                compilation_context
+                                    .error(compiled_argument_resolved_type, &"flattenable type")
                             })
                         },
                         false,
                     )?,
-                    EmbeddedFunction::MatchRegex => {
-                        self.compile_embedded_function_call(
-                            compilation_context,
-                            global_compilation_context,
-                            embedded_function_call,
-                            &TypeKind::Object(
-                                BTreeMap::from_iter([
-                                    ("string".to_string().into(), TypeKind::String.into()),
-                                    (
-                                        "regex".to_string().into(),
-                                        TypeKind::Constructed(Constructed::Regex).into(),
-                                    ),
+                    EmbeddedFunction::MatchRegex => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &TypeKind::Object(
+                            BTreeMap::from_iter([
+                                ("string".to_string().into(), TypeKind::String.into()),
+                                (
+                                    "regex".to_string().into(),
+                                    TypeKind::Constructed(Constructed::Regex).into(),
+                                ),
+                            ])
+                            .into(),
+                        ),
+                        &|compiled_argument_resolved_type| {
+                            if let TypeKind::LiteralString(regex_literal_string) =
+                                &compiled_argument_resolved_type.kind
+                            {
+                                Regex::new(&regex_literal_string.to_string()).with_context(
+                                    || {
+                                        compilation_context.error(
+                                            &regex_literal_string.to_string(),
+                                            &"correct regex",
+                                        )
+                                    },
+                                )?;
+                            };
+                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
+                                BTreeSet::from_iter([
+                                    compiled_argument_resolved_type.with_kind(TypeKind::Object(
+                                        BTreeMap::from_iter([
+                                            (
+                                                "groups".to_string().into(),
+                                                compiled_argument_resolved_type.with_kind(
+                                                    TypeKind::GenericObject(Box::new(
+                                                        compiled_argument_resolved_type.with_kind(
+                                                            TypeKind::Union(
+                                                                BTreeSet::from_iter(vec![
+                                                                    compiled_argument_resolved_type
+                                                                        .with_kind(
+                                                                            TypeKind::String,
+                                                                        ),
+                                                                    compiled_argument_resolved_type
+                                                                        .with_kind(
+                                                                            TypeKind::Number,
+                                                                        ),
+                                                                ])
+                                                                .into(),
+                                                            ),
+                                                        ),
+                                                    )),
+                                                ),
+                                            ),
+                                            (
+                                                "start".to_string().into(),
+                                                compiled_argument_resolved_type
+                                                    .with_kind(TypeKind::Number),
+                                            ),
+                                            (
+                                                "end".to_string().into(),
+                                                compiled_argument_resolved_type
+                                                    .with_kind(TypeKind::Number),
+                                            ),
+                                        ])
+                                        .into(),
+                                    )),
+                                    compiled_argument_resolved_type.with_kind(TypeKind::Null),
                                 ])
                                 .into(),
-                            ),
-                            &|compiled_argument_resolved_type| {
-                                if let TypeKind::LiteralString(regex_literal_string) =
-                                    &compiled_argument_resolved_type.kind
-                                {
-                                    Regex::new(&regex_literal_string.to_string()).with_context(
-                                        || {
-                                            format!(
-                                                "expected correct regex, found \
-                                                 {regex_literal_string:?} at {:?}",
-                                                compilation_context.path
-                                            )
-                                        },
-                                    )?;
-                                };
-                                Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
-                                    BTreeSet::from_iter([
-                                        compiled_argument_resolved_type.with_kind(
-                                            TypeKind::Object(
-                                                BTreeMap::from_iter([
-                                                    (
-                                                        "groups".to_string().into(),
-                                                        compiled_argument_resolved_type.with_kind(
-                                                            TypeKind::GenericObject(Box::new(
-                                                                compiled_argument_resolved_type
-                                                                    .with_kind(TypeKind::Union(
-                                                                        BTreeSet::from_iter(vec![
-                                                                compiled_argument_resolved_type
-                                                                    .with_kind(TypeKind::String),
-                                                                compiled_argument_resolved_type
-                                                                    .with_kind(TypeKind::Number),
-                                                            ])
-                                                                        .into(),
-                                                                    )),
-                                                            )),
-                                                        ),
-                                                    ),
-                                                    (
-                                                        "start".to_string().into(),
-                                                        compiled_argument_resolved_type
-                                                            .with_kind(TypeKind::Number),
-                                                    ),
-                                                    (
-                                                        "end".to_string().into(),
-                                                        compiled_argument_resolved_type
-                                                            .with_kind(TypeKind::Number),
-                                                    ),
-                                                ])
-                                                .into(),
-                                            ),
-                                        ),
-                                        compiled_argument_resolved_type.with_kind(TypeKind::Null),
-                                    ])
-                                    .into(),
-                                )))
-                            },
-                            false,
-                        )?
-                    }
+                            )))
+                        },
+                        false,
+                    )?,
                     EmbeddedFunction::ReadBytesFromFile => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
@@ -1324,11 +1329,8 @@ impl Compiler {
                     global_compilation_context,
                 )?;
                 if !compiled_match.node.r#type.kind.is_known() {
-                    return Err(anyhow!(
-                        "expected match of known type, found {:#?} at {:#?}",
-                        compiled_match.node.r#type,
-                        match_compilation_context.path
-                    ));
+                    return Err(match_compilation_context
+                        .error(&compiled_match.node.r#type, &"match of known type"));
                 }
                 let mut result_cases = Vec::new();
                 let mut result_types = BTreeSet::new();
@@ -1464,19 +1466,16 @@ impl Compiler {
                         .collect::<BTreeSet<_>>(),
                 );
                 if !covered.kind.contains(&compiled_match.node.r#type.kind) {
-                    return Err(anyhow!(
-                        "expected coverage for {:#?}, found coverage only for {covered:#?} at \
-                         {:#?}",
-                        compiled_match.node.r#type,
-                        compilation_context.path
-                    ));
+                    return Err(compilation_context.error(&covered, &compiled_match.node.r#type));
                 }
                 match result_cases.len() {
                     0 => {
-                        return Err(anyhow!(
-                            "expected at least one valid case for match {:#?} at path {:#?}",
-                            compiled_match.node.r#type,
-                            match_compilation_context.path
+                        return Err(match_compilation_context.error(
+                            &Option::<String>::None,
+                            &BTreeMap::from_iter([(
+                                "at least one valid case for match",
+                                &compiled_match.node.r#type,
+                            )]),
                         ));
                     }
                     _ => NodeAndMetadata {
@@ -1630,11 +1629,8 @@ impl Compiler {
                                 Throughs::Array(compiled_through.node.clone())
                             }
                             _ => {
-                                return Err(anyhow!(
-                                    "expected tuple or array, found {:#?} at {:#?}",
-                                    map_concrete_type,
-                                    map_compilation_context.path
-                                ));
+                                return Err(map_compilation_context
+                                    .error(map_concrete_type, &"tuple or array"));
                             }
                         },
                     ));
@@ -1787,11 +1783,8 @@ impl Compiler {
                                 Throughs::Array(compiled_through.node.clone())
                             }
                             _ => {
-                                return Err(anyhow!(
-                                    "expected tuple or array, found {:#?} at {:#?}",
-                                    filter_concrete_type,
-                                    filter_compilation_context.path
-                                ));
+                                return Err(filter_compilation_context
+                                    .error(filter_concrete_type, &"tuple or array"));
                             }
                         },
                     ));
@@ -1991,10 +1984,9 @@ impl Compiler {
                                 Throughs::Array(compiled_through.node.clone())
                             }
                             _ => {
-                                return Err(anyhow!(
-                                    "expected tuple or array, found {:#?} at {:#?}",
+                                return Err(fold_compilation_context.error(
                                     fold_concrete_type,
-                                    fold_compilation_context.path
+                                    &"tuple or array"
                                 ));
                             }
                         })
@@ -2027,10 +2019,7 @@ impl Compiler {
                     .extend([PathSegment::Metaprogram]);
                 let compiled_metaprogram =
                     Arc::new(self.compile(metaprogram).with_context(|| {
-                        format!(
-                            "expected valid metaprogram at {:#?}",
-                            metaprogram_compilation_context.path
-                        )
+                        metaprogram_compilation_context.error(&"", &"valid metaprogram")
                     })?);
                 self.compile_with_context(
                     &serde_saphyr::from_str(&serde_saphyr::to_string(
@@ -2038,10 +2027,8 @@ impl Compiler {
                             .metaprograms_computer
                             .compute(&compiled_metaprogram)
                             .with_context(|| {
-                                format!(
-                                    "expected to succesfully compute metaprogram at {:#?}",
-                                    metaprogram_compilation_context.path
-                                )
+                                metaprogram_compilation_context
+                                    .error(&"", &"computable metaprogram")
                             })?,
                     )?)?,
                     &metaprogram_compilation_context,
@@ -2066,61 +2053,76 @@ impl Compiler {
                 let mut result_external_constants_name_clustered_indices = compiled_starting_with
                     .external_constants_name_clustered_indices
                     .clone();
-                let mut next_compilation_context = compilation_context.clone();
-                next_compilation_context.path.0.extend([PathSegment::Next]);
-                let current_constant_name_clustered_index = self
-                    .define_constant(
-                        r#as.clone(),
-                        ConstantMetadata {
-                            r#type: compiled_starting_with.node.r#type.clone(),
-                        },
-                        &mut next_compilation_context,
+                let mut current_concrete_type = compiled_starting_with.node.r#type.clone();
+                let mut current_concrete_type_to_next = BTreeMap::new();
+                let mut current_constant_name_clustered_index;
+                loop {
+                    let mut next_compilation_context = compilation_context.clone();
+                    next_compilation_context.path.0.extend([PathSegment::Next(
+                        compiled_starting_with.node.r#type.clone(),
+                    )]);
+                    current_constant_name_clustered_index = self
+                        .define_constant(
+                            r#as.clone(),
+                            ConstantMetadata {
+                                r#type: current_concrete_type.clone(),
+                            },
+                            &mut next_compilation_context,
+                            global_compilation_context,
+                        )
+                        .name_clustered_index;
+                    let compiled_next = self.compile_with_context(
+                        next,
+                        &next_compilation_context,
                         global_compilation_context,
-                    )
-                    .name_clustered_index;
-                let compiled_next = self.compile_with_context(
-                    next,
-                    &next_compilation_context,
-                    global_compilation_context,
-                )?;
-                result_external_constants_name_clustered_indices.append(
-                    &mut compiled_next
-                        .external_constants_name_clustered_indices
-                        .clone(),
-                );
-                resolve_type(
-                    &compiled_next.node.r#type,
-                    &compiled_starting_with.node.r#type.kind,
-                    &next_compilation_context,
-                )?;
-                let mut while_compilation_context = compilation_context.clone();
-                while_compilation_context
-                    .path
-                    .0
-                    .extend([PathSegment::While]);
-                self.define_constant(
-                    r#as.clone(),
-                    ConstantMetadata {
-                        r#type: compiled_starting_with.node.r#type.clone(),
-                    },
-                    &mut while_compilation_context,
-                    global_compilation_context,
-                );
-                let starting_with_type = compiled_starting_with.node.r#type.clone();
+                    )?;
+                    if current_concrete_type_to_next
+                        .insert(
+                            std::mem::take(&mut current_concrete_type),
+                            compiled_next.node.clone(),
+                        )
+                        .is_some()
+                    {
+                        break;
+                    }
+                    current_concrete_type = compiled_next.node.r#type.clone();
+                    result_external_constants_name_clustered_indices.append(
+                        &mut compiled_next
+                            .external_constants_name_clustered_indices
+                            .clone(),
+                    );
+                }
+                let r#type = Type {
+                    kind: TypeKind::Array(Box::new(Type::from(BTreeSet::from_iter(
+                        [compiled_starting_with.node.r#type.clone()]
+                            .into_iter()
+                            .chain(current_concrete_type_to_next.keys().cloned()),
+                    )))),
+                    properties: TypeProperties {
+                        capabilities: EnumSet::default(),
+                        is_computable: false,
+                    }
+                    .unified(&compiled_starting_with.node.r#type.properties)
+                    .unified_all(
+                        current_concrete_type_to_next
+                            .keys()
+                            .map(|r#type| &r#type.properties),
+                    ),
+                };
                 NodeAndMetadata {
                     node: Node {
                         content: Content::Sequence(Arc::new(
                             intermediate_representation::Sequence {
                                 starting_with: compiled_starting_with.node.clone(),
                                 current_constant_name_clustered_index,
-                                next: compiled_next.node.clone(),
+                                current_concrete_type_kind_and_next: current_concrete_type_to_next
+                                    .into_iter()
+                                    .map(|(r#type, node)| (r#type.kind, node))
+                                    .collect::<Vec<_>>()
+                                    .into(),
                             },
                         )),
-                        r#type: (
-                            TypeKind::Array(Box::new(starting_with_type.clone())),
-                            [starting_with_type, compiled_next.node.r#type.clone()].iter(),
-                        )
-                            .into(),
+                        r#type,
                     }
                     .into(),
                     external_constants_name_clustered_indices:
@@ -2130,10 +2132,7 @@ impl Compiler {
             }
             Program::Pipe { pipe, r#as } => {
                 if pipe.is_empty() {
-                    return Err(anyhow!(
-                        "expected non-empty pipe, found {pipe:#?} at {:#?}",
-                        compilation_context.path
-                    ));
+                    return Err(compilation_context.error(&[0; 0], &"non-empty pipe"));
                 }
                 let mut compiled_pipe_elements = Vec::with_capacity(pipe.len());
                 let mut compiled_previous_pipe_element_option: Option<Arc<NodeAndMetadata>> = None;
@@ -2432,14 +2431,12 @@ impl Compiler {
                                     }
                                 }
                             } else {
-                                return Err(anyhow!(
-                                    "expected one of available functions {:#?}, found function \
-                                     {function_name:?} at {:#?}",
-                                    compilation_context
+                                return Err(compilation_context.error(
+                                    function_name,
+                                    &compilation_context
                                         .available_functions
                                         .keys()
                                         .collect::<Vec<_>>(),
-                                    compilation_context.path,
                                 ));
                             }
                         }
