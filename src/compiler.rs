@@ -20,8 +20,8 @@ use crate::{
         ValuePathSegment,
     },
     program::{
-        self, AtSegment, Condition, EmbeddedFunction, EmbeddedFunctionCall, Path, PathSegment,
-        Program, RangeBound,
+        self, AtSegment, Condition, EmbeddedFunction, EmbeddedFunctionCall, Match, Path,
+        PathSegment, Program, RangeBound,
     },
     r#type::{Capability, Constructed, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties},
     value::Value,
@@ -1336,6 +1336,12 @@ impl Compiler {
                 r#as,
                 cases,
             } => {
+                let r#match = match r#match {
+                    Match::Constant(constant_name) => &Program::Constant {
+                        constant: constant_name.clone(),
+                    },
+                    Match::Program(program) => program,
+                };
                 let mut match_compilation_context = compilation_context.clone();
                 match_compilation_context
                     .path

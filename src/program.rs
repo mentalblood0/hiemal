@@ -41,7 +41,7 @@ pub enum Program {
     },
     EmbeddedFunctionCall(EmbeddedFunctionCall),
     Match {
-        r#match: Box<Program>,
+        r#match: Match,
         #[serde(default = "default_match_as")]
         r#as: Option<Arc<String>>,
         cases: Vec<(Condition, Program)>,
@@ -126,6 +126,14 @@ pub fn default_sequence_as() -> Arc<String> {
 
 pub fn default_pipe_as() -> Option<Arc<String>> {
     None
+}
+
+#[repr(u8)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[serde(untagged)]
+pub enum Match {
+    Constant(Arc<String>),
+    Program(Box<Program>),
 }
 
 #[repr(u8)]

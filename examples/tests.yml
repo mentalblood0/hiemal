@@ -1,6 +1,6 @@
 functions:
   assert equal::
-    match: { constant: found }
+    match: found
     cases:
       - [{ constant: expected }, ok]
       - - any
@@ -38,7 +38,7 @@ functions:
               string: { constant: string }
               regex: { constant: regex }
         compute:
-          match: { constant: match regex result }
+          match: match regex result
           as: match regex result
           cases:
             - [null, null]
@@ -70,7 +70,7 @@ functions:
                         string: { constant: string }
                         regex: { constant: regex } 
                   compute:
-                    match: { constant: match regex result }
+                    match: match regex result
                     as: match regex result
                     cases:
                       - [null, null]
@@ -509,7 +509,7 @@ compute:
             through:
               sum:
                 - constant: accumulator
-                - match: { constant: current }
+                - match: current
                   as: _
                   cases:
                     - [number, _]
@@ -690,7 +690,7 @@ compute:
               push back::
                 flatten: [{ constant: list }, [{ constant: value }]]
               repeat::
-                match: { constant: amount }
+                match: amount
                 cases:
                   - [1, [{ constant: value }]]
                   - - any
@@ -736,7 +736,7 @@ compute:
             starting with: 0
             accumulating in: accumulator
             through:
-              match: { constant: current }
+              match: current
               as: matched
               cases:
                 - [number, sum: [{ constant: accumulator }, { constant: matched }]]
@@ -751,7 +751,7 @@ compute:
                 starting with: 0
                 accumulating in: accumulator
                 through:
-                  match: { constant: current }
+                  match: current
                   cases:
                     - [
                         number,

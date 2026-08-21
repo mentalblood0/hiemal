@@ -451,7 +451,7 @@ sum:
     starting with: 0
     accumulating in: accumulator
     through:
-      match: { constant: current }
+      match: current
       cases:
         - [number, sum: [{ constant: accumulator }, { constant: current }]]
         - [string, 0]
@@ -468,7 +468,7 @@ starting with: 0
 through:
   sum:
     - constant: accumulator
-    - match: { constant: current }
+    - match: current
       as: _
       cases:
         - [number, _]
