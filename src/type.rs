@@ -672,6 +672,7 @@ impl TypeKind {
             None
         } else {
             match (self, other) {
+                (_, TypeKind::Any) => None,
                 (TypeKind::Bool, TypeKind::LiteralTrue) => Some(TypeKind::LiteralFalse),
                 (TypeKind::Bool, TypeKind::LiteralFalse) => Some(TypeKind::LiteralTrue),
                 (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
@@ -697,6 +698,93 @@ impl TypeKind {
                 (_, TypeKind::Union(other_union_types)) => {
                     if other_union_types.contains(&(*other).clone().into()) {
                         None
+                    } else {
+                        Some(self.clone())
+                    }
+                }
+                (
+                    TypeKind::Constructed(self_constructed),
+                    TypeKind::Constructed(other_constructed),
+                ) => self_constructed
+                    .inner()
+                    .kind
+                    .substraction(&other_constructed.inner().kind),
+                (
+                    TypeKind::GenericObject(self_value_type),
+                    TypeKind::GenericObject(other_value_type),
+                ) => self_value_type
+                    .kind
+                    .substraction(&other_value_type.kind)
+                    .map(|result_element_type| {
+                        TypeKind::GenericObject(Box::new(Type {
+                            kind: result_element_type,
+                            properties: self_value_type
+                                .properties
+                                .unified(&other_value_type.properties),
+                        }))
+                    }),
+                (TypeKind::Array(self_element_type), TypeKind::Array(other_element_type)) => {
+                    self_element_type
+                        .kind
+                        .substraction(&other_element_type.kind)
+                        .map(|result_element_type| {
+                            TypeKind::Array(Box::new(Type {
+                                kind: result_element_type,
+                                properties: self_element_type
+                                    .properties
+                                    .unified(&other_element_type.properties),
+                            }))
+                        })
+                }
+                (TypeKind::Object(self_inner_types), TypeKind::Object(other_inner_types)) => {
+                    if self_inner_types
+                        .keys()
+                        .zip(other_inner_types.keys())
+                        .all(|(self_key, other_key)| self_key == other_key)
+                    {
+                        let mut result_inner_types = BTreeMap::new();
+                        for ((key, self_value_type), (_, other_value_type)) in
+                            self_inner_types.iter().zip(other_inner_types.iter())
+                        {
+                            if let Some(result_value_type_kind) =
+                                self_value_type.kind.substraction(&other_value_type.kind)
+                            {
+                                result_inner_types.insert(
+                                    key.clone(),
+                                    Type {
+                                        kind: result_value_type_kind,
+                                        properties: self_value_type
+                                            .properties
+                                            .unified(&other_value_type.properties),
+                                    },
+                                );
+                            } else {
+                                return None;
+                            }
+                        }
+                        Some(TypeKind::Object(result_inner_types.into()))
+                    } else {
+                        Some(self.clone())
+                    }
+                }
+                (TypeKind::Tuple(self_types), TypeKind::Tuple(other_types)) => {
+                    if self_types.len() == other_types.len() {
+                        let mut result_types = Vec::new();
+                        for (self_type, other_type) in self_types.iter().zip(other_types.iter()) {
+                            if let Some(result_type_kind) =
+                                self_type.kind.substraction(&other_type.kind)
+                            {
+                                result_types.push(Type {
+                                    kind: result_type_kind,
+                                    properties: self_type
+                                        .properties
+                                        .unified(&other_type.properties),
+                                });
+                            } else {
+                                return None;
+                            }
+                        }
+                        Some(TypeKind::Tuple(result_types.into()))
                     } else {
                         Some(self.clone())
                     }

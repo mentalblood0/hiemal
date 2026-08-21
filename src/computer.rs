@@ -4,6 +4,7 @@ use std::{
     collections::BTreeMap,
     hash::{Hash, Hasher},
     io::{BufWriter, Read, Write},
+    ops::Range,
     str::FromStr,
     sync::{Arc, LazyLock},
 };
@@ -679,8 +680,7 @@ impl<'a> ComputationContext<'a> {
             IntermediateValue::Map(_) => Ok(self
                 .get_range_from_intermediate_value(
                     intermediate_value_and_metadata,
-                    index,
-                    index + 1,
+                    index..index + 1,
                 )?
                 .inner
                 .into_iter()
@@ -725,22 +725,26 @@ impl<'a> ComputationContext<'a> {
     fn get_range_from_intermediate_value(
         &self,
         intermediate_value_and_metadata: &Arc<IntermediateValueAndMetadata>,
-        from: usize,
-        to: usize,
+        range: Range<usize>,
     ) -> Result<Vector<IntermediateValueAndMetadata>> {
         match &intermediate_value_and_metadata.intermediate_value {
             IntermediateValue::Tuple(list) => Ok(Vector {
-                inner: list.iter().skip(from).take(to - from).cloned().collect(),
+                inner: list
+                    .iter()
+                    .skip(range.start)
+                    .take(range.end - range.start)
+                    .cloned()
+                    .collect(),
             }),
             IntermediateValue::Sequence(sequence) => {
                 let lockable_internals_read_guard = sequence.lockable_internals.upgradable_read();
-                if lockable_internals_read_guard.already_computed_values.len() >= to {
+                if lockable_internals_read_guard.already_computed_values.len() >= range.end {
                     Ok(Vector {
                         inner: lockable_internals_read_guard
                             .already_computed_values
                             .iter()
-                            .skip(from)
-                            .take(to - from)
+                            .skip(range.start)
+                            .take(range.end - range.start)
                             .cloned()
                             .collect(),
                     })
@@ -749,7 +753,7 @@ impl<'a> ComputationContext<'a> {
                         parking_lot::RwLockUpgradableReadGuard::upgrade(
                             lockable_internals_read_guard,
                         );
-                    while lockable_internals_write_guard.already_computed_values.len() < to {
+                    while lockable_internals_write_guard.already_computed_values.len() < range.end {
                         self.compute_next_in_sequence(
                             sequence,
                             &mut lockable_internals_write_guard,
@@ -759,8 +763,8 @@ impl<'a> ComputationContext<'a> {
                         inner: lockable_internals_write_guard
                             .already_computed_values
                             .iter()
-                            .skip(from)
-                            .take(to - from)
+                            .skip(range.start)
+                            .take(range.end - range.start)
                             .cloned()
                             .collect(),
                     })
@@ -768,13 +772,13 @@ impl<'a> ComputationContext<'a> {
             }
             IntermediateValue::Filter(filter) => {
                 let lockable_internals_read_guard = filter.lockable_internals.upgradable_read();
-                if lockable_internals_read_guard.already_computed_values.len() >= to {
+                if lockable_internals_read_guard.already_computed_values.len() >= range.end {
                     Ok(Vector {
                         inner: lockable_internals_read_guard
                             .already_computed_values
                             .iter()
-                            .skip(from)
-                            .take(to - from)
+                            .skip(range.start)
+                            .take(range.end - range.start)
                             .cloned()
                             .collect(),
                     })
@@ -783,7 +787,7 @@ impl<'a> ComputationContext<'a> {
                         parking_lot::RwLockUpgradableReadGuard::upgrade(
                             lockable_internals_read_guard,
                         );
-                    while lockable_internals_write_guard.already_computed_values.len() < to {
+                    while lockable_internals_write_guard.already_computed_values.len() < range.end {
                         if !self
                             .compute_next_in_filter(filter, &mut lockable_internals_write_guard)?
                         {
@@ -794,8 +798,8 @@ impl<'a> ComputationContext<'a> {
                         inner: lockable_internals_write_guard
                             .already_computed_values
                             .iter()
-                            .skip(from)
-                            .take(to - from)
+                            .skip(range.start)
+                            .take(range.end - range.start)
                             .cloned()
                             .collect(),
                     })
@@ -803,18 +807,18 @@ impl<'a> ComputationContext<'a> {
             }
             IntermediateValue::Map(map) => {
                 let computed_map_range =
-                    self.get_range_from_intermediate_value(&map.computed_map, from, to)?;
+                    self.get_range_from_intermediate_value(&map.computed_map, range.clone())?;
                 let (already_taken_elements, elements_to_compute) = {
                     let mut lockable_internals_read_guard =
                         map.lockable_internals.upgradable_read();
                     let already_taken = lockable_internals_read_guard
                         .elements_taken_for_computation
-                        .range(from..to)
+                        .range(range.clone())
                         .map(|(key, value)| (*key, value.clone()))
                         .collect::<Vec<_>>();
                     let mut to_compute = Vec::new();
                     lockable_internals_read_guard.with_upgraded(|lockable_internals_write_guard| {
-                        for element_index in from..computed_map_range.len() {
+                        for element_index in range.start..computed_map_range.len() {
                             lockable_internals_write_guard
                                 .elements_taken_for_computation
                                 .entry(element_index)
@@ -838,7 +842,7 @@ impl<'a> ComputationContext<'a> {
                             if let Some((already_computed_through_index, _)) =
                                 std::mem::take(&mut already_taken_elements_iterator_current_option)
                                 && *already_computed_through_index
-                                    == computed_map_element_index + from
+                                    == computed_map_element_index + range.start
                             {
                                 already_taken_elements_iterator_current_option =
                                     already_taken_elements_iterator.next();
@@ -856,7 +860,8 @@ impl<'a> ComputationContext<'a> {
                                             nodes_indexes,
                                             nodes,
                                         } => {
-                                            &nodes[nodes_indexes[computed_map_element_index + from]]
+                                            &nodes[nodes_indexes
+                                                [computed_map_element_index + range.start]]
                                         }
                                     }),
                                     Cow::Owned(through_constants),
@@ -870,19 +875,19 @@ impl<'a> ComputationContext<'a> {
                     elements_to_compute.into_iter()
                 {
                     *element_to_compute_value =
-                        result.inner[element_to_compute_index - from].clone();
+                        result.inner[element_to_compute_index - range.start].clone();
                 }
                 for (already_computed_value_index, already_computed_value) in
                     already_taken_elements.into_iter()
                 {
-                    result.inner[already_computed_value_index - from] =
+                    result.inner[already_computed_value_index - range.start] =
                         already_computed_value.read().clone();
                 }
                 Ok(result)
             }
             IntermediateValue::LazyValue(lazy_value) => {
                 self.with_computed_lazy_value(lazy_value, |computed_lazy_value| {
-                    self.get_range_from_intermediate_value(computed_lazy_value, from, to)
+                    self.get_range_from_intermediate_value(computed_lazy_value, range.clone())
                 })
             }
             IntermediateValue::Value(value_arc) => {
@@ -890,8 +895,8 @@ impl<'a> ComputationContext<'a> {
                     TypeKind::Array(element_type) => [*element_type.clone()].to_vec(),
                     TypeKind::Tuple(elements_types) => elements_types
                         .iter()
-                        .skip(from)
-                        .take(to - from)
+                        .skip(range.start)
+                        .take(range.end - range.start)
                         .cloned()
                         .collect::<Vec<_>>(),
                     _ => panic!(),
@@ -900,8 +905,8 @@ impl<'a> ComputationContext<'a> {
                     Some(Value::Tuple(list)) => Ok(Vector {
                         inner: list
                             .iter()
-                            .skip(from)
-                            .take(to - from)
+                            .skip(range.start)
+                            .take(range.end - range.start)
                             .cloned()
                             .zip(elements_types)
                             .map(|(value, r#type)| {
@@ -1063,7 +1068,7 @@ impl<'a> ComputationContext<'a> {
                 type_kind: _,
             } => {
                 let computed_map_range =
-                    self.get_range_from_intermediate_value(&map.computed_map, 0, usize::MAX)?;
+                    self.get_range_from_intermediate_value(&map.computed_map, 0..usize::MAX)?;
                 let computed_map_len = computed_map_range.len();
                 Ok(Some(Value::Tuple({
                     let mut result = Vector::default();
@@ -1919,9 +1924,9 @@ impl<'a> ComputationContext<'a> {
                             };
                             let to_number = match &**range_to {
                                 RangeBound::Static(Some(range_to)) => *range_to,
-                                RangeBound::Static(None) => 0,
-                                RangeBound::Dynamic(to_node) => {
-                                    self.unroll_intermediate_value(
+                                RangeBound::Static(None) => usize::MAX,
+                                RangeBound::Dynamic(to_node) => self
+                                    .unroll_intermediate_value(
                                         &self.compute_node(to_node, constants)?,
                                     )?
                                     .as_ref()
@@ -1931,20 +1936,30 @@ impl<'a> ComputationContext<'a> {
                                     .unwrap()
                                     .to_f64()
                                     .value()
-                                    .max(0f64) as usize
-                                }
+                                    .min(usize::MAX as f64)
+                                    as usize,
                             };
                             if result.type_kind.contains(&TypeKind::GenericLiteralString) {
-                                let string_value: ropey::Rope = self
-                                    .unroll_intermediate_value(&result)?
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_string()
-                                    .unwrap()
-                                    .get_slice(from_number..to_number)
-                                    .unwrap_or_else(|| "".into())
-                                    .into();
+                                let unrolled_result = self.unroll_intermediate_value(&result)?;
+                                let string_value: ropey::Rope = if to_number == usize::MAX {
+                                    unrolled_result
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_string()
+                                        .unwrap()
+                                        .get_slice(from_number..)
+                                } else {
+                                    unrolled_result
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_string()
+                                        .unwrap()
+                                        .get_slice(from_number..to_number)
+                                }
+                                .unwrap_or_else(|| "".into())
+                                .into();
                                 result = IntermediateValueAndMetadata {
                                     intermediate_value: IntermediateValue::Value(
                                         Some(Value::String(string_value.clone())).into(),
@@ -1956,8 +1971,7 @@ impl<'a> ComputationContext<'a> {
                                 let result_elements = self
                                     .get_range_from_intermediate_value(
                                         &result,
-                                        from_number,
-                                        to_number,
+                                        from_number..to_number,
                                     )
                                     .with_context(|| {
                                         format!(

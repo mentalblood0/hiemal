@@ -29,59 +29,102 @@ functions:
     cases:
       - [null, false]
       - [any, true]
-  # match regex all::
-  #   starting with:
-  #     constants:
-  #       match regex result:
-  #         match regex:
-  #           string: { constant: string }
-  #           regex: { constant: regex }
-  #     compute:
-  #       match: { constant: match regex result }
-  #       as: match regex result
-  #       cases:
-  #         - [null, null]
-  #         - - any
-  #           - match regex result: { constant: match regex result }
-  #             string: { constant: string }
-  #   next:
-  #     match: _
-  #     as: previous
-  #     cases:
-  #       - [null, null]
-  #       - - any
-  #         - constants:
-  #             string:
-  #               from: { constant: previous }
-  #               at:
-  #                 - string
-  #                 - - from: { constant: previous }
-  #                     at: [match regex result, start]
-  #                   - null
-  #           compute:
-  #             string: { constant: string }
-  #             match regex result:
-  #               match regex:
-  #                 string: { constant: string }
-  #                 regex: { constant: regex } 
+  match regex all::
+    map:
+      starting with:
+        constants:
+          match regex result:
+            match regex:
+              string: { constant: string }
+              regex: { constant: regex }
+        compute:
+          match: { constant: match regex result }
+          as: match regex result
+          cases:
+            - [null, null]
+            - - any
+              - match regex result: { constant: match regex result }
+                string: { constant: string }
+      next:
+        match: _
+        as: previous
+        cases:
+          - [null, null]
+          - - any
+            - constants:
+                previous end:
+                  from: { constant: previous }
+                  at: [match regex result, end]
+              compute:
+                constants:
+                  string:
+                    from: { constant: previous }
+                    at:
+                      - string
+                      - - { constant: previous end }
+                        - null
+                compute:
+                  constants:
+                    match regex result:
+                      match regex:
+                        string: { constant: string }
+                        regex: { constant: regex } 
+                  compute:
+                    match: { constant: match regex result }
+                    as: match regex result
+                    cases:
+                      - [null, null]
+                      - - any
+                        - string: { constant: string }
+                          match regex result:
+                            groups:
+                              from: { constant: match regex result }
+                              at: [groups]
+                            start:
+                              sum:
+                                - { constant: previous end }
+                                - from: { constant: match regex result }
+                                  at: [start]
+                            end:
+                              sum:
+                                - { constant: previous end }
+                                - from: { constant: match regex result }
+                                  at: [end]
+    through:
+      match: _
+      as: _
+      cases:
+        - [null, null]
+        - - any
+          - from: _
+            at: [match regex result]
 compute:
   tests report::
     key-value pairs:
-      # test match regex all:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         match regex all::
-      #           string: I categorically categorically deny having triskaidekaphobia.
-      #           regex:
-      #             - word boundary
-      #             - group:
-      #                 - repeat: [word character]
-      #                   exactly: 13
-      #               name: horror
-      #             - word boundary
-      #       at: [[0, 3]]
-      #     expected: categorically
+      test match regex all:
+        assert equal::
+          found:
+            from:
+              match regex all::
+                string: I categorically categorically deny having triskaidekaphobia.
+                regex:
+                  - word boundary
+                  - group:
+                      - repeat: [word character]
+                        exactly: 13
+                    name: horror
+                  - word boundary
+            at: [[0, 3]]
+          expected:
+            - groups:
+                horror: categorically
+              start: 2
+              end: 15
+            - groups:
+                horror: categorically
+              start: 16
+              end: 29
+            - null
       test lazy constant:
         assert equal::
           found:
