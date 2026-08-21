@@ -4,7 +4,7 @@
 
 - no own syntax, parsing is deserialization
 - static type checking without annotations
-- tuples, union types, heterogenous fold
+- tuples, union types, heterogenous fold and sequence
 - match clause exhaustiveness checking
 - capabilities restrictions checking
 - pass-by-value, strings and containers are cheap to clone
@@ -340,6 +340,23 @@ from:
   starting with: 1
   next: { sum: [_, 1] }
 at: [[0, 3]]
+```
+
+```yaml
+from:
+  starting with: [0, 1]
+  next:
+    - sum:
+        - from: _
+          at: [0]
+        - 1
+    - match:
+        from: _
+        at: [1]
+      cases:
+        - [number, s]
+        - [string, 1]
+at: [[0, 4]]
 ```
 
 #### map as through
