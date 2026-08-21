@@ -224,6 +224,8 @@ impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
 pub enum EmbeddedFunction {
     #[serde(rename = "sum")]
     Sum,
+    #[serde(rename = "mod")]
+    Mod,
     #[serde(rename = "is sorted")]
     IsSorted,
     #[serde(rename = "standard input")]

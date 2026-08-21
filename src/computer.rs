@@ -1288,6 +1288,51 @@ impl<'a> ComputationContext<'a> {
                     type_kind: TypeKind::Number,
                 }
                 .into()),
+                EmbeddedFunction::Mod => Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Value(
+                        {
+                            let unrolled_argument = self.unroll_intermediate_value(
+                                &self.compute_node(&embedded_function_call.argument, constants)?,
+                            )?;
+                            let m = unrolled_argument
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_tuple()
+                                .unwrap()
+                                .get(1)
+                                .unwrap()
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_number()
+                                .unwrap();
+                            if m == Rational::ZERO {
+                                None
+                            } else {
+                                let a = unrolled_argument
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_tuple()
+                                    .unwrap()
+                                    .get(0)
+                                    .unwrap()
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_number()
+                                    .unwrap();
+                                let quotient = a.clone() / m.clone();
+                                let floor = quotient.floor();
+                                Some(Value::Number(a - floor * m))
+                            }
+                        }
+                        .into(),
+                    ),
+                    type_kind: TypeKind::Number,
+                }
+                .into()),
                 EmbeddedFunction::Concat => {
                     let mut result_rope = ropey::Rope::default();
                     for appendix in self

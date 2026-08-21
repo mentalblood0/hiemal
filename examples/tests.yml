@@ -101,6 +101,11 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test mod:
+        assert equal::
+          found:
+            mod: [20, 6]
+          expected: 2
       test match regex all:
         assert equal::
           found:

@@ -977,6 +977,24 @@ impl Compiler {
                         },
                         false,
                     )?,
+                    EmbeddedFunction::Mod => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &TypeKind::Tuple(
+                            vec![TypeKind::Number.into(), TypeKind::Number.into()].into(),
+                        ),
+                        &|compiled_argument_resolved_type| {
+                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
+                                BTreeSet::from_iter([
+                                    TypeKind::Number.into(),
+                                    TypeKind::Null.into(),
+                                ])
+                                .into(),
+                            )))
+                        },
+                        false,
+                    )?,
                     EmbeddedFunction::Concat => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
