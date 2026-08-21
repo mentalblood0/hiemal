@@ -365,12 +365,11 @@ at: [[0, 4]]
 map: [1, string, 2, [1, 2, 3]]
 through:
   match: _
-  as: matched
   cases:
     - [number, it's a number]
     - [string, it's a string]
     - - { array: number }
-      - map: { constant: matched }
+      - map: _
         as: element from matched
         through:
           sum: [{ constant: element from matched }, 1]
@@ -381,12 +380,11 @@ map:
   key-value pairs: { first: 1, second: string, third: [1, 2, 3] }
 through:
   match: _
-  as: matched
   cases:
     - [{ tuple: [string, number] }, it's a number]
     - [{ tuple: [string, string] }, it's a string]
     - - { tuple: [string, { array: number }] }
-      - map: { from: { constant: matched }, at: [1] }
+      - map: { from: _, at: [1] }
         as: element from matched
         through:
           sum: [{ constant: element from matched }, 1]
@@ -469,9 +467,8 @@ through:
   sum:
     - constant: accumulator
     - match: current
-      as: _
       cases:
-        - [number, _]
+        - [number, { constant: current }]
         - [string, 0]
 ```
 

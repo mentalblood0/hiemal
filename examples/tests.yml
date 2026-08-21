@@ -39,7 +39,6 @@ functions:
               regex: { constant: regex }
         compute:
           match: match regex result
-          as: match regex result
           cases:
             - [null, null]
             - - any
@@ -71,7 +70,6 @@ functions:
                         regex: { constant: regex } 
                   compute:
                     match: match regex result
-                    as: match regex result
                     cases:
                       - [null, null]
                       - - any
@@ -92,7 +90,6 @@ functions:
                                   at: [end]
     through:
       match: _
-      as: _
       cases:
         - [null, null]
         - - any
@@ -510,9 +507,8 @@ compute:
               sum:
                 - constant: accumulator
                 - match: current
-                  as: _
                   cases:
-                    - [number, _]
+                    - [number, { constant: current }]
                     - [string, 0]
           expected: 15
       test filter union:
@@ -728,18 +724,18 @@ compute:
           found:
             fold:
               match: { parse yaml: "[1, 2, string, 3, 4]" }
-              as: matched
+              as: _
               cases:
-                - [{ array: { union: [number, string] } }, { constant: matched }]
+                - [{ array: { union: [number, string] } }, _]
                 - [any, [1]]
             as: current
             starting with: 0
             accumulating in: accumulator
             through:
               match: current
-              as: matched
+              as: _
               cases:
-                - [number, sum: [{ constant: accumulator }, { constant: matched }]]
+                - [number, sum: [{ constant: accumulator }, _]]
                 - [string, 0]
           expected: 7
       test fold heterogenous tuple:
@@ -775,12 +771,12 @@ compute:
               key-value pairs: { first: 1, second: string, third: [1, 2, 3] }
             through:
               match: _
-              as: matched
+              as: _
               cases:
                 - [{ tuple: [string, number] }, it's a number]
                 - [{ tuple: [string, string] }, it's a string]
                 - - { tuple: [string, { array: number }] }
-                  - map: { from: { constant: matched }, at: [1] }
+                  - map: { from: _, at: [1] }
                     as: element from matched
                     through:
                       sum: [{ constant: element from matched }, 1]
@@ -791,12 +787,11 @@ compute:
             map: [1, string, 2, [1, 2, 3]]
             through:
               match: _
-              as: matched
               cases:
                 - [number, it's a number]
                 - [string, it's a string]
                 - - { array: number }
-                  - map: { constant: matched }
+                  - map: _
                     as: element from matched
                     through:
                       sum: [{ constant: element from matched }, 1]

@@ -1336,11 +1336,14 @@ impl Compiler {
                 r#as,
                 cases,
             } => {
-                let r#match = match r#match {
-                    Match::Constant(constant_name) => &Program::Constant {
-                        constant: constant_name.clone(),
-                    },
-                    Match::Program(program) => program,
+                let (r#match, match_constant_name) = match r#match {
+                    Match::Constant(constant_name) => (
+                        &Program::Constant {
+                            constant: constant_name.clone(),
+                        },
+                        Some(constant_name),
+                    ),
+                    Match::Program(program) => (&**program, None),
                 };
                 let mut match_compilation_context = compilation_context.clone();
                 match_compilation_context
@@ -1393,7 +1396,9 @@ impl Compiler {
                                 if let Some(refined_match_type_kind) =
                                     current_match_type_kind.intersection(&case_match_type.kind)
                                 {
-                                    if let Some(match_constant_name) = r#as {
+                                    if let Some(match_constant_name) =
+                                        r#as.as_ref().or(match_constant_name)
+                                    {
                                         self.define_constant(
                                             match_constant_name.clone(),
                                             ConstantMetadata {
@@ -1440,7 +1445,9 @@ impl Compiler {
                                     .kind
                                     .intersection(&compiled_condition.node.r#type.kind)
                                 {
-                                    if let Some(match_constant_name) = r#as {
+                                    if let Some(match_constant_name) =
+                                        r#as.as_ref().or(match_constant_name)
+                                    {
                                         self.define_constant(
                                             match_constant_name.clone(),
                                             ConstantMetadata {
