@@ -101,6 +101,31 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test heterogenous sequence:
+        assert equal::
+          found:
+            from:
+              map:
+                starting with: 1
+                next: { sum: [_, 1] }
+              through:
+                match:
+                  mod: [_, 3]
+                cases:
+                  - - 0
+                    - match:
+                        mod: [_, 5]
+                      cases:
+                        - [0, FizzBuzz]
+                        - [any, Fizz]
+                  - - any
+                    - match:
+                        mod: [_, 5]
+                      cases:
+                        - [0, Buzz]
+                        - [any, _]
+            at: [[0, 20]]
+          expected: [1, 2, Fizz, 4, Buzz, Fizz, 7, 8, Fizz, Buzz, 11, Fizz, 13, 14, FizzBuzz, 16, 17, Fizz, 19, Buzz]
       test mod:
         assert equal::
           found:
