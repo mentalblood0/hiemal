@@ -1422,8 +1422,6 @@ impl Compiler {
                                             .external_constants_name_clustered_indices
                                             .clone(),
                                     );
-                                    current_match_type_kind_option =
-                                        current_match_type_kind.substraction(&case_match_type.kind);
                                     covered_types_kinds.insert(case_match_type.kind.clone());
                                     result_cases.push(Case {
                                         condition: intermediate_representation::Condition::Type(
@@ -1431,6 +1429,11 @@ impl Compiler {
                                         ),
                                         node: compiled_case.node.clone(),
                                     });
+                                    current_match_type_kind_option =
+                                        current_match_type_kind.substraction(&case_match_type.kind);
+                                    if current_match_type_kind_option.is_none() {
+                                        break;
+                                    }
                                 }
                             }
                             Condition::Value(condition) => {
@@ -1468,6 +1471,12 @@ impl Compiler {
                                             .external_constants_name_clustered_indices
                                             .clone(),
                                     );
+                                    result_cases.push(Case {
+                                        condition: intermediate_representation::Condition::Value(
+                                            compiled_condition.node.clone(),
+                                        ),
+                                        node: compiled_case.node.clone(),
+                                    });
                                     if matches!(
                                         refined_match_type_kind,
                                         TypeKind::LiteralTrue
@@ -1478,13 +1487,10 @@ impl Compiler {
                                         current_match_type_kind_option = current_match_type_kind
                                             .substraction(&refined_match_type_kind);
                                         covered_types_kinds.insert(refined_match_type_kind);
+                                        if current_match_type_kind_option.is_none() {
+                                            break;
+                                        }
                                     }
-                                    result_cases.push(Case {
-                                        condition: intermediate_representation::Condition::Value(
-                                            compiled_condition.node.clone(),
-                                        ),
-                                        node: compiled_case.node.clone(),
-                                    });
                                 }
                             }
                         }
