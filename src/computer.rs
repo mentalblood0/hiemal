@@ -1841,8 +1841,10 @@ impl<'a> ComputationContext<'a> {
                         for constant_name_clustered_index in
                             &user_function.external_constants_name_clustered_indices
                         {
-                            let constant_value = &result_constants[*constant_name_clustered_index];
-                            constant_value.hash(&mut hasher);
+                            result_constants[*constant_name_clustered_index]
+                                .as_ref()
+                                .unwrap()
+                                .hash(&mut hasher);
                         }
                         body.hash(&mut hasher);
                         hasher.finish_u128()

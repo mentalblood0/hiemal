@@ -310,7 +310,6 @@ struct GlobalCompilationContext {
     constants_names_to_name_clustered_constants_indices: HashMap<Arc<String>, usize>,
     constants: Vec<ConstantMetadata>,
     includes_cache: IncludesCache,
-    compiled_functions_cache: HashMap<u128, Arc<NodeAndMetadata>>,
 }
 
 fn process_from_at_program_path_part(
@@ -2375,133 +2374,101 @@ impl Compiler {
                                         );
                                     }
                                 }
-                                let instantiated_function_hash = {
-                                    let mut hasher = gxhash::GxHasher::default();
-                                    function_body.hash(&mut hasher);
-                                    for (constant_name, constant_index) in
-                                        body_compilation_context.available_constants.iter()
-                                    {
-                                        constant_name.hash(&mut hasher);
-                                        global_compilation_context.constants[*constant_index]
-                                            .hash(&mut hasher);
-                                    }
-                                    body_compilation_context
-                                        .available_functions
-                                        .hash(&mut hasher);
-                                    hasher.finish_u128()
-                                };
-                                if let Some(cached_compiled_function) = global_compilation_context
-                                    .compiled_functions_cache
-                                    .get(&instantiated_function_hash)
+                                let function_body_as_maybe_compiled_program =
+                                    MaybeCompiledProgram::from(function_body);
+                                if compilation_context
+                                    .entered_user_functions
+                                    .contains(function_body)
                                 {
-                                    return Ok(cached_compiled_function.clone());
-                                } else {
-                                    let function_body_as_maybe_compiled_program =
-                                        MaybeCompiledProgram::from(function_body);
-                                    if compilation_context
-                                        .entered_user_functions
-                                        .contains(function_body)
-                                    {
-                                        let (function_index, function_type) =
-                                            global_compilation_context
-                                                .user_function_to_index_and_type_option
-                                                .get(&function_body_as_maybe_compiled_program)
-                                                .unwrap(); // in different contexts the same function return type may be not the same, here this would mean polymorphic recursion which is not supported
-                                        return Ok(NodeAndMetadata {
-                                            external_constants_name_clustered_indices:
-                                                BTreeSet::new(),
-                                            node: Node {
-                                                content: Content::UserFunctionCall {
-                                                    arguments: new_constants_definitions,
-                                                    body: *function_index,
-                                                    arguments_is_pure: function_type
-                                                        .properties
-                                                        .capabilities
-                                                        .is_empty(),
-                                                },
-                                                r#type: function_type.clone(),
-                                            }
-                                            .into(),
+                                    let (function_index, function_type) =
+                                        global_compilation_context
+                                            .user_function_to_index_and_type_option
+                                            .get(&function_body_as_maybe_compiled_program)
+                                            .unwrap(); // in different contexts the same function return type may be not the same, here this would mean polymorphic recursion which is not supported
+                                    return Ok(NodeAndMetadata {
+                                        external_constants_name_clustered_indices: BTreeSet::new(),
+                                        node: Node {
+                                            content: Content::UserFunctionCall {
+                                                arguments: new_constants_definitions,
+                                                body: *function_index,
+                                                arguments_is_pure: function_type
+                                                    .properties
+                                                    .capabilities
+                                                    .is_empty(),
+                                            },
+                                            r#type: function_type.clone(),
                                         }
-                                        .into());
-                                    } else {
-                                        body_compilation_context
-                                            .entered_user_functions
-                                            .extend([function_body.clone()]);
-                                        let function_index = global_compilation_context
-                                            .user_functions_definitions
-                                            .len();
-                                        global_compilation_context.user_functions_definitions.push(
-                                            UserFunctionCallDefinition {
-                                                external_constants_name_clustered_indices: Vec::new(
-                                                ),
-                                                body: function_body_as_maybe_compiled_program
-                                                    .clone(),
-                                            },
-                                        );
-                                        global_compilation_context
-                                            .user_function_to_index_and_type_option
-                                            .insert(
-                                                function_body_as_maybe_compiled_program.clone(),
-                                                (
-                                                    function_index,
-                                                    TypeKind::Unknown(MaybeType::default()).into(),
-                                                ),
-                                            );
-                                        let compiled_function = self.compile_with_context(
-                                            function_body,
-                                            &body_compilation_context,
-                                            global_compilation_context,
-                                        )?;
-                                        global_compilation_context
-                                            .user_function_to_index_and_type_option
-                                            .get_mut(&function_body_as_maybe_compiled_program)
-                                            .unwrap()
-                                            .1 = compiled_function.node.r#type.clone();
-                                        global_compilation_context.user_functions_definitions
-                                            [function_index] = UserFunctionCallDefinition {
-                                            external_constants_name_clustered_indices:
-                                                Vec::from_iter(
-                                                    compiled_function
-                                                        .external_constants_name_clustered_indices
-                                                        .iter()
-                                                        .cloned(),
-                                                ),
-                                            body: MaybeCompiledProgram {
-                                                program: function_body_as_maybe_compiled_program
-                                                    .program,
-                                                node: Some(compiled_function.node.clone()),
-                                            },
-                                        };
-                                        result_external_constants_name_clustered_indices.append(
-                                            &mut compiled_function
-                                                .external_constants_name_clustered_indices
-                                                .clone(),
-                                        );
-                                        let result = Arc::new(NodeAndMetadata {
-                                            external_constants_name_clustered_indices:
-                                                result_external_constants_name_clustered_indices
-                                                    .clone(),
-                                            node: Node {
-                                                content: Content::UserFunctionCall {
-                                                    arguments: new_constants_definitions,
-                                                    body: function_index,
-                                                    arguments_is_pure: compiled_function
-                                                        .node
-                                                        .r#type
-                                                        .properties
-                                                        .capabilities
-                                                        .is_empty(),
-                                                },
-                                                r#type: compiled_function.node.r#type.clone(),
-                                            }
-                                            .into(),
-                                        });
-                                        global_compilation_context
-                                            .compiled_functions_cache
-                                            .insert(instantiated_function_hash, result.clone());
-                                        return Ok(result);
+                                        .into(),
                                     }
+                                    .into());
+                                } else {
+                                    body_compilation_context
+                                        .entered_user_functions
+                                        .extend([function_body.clone()]);
+                                    let function_index =
+                                        global_compilation_context.user_functions_definitions.len();
+                                    global_compilation_context.user_functions_definitions.push(
+                                        UserFunctionCallDefinition {
+                                            external_constants_name_clustered_indices: Vec::new(),
+                                            body: function_body_as_maybe_compiled_program.clone(),
+                                        },
+                                    );
+                                    global_compilation_context
+                                        .user_function_to_index_and_type_option
+                                        .insert(
+                                            function_body_as_maybe_compiled_program.clone(),
+                                            (
+                                                function_index,
+                                                TypeKind::Unknown(MaybeType::default()).into(),
+                                            ),
+                                        );
+                                    let compiled_function = self.compile_with_context(
+                                        function_body,
+                                        &body_compilation_context,
+                                        global_compilation_context,
+                                    )?;
+                                    global_compilation_context
+                                        .user_function_to_index_and_type_option
+                                        .get_mut(&function_body_as_maybe_compiled_program)
+                                        .unwrap()
+                                        .1 = compiled_function.node.r#type.clone();
+                                    global_compilation_context.user_functions_definitions
+                                        [function_index] = UserFunctionCallDefinition {
+                                        external_constants_name_clustered_indices: Vec::from_iter(
+                                            compiled_function
+                                                .external_constants_name_clustered_indices
+                                                .iter()
+                                                .cloned(),
+                                        ),
+                                        body: MaybeCompiledProgram {
+                                            program: function_body_as_maybe_compiled_program
+                                                .program,
+                                            node: Some(compiled_function.node.clone()),
+                                        },
+                                    };
+                                    result_external_constants_name_clustered_indices.append(
+                                        &mut compiled_function
+                                            .external_constants_name_clustered_indices
+                                            .clone(),
+                                    );
+                                    return Ok(Arc::new(NodeAndMetadata {
+                                        external_constants_name_clustered_indices:
+                                            result_external_constants_name_clustered_indices.clone(),
+                                        node: Node {
+                                            content: Content::UserFunctionCall {
+                                                arguments: new_constants_definitions,
+                                                body: function_index,
+                                                arguments_is_pure: compiled_function
+                                                    .node
+                                                    .r#type
+                                                    .properties
+                                                    .capabilities
+                                                    .is_empty(),
+                                            },
+                                            r#type: compiled_function.node.r#type.clone(),
+                                        }
+                                        .into(),
+                                    }));
                                 }
                             } else {
                                 return Err(compilation_context.error(
