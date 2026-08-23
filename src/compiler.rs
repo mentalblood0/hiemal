@@ -464,26 +464,31 @@ pub struct Compiler {
 impl Compiler {
     pub fn compile(&self, program: &Program) -> Result<Arc<IntermediateRepresentation>> {
         let mut global_compilation_context = GlobalCompilationContext::default();
-        let result = self.compile_with_context(
+        let compilation_context = CompilationContext::default();
+        let compiled_program = self.compile_with_context(
             program,
-            &CompilationContext::default(),
+            &compilation_context,
             &mut global_compilation_context,
         )?;
-        Ok(Arc::new(IntermediateRepresentation {
-            root: result.node.clone(),
-            user_functions: global_compilation_context
-                .user_functions_definitions
-                .into_iter()
-                .map(|user_function_definition| UserFunction {
-                    external_constants_name_clustered_indices: user_function_definition
-                        .external_constants_name_clustered_indices,
-                    node: user_function_definition.body.node.unwrap().clone(),
-                })
-                .collect(),
-            unique_constants_names_count: global_compilation_context
-                .constants_names_to_name_clustered_constants_indices
-                .len(),
-        }))
+        if !compiled_program.node.r#type.properties.is_computable {
+            Err(compilation_context.error(&"non-computible program", &"computible program"))
+        } else {
+            Ok(Arc::new(IntermediateRepresentation {
+                root: compiled_program.node.clone(),
+                user_functions: global_compilation_context
+                    .user_functions_definitions
+                    .into_iter()
+                    .map(|user_function_definition| UserFunction {
+                        external_constants_name_clustered_indices: user_function_definition
+                            .external_constants_name_clustered_indices,
+                        node: user_function_definition.body.node.unwrap().clone(),
+                    })
+                    .collect(),
+                unique_constants_names_count: global_compilation_context
+                    .constants_names_to_name_clustered_constants_indices
+                    .len(),
+            }))
+        }
     }
 
     fn define_constant(
@@ -550,6 +555,12 @@ impl Compiler {
             argument_type_kind,
             &argument_compilation_context,
         )?;
+        if !compiled_argument_resolved_type.properties.is_computable {
+            return Err(argument_compilation_context.error(
+                &"non-computible embedded function argument",
+                &"computible embedded function argument",
+            ));
+        }
         let result_type =
             get_result_type_from_argument_resolved_type(&compiled_argument_resolved_type)?;
         Ok(NodeAndMetadata {
@@ -1334,6 +1345,7 @@ impl Compiler {
                     } else {
                         None
                     };
+                let mut has_effective_values_conditions = false;
                 for (case_index, (case_condition, case)) in cases.iter().enumerate() {
                     let mut case_compilation_context = compilation_context.clone();
                     case_compilation_context
@@ -1440,11 +1452,25 @@ impl Compiler {
                                         if current_match_type_kind_option.is_none() {
                                             break;
                                         }
+                                        if !compiled_condition.node.r#type.properties.is_computable
+                                        {
+                                            return Err(case_compilation_context.error(
+                                                &"non-computible case condition value",
+                                                &"computible case condition value",
+                                            ));
+                                        }
+                                        has_effective_values_conditions = true;
                                     }
                                 }
                             }
                         }
                     }
+                }
+                if has_effective_values_conditions
+                    && !compiled_match.node.r#type.properties.is_computable
+                {
+                    return Err(match_compilation_context
+                        .error(&"non-computable match", &"computable match"));
                 }
                 let covered = Type::from(
                     covered_types_kinds
@@ -1907,6 +1933,9 @@ impl Compiler {
                                         {
                                             compiled_through_index
                                         } else {
+                                            if (current_type_index == fold_tuple_elements_types.len() - 1) && !compiled_through.node.r#type.properties.is_computable {
+                                                return Err(through_compilation_context.error(&"non-computible through", &"computible through"));
+                                            }
                                             result_external_constants_name_clustered_indices.extend(
                                                 compiled_through
                                                     .external_constants_name_clustered_indices
@@ -2198,6 +2227,11 @@ impl Compiler {
                     &try_compilation_context,
                     global_compilation_context,
                 )?;
+                if !compiled_try.node.r#type.properties.is_computable {
+                    return Err(
+                        try_compilation_context.error(&"non-computible try", &"computible try")
+                    );
+                }
                 let mut or_compilation_context = compilation_context.clone();
                 or_compilation_context.path.0.push(PathSegment::Or);
                 let as_constant_name_clustered_index = self
