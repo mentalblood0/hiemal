@@ -998,13 +998,14 @@ impl Compiler {
                             vec![TypeKind::Number.into(), TypeKind::Number.into()].into(),
                         ),
                         &|compiled_argument_resolved_type| {
-                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
-                                BTreeSet::from_iter([
-                                    TypeKind::Number.into(),
-                                    TypeKind::Null.into(),
-                                ])
-                                .into(),
-                            )))
+                            Ok(Type {
+                                kind: TypeKind::Number,
+                                properties: TypeProperties {
+                                    capabilities: Capability::Error.into(),
+                                    is_computable: true,
+                                }
+                                .unified(&compiled_argument_resolved_type.properties),
+                            })
                         },
                     )?,
                     EmbeddedFunction::Concat => self.compile_embedded_function_call(

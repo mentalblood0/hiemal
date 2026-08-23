@@ -4,7 +4,8 @@
 
 - no own syntax, parsing is deserialization
 - static type checking without annotations
-- tuples, union types, heterogenous fold and sequence
+- tuples, union types, literal strings
+- heterogenous fold and sequence
 - match clause exhaustiveness checking
 - capabilities restrictions checking
 - pass-by-value, strings and containers are cheap to clone
@@ -282,6 +283,12 @@ compute:
   as: _
 ```
 
+```yaml
+allow:
+  - error
+compute: { read bytes from file: tests.yml }
+```
+
 available capabilities:
 
 - append to file
@@ -292,6 +299,7 @@ available capabilities:
 - read standard input
 - read network
 - write network
+- error
 
 #### match cases
 

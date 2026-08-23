@@ -1299,7 +1299,8 @@ impl<'a> ComputationContext<'a> {
                                 .as_number()
                                 .unwrap();
                             if m == Rational::ZERO {
-                                None
+                                return Err(anyhow!("can not devide by zero"))
+                                    .with_context(embedded_function_error_context(path_option))?;
                             } else {
                                 let a = unrolled_argument
                                     .as_ref()
