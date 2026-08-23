@@ -98,6 +98,14 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test try:
+        assert equal::
+          found:
+            try:
+              - read bytes from file: tests.yml
+              - read bytes from file: nonexistent file
+            or: false
+          expected: false
       test heterogenous sequence:
         assert equal::
           found:
@@ -199,6 +207,7 @@ compute:
         assert equal::
           found:
             allow:
+              - error
               - create file
               - overwrite file
               - read file
@@ -211,16 +220,18 @@ compute:
                 - overwrite file:
                     path: test files.txt
                     content: b
-                - create file:
-                    path: test files.txt
-                    content: c
+                - try:
+                    create file:
+                      path: test files.txt
+                      content: c
+                  or: null
                 - read bytes from file: test files.txt
                 - - _
                   - remove file: test files.txt
               as: _
           expected:
             - { bytes: "62" }
-            - true
+            - null
       test pipe lazy:
         assert equal::
           found:

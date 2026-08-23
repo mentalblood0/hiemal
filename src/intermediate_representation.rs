@@ -104,6 +104,11 @@ pub enum Content {
         pipe: Vec<Arc<Node>>,
         as_constant_name_clustered_index_option: Option<usize>,
     },
+    Try {
+        r#try: Arc<Node>,
+        or: Arc<Node>,
+        as_constant_name_clustered_index: usize,
+    },
     Object(BTreeMap<Arc<String>, Arc<Node>>),
     Value(Arc<Option<Value>>),
 }

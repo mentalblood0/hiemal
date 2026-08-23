@@ -22,7 +22,7 @@ use crate::{
         self, Condition, Content, IntermediateRepresentation, Node, RangeBound, Throughs,
         ValuePathSegment,
     },
-    program::EmbeddedFunction,
+    program::{EmbeddedFunction, Path},
     r#type::TypeKind,
     value::Value,
 };
@@ -272,22 +272,13 @@ where
     }
 }
 
-fn false_value() -> Result<Arc<IntermediateValueAndMetadata>> {
-    Ok(IntermediateValueAndMetadata {
-        intermediate_value: IntermediateValue::Value(Some(Value::Bool(false)).into()),
-        type_kind: TypeKind::LiteralFalse,
+fn embedded_function_error_context(path_option: &Option<Path>) -> impl FnOnce() -> String {
+    || {
+        format!(
+            "can not compute embedded function at path\n{}",
+            serde_saphyr::to_string(path_option.as_ref().unwrap()).unwrap()
+        )
     }
-    .into())
-}
-
-macro_rules! ok_or_return_false_value {
-    ($block:block) => {
-        if let Ok(result) = $block {
-            result
-        } else {
-            return false_value();
-        }
-    };
 }
 
 impl<'a> ComputationContext<'a> {
@@ -1393,13 +1384,7 @@ impl<'a> ComputationContext<'a> {
                     ) {
                         // argument is "all"
                         let mut result = Vec::new();
-                        if std::io::stdin().read_to_end(&mut result).is_err() {
-                            return Ok(IntermediateValueAndMetadata {
-                                intermediate_value: IntermediateValue::Value(None.into()),
-                                type_kind: TypeKind::Null,
-                            }
-                            .into());
-                        }
+                        std::io::stdin().read_to_end(&mut result)?;
                         result
                     } else {
                         let read_bytes_amount = (computed_argument_unrolled
@@ -1412,22 +1397,9 @@ impl<'a> ComputationContext<'a> {
                             .value() as i64)
                             .max(0) as usize;
                         let mut result = vec![0; read_bytes_amount];
-                        if std::io::stdin()
+                        std::io::stdin()
                             .read_exact(&mut result)
-                            .with_context(|| {
-                                format!(
-                                    "can not compute embedded function at path {:#?}",
-                                    path_option
-                                )
-                            })
-                            .is_err()
-                        {
-                            return Ok(IntermediateValueAndMetadata {
-                                intermediate_value: IntermediateValue::Value(None.into()),
-                                type_kind: TypeKind::Null,
-                            }
-                            .into());
-                        };
+                            .with_context(embedded_function_error_context(path_option))?;
                         result
                     };
                     Ok(IntermediateValueAndMetadata {
@@ -1451,12 +1423,7 @@ impl<'a> ComputationContext<'a> {
                             .unwrap()
                             .to_string(),
                     )
-                    .with_context(|| {
-                        format!(
-                            "can not compute embedded function at path {:#?}",
-                            path_option.as_ref().unwrap()
-                        )
-                    })?;
+                    .with_context(embedded_function_error_context(path_option))?;
                     let r#type = Value::type_kind(&result_value);
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(result_value.into()),
@@ -1653,7 +1620,7 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Bytes(
-                                if let Ok(result) = std::fs::read(
+                                std::fs::read(
                                     self.unroll_intermediate_value(&self.compute_node(
                                         &embedded_function_call.argument,
                                         constants,
@@ -1664,15 +1631,8 @@ impl<'a> ComputationContext<'a> {
                                     .as_string()
                                     .unwrap()
                                     .to_string(),
-                                ) {
-                                    result
-                                } else {
-                                    return Ok(IntermediateValueAndMetadata {
-                                        intermediate_value: IntermediateValue::Value(None.into()),
-                                        type_kind: TypeKind::Null,
-                                    }
-                                    .into());
-                                }
+                                )
+                                .with_context(embedded_function_error_context(path_option))?
                                 .into(),
                             ))
                             .into(),
@@ -1685,7 +1645,7 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::String(
-                                if let Ok(result) = String::from_utf8(
+                                String::from_utf8(
                                     self.unroll_intermediate_value(&self.compute_node(
                                         &embedded_function_call.argument,
                                         constants,
@@ -1696,15 +1656,8 @@ impl<'a> ComputationContext<'a> {
                                     .as_bytes()
                                     .unwrap()
                                     .to_vec(),
-                                ) {
-                                    result
-                                } else {
-                                    return Ok(IntermediateValueAndMetadata {
-                                        intermediate_value: IntermediateValue::Value(None.into()),
-                                        type_kind: TypeKind::Null,
-                                    }
-                                    .into());
-                                }
+                                )
+                                .with_context(embedded_function_error_context(path_option))?
                                 .into(),
                             ))
                             .into(),
@@ -1745,33 +1698,37 @@ impl<'a> ComputationContext<'a> {
                         .as_ref()
                         .unwrap();
                     if let Some(parent) = computed_path.parent() {
-                        ok_or_return_false_value!({ std::fs::create_dir_all(parent) });
+                        std::fs::create_dir_all(parent)
+                            .with_context(embedded_function_error_context(path_option))?;
                     }
                     match computed_content {
                         Value::String(string) => {
-                            let file =
-                                ok_or_return_false_value!({ std::fs::File::create(computed_path) });
+                            let file = std::fs::File::create(computed_path)
+                                .with_context(embedded_function_error_context(path_option))?;
                             let mut writer = BufWriter::new(file);
                             for chunk in string.chunks() {
-                                ok_or_return_false_value!({ writer.write_all(chunk.as_bytes()) });
+                                writer
+                                    .write_all(chunk.as_bytes())
+                                    .with_context(embedded_function_error_context(path_option))?;
                             }
-                            ok_or_return_false_value!({ writer.flush() });
+                            writer
+                                .flush()
+                                .with_context(embedded_function_error_context(path_option))?;
                         }
                         Value::Bytes(bytes) => {
-                            ok_or_return_false_value!({ std::fs::write(computed_path, bytes) });
+                            std::fs::write(computed_path, bytes)
+                                .with_context(embedded_function_error_context(path_option))?;
                         }
                         _ => panic!(),
                     }
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bool(true)).into(),
-                        ),
-                        type_kind: TypeKind::LiteralTrue,
+                        intermediate_value: IntermediateValue::Value(None.into()),
+                        type_kind: TypeKind::Null,
                     }
                     .into())
                 }
                 EmbeddedFunction::RemoveFile => {
-                    if std::fs::remove_file(std::path::PathBuf::from(
+                    std::fs::remove_file(std::path::PathBuf::from(
                         self.unroll_intermediate_value(
                             &self.compute_node(&embedded_function_call.argument, constants)?,
                         )?
@@ -1782,18 +1739,12 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .to_string(),
                     ))
-                    .is_err()
-                    {
-                        false_value()
-                    } else {
-                        Ok(IntermediateValueAndMetadata {
-                            intermediate_value: IntermediateValue::Value(
-                                Some(Value::Bool(true)).into(),
-                            ),
-                            type_kind: TypeKind::LiteralTrue,
-                        }
-                        .into())
+                    .with_context(embedded_function_error_context(path_option))?;
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(None.into()),
+                        type_kind: TypeKind::Null,
                     }
+                    .into())
                 }
                 EmbeddedFunction::CreateFile => {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
@@ -1827,32 +1778,36 @@ impl<'a> ComputationContext<'a> {
                         .as_ref()
                         .unwrap();
                     if let Some(parent) = computed_path.parent() {
-                        ok_or_return_false_value!({ std::fs::create_dir_all(parent) });
+                        std::fs::create_dir_all(parent)
+                            .with_context(embedded_function_error_context(path_option))?;
                     }
-                    let file = ok_or_return_false_value!({
-                        std::fs::OpenOptions::new()
-                            .write(true)
-                            .create_new(true)
-                            .open(&computed_path)
-                    });
+                    let file = std::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(&computed_path)
+                        .with_context(embedded_function_error_context(path_option))?;
                     let mut writer = BufWriter::new(file);
                     match computed_content {
                         Value::String(string) => {
                             for chunk in string.chunks() {
-                                ok_or_return_false_value!({ writer.write_all(chunk.as_bytes()) });
+                                writer
+                                    .write_all(chunk.as_bytes())
+                                    .with_context(embedded_function_error_context(path_option))?;
                             }
                         }
                         Value::Bytes(bytes) => {
-                            ok_or_return_false_value!({ writer.write_all(bytes) });
+                            writer
+                                .write_all(bytes)
+                                .with_context(embedded_function_error_context(path_option))?;
                         }
                         _ => panic!(),
                     }
-                    ok_or_return_false_value!({ writer.flush() });
+                    writer
+                        .flush()
+                        .with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bool(true)).into(),
-                        ),
-                        type_kind: TypeKind::LiteralTrue,
+                        intermediate_value: IntermediateValue::Value(None.into()),
+                        type_kind: TypeKind::Null,
                     }
                     .into())
                 }
@@ -2299,6 +2254,37 @@ impl<'a> ComputationContext<'a> {
                     };
                 }
                 Ok(previous_pipe_element_computed_option.unwrap())
+            }
+            Content::Try {
+                r#try,
+                or,
+                as_constant_name_clustered_index,
+            } => {
+                let error_string: ropey::Rope = match self.compute_node(r#try, constants) {
+                    Ok(computed_try) => match self.unroll_intermediate_value(&computed_try) {
+                        Ok(computed_try_unrolled) => {
+                            let type_kind = Value::type_kind(&computed_try_unrolled);
+                            return Ok(IntermediateValueAndMetadata {
+                                intermediate_value: IntermediateValue::Value(computed_try_unrolled),
+                                type_kind,
+                            }
+                            .into());
+                        }
+                        Err(error) => error.to_string().into(),
+                    },
+                    Err(error) => error.to_string().into(),
+                };
+                let mut or_constants = constants.clone();
+                or_constants[*as_constant_name_clustered_index] = Some(
+                    IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::String(error_string.clone())).into(),
+                        ),
+                        type_kind: TypeKind::LiteralString(error_string),
+                    }
+                    .into(),
+                );
+                self.compute_node(or, &or_constants)
             }
             Content::Object(object) => {
                 let mut result = containers::Object::default();

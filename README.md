@@ -495,6 +495,16 @@ from:
 at: [1]
 ```
 
+#### try as or
+
+```yaml
+try:
+  - read bytes from file: tests.yml
+  - read bytes from file: nonexistent file
+as: error
+or: { constant: error }
+```
+
 ## Name
 
 Named after [Hiemal](https://hiemalambient.bandcamp.com/) Dark/Drone Ambient artist from France

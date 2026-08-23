@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Error, Result, anyhow};
-use enumset::{EnumSet, enum_set};
+use enumset::EnumSet;
 use gxhash::HashMap;
 use regex::Regex;
 use serde::Serialize;
@@ -529,7 +529,6 @@ impl Compiler {
         embedded_function_call: &EmbeddedFunctionCall,
         argument_type_kind: &TypeKind,
         get_result_type_from_argument_resolved_type: &F,
-        is_fallible: bool,
     ) -> Result<Arc<NodeAndMetadata>>
     where
         F: Fn(&Type) -> Result<Type>,
@@ -551,13 +550,19 @@ impl Compiler {
             argument_type_kind,
             &argument_compilation_context,
         )?;
+        let result_type =
+            get_result_type_from_argument_resolved_type(&compiled_argument_resolved_type)?;
         Ok(NodeAndMetadata {
             external_constants_name_clustered_indices: compiled_argument
                 .external_constants_name_clustered_indices
                 .clone(),
             node: Node {
                 content: Content::EmbeddedFunctionCall {
-                    path_option: if is_fallible {
+                    path_option: if result_type
+                        .properties
+                        .capabilities
+                        .contains(Capability::Error)
+                    {
                         Some(argument_compilation_context.path.clone())
                     } else {
                         None
@@ -567,9 +572,7 @@ impl Compiler {
                         argument: compiled_argument.node.clone(),
                     },
                 },
-                r#type: get_result_type_from_argument_resolved_type(
-                    &compiled_argument_resolved_type,
-                )?,
+                r#type: result_type,
             }
             .into(),
         }
@@ -975,7 +978,6 @@ impl Compiler {
                         &|compiled_argument_resolved_type| {
                             Ok(compiled_argument_resolved_type.with_kind(TypeKind::Number))
                         },
-                        false,
                     )?,
                     EmbeddedFunction::Mod => self.compile_embedded_function_call(
                         compilation_context,
@@ -993,7 +995,6 @@ impl Compiler {
                                 .into(),
                             )))
                         },
-                        false,
                     )?,
                     EmbeddedFunction::Concat => self.compile_embedded_function_call(
                         compilation_context,
@@ -1003,7 +1004,6 @@ impl Compiler {
                         &|compiled_argument_resolved_type| {
                             Ok(compiled_argument_resolved_type.with_kind(TypeKind::String))
                         },
-                        false,
                     )?,
                     EmbeddedFunction::IsSorted => self.compile_embedded_function_call(
                         compilation_context,
@@ -1013,7 +1013,6 @@ impl Compiler {
                         &|compiled_argument_resolved_type| {
                             Ok(compiled_argument_resolved_type.with_kind(TypeKind::Bool))
                         },
-                        false,
                     )?,
                     EmbeddedFunction::ReadBytesFromStandardInput => self
                         .compile_embedded_function_call(
@@ -1029,43 +1028,15 @@ impl Compiler {
                             ),
                             &|compiled_argument_resolved_type| {
                                 Ok(Type {
-                                    kind: TypeKind::Union(
-                                        BTreeSet::from_iter([
-                                            Type {
-                                                kind: TypeKind::Bytes,
-                                                properties: TypeProperties {
-                                                    capabilities: enum_set!(
-                                                        Capability::ReadStandardInput
-                                                    ),
-                                                    is_computable: true,
-                                                }
-                                                .unified(
-                                                    &compiled_argument_resolved_type.properties,
-                                                ),
-                                            },
-                                            Type {
-                                                kind: TypeKind::Null,
-                                                properties: TypeProperties {
-                                                    capabilities: enum_set!(
-                                                        Capability::ReadStandardInput
-                                                    ),
-                                                    is_computable: true,
-                                                }
-                                                .unified(
-                                                    &compiled_argument_resolved_type.properties,
-                                                ),
-                                            },
-                                        ])
-                                        .into(),
-                                    ),
+                                    kind: TypeKind::Bytes,
                                     properties: TypeProperties {
-                                        capabilities: enum_set!(Capability::ReadStandardInput),
+                                        capabilities: Capability::ReadStandardInput
+                                            | Capability::Error,
                                         is_computable: true,
                                     }
                                     .unified(&compiled_argument_resolved_type.properties),
                                 })
                             },
-                            false,
                         )?,
                     EmbeddedFunction::ParseYaml => self.compile_embedded_function_call(
                         compilation_context,
@@ -1073,9 +1044,15 @@ impl Compiler {
                         embedded_function_call,
                         &TypeKind::String,
                         &|compiled_argument_resolved_type| {
-                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Any))
+                            Ok(Type {
+                                kind: TypeKind::Any,
+                                properties: TypeProperties {
+                                    capabilities: Capability::Error.into(),
+                                    is_computable: true,
+                                }
+                                .unified(&compiled_argument_resolved_type.properties),
+                            })
                         },
-                        true,
                     )?,
                     EmbeddedFunction::KeyValuePairs => self.compile_embedded_function_call(
                         compilation_context,
@@ -1103,7 +1080,6 @@ impl Compiler {
                                     .error(compiled_argument_resolved_type, &"object"))
                             }
                         },
-                        false,
                     )?,
                     EmbeddedFunction::Flatten => self.compile_embedded_function_call(
                         compilation_context,
@@ -1118,7 +1094,6 @@ impl Compiler {
                                     .error(compiled_argument_resolved_type, &"flattenable type")
                             })
                         },
-                        false,
                     )?,
                     EmbeddedFunction::MatchRegex => self.compile_embedded_function_call(
                         compilation_context,
@@ -1191,7 +1166,6 @@ impl Compiler {
                                 .into(),
                             )))
                         },
-                        false,
                     )?,
                     EmbeddedFunction::ReadBytesFromFile => self.compile_embedded_function_call(
                         compilation_context,
@@ -1200,35 +1174,14 @@ impl Compiler {
                         &TypeKind::String,
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
-                                kind: TypeKind::Union(
-                                    BTreeSet::from_iter([
-                                        Type {
-                                            kind: TypeKind::Bytes,
-                                            properties: TypeProperties {
-                                                capabilities: enum_set!(Capability::ReadFile),
-                                                is_computable: true,
-                                            }
-                                            .unified(&compiled_argument_resolved_type.properties),
-                                        },
-                                        Type {
-                                            kind: TypeKind::Null,
-                                            properties: TypeProperties {
-                                                capabilities: enum_set!(Capability::ReadFile),
-                                                is_computable: true,
-                                            }
-                                            .unified(&compiled_argument_resolved_type.properties),
-                                        },
-                                    ])
-                                    .into(),
-                                ),
+                                kind: TypeKind::Bytes,
                                 properties: TypeProperties {
-                                    capabilities: enum_set!(Capability::ReadFile),
+                                    capabilities: Capability::ReadFile | Capability::Error,
                                     is_computable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
                         },
-                        false,
                     )?,
                     EmbeddedFunction::StringFromBytes => self.compile_embedded_function_call(
                         compilation_context,
@@ -1236,15 +1189,15 @@ impl Compiler {
                         embedded_function_call,
                         &TypeKind::Bytes,
                         &|compiled_argument_resolved_type| {
-                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
-                                BTreeSet::from_iter([
-                                    compiled_argument_resolved_type.with_kind(TypeKind::String),
-                                    compiled_argument_resolved_type.with_kind(TypeKind::Null),
-                                ])
-                                .into(),
-                            )))
+                            Ok(Type {
+                                kind: TypeKind::String,
+                                properties: TypeProperties {
+                                    capabilities: Capability::Error.into(),
+                                    is_computable: true,
+                                }
+                                .unified(&compiled_argument_resolved_type.properties),
+                            })
                         },
-                        false,
                     )?,
                     EmbeddedFunction::CreateFile => self.compile_embedded_function_call(
                         compilation_context,
@@ -1269,15 +1222,14 @@ impl Compiler {
                         ),
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
-                                kind: TypeKind::Bool,
+                                kind: TypeKind::Null,
                                 properties: TypeProperties {
-                                    capabilities: enum_set!(Capability::CreateFile),
+                                    capabilities: Capability::CreateFile | Capability::Error,
                                     is_computable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
                         },
-                        false,
                     )?,
                     EmbeddedFunction::OverwriteFile => self.compile_embedded_function_call(
                         compilation_context,
@@ -1302,15 +1254,14 @@ impl Compiler {
                         ),
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
-                                kind: TypeKind::Bool,
+                                kind: TypeKind::Null,
                                 properties: TypeProperties {
-                                    capabilities: enum_set!(Capability::OverwriteFile),
+                                    capabilities: Capability::OverwriteFile | Capability::Error,
                                     is_computable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
                         },
-                        false,
                     )?,
                     EmbeddedFunction::RemoveFile => self.compile_embedded_function_call(
                         compilation_context,
@@ -1319,15 +1270,14 @@ impl Compiler {
                         &TypeKind::String,
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
-                                kind: TypeKind::Bool,
+                                kind: TypeKind::Null,
                                 properties: TypeProperties {
-                                    capabilities: enum_set!(Capability::RemoveFile),
+                                    capabilities: Capability::RemoveFile | Capability::Error,
                                     is_computable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
                         },
-                        false,
                     )?,
                 }
             }
@@ -2228,16 +2178,67 @@ impl Compiler {
                         r#type: r#type.unwrap(),
                     }
                     .into(),
-                    external_constants_name_clustered_indices: compiled_pipe_elements.iter().fold(
-                        BTreeSet::new(),
-                        |mut result, compiled_pipe_element| {
-                            result.append(
-                                &mut compiled_pipe_element
-                                    .external_constants_name_clustered_indices
-                                    .clone(),
-                            );
-                            result
+                    external_constants_name_clustered_indices: compiled_pipe_elements
+                        .iter()
+                        .flat_map(|compiled_pipe_element| {
+                            compiled_pipe_element
+                                .external_constants_name_clustered_indices
+                                .iter()
+                                .cloned()
+                        })
+                        .collect(),
+                }
+                .into()
+            }
+            Program::Try { r#try, or, r#as } => {
+                let mut try_compilation_context = compilation_context.clone();
+                try_compilation_context.path.0.push(PathSegment::Try);
+                let compiled_try = self.compile_with_context(
+                    r#try,
+                    &try_compilation_context,
+                    global_compilation_context,
+                )?;
+                let mut or_compilation_context = compilation_context.clone();
+                or_compilation_context.path.0.push(PathSegment::Or);
+                let as_constant_name_clustered_index = self
+                    .define_constant(
+                        r#as.clone(),
+                        ConstantMetadata {
+                            r#type: compiled_try.node.r#type.with_kind(TypeKind::String),
                         },
+                        &mut or_compilation_context,
+                        global_compilation_context,
+                    )
+                    .name_clustered_index;
+                let compiled_or = self.compile_with_context(
+                    or,
+                    &or_compilation_context,
+                    global_compilation_context,
+                )?;
+                NodeAndMetadata {
+                    node: Node {
+                        content: Content::Try {
+                            r#try: compiled_try.node.clone(),
+                            or: compiled_or.node.clone(),
+                            as_constant_name_clustered_index,
+                        },
+                        r#type: Type::from(BTreeSet::from_iter([
+                            compiled_try.node.r#type.clone(),
+                            compiled_or.node.r#type.clone(),
+                        ])),
+                    }
+                    .into(),
+                    external_constants_name_clustered_indices: BTreeSet::from_iter(
+                        compiled_try
+                            .external_constants_name_clustered_indices
+                            .iter()
+                            .cloned()
+                            .chain(
+                                compiled_or
+                                    .external_constants_name_clustered_indices
+                                    .iter()
+                                    .cloned(),
+                            ),
                     ),
                 }
                 .into()

@@ -85,6 +85,12 @@ pub enum Program {
         #[serde(default = "default_pipe_as")]
         r#as: Option<Arc<String>>,
     },
+    Try {
+        r#try: Arc<Program>,
+        #[serde(default = "default_try_as")]
+        r#as: Arc<String>,
+        or: Arc<Program>,
+    },
     BytesValue {
         bytes: String,
     },
@@ -126,6 +132,10 @@ pub fn default_sequence_as() -> Arc<String> {
 
 pub fn default_pipe_as() -> Option<Arc<String>> {
     None
+}
+
+pub fn default_try_as() -> Arc<String> {
+    "error".to_string().into()
 }
 
 #[repr(u8)]
@@ -277,6 +287,10 @@ pub enum PathSegment {
     Map,
     #[serde(rename = "pipe")]
     Pipe,
+    #[serde(rename = "try")]
+    Try,
+    #[serde(rename = "or")]
+    Or,
     #[serde(rename = "filter")]
     Filter,
     #[serde(rename = "fold")]

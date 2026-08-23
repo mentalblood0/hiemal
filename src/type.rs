@@ -215,6 +215,8 @@ pub enum Capability {
     ReadNetwork,
     #[serde(rename = "write network")]
     WriteNetwork,
+    #[serde(rename = "error")]
+    Error,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialOrd, Ord, Hash, PartialEq, Eq, Clone)]
