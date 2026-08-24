@@ -98,6 +98,16 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test flatten lazy:
+        assert equal::
+          found:
+            from:
+              flatten:
+                - [1, 2]
+                - starting with: 1
+                  next: { sum: [_, 1] }
+            at: [[0, 5]]
+          expected: [1, 2, 1, 2, 3]
       test try:
         assert equal::
           found:
@@ -720,11 +730,6 @@ compute:
               - [true, 1]
               - [false, string]
           expected: 1
-      test flatten tuple complex:
-        assert equal::
-          found:
-            flatten: [[1, a, 3], [b], [5, 6]]
-          expected: [1, a, 3, b, 5, 6]
       test flatten tuple simple:
         assert equal::
           found:

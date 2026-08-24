@@ -1092,20 +1092,6 @@ impl Compiler {
                             }
                         },
                     )?,
-                    EmbeddedFunction::Flatten => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        &TypeKind::Array(Box::new(
-                            TypeKind::Array(Box::new(TypeKind::Any.into())).into(),
-                        )),
-                        &|compiled_argument_resolved_type| {
-                            compiled_argument_resolved_type.flatten().with_context(|| {
-                                compilation_context
-                                    .error(compiled_argument_resolved_type, &"flattenable type")
-                            })
-                        },
-                    )?,
                     EmbeddedFunction::MatchRegex => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
@@ -1661,6 +1647,36 @@ impl Compiler {
                     .into(),
                     external_constants_name_clustered_indices:
                         result_external_constants_name_clustered_indices,
+                }
+                .into()
+            }
+            Program::Flatten { flatten } => {
+                let mut flatten_compilation_context = compilation_context.clone();
+                flatten_compilation_context
+                    .path
+                    .0
+                    .push(PathSegment::Flatten);
+                let compiled_flatten = self.compile_with_context(
+                    flatten,
+                    &flatten_compilation_context,
+                    global_compilation_context,
+                )?;
+                let flatten_resolved_type = resolve_type(
+                    &compiled_flatten.node.r#type,
+                    &TypeKind::Array(Box::new(
+                        TypeKind::Array(Box::new(TypeKind::Any.into())).into(),
+                    )),
+                    compilation_context,
+                )?;
+                NodeAndMetadata {
+                    node: Node {
+                        content: Content::Flatten(compiled_flatten.node.clone()),
+                        r#type: flatten_resolved_type.flatten()?,
+                    }
+                    .into(),
+                    external_constants_name_clustered_indices: compiled_flatten
+                        .external_constants_name_clustered_indices
+                        .clone(),
                 }
                 .into()
             }

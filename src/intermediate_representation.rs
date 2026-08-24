@@ -92,6 +92,7 @@ pub enum Content {
     },
     Map(Arc<Map>),
     Filter(Arc<Filter>),
+    Flatten(Arc<Node>),
     Fold {
         fold: Arc<Node>,
         fold_constant_name_clustered_index: usize,

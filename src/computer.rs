@@ -162,6 +162,45 @@ impl Hash for Filter {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct FlattenLockableInternals {
+    next_element_index: usize,
+    next_element_element_index: usize,
+    already_computed_values: Vec<Arc<IntermediateValueAndMetadata>>,
+}
+
+#[derive(Clone, Debug)]
+struct Flatten {
+    computed_flatten: Arc<IntermediateValueAndMetadata>,
+    lockable_internals: Arc<RwLock<FlattenLockableInternals>>,
+}
+
+impl PartialEq for Flatten {
+    fn eq(&self, other: &Self) -> bool {
+        self.computed_flatten == other.computed_flatten
+    }
+}
+
+impl Eq for Flatten {}
+
+impl PartialOrd for Flatten {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Flatten {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.computed_flatten.cmp(&other.computed_flatten)
+    }
+}
+
+impl Hash for Flatten {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.computed_flatten.hash(state);
+    }
+}
+
 #[derive(Clone, Debug)]
 struct LazyValue {
     node: Arc<Node>,
@@ -205,6 +244,7 @@ enum IntermediateValue {
     Sequence(Sequence),
     Map(Map),
     Filter(Filter),
+    Flatten(Flatten),
     LazyValue(LazyValue),
 }
 
@@ -574,6 +614,37 @@ impl<'a> ComputationContext<'a> {
         }
     }
 
+    fn compute_next_in_flatten(
+        &self,
+        flatten: &Flatten,
+        lockable_internals_write_guard: &mut parking_lot::RwLockWriteGuard<
+            FlattenLockableInternals,
+        >,
+    ) -> Result<bool> {
+        loop {
+            if let Some(current_element) = self.get_from_intermediate_value(
+                &flatten.computed_flatten,
+                lockable_internals_write_guard.next_element_index,
+            )? {
+                if let Some(current_element_element) = self.get_from_intermediate_value(
+                    &current_element,
+                    lockable_internals_write_guard.next_element_element_index,
+                )? {
+                    lockable_internals_write_guard.next_element_element_index += 1;
+                    lockable_internals_write_guard
+                        .already_computed_values
+                        .push(current_element_element.clone());
+                    return Ok(true);
+                } else {
+                    lockable_internals_write_guard.next_element_index += 1;
+                    lockable_internals_write_guard.next_element_element_index = 0;
+                }
+            } else {
+                return Ok(false);
+            }
+        }
+    }
+
     fn get_by_key_from_intermediate_value(
         &self,
         intermediate_value_and_metadata: &Arc<IntermediateValueAndMetadata>,
@@ -630,6 +701,34 @@ impl<'a> ComputationContext<'a> {
                             sequence,
                             &mut lockable_internals_write_guard,
                         )?;
+                    }
+                    Ok(Some(
+                        lockable_internals_write_guard
+                            .already_computed_values
+                            .last()
+                            .unwrap()
+                            .clone(),
+                    ))
+                }
+            }
+            IntermediateValue::Flatten(flatten) => {
+                let lockable_internals_read_guard = flatten.lockable_internals.upgradable_read();
+                if let Some(result) = lockable_internals_read_guard
+                    .already_computed_values
+                    .get(index)
+                {
+                    Ok(Some(result.clone()))
+                } else {
+                    let mut lockable_internals_write_guard =
+                        parking_lot::RwLockUpgradableReadGuard::upgrade(
+                            lockable_internals_read_guard,
+                        );
+                    while lockable_internals_write_guard.already_computed_values.len() <= index {
+                        if !self
+                            .compute_next_in_flatten(flatten, &mut lockable_internals_write_guard)?
+                        {
+                            return Ok(None);
+                        }
                     }
                     Ok(Some(
                         lockable_internals_write_guard
@@ -749,6 +848,41 @@ impl<'a> ComputationContext<'a> {
                             sequence,
                             &mut lockable_internals_write_guard,
                         )?;
+                    }
+                    Ok(Vector {
+                        inner: lockable_internals_write_guard
+                            .already_computed_values
+                            .iter()
+                            .skip(range.start)
+                            .take(range.end - range.start)
+                            .cloned()
+                            .collect(),
+                    })
+                }
+            }
+            IntermediateValue::Flatten(flatten) => {
+                let lockable_internals_read_guard = flatten.lockable_internals.upgradable_read();
+                if lockable_internals_read_guard.already_computed_values.len() >= range.end {
+                    Ok(Vector {
+                        inner: lockable_internals_read_guard
+                            .already_computed_values
+                            .iter()
+                            .skip(range.start)
+                            .take(range.end - range.start)
+                            .cloned()
+                            .collect(),
+                    })
+                } else {
+                    let mut lockable_internals_write_guard =
+                        parking_lot::RwLockUpgradableReadGuard::upgrade(
+                            lockable_internals_read_guard,
+                        );
+                    while lockable_internals_write_guard.already_computed_values.len() < range.end {
+                        if !self
+                            .compute_next_in_flatten(flatten, &mut lockable_internals_write_guard)?
+                        {
+                            break;
+                        }
                     }
                     Ok(Vector {
                         inner: lockable_internals_write_guard
@@ -1100,6 +1234,28 @@ impl<'a> ComputationContext<'a> {
                 intermediate_value: IntermediateValue::LazyValue(ref lazy_value),
                 type_kind: _,
             } => self.unroll_intermediate_value(&self.compute_lazy_value(lazy_value)?),
+            &IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Flatten(ref flatten),
+                type_kind: _,
+            } => {
+                {
+                    let mut lockable_internals_write_guard = flatten.lockable_internals.write();
+                    while self
+                        .compute_next_in_flatten(flatten, &mut lockable_internals_write_guard)?
+                    {
+                    }
+                }
+                let lockable_internals_read_guard = flatten.lockable_internals.read();
+                Ok(Arc::new(Some(Value::Tuple(
+                    self.unroll_intermediate_values(
+                        lockable_internals_read_guard
+                            .already_computed_values
+                            .iter()
+                            .cloned(),
+                        lockable_internals_read_guard.already_computed_values.len(),
+                    )?,
+                ))))
+            }
             &IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Filter(ref filter),
                 type_kind: _,
@@ -1486,41 +1642,6 @@ impl<'a> ComputationContext<'a> {
                                     .into(),
                             )
                         }),
-                    }
-                    .into())
-                }
-                EmbeddedFunction::Flatten => {
-                    Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Tuple({
-                                let mut result = Vector::default();
-                                for list in self
-                                    .unroll_intermediate_value(&self.compute_node(
-                                        &embedded_function_call.argument,
-                                        constants,
-                                    )?)?
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_tuple()
-                                    .unwrap()
-                                    .iter()
-                                {
-                                    result.append(
-                                        list.as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_tuple()
-                                            .unwrap()
-                                            .iter()
-                                            .cloned(),
-                                    );
-                                }
-                                result
-                            }))
-                            .into(),
-                        ),
-                        type_kind: node.r#type.kind.clone(),
                     }
                     .into())
                 }
@@ -2098,6 +2219,14 @@ impl<'a> ComputationContext<'a> {
                 }
                 .into())
             }
+            Content::Flatten(flatten) => Ok(IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Flatten(Flatten {
+                    computed_flatten: self.compute_node(flatten, constants)?,
+                    lockable_internals: Arc::new(RwLock::new(FlattenLockableInternals::default())),
+                }),
+                type_kind: node.r#type.kind.clone(),
+            }
+            .into()),
             Content::Filter(intermediate_representation_content) => {
                 let computed_filter = Box::new(
                     self.compute_node(&intermediate_representation_content.filter, constants)?,

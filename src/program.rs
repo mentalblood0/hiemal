@@ -58,6 +58,9 @@ pub enum Program {
         r#as: Arc<String>,
         through: Box<Program>,
     },
+    Flatten {
+        flatten: Box<Program>,
+    },
     Fold {
         fold: Box<Program>,
         #[serde(default = "default_fold_as")]
@@ -252,8 +255,6 @@ pub enum EmbeddedFunction {
     ParseYaml,
     #[serde(rename = "key-value pairs")]
     KeyValuePairs,
-    #[serde(rename = "flatten")]
-    Flatten,
     #[serde(rename = "match regex")]
     MatchRegex,
     #[serde(rename = "concat")]
@@ -291,6 +292,8 @@ pub enum PathSegment {
     Try,
     #[serde(rename = "or")]
     Or,
+    #[serde(rename = "flatten")]
+    Flatten,
     #[serde(rename = "filter")]
     Filter,
     #[serde(rename = "fold")]
