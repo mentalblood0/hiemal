@@ -133,6 +133,7 @@ pub struct Sequence {
     pub starting_with: Arc<Node>,
     pub current_constant_name_clustered_index: usize,
     pub current_concrete_type_kind_and_next: Arc<Vec<(TypeKind, Arc<Node>)>>,
+    pub r#while: Option<Arc<Node>>,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

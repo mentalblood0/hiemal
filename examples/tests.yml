@@ -98,6 +98,13 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test sequence while:
+        assert equal::
+          found:
+            starting with: 1
+            next: { sum: [_, 1] }
+            while: { is sorted: [_, 5] }
+          expected: [1, 2, 3, 4, 5]
       test flatten lazy:
         assert equal::
           found:

@@ -44,6 +44,7 @@ struct SequenceLockableInternals {
     current_concrete_type_and_next: Arc<Vec<(TypeKind, Arc<Node>)>>,
     next_constants: Constants,
     already_computed_values: Vec<Arc<IntermediateValueAndMetadata>>,
+    already_fully_computed: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -549,30 +550,55 @@ impl<'a> ComputationContext<'a> {
             SequenceLockableInternals,
         >,
     ) -> Result<()> {
-        let next_node = lockable_internals_write_guard
-            .current_concrete_type_and_next
-            .iter()
-            .find_map(|(current_concrete_type_kind, possible_next_node)| {
-                if current_concrete_type_kind.contains(
-                    &lockable_internals_write_guard
+        if !lockable_internals_write_guard.already_fully_computed {
+            let next_node = lockable_internals_write_guard
+                .current_concrete_type_and_next
+                .iter()
+                .find_map(|(current_concrete_type_kind, possible_next_node)| {
+                    if current_concrete_type_kind.contains(
+                        &lockable_internals_write_guard
+                            .already_computed_values
+                            .last()
+                            .unwrap()
+                            .type_kind,
+                    ) {
+                        Some(possible_next_node)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap();
+            let next =
+                self.compute_node(next_node, &lockable_internals_write_guard.next_constants)?;
+            lockable_internals_write_guard.next_constants[sequence
+                .intermediate_representation_content
+                .current_constant_name_clustered_index] = Some(next.clone());
+            if let Some(ref r#while) = sequence.intermediate_representation_content.r#while {
+                if self
+                    .unroll_intermediate_value(
+                        &self.compute_node(
+                            r#while,
+                            &lockable_internals_write_guard.next_constants,
+                        )?,
+                    )?
+                    .as_ref()
+                    .as_ref()
+                    .unwrap()
+                    .as_bool()
+                    .unwrap()
+                {
+                    lockable_internals_write_guard
                         .already_computed_values
-                        .last()
-                        .unwrap()
-                        .type_kind,
-                ) {
-                    Some(possible_next_node)
+                        .push(next);
                 } else {
-                    None
+                    lockable_internals_write_guard.already_fully_computed = true;
                 }
-            })
-            .unwrap();
-        let next = self.compute_node(next_node, &lockable_internals_write_guard.next_constants)?;
-        lockable_internals_write_guard.next_constants[sequence
-            .intermediate_representation_content
-            .current_constant_name_clustered_index] = Some(next.clone());
-        lockable_internals_write_guard
-            .already_computed_values
-            .push(next);
+            } else {
+                lockable_internals_write_guard
+                    .already_computed_values
+                    .push(next);
+            }
+        }
         Ok(())
     }
 
@@ -696,19 +722,18 @@ impl<'a> ComputationContext<'a> {
                         parking_lot::RwLockUpgradableReadGuard::upgrade(
                             lockable_internals_read_guard,
                         );
-                    while lockable_internals_write_guard.already_computed_values.len() <= index {
+                    while !lockable_internals_write_guard.already_fully_computed
+                        && lockable_internals_write_guard.already_computed_values.len() <= index
+                    {
                         self.compute_next_in_sequence(
                             sequence,
                             &mut lockable_internals_write_guard,
                         )?;
                     }
-                    Ok(Some(
-                        lockable_internals_write_guard
-                            .already_computed_values
-                            .last()
-                            .unwrap()
-                            .clone(),
-                    ))
+                    Ok(lockable_internals_write_guard
+                        .already_computed_values
+                        .get(index)
+                        .cloned())
                 }
             }
             IntermediateValue::Flatten(flatten) => {
@@ -843,7 +868,9 @@ impl<'a> ComputationContext<'a> {
                         parking_lot::RwLockUpgradableReadGuard::upgrade(
                             lockable_internals_read_guard,
                         );
-                    while lockable_internals_write_guard.already_computed_values.len() < range.end {
+                    while !lockable_internals_write_guard.already_fully_computed
+                        && lockable_internals_write_guard.already_computed_values.len() < range.end
+                    {
                         self.compute_next_in_sequence(
                             sequence,
                             &mut lockable_internals_write_guard,
@@ -1166,20 +1193,52 @@ impl<'a> ComputationContext<'a> {
         intermediate_value: &Arc<IntermediateValueAndMetadata>,
     ) -> Result<Arc<Option<Value>>> {
         match &**intermediate_value {
-            &IntermediateValueAndMetadata {
-                intermediate_value: IntermediateValue::Value(ref result),
+            IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Value(result),
                 type_kind: _,
             } => Ok(result.clone()),
-            &IntermediateValueAndMetadata {
-                intermediate_value: IntermediateValue::Tuple(ref intermediate_values_list),
+            IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Tuple(intermediate_values_list),
                 type_kind: _,
             } => Ok(Some(Value::Tuple(self.unroll_intermediate_values(
                 intermediate_values_list.inner.iter().cloned(),
                 intermediate_values_list.len(),
             )?))
             .into()),
-            &IntermediateValueAndMetadata {
-                intermediate_value: IntermediateValue::Object(ref object),
+            IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Sequence(sequence),
+                type_kind: _,
+            } => {
+                if sequence
+                    .intermediate_representation_content
+                    .r#while
+                    .is_none()
+                {
+                    Err(anyhow!(
+                        "can not possibly unroll sequence without `while` {intermediate_value:#?}"
+                    ))
+                } else {
+                    let mut lockable_internals_write_guard = sequence.lockable_internals.write();
+                    while !lockable_internals_write_guard.already_fully_computed {
+                        self.compute_next_in_sequence(
+                            sequence,
+                            &mut lockable_internals_write_guard,
+                        )?;
+                    }
+                    Ok(Some(Value::Tuple(
+                        self.unroll_intermediate_values(
+                            lockable_internals_write_guard
+                                .already_computed_values
+                                .iter()
+                                .cloned(),
+                            lockable_internals_write_guard.already_computed_values.len(),
+                        )?,
+                    ))
+                    .into())
+                }
+            }
+            IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Object(object),
                 type_kind: _,
             } => Ok(Some(Value::Object(Object::new_from_iter(
                 object.keys().cloned().zip(
@@ -1188,8 +1247,8 @@ impl<'a> ComputationContext<'a> {
                 ),
             )))
             .into()),
-            &IntermediateValueAndMetadata {
-                intermediate_value: IntermediateValue::Map(ref map),
+            IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Map(map),
                 type_kind: _,
             } => {
                 let computed_map_range =
@@ -1230,12 +1289,12 @@ impl<'a> ComputationContext<'a> {
                 }))
                 .into())
             }
-            &IntermediateValueAndMetadata {
-                intermediate_value: IntermediateValue::LazyValue(ref lazy_value),
+            IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::LazyValue(lazy_value),
                 type_kind: _,
             } => self.unroll_intermediate_value(&self.compute_lazy_value(lazy_value)?),
-            &IntermediateValueAndMetadata {
-                intermediate_value: IntermediateValue::Flatten(ref flatten),
+            IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Flatten(flatten),
                 type_kind: _,
             } => {
                 {
@@ -1256,8 +1315,8 @@ impl<'a> ComputationContext<'a> {
                     )?,
                 ))))
             }
-            &IntermediateValueAndMetadata {
-                intermediate_value: IntermediateValue::Filter(ref filter),
+            IntermediateValueAndMetadata {
+                intermediate_value: IntermediateValue::Filter(filter),
                 type_kind: _,
             } => {
                 {
@@ -1278,7 +1337,6 @@ impl<'a> ComputationContext<'a> {
                     )?,
                 ))))
             }
-            unexpected_variant => Err(anyhow!("unexpected enum variant {unexpected_variant:#?}")),
         }
     }
 
@@ -2358,6 +2416,7 @@ impl<'a> ComputationContext<'a> {
                                 .clone(),
                             next_constants,
                             already_computed_values: [computed_starting_with].into(),
+                            already_fully_computed: false,
                         })),
                     }),
                     type_kind: node.r#type.kind.clone(),

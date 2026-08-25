@@ -82,6 +82,8 @@ pub enum Program {
         #[serde(default = "default_sequence_as")]
         r#as: Arc<String>,
         next: Box<Program>,
+        #[serde(default = "default_sequence_while")]
+        r#while: Option<Box<Program>>,
     },
     Pipe {
         pipe: Vec<Arc<Program>>,
@@ -131,6 +133,10 @@ pub fn default_fold_as() -> Arc<String> {
 
 pub fn default_sequence_as() -> Arc<String> {
     DEFAULT_ARGUMENT_NAME.to_string().into()
+}
+
+pub fn default_sequence_while() -> Option<Box<Program>> {
+    None
 }
 
 pub fn default_pipe_as() -> Option<Arc<String>> {

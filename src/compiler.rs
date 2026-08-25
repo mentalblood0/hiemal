@@ -807,10 +807,13 @@ impl Compiler {
                 } else {
                     return Err(compilation_context.error(
                         constant_name,
-                        &compilation_context
-                            .available_constants
-                            .keys()
-                            .collect::<Vec<_>>(),
+                        &BTreeMap::from_iter([(
+                            &"one of available constants names",
+                            &compilation_context
+                                .available_functions
+                                .keys()
+                                .collect::<Vec<_>>(),
+                        )]),
                     ));
                 }
             }
@@ -2071,6 +2074,7 @@ impl Compiler {
                 starting_with,
                 r#as,
                 next,
+                r#while,
             } => {
                 let mut starting_with_compilation_context = compilation_context.clone();
                 starting_with_compilation_context
@@ -2124,15 +2128,41 @@ impl Compiler {
                             .clone(),
                     );
                 }
+                let element_type = Type::from(BTreeSet::from_iter(
+                    [compiled_starting_with.node.r#type.clone()]
+                        .into_iter()
+                        .chain(current_concrete_type_to_next.keys().cloned()),
+                ));
+                let compiled_while_node = if let Some(r#while) = r#while {
+                    let mut while_compilation_context = compilation_context.clone();
+                    while_compilation_context.path.0.push(PathSegment::While);
+                    self.define_constant(
+                        r#as.clone(),
+                        ConstantMetadata {
+                            r#type: element_type.clone(),
+                        },
+                        &mut while_compilation_context,
+                        global_compilation_context,
+                    );
+                    let compiled_while = self.compile_with_context(
+                        r#while,
+                        &while_compilation_context,
+                        global_compilation_context,
+                    )?;
+                    resolve_type(
+                        &compiled_while.node.r#type,
+                        &TypeKind::Bool,
+                        compilation_context,
+                    )?;
+                    Some(compiled_while.node.clone())
+                } else {
+                    None
+                };
                 let r#type = Type {
-                    kind: TypeKind::Array(Box::new(Type::from(BTreeSet::from_iter(
-                        [compiled_starting_with.node.r#type.clone()]
-                            .into_iter()
-                            .chain(current_concrete_type_to_next.keys().cloned()),
-                    )))),
+                    kind: TypeKind::Array(Box::new(element_type)),
                     properties: TypeProperties {
                         capabilities: EnumSet::default(),
-                        is_computable: false,
+                        is_computable: compiled_while_node.is_some(),
                     }
                     .unified(&compiled_starting_with.node.r#type.properties)
                     .unified_all(
@@ -2152,6 +2182,7 @@ impl Compiler {
                                     .map(|(r#type, node)| (r#type.kind, node))
                                     .collect::<Vec<_>>()
                                     .into(),
+                                r#while: compiled_while_node,
                             },
                         )),
                         r#type,
@@ -2489,10 +2520,13 @@ impl Compiler {
                             } else {
                                 return Err(compilation_context.error(
                                     function_name,
-                                    &compilation_context
-                                        .available_functions
-                                        .keys()
-                                        .collect::<Vec<_>>(),
+                                    &BTreeMap::from_iter([(
+                                        &"one of available functions names",
+                                        &compilation_context
+                                            .available_functions
+                                            .keys()
+                                            .collect::<Vec<_>>(),
+                                    )]),
                                 ));
                             }
                         }

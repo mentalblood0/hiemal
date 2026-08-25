@@ -367,6 +367,12 @@ from:
 at: [[0, 4]]
 ```
 
+```yaml
+starting with: 1
+next: { sum: [_, 1] }
+while: { is sorted: [_, 5] }
+```
+
 #### map as through
 
 ```yaml
