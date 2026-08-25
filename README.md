@@ -261,6 +261,7 @@ allow:
   - remove file
   - read file
   - overwrite file
+  - error
 compute:
   pipe:
     - overwrite file:
@@ -275,6 +276,7 @@ compute:
 ```yaml
 forbid:
   - remove file
+  - error
 compute:
   pipe:
     - overwrite file:
@@ -286,6 +288,7 @@ compute:
 
 ```yaml
 allow:
+  - read file
   - error
 compute: { read bytes from file: tests.yml }
 ```
