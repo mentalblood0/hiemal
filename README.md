@@ -345,7 +345,7 @@ cases:
   - [any, it's something else]
 ```
 
-#### starting with next
+#### starting with next while
 
 ```yaml
 from:
