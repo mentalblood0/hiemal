@@ -260,6 +260,7 @@ compute:
 allow:
   - remove file
   - read file
+  - overwrite file
 compute:
   pipe:
     - overwrite file:
@@ -369,7 +370,7 @@ at: [[0, 4]]
 
 ```yaml
 starting with: 1
-next: { sum: [_, 1] }
+next: { sum: [_, 2] }
 while: { is sorted: [_, 5] }
 ```
 
