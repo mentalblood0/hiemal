@@ -17,7 +17,7 @@ use crate::{
 #[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Program {
-    Tuple(Vec<Program>),
+    Tuple(Vec<Arc<Program>>),
     Scope {
         #[serde(default)]
         functions: BTreeMap<Arc<String>, Arc<Program>>,
@@ -37,7 +37,7 @@ pub enum Program {
         from: From,
         at: Vec<AtSegment>,
         #[serde(default = "default_from_at_default")]
-        default: Box<Program>,
+        default: Arc<Program>,
     },
     EmbeddedFunctionCall(EmbeddedFunctionCall),
     Match {
@@ -115,8 +115,8 @@ pub fn default_match_as() -> Option<Arc<String>> {
     None
 }
 
-pub fn default_from_at_default() -> Box<Program> {
-    Box::new(Program::Value(None.into()))
+pub fn default_from_at_default() -> Arc<Program> {
+    Program::Value(None.into()).into()
 }
 
 pub fn default_map_as() -> Arc<String> {

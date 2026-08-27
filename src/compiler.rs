@@ -324,7 +324,7 @@ fn process_from_at_program_path_part(
             AtSegment::ProgramPathSegment(program_path_segment) => {
                 match (&*result, program_path_segment) {
                     (Program::Tuple(tuple), PathSegment::ArrayIndex(tuple_index)) => {
-                        result = Arc::new(tuple.get(*tuple_index).unwrap().clone());
+                        result = tuple.get(*tuple_index).unwrap().clone();
                     }
                     (Program::Object(object), PathSegment::ObjectKey(object_key)) => {
                         result = object.get(object_key).unwrap().clone();
@@ -427,6 +427,35 @@ fn process_from_at_program_path_part(
                         PathSegment::Compute,
                     ) => {
                         result = compute.clone();
+                    }
+                    (
+                        Program::FromAt {
+                            from: inner_from,
+                            at: inner_at,
+                            default: _,
+                        },
+                        _,
+                    ) => {
+                        let result_and_inner_path_segment_index =
+                            process_from_at_program_path_part(
+                                inner_from,
+                                inner_at,
+                                includes_cache,
+                            )?;
+                        if result_and_inner_path_segment_index.1 != Some(inner_at.len()) {
+                            return Err(anyhow!(
+                                "Can not get program from {:#?} at {:#?}: stuck at path segment \
+                                 {}: {current_path_segment:#?}",
+                                from,
+                                at,
+                                current_path_segment_index + 1
+                            ))
+                            .context(
+                                "expected only program segments path in inner from-at clause, got \
+                                 {inner_at:#?}",
+                            )?;
+                        }
+                        result = result_and_inner_path_segment_index.0;
                     }
                     _ => {
                         return Err(anyhow!(
