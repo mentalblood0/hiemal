@@ -1991,6 +1991,75 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
+                EmbeddedFunction::Run => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let command_name = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"command".to_string())
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .to_string();
+                    let arguments = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"arguments".to_string())
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_tuple()
+                        .unwrap();
+                    let result = std::process::Command::new(command_name)
+                        .args(arguments.iter().map(|argument_value| {
+                            argument_value
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_string()
+                                .unwrap()
+                                .to_string()
+                        }))
+                        .output()
+                        .with_context(embedded_function_error_context(path_option))?;
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Object(Object::new_from_iter(
+                                [
+                                    (
+                                        "exit code".to_string().into(),
+                                        Some(Value::Number(result.status.code().unwrap().into()))
+                                            .into(),
+                                    ),
+                                    (
+                                        "standard output".to_string().into(),
+                                        Some(Value::Bytes(result.stdout.into())).into(),
+                                    ),
+                                    (
+                                        "standard error".to_string().into(),
+                                        Some(Value::Bytes(result.stderr.into())).into(),
+                                    ),
+                                ]
+                                .into_iter(),
+                            )))
+                            .into(),
+                        ),
+                        type_kind: node.r#type.kind.clone(),
+                    }
+                    .into())
+                }
             },
             Content::UserFunctionCall {
                 arguments,

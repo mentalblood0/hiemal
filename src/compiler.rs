@@ -1318,6 +1318,57 @@ impl Compiler {
                             })
                         },
                     )?,
+                    EmbeddedFunction::Run => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &TypeKind::Object(
+                            BTreeMap::from_iter([
+                                ("command".to_string().into(), TypeKind::String.into()),
+                                (
+                                    "arguments".to_string().into(),
+                                    TypeKind::Array(Box::new(TypeKind::String.into())).into(),
+                                ),
+                            ])
+                            .into(),
+                        ),
+                        &|compiled_argument_resolved_type| {
+                            let type_properties = TypeProperties {
+                                capabilities: Capability::RemoveFile | Capability::Error,
+                                is_computable: true,
+                            }
+                            .unified(&compiled_argument_resolved_type.properties);
+                            Ok(Type {
+                                kind: TypeKind::Object(
+                                    BTreeMap::from_iter([
+                                        (
+                                            "exit code".to_string().into(),
+                                            Type {
+                                                kind: TypeKind::Number,
+                                                properties: type_properties.clone(),
+                                            },
+                                        ),
+                                        (
+                                            "standard output".to_string().into(),
+                                            Type {
+                                                kind: TypeKind::Bytes,
+                                                properties: type_properties.clone(),
+                                            },
+                                        ),
+                                        (
+                                            "standard error".to_string().into(),
+                                            Type {
+                                                kind: TypeKind::Bytes,
+                                                properties: type_properties.clone(),
+                                            },
+                                        ),
+                                    ])
+                                    .into(),
+                                ),
+                                properties: type_properties.clone(),
+                            })
+                        },
+                    )?,
                 }
             }
             Program::Match {

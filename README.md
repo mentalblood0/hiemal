@@ -67,6 +67,9 @@ hiemal examples/include.yml
     content: b
 - read bytes from file: test overwrite file.txt
 - remove file: test overwrite file.txt
+- run:
+    command: echo
+    arguments: [lalala]
 ```
 
 <details>

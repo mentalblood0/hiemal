@@ -275,6 +275,8 @@ pub enum EmbeddedFunction {
     CreateFile,
     #[serde(rename = "remove file")]
     RemoveFile,
+    #[serde(rename = "run")]
+    Run,
 }
 
 #[repr(u8)]

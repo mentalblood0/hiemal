@@ -215,6 +215,8 @@ pub enum Capability {
     ReadNetwork,
     #[serde(rename = "write network")]
     WriteNetwork,
+    #[serde(rename = "run command")]
+    RunCommand,
     #[serde(rename = "error")]
     Error,
 }

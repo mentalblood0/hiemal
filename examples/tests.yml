@@ -98,6 +98,16 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test run command:
+        assert equal::
+          found:
+            run:
+              command: echo
+              arguments: [lalala]
+          expected:
+            exit code: 0
+            standard output: { bytes: 6c616c616c610a }
+            standard error: { bytes: "" }
       test from at inner:
         assert equal::
           found:
