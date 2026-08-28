@@ -10,6 +10,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
+use bytes::Bytes;
 use dashu::Rational;
 use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
@@ -1846,6 +1847,25 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
+                EmbeddedFunction::BytesFromString => Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Value(
+                        Some(Value::Bytes(Bytes::from(
+                            self.unroll_intermediate_value(
+                                &self.compute_node(&embedded_function_call.argument, constants)?,
+                            )?
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_string()
+                            .unwrap()
+                            .bytes()
+                            .collect::<Vec<_>>(),
+                        )))
+                        .into(),
+                    ),
+                    type_kind: TypeKind::String,
+                }
+                .into()),
                 EmbeddedFunction::OverwriteFile => {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,

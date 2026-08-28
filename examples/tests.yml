@@ -106,7 +106,7 @@ compute:
               arguments: [lalala]
           expected:
             exit code: 0
-            standard output: { bytes: 6c616c616c610a }
+            standard output: { bytes from string: "lalala\n" }
             standard error: { bytes: "" }
       test from at inner:
         assert equal::

@@ -269,6 +269,8 @@ pub enum EmbeddedFunction {
     ReadBytesFromFile,
     #[serde(rename = "string from bytes")]
     StringFromBytes,
+    #[serde(rename = "bytes from string")]
+    BytesFromString,
     #[serde(rename = "overwrite file")]
     OverwriteFile,
     #[serde(rename = "create file")]

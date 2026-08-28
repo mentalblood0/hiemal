@@ -1238,6 +1238,22 @@ impl Compiler {
                             })
                         },
                     )?,
+                    EmbeddedFunction::BytesFromString => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &TypeKind::String,
+                        &|compiled_argument_resolved_type| {
+                            Ok(Type {
+                                kind: TypeKind::Bytes,
+                                properties: TypeProperties {
+                                    capabilities: Capability::Error.into(),
+                                    is_computable: true,
+                                }
+                                .unified(&compiled_argument_resolved_type.properties),
+                            })
+                        },
+                    )?,
                     EmbeddedFunction::CreateFile => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
@@ -1334,7 +1350,7 @@ impl Compiler {
                         ),
                         &|compiled_argument_resolved_type| {
                             let type_properties = TypeProperties {
-                                capabilities: Capability::RemoveFile | Capability::Error,
+                                capabilities: Capability::RunCommand | Capability::Error,
                                 is_computable: true,
                             }
                             .unified(&compiled_argument_resolved_type.properties);
