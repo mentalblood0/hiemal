@@ -444,18 +444,28 @@ fn process_from_at_program_path_part(
                             )?;
                         if result_and_inner_path_segment_index.1 != Some(inner_at.len()) {
                             return Err(anyhow!(
+                                "expected only program segments path in inner from-at clause, got \
+                                 {inner_at:#?}"
+                            ))
+                            .context(format!(
                                 "Can not get program from {:#?} at {:#?}: stuck at path segment \
                                  {}: {current_path_segment:#?}",
                                 from,
                                 at,
-                                current_path_segment_index + 1
-                            ))
-                            .context(
-                                "expected only program segments path in inner from-at clause, got \
-                                 {inner_at:#?}",
-                            )?;
+                                current_path_segment_index + 1,
+                            ))?;
                         }
                         result = result_and_inner_path_segment_index.0;
+                        continue;
+                    }
+                    (
+                        Program::EmbeddedFunctionCall(EmbeddedFunctionCall {
+                            embedded_function,
+                            argument,
+                        }),
+                        PathSegment::EmbeddedFunctionCall(embedded_function_from_path),
+                    ) if embedded_function == embedded_function_from_path => {
+                        result = argument.clone();
                     }
                     _ => {
                         return Err(anyhow!(

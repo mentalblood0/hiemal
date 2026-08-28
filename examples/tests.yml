@@ -98,6 +98,30 @@ functions:
 compute:
   tests report::
     key-value pairs:
+      test from at inner:
+        assert equal::
+          found:
+            - functions:
+                f::
+                  from: examples/fibonacci.yml
+                  at: [functions, { object key: "fibonacci:" }]
+              compute: 0
+            - functions:
+                fibonacci::
+                  from: examples/tests.yml
+                  at:
+                    - compute
+                    - { object key: "tests report:" }
+                    - { embedded function call: key-value pairs }
+                    - { object key: test from at inner}
+                    - { object key: "assert equal:" }
+                    - { object key: "found" }
+                    - { array index: 0 }
+                    - functions
+                    - { object key: "f:" }
+              compute:
+                fibonacci:: 10
+          expected: [0, 55]
       test sequence while:
         assert equal::
           found:
