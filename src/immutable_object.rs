@@ -2,15 +2,9 @@ use std::{collections::BTreeMap, ops::Bound, sync::Arc};
 
 use parking_lot::{RwLock, RwLockReadGuard};
 
-#[derive(Default, Clone)]
-struct ImmutableCommonDifference<K, V> {
-    base_version: Arc<ImmutableCommonDifference<K, V>>,
-    difference: BTreeMap<Arc<K>, Option<Arc<V>>>,
-}
-
 #[derive(Default)]
 struct LockableInternals<K, V> {
-    base_immutable_common_difference_option: Option<Arc<ImmutableCommonDifference<K, V>>>,
+    base_immutable_common_difference_option: Option<Arc<LockableInternals<K, V>>>,
     difference: BTreeMap<Arc<K>, Option<Arc<V>>>,
 }
 
