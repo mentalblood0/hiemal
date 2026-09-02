@@ -70,6 +70,7 @@ hiemal examples/include.yml
 - run:
     command: echo
     arguments: [lalala]
+- bytes from string: lalala
 ```
 
 <details>
