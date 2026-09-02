@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ops::Bound, sync::Arc};
 
 use parking_lot::{RwLock, RwLockReadGuard};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct LockableInternals<K, V> {
     base_immutable_common_difference_option: Option<Arc<LockableInternals<K, V>>>,
     difference: BTreeMap<Arc<K>, Option<Arc<V>>>,
@@ -21,9 +21,9 @@ where
         self.difference.insert(key.clone(), None);
     }
 
-    fn get(&self, key: &Arc<K>) -> Option<Arc<V>> {
+    fn get(&self, key: &Arc<K>) -> Option<&Arc<V>> {
         if let Some(result) = self.difference.get(key) {
-            result.clone()
+            result.as_ref()
         } else if let Some(ref base_immutable_common_difference) =
             self.base_immutable_common_difference_option
         {
@@ -31,7 +31,7 @@ where
                 .difference
                 .get(key)
                 .unwrap_or(&None)
-                .clone()
+                .as_ref()
         } else {
             None
         }
@@ -40,7 +40,7 @@ where
 
 #[derive(Default)]
 pub struct ImmutableObject<K, V> {
-    lockable_internals: RwLock<Arc<RwLock<LockableInternals<K, V>>>>,
+    lockable_internals: RwLock<LockableInternals<K, V>>,
 }
 
 impl<K, V> Clone for ImmutableObject<K, V>
@@ -49,39 +49,28 @@ where
     V: Default + Clone,
 {
     fn clone(&self) -> Self {
-        let mut lockable_internals_outer_read_guard = self.lockable_internals.upgradable_read();
-        let lockable_internals_read_guard = lockable_internals_outer_read_guard.read();
+        let mut lockable_internals_read_guard = self.lockable_internals.upgradable_read();
         if lockable_internals_read_guard.difference.len() < 16 {
             Self {
-                lockable_internals: RwLock::new(Arc::new(RwLock::new(LockableInternals {
+                lockable_internals: RwLock::new(LockableInternals {
                     base_immutable_common_difference_option: lockable_internals_read_guard
                         .base_immutable_common_difference_option
                         .clone(),
                     difference: lockable_internals_read_guard.difference.clone(),
-                }))),
+                }),
             }
         } else {
-            drop(lockable_internals_read_guard);
-            let common_base_immutable_common_difference_option =
-                lockable_internals_outer_read_guard
-                    .read()
-                    .base_immutable_common_difference_option
-                    .clone();
-            lockable_internals_outer_read_guard.with_upgraded(
-                |lockable_internals_outer_write_guard| {
-                    *lockable_internals_outer_write_guard = Arc::default();
-                    lockable_internals_outer_write_guard
-                        .write()
-                        .base_immutable_common_difference_option =
-                        common_base_immutable_common_difference_option.clone();
-                },
-            );
+            let common_base = Arc::new(lockable_internals_read_guard.clone());
+            lockable_internals_read_guard.with_upgraded(|lockable_internals_write_guard| {
+                lockable_internals_write_guard.base_immutable_common_difference_option =
+                    Some(common_base.clone());
+                lockable_internals_write_guard.difference.clear();
+            });
             Self {
-                lockable_internals: RwLock::new(Arc::new(RwLock::new(LockableInternals {
-                    base_immutable_common_difference_option:
-                        common_base_immutable_common_difference_option,
+                lockable_internals: RwLock::new(LockableInternals {
+                    base_immutable_common_difference_option: Some(common_base),
                     difference: BTreeMap::new(),
-                }))),
+                }),
             }
         }
     }
@@ -93,20 +82,15 @@ where
     V: Default,
 {
     pub fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
-        let lockable_internals_outer_read_guard = self.lockable_internals.read();
-        lockable_internals_outer_read_guard
-            .write()
-            .insert(key, value)
+        self.lockable_internals.write().insert(key, value)
     }
 
     pub fn remove(&mut self, key: &Arc<K>) {
-        let lockable_internals_outer_read_guard = self.lockable_internals.read();
-        lockable_internals_outer_read_guard.write().remove(key)
+        self.lockable_internals.write().remove(key)
     }
 
     pub fn get(&self, key: &Arc<K>) -> Option<Arc<V>> {
-        let lockable_internals_outer_read_guard = self.lockable_internals.read();
-        lockable_internals_outer_read_guard.read().get(key)
+        self.lockable_internals.write().get(key).cloned()
     }
 }
 
