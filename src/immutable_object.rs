@@ -8,7 +8,7 @@ struct LockableInternals<K, V> {
     difference: BTreeMap<Arc<K>, Option<Arc<V>>>,
 }
 
-impl<K, V> LockableInternals<K, V>
+impl<'a, K, V> LockableInternals<K, V>
 where
     K: Default + Ord,
     V: Default,
@@ -18,25 +18,61 @@ where
     }
 
     fn remove(&mut self, key: &Arc<K>) {
-        self.difference.insert(key.clone(), None);
+        if self.base_immutable_common_difference_option.is_some() {
+            self.difference.insert(key.clone(), None);
+        } else {
+            self.difference.remove(key);
+        }
     }
 
     fn get(&self, key: &Arc<K>) -> Option<&Arc<V>> {
         if let Some(result) = self.difference.get(key) {
             result.as_ref()
-        } else if let Some(ref base_immutable_common_difference) =
-            self.base_immutable_common_difference_option
-        {
-            base_immutable_common_difference
-                .difference
-                .get(key)
-                .unwrap_or(&None)
-                .as_ref()
         } else {
-            None
+            self.base_immutable_common_difference_option
+                .as_ref()
+                .and_then(|base_immutable_common_difference| {
+                    base_immutable_common_difference.get(key)
+                })
+        }
+    }
+
+    fn iter(&'a self) -> LockableInternalsIterator<'a, K, V> {
+        let mut differences_iterators = Vec::new();
+        let mut current_lockable_internals_option = Some(self);
+        while let Some(current_lockable_internals) = current_lockable_internals_option {
+            differences_iterators.push(current_lockable_internals.difference.iter());
+            current_lockable_internals_option = current_lockable_internals
+                .base_immutable_common_difference_option
+                .as_deref();
+        }
+        let current_key_value_pairs = differences_iterators
+            .iter_mut()
+            .map(|difference_iterator| difference_iterator.next())
+            .collect::<Vec<_>>();
+        LockableInternalsIterator {
+            differences_iterators,
+            current_key_value_pairs,
         }
     }
 }
+
+struct LockableInternalsIterator<'a, K, V> {
+    differences_iterators: Vec<std::collections::btree_map::Iter<'a, Arc<K>, Option<Arc<V>>>>,
+    current_key_value_pairs: Vec<Option<(&'a Arc<K>, &'a Option<Arc<V>>)>>,
+}
+
+// impl<'a, K, V> Iterator for LockableInternalsIterator<'a, K, V> {
+//     type Item = (&'a Arc<K>, &'a Arc<V>);
+
+//     fn next(&mut self) -> Option<Self::Item> {
+//         for (differences_iterator, current_key_value_pair) in self
+//             .differences_iterators
+//             .iter_mut()
+//             .zip(self.current_key_value_pairs)
+//         {}
+//     }
+// }
 
 #[derive(Default)]
 pub struct ImmutableObject<K, V> {
