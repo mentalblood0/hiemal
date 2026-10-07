@@ -1,5 +1,6 @@
-use std::{collections::BTreeMap, ops::Bound, sync::Arc};
+use std::{collections::BTreeMap, hash::Hash, ops::Bound, sync::Arc};
 
+use gxhash::HashSet;
 use parking_lot::{RwLock, RwLockReadGuard};
 
 #[derive(Default, Clone)]
@@ -46,33 +47,48 @@ where
                 .base_immutable_common_difference_option
                 .as_deref();
         }
-        let current_key_value_pairs = differences_iterators
-            .iter_mut()
-            .map(|difference_iterator| difference_iterator.next())
-            .collect::<Vec<_>>();
         LockableInternalsIterator {
             differences_iterators,
-            current_key_value_pairs,
+            current_difference_iterator_index: 0,
+            already_yielded_keys: HashSet::default(),
         }
     }
 }
 
 struct LockableInternalsIterator<'a, K, V> {
     differences_iterators: Vec<std::collections::btree_map::Iter<'a, Arc<K>, Option<Arc<V>>>>,
-    current_key_value_pairs: Vec<Option<(&'a Arc<K>, &'a Option<Arc<V>>)>>,
+    current_difference_iterator_index: usize,
+    already_yielded_keys: HashSet<&'a Arc<K>>,
 }
 
-// impl<'a, K, V> Iterator for LockableInternalsIterator<'a, K, V> {
-//     type Item = (&'a Arc<K>, &'a Arc<V>);
+impl<'a, K, V> Iterator for LockableInternalsIterator<'a, K, V>
+where
+    K: Hash + Eq + std::fmt::Debug,
+    V: std::fmt::Debug,
+{
+    type Item = (&'a Arc<K>, &'a Arc<V>);
 
-//     fn next(&mut self) -> Option<Self::Item> {
-//         for (differences_iterator, current_key_value_pair) in self
-//             .differences_iterators
-//             .iter_mut()
-//             .zip(self.current_key_value_pairs)
-//         {}
-//     }
-// }
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.current_difference_iterator_index == self.differences_iterators.len() {
+                return None;
+            } else {
+                let current_difference_iterator = self
+                    .differences_iterators
+                    .get_mut(self.current_difference_iterator_index)
+                    .unwrap();
+                for key_value_pair in current_difference_iterator {
+                    if self.already_yielded_keys.insert(key_value_pair.0)
+                        && let Some(value) = key_value_pair.1
+                    {
+                        return Some((key_value_pair.0, value));
+                    }
+                }
+                self.current_difference_iterator_index += 1;
+            }
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct ImmutableObject<K, V> {
@@ -185,17 +201,18 @@ mod tests {
                 }
                 _ => {}
             }
-            // for object_index in 0..normal_objects.len() {
-            //     assert_eq!(
-            //         immutable_objects[object_index].iter().collect::<Vec<_>>(),
-            //         normal_objects[object_index]
-            //             .iter()
-            //             .map(|(key, value)| (key.clone(), value.clone()))
-            //             .collect::<Vec<_>>(),
-            //         "objects at index {}",
-            //         object_index
-            //     );
-            // }
+            for object_index in 0..normal_objects.len() {
+                assert_eq!(
+                    immutable_objects[object_index]
+                        .lockable_internals
+                        .read()
+                        .iter()
+                        .collect::<HashSet<_>>(),
+                    normal_objects[object_index].iter().collect::<HashSet<_>>(),
+                    "objects at index {}",
+                    object_index
+                );
+            }
         }
     }
 }
