@@ -1,18 +1,64 @@
-use std::{collections::BTreeMap, hash::Hash, ops::Bound, sync::Arc};
+use std::{collections::BTreeMap, hash::Hash, hash::Hasher, marker::PhantomData, sync::Arc};
 
 use gxhash::HashSet;
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{self, MapAccess, Visitor},
+    ser::SerializeMap,
+};
 
-#[derive(Default, Clone)]
-struct LockableInternals<K, V> {
-    base_immutable_common_difference_option: Option<Arc<LockableInternals<K, V>>>,
-    difference: BTreeMap<Arc<K>, Option<Arc<V>>>,
+pub trait Key<'a>:
+    Serialize + Deserialize<'a> + Hash + Eq + Ord + Clone + Send + Sync + std::fmt::Debug + Default
+{
+}
+impl<'a, T> Key<'a> for T where
+    T: Serialize
+        + Deserialize<'a>
+        + Hash
+        + Eq
+        + Ord
+        + Clone
+        + Send
+        + Sync
+        + std::fmt::Debug
+        + Default
+{
 }
 
-impl<'a, K, V> LockableInternals<K, V>
+pub trait Value<'a>:
+    Serialize + Deserialize<'a> + Hash + Eq + Ord + Clone + Send + Sync + std::fmt::Debug + Default
+{
+}
+impl<'a, T> Value<'a> for T where
+    T: Serialize
+        + Deserialize<'a>
+        + Hash
+        + Eq
+        + Ord
+        + Clone
+        + Send
+        + Sync
+        + std::fmt::Debug
+        + Default
+{
+}
+
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+struct LockableInternals<'a, K, V>
 where
-    K: Default + Ord,
-    V: Default,
+    K: Key<'a>,
+    V: Value<'a>,
+{
+    base_immutable_common_difference_option: Option<Arc<LockableInternals<'a, K, V>>>,
+    difference: BTreeMap<Arc<K>, Option<Arc<V>>>,
+    marker: PhantomData<&'a ()>,
+}
+
+impl<'a, K, V> LockableInternals<'a, K, V>
+where
+    K: Key<'a>,
+    V: Value<'a>,
 {
     fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
         self.difference.insert(key, Some(value));
@@ -38,7 +84,7 @@ where
         }
     }
 
-    fn iter(&'a self) -> LockableInternalsIterator<'a, K, V> {
+    fn iter<'b>(&'b self) -> LockableInternalsIterator<'b, K, V> {
         let mut differences_iterators = Vec::new();
         let mut current_lockable_internals_option = Some(self);
         while let Some(current_lockable_internals) = current_lockable_internals_option {
@@ -63,8 +109,7 @@ struct LockableInternalsIterator<'a, K, V> {
 
 impl<'a, K, V> Iterator for LockableInternalsIterator<'a, K, V>
 where
-    K: Hash + Eq + std::fmt::Debug,
-    V: std::fmt::Debug,
+    K: Hash + Eq,
 {
     type Item = (&'a Arc<K>, &'a Arc<V>);
 
@@ -90,15 +135,124 @@ where
     }
 }
 
-#[derive(Default)]
-pub struct ImmutableObject<K, V> {
-    lockable_internals: RwLock<LockableInternals<K, V>>,
+#[derive(Default, Debug)]
+pub struct ImmutableObject<'a, K, V>
+where
+    K: Key<'a>,
+    V: Value<'a>,
+{
+    lockable_internals: RwLock<LockableInternals<'a, K, V>>,
 }
 
-impl<K, V> Clone for ImmutableObject<K, V>
+impl<'a, K, V> Serialize for ImmutableObject<'a, K, V>
 where
-    K: Default + Ord + Clone,
-    V: Default + Clone,
+    K: Key<'a>,
+    V: Value<'a>,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+        {
+            let lockable_internals_read_guard = self.lockable_internals.read();
+            for (k, v) in lockable_internals_read_guard.iter() {
+                map.serialize_entry(k, v)?;
+            }
+        }
+        map.end()
+    }
+}
+
+impl<'de, K, V> Deserialize<'de> for ImmutableObject<'de, K, V>
+where
+    K: Key<'de>,
+    V: Value<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct MapVisitor;
+
+        impl<'de> Visitor<'de> for MapVisitor {
+            type Value = ImmutableObject<'de, K, V>;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a map of string to string")
+            }
+
+            fn visit_map<A>(self, mut access: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut out = ImmutableObject::new();
+                while let Some((k, v)) = access.next_entry::<String, String>()? {
+                    // Duplicate detection (optional)
+                    if out.get(&k).is_some() {
+                        return Err(de::Error::custom(format!("duplicate key: {k}")));
+                    }
+                    out.insert(k, v);
+                }
+                Ok(out)
+            }
+        }
+
+        deserializer.deserialize_map(MapVisitor)
+    }
+}
+
+impl<'a, K, V> PartialEq for ImmutableObject<'a, K, V>
+where
+    K: Key<'a>,
+    V: Value<'a>,
+{
+    fn eq(&self, other: &Self) -> bool {
+        *self.lockable_internals.read() == *other.lockable_internals.read()
+    }
+}
+
+impl<'a, K, V> Eq for ImmutableObject<'a, K, V>
+where
+    K: Key<'a>,
+    V: Value<'a>,
+{
+}
+
+impl<'a, K, V> PartialOrd for ImmutableObject<'a, K, V>
+where
+    K: Key<'a>,
+    V: Value<'a>,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a, K, V> Ord for ImmutableObject<'a, K, V>
+where
+    K: Key<'a>,
+    V: Value<'a>,
+{
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (*self.lockable_internals.read()).cmp(&*other.lockable_internals.read())
+    }
+}
+
+impl<'a, K, V> Hash for ImmutableObject<'a, K, V>
+where
+    K: Key<'a>,
+    V: Value<'a>,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (*self.lockable_internals.read()).hash(state);
+    }
+}
+
+impl<'a, K, V> Clone for ImmutableObject<'a, K, V>
+where
+    K: Key<'a>,
+    V: Value<'a>,
 {
     fn clone(&self) -> Self {
         let mut lockable_internals_read_guard = self.lockable_internals.upgradable_read();
@@ -128,10 +282,10 @@ where
     }
 }
 
-impl<K, V> ImmutableObject<K, V>
+impl<'a, K, V> ImmutableObject<'a, K, V>
 where
-    K: Default + Ord,
-    V: Default,
+    K: Key<'a>,
+    V: Value<'a>,
 {
     pub fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
         self.lockable_internals.write().insert(key, value)
@@ -201,18 +355,18 @@ mod tests {
                 }
                 _ => {}
             }
-            for object_index in 0..normal_objects.len() {
-                assert_eq!(
-                    immutable_objects[object_index]
-                        .lockable_internals
-                        .read()
-                        .iter()
-                        .collect::<HashSet<_>>(),
-                    normal_objects[object_index].iter().collect::<HashSet<_>>(),
-                    "objects at index {}",
-                    object_index
-                );
-            }
+        }
+        for object_index in 0..normal_objects.len() {
+            assert_eq!(
+                immutable_objects[object_index]
+                    .lockable_internals
+                    .read()
+                    .iter()
+                    .collect::<HashSet<_>>(),
+                normal_objects[object_index].iter().collect::<HashSet<_>>(),
+                "objects at index {}",
+                object_index
+            );
         }
     }
 }

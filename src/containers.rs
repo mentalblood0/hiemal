@@ -4,20 +4,22 @@ use std::{
     sync::Arc,
 };
 
+use crate::immutable_object::{ImmutableObject, Key, Value};
+
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Debug, Hash)]
 #[serde(transparent)]
-pub struct Object<K, V>
+pub struct Object<'a, K, V>
 where
-    K: Ord + Clone,
-    V: Clone,
+    K: Key<'a>,
+    V: Value<'a>,
 {
-    pub inner: BTreeMap<Arc<K>, Arc<V>>,
+    pub inner: ImmutableObject<'a, K, V>,
 }
 
-impl<K, V> Object<K, V>
+impl<'a, K, V> Object<'a, K, V>
 where
-    K: Ord + Clone,
-    V: Clone,
+    K: Key<'a>,
+    V: Value<'a>,
 {
     pub fn len(&self) -> usize {
         self.inner.len()
