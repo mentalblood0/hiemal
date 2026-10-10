@@ -4,17 +4,17 @@ use gxhash::HashSet;
 use parking_lot::RwLock;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
-    de::{self, MapAccess, Visitor},
+    de::{self, DeserializeOwned, MapAccess, Visitor},
     ser::SerializeMap,
 };
 
-pub trait Key<'a>:
-    Serialize + Deserialize<'a> + Hash + Eq + Ord + Clone + Send + Sync + std::fmt::Debug + Default
+pub trait Key:
+    Serialize + DeserializeOwned + Hash + Eq + Ord + Clone + Send + Sync + std::fmt::Debug + Default
 {
 }
-impl<'a, T> Key<'a> for T where
+impl<T> Key for T where
     T: Serialize
-        + Deserialize<'a>
+        + DeserializeOwned
         + Hash
         + Eq
         + Ord
@@ -26,13 +26,13 @@ impl<'a, T> Key<'a> for T where
 {
 }
 
-pub trait Value<'a>:
-    Serialize + Deserialize<'a> + Hash + Eq + Ord + Clone + Send + Sync + std::fmt::Debug + Default
+pub trait Value:
+    Serialize + DeserializeOwned + Hash + Eq + Ord + Clone + Send + Sync + std::fmt::Debug + Default
 {
 }
-impl<'a, T> Value<'a> for T where
+impl<T> Value for T where
     T: Serialize
-        + Deserialize<'a>
+        + DeserializeOwned
         + Hash
         + Eq
         + Ord
@@ -45,20 +45,18 @@ impl<'a, T> Value<'a> for T where
 }
 
 #[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-struct LockableInternals<'a, K, V>
+struct LockableInternals<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
-    base_immutable_common_difference_option: Option<Arc<LockableInternals<'a, K, V>>>,
+    base_immutable_common_difference_option: Option<Arc<LockableInternals<K, V>>>,
     difference: BTreeMap<Arc<K>, Option<Arc<V>>>,
-    marker: PhantomData<&'a ()>,
 }
-
-impl<'a, K, V> LockableInternals<'a, K, V>
+impl<K, V> LockableInternals<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
     fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
         self.difference.insert(key, Some(value));
@@ -136,18 +134,18 @@ where
 }
 
 #[derive(Default, Debug)]
-pub struct ImmutableObject<'a, K, V>
+pub struct ImmutableObject<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
-    lockable_internals: RwLock<LockableInternals<'a, K, V>>,
+    lockable_internals: RwLock<LockableInternals<K, V>>,
 }
 
-impl<'a, K, V> Serialize for ImmutableObject<'a, K, V>
+impl<'a, K, V> Serialize for ImmutableObject<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -164,95 +162,57 @@ where
     }
 }
 
-impl<'de, K, V> Deserialize<'de> for ImmutableObject<'de, K, V>
+impl<K, V> PartialEq for ImmutableObject<K, V>
 where
-    K: Key<'de>,
-    V: Value<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct MapVisitor;
-
-        impl<'de> Visitor<'de> for MapVisitor {
-            type Value = ImmutableObject<'de, K, V>;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a map of string to string")
-            }
-
-            fn visit_map<A>(self, mut access: A) -> Result<Self::Value, A::Error>
-            where
-                A: MapAccess<'de>,
-            {
-                let mut out = ImmutableObject::new();
-                while let Some((k, v)) = access.next_entry::<String, String>()? {
-                    // Duplicate detection (optional)
-                    if out.get(&k).is_some() {
-                        return Err(de::Error::custom(format!("duplicate key: {k}")));
-                    }
-                    out.insert(k, v);
-                }
-                Ok(out)
-            }
-        }
-
-        deserializer.deserialize_map(MapVisitor)
-    }
-}
-
-impl<'a, K, V> PartialEq for ImmutableObject<'a, K, V>
-where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
     fn eq(&self, other: &Self) -> bool {
         *self.lockable_internals.read() == *other.lockable_internals.read()
     }
 }
 
-impl<'a, K, V> Eq for ImmutableObject<'a, K, V>
+impl<K, V> Eq for ImmutableObject<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
 }
 
-impl<'a, K, V> PartialOrd for ImmutableObject<'a, K, V>
+impl<K, V> PartialOrd for ImmutableObject<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'a, K, V> Ord for ImmutableObject<'a, K, V>
+impl<K, V> Ord for ImmutableObject<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (*self.lockable_internals.read()).cmp(&*other.lockable_internals.read())
     }
 }
 
-impl<'a, K, V> Hash for ImmutableObject<'a, K, V>
+impl<K, V> Hash for ImmutableObject<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (*self.lockable_internals.read()).hash(state);
     }
 }
 
-impl<'a, K, V> Clone for ImmutableObject<'a, K, V>
+impl<K, V> Clone for ImmutableObject<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
     fn clone(&self) -> Self {
         let mut lockable_internals_read_guard = self.lockable_internals.upgradable_read();
@@ -282,10 +242,10 @@ where
     }
 }
 
-impl<'a, K, V> ImmutableObject<'a, K, V>
+impl<K, V> ImmutableObject<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
     pub fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
         self.lockable_internals.write().insert(key, value)
