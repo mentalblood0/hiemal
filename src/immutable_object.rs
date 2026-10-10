@@ -1,11 +1,9 @@
-use std::{collections::BTreeMap, hash::Hash, hash::Hasher, marker::PhantomData, sync::Arc};
+use std::{collections::BTreeMap, hash::Hash, hash::Hasher, sync::Arc};
 
 use gxhash::HashSet;
 use parking_lot::RwLock;
 use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
-    de::{self, DeserializeOwned, MapAccess, Visitor},
-    ser::SerializeMap,
+    Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned, ser::SerializeMap,
 };
 
 pub trait Key:
@@ -53,6 +51,7 @@ where
     base_immutable_common_difference_option: Option<Arc<LockableInternals<K, V>>>,
     difference: BTreeMap<Arc<K>, Option<Arc<V>>>,
 }
+
 impl<K, V> LockableInternals<K, V>
 where
     K: Key,
@@ -159,6 +158,29 @@ where
             }
         }
         map.end()
+    }
+}
+
+impl<'de, K, V> Deserialize<'de> for ImmutableObject<K, V>
+where
+    K: Key + DeserializeOwned,
+    V: Value + DeserializeOwned,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let map = BTreeMap::<K, V>::deserialize(deserializer)?;
+        let difference: BTreeMap<Arc<K>, Option<Arc<V>>> = map
+            .into_iter()
+            .map(|(k, v)| (Arc::new(k), Some(Arc::new(v))))
+            .collect();
+        Ok(ImmutableObject {
+            lockable_internals: RwLock::new(LockableInternals {
+                base_immutable_common_difference_option: None,
+                difference,
+            }),
+        })
     }
 }
 
