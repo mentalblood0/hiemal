@@ -128,7 +128,7 @@ where
         }
     }
 
-    fn get(&self, key: &Arc<K>) -> Option<&Arc<V>> {
+    fn get(&self, key: &K) -> Option<&Arc<V>> {
         if let Some(result) = self.difference.get(key) {
             result.as_ref()
         } else {
@@ -370,7 +370,7 @@ where
         self.lockable_internals.write().remove(key)
     }
 
-    pub fn get(&self, key: &Arc<K>) -> Option<Arc<V>> {
+    pub fn get(&self, key: &K) -> Option<Arc<V>> {
         self.lockable_internals.read().get(key).cloned()
     }
 

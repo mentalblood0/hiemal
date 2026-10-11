@@ -40,7 +40,7 @@ where
         self.inner.insert(key, value);
     }
 
-    pub fn get(&self, key: &K) -> Option<&Arc<V>> {
+    pub fn get(&self, key: &K) -> Option<Arc<V>> {
         self.inner.get(key)
     }
 
