@@ -114,6 +114,28 @@ where
     }
 }
 
+impl<K, V> LockableInternals<K, V>
+where
+    K: Ord + Hash,
+{
+    pub fn len(&self) -> usize {
+        self.iter().count()
+    }
+}
+
+impl<K, V> LockableInternals<K, V>
+where
+    K: Ord + Hash + Eq,
+{
+    pub fn keys<'b>(&'b self) -> impl Iterator<Item = &'b Arc<K>> {
+        self.iter().map(|element| element.0)
+    }
+
+    pub fn values<'b>(&'b self) -> impl Iterator<Item = &'b Arc<V>> {
+        self.iter().map(|element| element.1)
+    }
+}
+
 struct LockableInternalsIterator<'a, K, V> {
     differences_iterators: Vec<std::collections::btree_map::Iter<'a, Arc<K>, Option<Arc<V>>>>,
     current_difference_iterator_index: usize,
@@ -325,6 +347,38 @@ where
         ImmutableObjectIterator {
             lockable_internals_read_guard: self.lockable_internals.read(),
             lockable_internals_iterator_option: None,
+        }
+    }
+}
+
+impl<K, V> ImmutableObject<K, V>
+where
+    K: Ord + Hash,
+{
+    pub fn len(&self) -> usize {
+        self.lockable_internals.read().len()
+    }
+}
+
+impl<K, V> ImmutableObject<K, V>
+where
+    K: Ord + Hash + Eq,
+{
+    pub fn keys<'b>(&'b self) -> impl Iterator<Item = &'b Arc<K>> {
+        self.iter().map(|element| element.0)
+    }
+
+    pub fn values<'b>(&'b self) -> impl Iterator<Item = &'b Arc<V>> {
+        self.iter().map(|element| element.1)
+    }
+
+    pub fn extend<A>(&mut self, addition: A)
+    where
+        A: Iterator<Item = (Arc<K>, Arc<V>)>,
+    {
+        let mut lockable_internals_write_guard = self.lockable_internals.write();
+        for key_value_pair in addition {
+            lockable_internals_write_guard.insert(key_value_pair.0, key_value_pair.1);
         }
     }
 }
