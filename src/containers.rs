@@ -1,26 +1,26 @@
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    hash::Hash,
     sync::Arc,
 };
 
-use crate::immutable_object::{ImmutableObject, Key, Value};
+use crate::immutable_object::ImmutableObject;
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Debug, Hash)]
 #[serde(transparent)]
-#[serde(bound(serialize = "K: Key, V: Value", deserialize = "K: Key, V: Value",))]
 pub struct Object<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Hash + Ord,
+    V: Ord,
 {
     pub inner: ImmutableObject<K, V>,
 }
 
 impl<K, V> Object<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Hash + Ord,
+    V: Ord,
 {
     pub fn len(&self) -> usize {
         self.inner.len()

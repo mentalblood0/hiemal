@@ -2,60 +2,18 @@ use std::{collections::BTreeMap, hash::Hash, hash::Hasher, sync::Arc};
 
 use gxhash::HashSet;
 use parking_lot::{RwLock, RwLockReadGuard};
-use serde::{
-    Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned, ser::SerializeMap,
-};
-
-pub trait Key:
-    Serialize + DeserializeOwned + Hash + Eq + Ord + Clone + Send + Sync + std::fmt::Debug + Default
-{
-}
-impl<T> Key for T where
-    T: Serialize
-        + DeserializeOwned
-        + Hash
-        + Eq
-        + Ord
-        + Clone
-        + Send
-        + Sync
-        + std::fmt::Debug
-        + Default
-{
-}
-
-pub trait Value:
-    Serialize + DeserializeOwned + Hash + Eq + Ord + Clone + Send + Sync + std::fmt::Debug + Default
-{
-}
-impl<T> Value for T where
-    T: Serialize
-        + DeserializeOwned
-        + Hash
-        + Eq
-        + Ord
-        + Clone
-        + Send
-        + Sync
-        + std::fmt::Debug
-        + Default
-{
-}
+use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
 
 #[derive(Default, Clone, Debug)]
-struct LockableInternals<K, V>
-where
-    K: Key,
-    V: Value,
-{
+struct LockableInternals<K, V> {
     base_immutable_common_difference_option: Option<Arc<LockableInternals<K, V>>>,
     difference: BTreeMap<Arc<K>, Option<Arc<V>>>,
 }
 
 impl<K, V> PartialEq for LockableInternals<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash + Eq,
+    V: Ord + Eq,
 {
     fn eq(&self, other: &Self) -> bool {
         let mut self_elements = self.iter().collect::<Vec<_>>();
@@ -68,15 +26,15 @@ where
 
 impl<K, V> Eq for LockableInternals<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash + Eq,
+    V: Ord + Eq,
 {
 }
 
 impl<K, V> PartialOrd for LockableInternals<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash + Eq,
+    V: Ord + Eq,
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -85,8 +43,8 @@ where
 
 impl<K, V> Ord for LockableInternals<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash + Eq,
+    V: Ord + Eq,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let mut self_elements = self.iter().collect::<Vec<_>>();
@@ -99,8 +57,8 @@ where
 
 impl<K, V> Hash for LockableInternals<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash + Eq,
+    V: Ord + Hash + Eq,
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let mut self_elements = self.iter().collect::<Vec<_>>();
@@ -113,8 +71,7 @@ where
 
 impl<K, V> LockableInternals<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord,
 {
     fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
         self.difference.insert(key, Some(value));
@@ -192,18 +149,14 @@ where
 }
 
 #[derive(Default, Debug)]
-pub struct ImmutableObject<K, V>
-where
-    K: Key,
-    V: Value,
-{
+pub struct ImmutableObject<K, V> {
     lockable_internals: RwLock<LockableInternals<K, V>>,
 }
 
 impl<'a, K, V> Serialize for ImmutableObject<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash + Serialize,
+    V: Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -222,8 +175,8 @@ where
 
 impl<'de, K, V> Deserialize<'de> for ImmutableObject<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Deserialize<'de>,
+    V: Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -245,8 +198,8 @@ where
 
 impl<K, V> PartialEq for ImmutableObject<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash,
+    V: Ord,
 {
     fn eq(&self, other: &Self) -> bool {
         *self.lockable_internals.read() == *other.lockable_internals.read()
@@ -255,15 +208,15 @@ where
 
 impl<K, V> Eq for ImmutableObject<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash,
+    V: Ord,
 {
 }
 
 impl<K, V> PartialOrd for ImmutableObject<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash,
+    V: Ord,
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -272,8 +225,8 @@ where
 
 impl<K, V> Ord for ImmutableObject<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash,
+    V: Ord,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (*self.lockable_internals.read()).cmp(&*other.lockable_internals.read())
@@ -282,8 +235,8 @@ where
 
 impl<K, V> Hash for ImmutableObject<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash,
+    V: Ord + Hash,
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (*self.lockable_internals.read()).hash(state);
@@ -292,8 +245,8 @@ where
 
 impl<K, V> Clone for ImmutableObject<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Clone,
+    V: Clone,
 {
     fn clone(&self) -> Self {
         let mut lockable_internals_read_guard = self.lockable_internals.upgradable_read();
@@ -323,19 +276,14 @@ where
     }
 }
 
-struct ImmutableObjectIterator<'a, K, V>
-where
-    K: Key,
-    V: Value,
-{
+struct ImmutableObjectIterator<'a, K, V> {
     lockable_internals_read_guard: RwLockReadGuard<'a, LockableInternals<K, V>>,
     lockable_internals_iterator_option: Option<LockableInternalsIterator<'a, K, V>>,
 }
 
 impl<'a, K, V> Iterator for ImmutableObjectIterator<'a, K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord + Hash,
 {
     type Item = (&'a Arc<K>, &'a Arc<V>);
 
@@ -359,8 +307,7 @@ where
 
 impl<K, V> ImmutableObject<K, V>
 where
-    K: Key,
-    V: Value,
+    K: Ord,
 {
     pub fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
         self.lockable_internals.write().insert(key, value)
