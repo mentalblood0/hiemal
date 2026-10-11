@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, hash::Hash, hash::Hasher, sync::Arc};
 
 use gxhash::HashSet;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned, ser::SerializeMap,
 };
@@ -163,8 +163,8 @@ where
 
 impl<'de, K, V> Deserialize<'de> for ImmutableObject<K, V>
 where
-    K: Key + DeserializeOwned,
-    V: Value + DeserializeOwned,
+    K: Key,
+    V: Value,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -264,6 +264,40 @@ where
     }
 }
 
+struct ImmutableObjectIterator<'a, K, V>
+where
+    K: Key,
+    V: Value,
+{
+    lockable_internals_read_guard: RwLockReadGuard<'a, LockableInternals<K, V>>,
+    lockable_internals_iterator_option: Option<LockableInternalsIterator<'a, K, V>>,
+}
+
+impl<'a, K, V> Iterator for ImmutableObjectIterator<'a, K, V>
+where
+    K: Key,
+    V: Value,
+{
+    type Item = (&'a Arc<K>, &'a Arc<V>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.lockable_internals_iterator_option.is_none() {
+            // SAFETY: `lockable_internals_read_guard` is stored in `self` for `'a`
+            // and holds the read lock, so the `LockableInternals` it points to (and
+            // its `BTreeMap`s) stay alive and unmodified for `'a`. The iterator only
+            // borrows that data, so the extended lifetime is valid.
+            let lockable_internals_as_const: &'a LockableInternals<K, V> = unsafe {
+                &*(&*self.lockable_internals_read_guard as *const LockableInternals<K, V>)
+            };
+            self.lockable_internals_iterator_option = Some(lockable_internals_as_const.iter());
+        }
+        self.lockable_internals_iterator_option
+            .as_mut()
+            .unwrap()
+            .next()
+    }
+}
+
 impl<K, V> ImmutableObject<K, V>
 where
     K: Key,
@@ -278,7 +312,14 @@ where
     }
 
     pub fn get(&self, key: &Arc<K>) -> Option<Arc<V>> {
-        self.lockable_internals.write().get(key).cloned()
+        self.lockable_internals.read().get(key).cloned()
+    }
+
+    pub fn iter<'a>(&'a self) -> ImmutableObjectIterator<'a, K, V> {
+        ImmutableObjectIterator {
+            lockable_internals_read_guard: self.lockable_internals.read(),
+            lockable_internals_iterator_option: None,
+        }
     }
 }
 

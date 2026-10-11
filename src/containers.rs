@@ -8,18 +8,19 @@ use crate::immutable_object::{ImmutableObject, Key, Value};
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Debug, Hash)]
 #[serde(transparent)]
-pub struct Object<'a, K, V>
+#[serde(bound(serialize = "K: Key, V: Value", deserialize = "K: Key, V: Value",))]
+pub struct Object<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
-    pub inner: ImmutableObject<'a, K, V>,
+    pub inner: ImmutableObject<K, V>,
 }
 
-impl<'a, K, V> Object<'a, K, V>
+impl<K, V> Object<K, V>
 where
-    K: Key<'a>,
-    V: Value<'a>,
+    K: Key,
+    V: Value,
 {
     pub fn len(&self) -> usize {
         self.inner.len()
