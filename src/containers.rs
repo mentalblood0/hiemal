@@ -1,9 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    hash::Hash,
-    sync::Arc,
-};
+use std::{collections::BTreeSet, hash::Hash, sync::Arc};
 
 use crate::immutable_object::ImmutableObject;
 
@@ -32,7 +28,7 @@ where
 
     pub fn new_from_iter(iterator: impl Iterator<Item = (Arc<K>, Arc<V>)>) -> Self {
         Self {
-            inner: BTreeMap::from_iter(iterator),
+            inner: ImmutableObject::from_iter(iterator),
         }
     }
 

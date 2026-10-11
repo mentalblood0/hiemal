@@ -2528,10 +2528,10 @@ impl Compiler {
                                     }
                                 }
                                 let function_body_as_maybe_compiled_program =
-                                    MaybeCompiledProgram::from(function_body);
+                                    MaybeCompiledProgram::from(function_body.clone());
                                 if compilation_context
                                     .entered_user_functions
-                                    .contains(function_body)
+                                    .contains(&function_body)
                                 {
                                     let (function_index, function_type) =
                                         global_compilation_context
@@ -2576,7 +2576,7 @@ impl Compiler {
                                             ),
                                         );
                                     let compiled_function = self.compile_with_context(
-                                        function_body,
+                                        &function_body,
                                         &body_compilation_context,
                                         global_compilation_context,
                                     )?;

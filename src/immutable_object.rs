@@ -127,16 +127,16 @@ impl<K, V> LockableInternals<K, V>
 where
     K: Ord + Hash + Eq,
 {
-    pub fn keys<'b>(&'b self) -> impl Iterator<Item = &'b Arc<K>> {
+    pub fn keys(&self) -> impl Iterator<Item = &Arc<K>> {
         self.iter().map(|element| element.0)
     }
 
-    pub fn values<'b>(&'b self) -> impl Iterator<Item = &'b Arc<V>> {
+    pub fn values(&self) -> impl Iterator<Item = &Arc<V>> {
         self.iter().map(|element| element.1)
     }
 }
 
-struct LockableInternalsIterator<'a, K, V> {
+pub struct LockableInternalsIterator<'a, K, V> {
     differences_iterators: Vec<std::collections::btree_map::Iter<'a, Arc<K>, Option<Arc<V>>>>,
     current_difference_iterator_index: usize,
     already_yielded_keys: HashSet<&'a Arc<K>>,
@@ -175,7 +175,7 @@ pub struct ImmutableObject<K, V> {
     lockable_internals: RwLock<LockableInternals<K, V>>,
 }
 
-impl<'a, K, V> Serialize for ImmutableObject<K, V>
+impl<K, V> Serialize for ImmutableObject<K, V>
 where
     K: Ord + Hash + Serialize,
     V: Serialize,
@@ -298,7 +298,7 @@ where
     }
 }
 
-struct ImmutableObjectIterator<'a, K, V> {
+pub struct ImmutableObjectIterator<'a, K, V> {
     lockable_internals_read_guard: RwLockReadGuard<'a, LockableInternals<K, V>>,
     lockable_internals_iterator_option: Option<LockableInternalsIterator<'a, K, V>>,
 }
@@ -331,6 +331,17 @@ impl<K, V> ImmutableObject<K, V>
 where
     K: Ord,
 {
+    pub fn from_iter(iterator: impl Iterator<Item = (Arc<K>, Arc<V>)>) -> Self {
+        Self {
+            lockable_internals: RwLock::new(LockableInternals {
+                base_immutable_common_difference_option: None,
+                difference: BTreeMap::from_iter(
+                    iterator.map(|key_value_pair| (key_value_pair.0, Some(key_value_pair.1))),
+                ),
+            }),
+        }
+    }
+
     pub fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
         self.lockable_internals.write().insert(key, value)
     }
@@ -358,17 +369,21 @@ where
     pub fn len(&self) -> usize {
         self.lockable_internals.read().len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<K, V> ImmutableObject<K, V>
 where
     K: Ord + Hash + Eq,
 {
-    pub fn keys<'b>(&'b self) -> impl Iterator<Item = &'b Arc<K>> {
+    pub fn keys(&self) -> impl Iterator<Item = &Arc<K>> {
         self.iter().map(|element| element.0)
     }
 
-    pub fn values<'b>(&'b self) -> impl Iterator<Item = &'b Arc<V>> {
+    pub fn values(&self) -> impl Iterator<Item = &Arc<V>> {
         self.iter().map(|element| element.1)
     }
 

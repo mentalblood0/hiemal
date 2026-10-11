@@ -679,7 +679,7 @@ impl<'a> ComputationContext<'a> {
     ) -> Result<Option<Arc<IntermediateValueAndMetadata>>> {
         match &intermediate_value_and_metadata.intermediate_value {
             IntermediateValue::Value(value_arc) => match &**value_arc {
-                Some(Value::Object(object)) => Ok(object.get(key).cloned().map(|value| {
+                Some(Value::Object(object)) => Ok(object.get(key).map(|value| {
                     IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(value.clone()),
                         type_kind: Value::type_kind(&value),
@@ -691,7 +691,7 @@ impl<'a> ComputationContext<'a> {
                     unexpected_value
                 )),
             },
-            IntermediateValue::Object(object) => Ok(object.get(key).cloned()),
+            IntermediateValue::Object(object) => Ok(object.get(key)),
             IntermediateValue::LazyValue(lazy_value) => {
                 self.with_computed_lazy_value(lazy_value, |computed_lazy_value| {
                     self.get_by_key_from_intermediate_value(computed_lazy_value, key)
@@ -1241,13 +1241,20 @@ impl<'a> ComputationContext<'a> {
             IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Object(object),
                 type_kind: _,
-            } => Ok(Some(Value::Object(Object::new_from_iter(
-                object.keys().cloned().zip(
-                    self.unroll_intermediate_values(object.values().cloned(), object.len())?
+            } => {
+                let object_values = object.values().cloned().collect::<Vec<_>>();
+                let object_values_len = object_values.len();
+                Ok(Some(Value::Object(Object::new_from_iter(
+                    object.keys().cloned().zip(
+                        self.unroll_intermediate_values(
+                            object_values.into_iter(),
+                            object_values_len,
+                        )?
                         .inner,
-                ),
-            )))
-            .into()),
+                    ),
+                )))
+                .into())
+            }
             IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Map(map),
                 type_kind: _,
@@ -1732,7 +1739,8 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .as_ref()
                         .as_ref()
-                        .unwrap();
+                        .unwrap()
+                        .clone();
                     let compiled_regex =
                         self.compile_regex(&*if let Value::String(computed_regex_string) =
                             computed_regex
@@ -1896,7 +1904,8 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .as_ref()
                         .as_ref()
-                        .unwrap();
+                        .unwrap()
+                        .clone();
                     if let Some(parent) = computed_path.parent() {
                         std::fs::create_dir_all(parent)
                             .with_context(embedded_function_error_context(path_option))?;
@@ -1976,7 +1985,8 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .as_ref()
                         .as_ref()
-                        .unwrap();
+                        .unwrap()
+                        .clone();
                     if let Some(parent) = computed_path.parent() {
                         std::fs::create_dir_all(parent)
                             .with_context(embedded_function_error_context(path_option))?;
@@ -1997,7 +2007,7 @@ impl<'a> ComputationContext<'a> {
                         }
                         Value::Bytes(bytes) => {
                             writer
-                                .write_all(bytes)
+                                .write_all(&bytes)
                                 .with_context(embedded_function_error_context(path_option))?;
                         }
                         _ => panic!(),
@@ -2041,7 +2051,8 @@ impl<'a> ComputationContext<'a> {
                         .as_ref()
                         .unwrap()
                         .as_tuple()
-                        .unwrap();
+                        .unwrap()
+                        .clone();
                     let result = std::process::Command::new(command_name)
                         .args(arguments.iter().map(|argument_value| {
                             argument_value
