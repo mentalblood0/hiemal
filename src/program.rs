@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Program {
     Tuple(Vec<Arc<Program>>),
@@ -148,7 +148,7 @@ pub fn default_try_as() -> Arc<String> {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Match {
     Constant(Arc<String>),
@@ -156,7 +156,7 @@ pub enum Match {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Condition {
     Type(Type),
@@ -164,14 +164,14 @@ pub enum Condition {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 pub enum DefaultArgument {
     #[serde(rename = "_")]
     Underline,
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum From {
     DefaultArgument(DefaultArgument),
@@ -181,7 +181,7 @@ pub enum From {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum RangeBound {
     Static(Option<usize>),
@@ -189,7 +189,7 @@ pub enum RangeBound {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum AtSegment {
     ProgramPathSegment(PathSegment),
@@ -204,7 +204,7 @@ impl Default for Program {
     }
 }
 
-#[derive(Serialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct EmbeddedFunctionCall {
     pub embedded_function: EmbeddedFunction,
     pub argument: Arc<Program>,
@@ -351,7 +351,7 @@ pub enum PathSegment {
     ObjectKey(Arc<String>),
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Hash, Debug)]
+#[derive(Serialize, Clone, PartialEq, PartialOrd, Eq, Ord, Default, Deserialize, Hash, Debug)]
 pub struct Path(pub Vec<PathSegment>);
 
 impl Path {
