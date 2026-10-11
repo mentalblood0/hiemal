@@ -280,7 +280,6 @@ compute:
 ```yaml
 forbid:
   - remove file
-  - error
 compute:
   pipe:
     - overwrite file:
