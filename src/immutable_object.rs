@@ -42,7 +42,7 @@ impl<T> Value for T where
 {
 }
 
-#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Default, Clone, Debug)]
 struct LockableInternals<K, V>
 where
     K: Key,
@@ -50,6 +50,65 @@ where
 {
     base_immutable_common_difference_option: Option<Arc<LockableInternals<K, V>>>,
     difference: BTreeMap<Arc<K>, Option<Arc<V>>>,
+}
+
+impl<K, V> PartialEq for LockableInternals<K, V>
+where
+    K: Key,
+    V: Value,
+{
+    fn eq(&self, other: &Self) -> bool {
+        let mut self_elements = self.iter().collect::<Vec<_>>();
+        self_elements.sort();
+        let mut other_elements = other.iter().collect::<Vec<_>>();
+        other_elements.sort();
+        self_elements == other_elements
+    }
+}
+
+impl<K, V> Eq for LockableInternals<K, V>
+where
+    K: Key,
+    V: Value,
+{
+}
+
+impl<K, V> PartialOrd for LockableInternals<K, V>
+where
+    K: Key,
+    V: Value,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<K, V> Ord for LockableInternals<K, V>
+where
+    K: Key,
+    V: Value,
+{
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let mut self_elements = self.iter().collect::<Vec<_>>();
+        self_elements.sort();
+        let mut other_elements = other.iter().collect::<Vec<_>>();
+        other_elements.sort();
+        self_elements.cmp(&other_elements)
+    }
+}
+
+impl<K, V> Hash for LockableInternals<K, V>
+where
+    K: Key,
+    V: Value,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let mut self_elements = self.iter().collect::<Vec<_>>();
+        self_elements.sort();
+        for element in self_elements {
+            element.hash(state)
+        }
+    }
 }
 
 impl<K, V> LockableInternals<K, V>
