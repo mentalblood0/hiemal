@@ -31,7 +31,7 @@ use crate::{
 struct CompilationContext {
     path: Path,
     available_functions: Object<String, Program>,
-    available_constants: HashMap<Arc<String>, usize>,
+    available_constants: Object<String, usize>,
     entered_user_functions: Set<Program>,
 }
 
@@ -560,7 +560,7 @@ impl Compiler {
         };
         compilation_context
             .available_constants
-            .insert(name, result.index);
+            .insert(name, result.index.into());
         result
     }
 
@@ -2557,7 +2557,7 @@ impl Compiler {
                                 } else {
                                     body_compilation_context
                                         .entered_user_functions
-                                        .extend([function_body.clone()]);
+                                        .extend([function_body.clone()].into_iter());
                                     let function_index =
                                         global_compilation_context.user_functions_definitions.len();
                                     global_compilation_context.user_functions_definitions.push(

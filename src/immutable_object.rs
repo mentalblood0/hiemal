@@ -97,6 +97,19 @@ where
         }
     }
 
+    fn contains(&self, key: &K) -> bool {
+        let mut current_lockable_internals_option = Some(self);
+        while let Some(current_lockable_internals) = current_lockable_internals_option {
+            if let Some(value_option) = current_lockable_internals.difference.get(key) {
+                return value_option.is_some();
+            }
+            current_lockable_internals_option = current_lockable_internals
+                .base_immutable_common_difference_option
+                .as_deref();
+        }
+        false
+    }
+
     fn iter<'b>(&'b self) -> LockableInternalsIterator<'b, K, V> {
         let mut differences_iterators = Vec::new();
         let mut current_lockable_internals_option = Some(self);
@@ -352,6 +365,10 @@ where
 
     pub fn get(&self, key: &K) -> Option<Arc<V>> {
         self.lockable_internals.read().get(key).cloned()
+    }
+
+    pub fn contains(&self, key: &K) -> bool {
+        self.lockable_internals.read().contains(key)
     }
 
     pub fn iter<'a>(&'a self) -> ImmutableObjectIterator<'a, K, V> {

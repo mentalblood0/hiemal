@@ -64,14 +64,14 @@ where
 #[serde(transparent)]
 pub struct Set<V>
 where
-    V: Ord + Clone,
+    V: Ord + Hash,
 {
-    inner: BTreeSet<Arc<V>>,
+    inner: ImmutableObject<V, ()>,
 }
 
 impl<V> Set<V>
 where
-    V: Ord + Clone,
+    V: Ord + Clone + Hash,
 {
     pub fn contains(&self, value: &V) -> bool {
         self.inner.contains(value)
@@ -86,16 +86,14 @@ where
     }
 
     pub fn insert(&mut self, value: Arc<V>) {
-        self.inner.insert(value);
+        self.inner.insert(value, ().into());
     }
 
     pub fn extend<A>(&mut self, addition: A)
     where
-        A: IntoIterator<Item = Arc<V>>,
+        A: Iterator<Item = Arc<V>>,
     {
-        for value in addition {
-            self.inner.insert(value);
-        }
+        self.inner.extend(addition.map(|key| (key, ().into())));
     }
 }
 
