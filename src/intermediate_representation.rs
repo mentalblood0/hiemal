@@ -165,7 +165,6 @@ pub struct ConstantDefinition {
 
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
-#[serde(untagged)]
 pub enum RangeBound {
     Static(Option<usize>),
     Dynamic(Arc<Node>),
