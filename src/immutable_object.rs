@@ -1,13 +1,13 @@
 use std::{collections::BTreeMap, hash::Hash, hash::Hasher, sync::Arc};
 
-use gxhash::HashSet;
+use gxhash::{HashMap, HashSet};
 use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
 
 #[derive(Default, Clone, Debug)]
 struct LockableInternals<K, V> {
     base_immutable_common_difference_option: Option<Arc<LockableInternals<K, V>>>,
-    difference: BTreeMap<Arc<K>, Option<Arc<V>>>,
+    difference: HashMap<Arc<K>, Option<Arc<V>>>,
 }
 
 impl<K, V> PartialEq for LockableInternals<K, V>
@@ -71,7 +71,7 @@ where
 
 impl<K, V> LockableInternals<K, V>
 where
-    K: Ord,
+    K: Ord + Hash,
 {
     fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
         self.difference.insert(key, Some(value));
@@ -136,21 +136,8 @@ where
     }
 }
 
-impl<K, V> LockableInternals<K, V>
-where
-    K: Ord + Hash + Eq,
-{
-    pub fn keys(&self) -> impl Iterator<Item = &Arc<K>> {
-        self.iter().map(|element| element.0)
-    }
-
-    pub fn values(&self) -> impl Iterator<Item = &Arc<V>> {
-        self.iter().map(|element| element.1)
-    }
-}
-
 pub struct LockableInternalsIterator<'a, K, V> {
-    differences_iterators: Vec<std::collections::btree_map::Iter<'a, Arc<K>, Option<Arc<V>>>>,
+    differences_iterators: Vec<std::collections::hash_map::Iter<'a, Arc<K>, Option<Arc<V>>>>,
     current_difference_iterator_index: usize,
     already_yielded_keys: HashSet<&'a Arc<K>>,
 }
@@ -210,7 +197,7 @@ where
 
 impl<'de, K, V> Deserialize<'de> for ImmutableObject<K, V>
 where
-    K: Ord + Deserialize<'de>,
+    K: Ord + Hash + Deserialize<'de>,
     V: Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -218,7 +205,7 @@ where
         D: Deserializer<'de>,
     {
         let map = BTreeMap::<K, V>::deserialize(deserializer)?;
-        let difference: BTreeMap<Arc<K>, Option<Arc<V>>> = map
+        let difference: HashMap<Arc<K>, Option<Arc<V>>> = map
             .into_iter()
             .map(|(k, v)| (Arc::new(k), Some(Arc::new(v))))
             .collect();
@@ -304,7 +291,7 @@ where
             Self {
                 lockable_internals: RwLock::new(LockableInternals {
                     base_immutable_common_difference_option: Some(common_base),
-                    difference: BTreeMap::new(),
+                    difference: HashMap::default(),
                 }),
             }
         }
@@ -342,13 +329,13 @@ where
 
 impl<K, V> ImmutableObject<K, V>
 where
-    K: Ord,
+    K: Ord + Hash,
 {
     pub fn from_iter(iterator: impl Iterator<Item = (Arc<K>, Arc<V>)>) -> Self {
         Self {
             lockable_internals: RwLock::new(LockableInternals {
                 base_immutable_common_difference_option: None,
-                difference: BTreeMap::from_iter(
+                difference: HashMap::from_iter(
                     iterator.map(|key_value_pair| (key_value_pair.0, Some(key_value_pair.1))),
                 ),
             }),
