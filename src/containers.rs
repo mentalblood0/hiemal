@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{hash::Hash, sync::Arc};
+use std::{borrow::Borrow, hash::Hash, sync::Arc};
 
 use crate::immutable_object::ImmutableObject;
 
@@ -36,7 +36,11 @@ where
         self.inner.insert(key, value);
     }
 
-    pub fn get(&self, key: &K) -> Option<V> {
+    pub fn get<Q>(&self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
         self.inner.get(key)
     }
 
@@ -95,7 +99,7 @@ where
     where
         A: Iterator<Item = V>,
     {
-        self.inner.extend(addition.map(|key| (key, ().into())));
+        self.inner.extend(addition.map(|key| (key, ())));
     }
 }
 

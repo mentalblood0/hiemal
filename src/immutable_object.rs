@@ -450,7 +450,7 @@ mod tests {
                     //      {}",
                     //     normal_objects.len()
                     // );
-                    new_normal_object.insert(new_key.clone(), new_value.clone());
+                    new_normal_object.insert(new_key, new_value);
                     normal_objects.push(new_normal_object);
                     let mut new_immutable_object = immutable_objects[current_object_index].clone();
                     new_immutable_object.insert(new_key, new_value);
@@ -461,11 +461,10 @@ mod tests {
                     if new_normal_object.is_empty() {
                         continue;
                     }
-                    let key_to_remove = new_normal_object
+                    let key_to_remove = *new_normal_object
                         .keys()
                         .nth(rng.generate_range(0..new_normal_object.len()))
-                        .unwrap()
-                        .clone();
+                        .unwrap();
                     // println!(
                     //     "remove {key_to_remove:?} from {current_object_index} and save as {}",
                     //     normal_objects.len()
