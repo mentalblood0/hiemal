@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, hash::Hash, sync::Arc};
+use std::{hash::Hash, sync::Arc};
 
 use crate::immutable_object::ImmutableObject;
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Debug, Hash)]
 #[serde(transparent)]
-pub struct Object<K, V>
+pub struct ObjectRaw<K, V>
 where
     K: Hash + Ord,
     V: Ord,
@@ -13,10 +13,10 @@ where
     pub inner: ImmutableObject<K, V>,
 }
 
-impl<K, V> Object<K, V>
+impl<K, V> ObjectRaw<K, V>
 where
     K: Hash + Ord,
-    V: Ord,
+    V: Ord + Clone,
 {
     pub fn len(&self) -> usize {
         self.inner.len()
@@ -26,50 +26,52 @@ where
         self.len() == 0
     }
 
-    pub fn new_from_iter(iterator: impl Iterator<Item = (Arc<K>, Arc<V>)>) -> Self {
+    pub fn new_from_iter(iterator: impl Iterator<Item = (K, V)>) -> Self {
         Self {
             inner: ImmutableObject::from_iter(iterator),
         }
     }
 
-    pub fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
+    pub fn insert(&mut self, key: K, value: V) {
         self.inner.insert(key, value);
     }
 
-    pub fn get(&self, key: &K) -> Option<Arc<V>> {
+    pub fn get(&self, key: &K) -> Option<V> {
         self.inner.get(key)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&Arc<K>, &Arc<V>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
         self.inner.iter()
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = &Arc<K>> {
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.inner.keys()
     }
 
-    pub fn values(&self) -> impl Iterator<Item = &Arc<V>> {
+    pub fn values(&self) -> impl Iterator<Item = &V> {
         self.inner.values()
     }
 
     pub fn extend<A>(&mut self, addition: A)
     where
-        A: Iterator<Item = (Arc<K>, Arc<V>)>,
+        A: Iterator<Item = (K, V)>,
     {
         self.inner.extend(addition);
     }
 }
 
+pub type Object<K, V> = ObjectRaw<Arc<K>, Arc<V>>;
+
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Default, Serialize, Deserialize, Debug, Hash)]
 #[serde(transparent)]
-pub struct Set<V>
+pub struct SetRaw<V>
 where
     V: Ord + Hash,
 {
     inner: ImmutableObject<V, ()>,
 }
 
-impl<V> Set<V>
+impl<V> SetRaw<V>
 where
     V: Ord + Clone + Hash,
 {
@@ -85,17 +87,19 @@ where
         self.len() == 0
     }
 
-    pub fn insert(&mut self, value: Arc<V>) {
-        self.inner.insert(value, ().into());
+    pub fn insert(&mut self, value: V) {
+        self.inner.insert(value, ());
     }
 
     pub fn extend<A>(&mut self, addition: A)
     where
-        A: Iterator<Item = Arc<V>>,
+        A: Iterator<Item = V>,
     {
         self.inner.extend(addition.map(|key| (key, ().into())));
     }
 }
+
+pub type Set<V> = SetRaw<Arc<V>>;
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Serialize, Deserialize)]
 #[serde(transparent)]

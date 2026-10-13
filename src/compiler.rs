@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::{
     computer::Computer,
-    containers::{Object, Set, Vector},
+    containers::{Object, ObjectRaw, Set, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     includes_cache::IncludesCache,
     intermediate_representation::{
@@ -31,7 +31,7 @@ use crate::{
 struct CompilationContext {
     path: Path,
     available_functions: Object<String, Program>,
-    available_constants: Object<String, usize>,
+    available_constants: ObjectRaw<Arc<String>, usize>,
     entered_user_functions: Set<Program>,
 }
 
@@ -827,7 +827,7 @@ impl Compiler {
                     compilation_context.available_constants.get(constant_name)
                 {
                     let constant_metadata =
-                        global_compilation_context.constants[*constant_index].clone();
+                        global_compilation_context.constants[constant_index].clone();
                     let name_clustered_constant_index = *global_compilation_context
                         .constants_names_to_name_clustered_constants_indices
                         .get(constant_name)

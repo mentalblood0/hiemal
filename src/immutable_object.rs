@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, hash::Hash, hash::Hasher, sync::Arc};
+use std::{borrow::Borrow, collections::BTreeMap, hash::Hash, hash::Hasher, sync::Arc};
 
 use gxhash::{HashMap, HashSet};
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap}
 #[derive(Default, Clone, Debug)]
 struct LockableInternals<K, V> {
     base_immutable_common_difference_option: Option<Arc<LockableInternals<K, V>>>,
-    difference: HashMap<Arc<K>, Option<Arc<V>>>,
+    difference: HashMap<K, Option<V>>,
 }
 
 impl<K, V> PartialEq for LockableInternals<K, V>
@@ -71,21 +71,23 @@ where
 
 impl<K, V> LockableInternals<K, V>
 where
-    K: Ord + Hash,
+    K: Ord + Hash + Clone,
 {
-    fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
-        self.difference.insert(key, Some(value));
-    }
-
-    fn remove(&mut self, key: &Arc<K>) {
+    fn remove(&mut self, key: &K) {
         if self.base_immutable_common_difference_option.is_some() {
             self.difference.insert(key.clone(), None);
         } else {
             self.difference.remove(key);
         }
     }
+}
 
-    fn get(&self, key: &K) -> Option<&Arc<V>> {
+impl<K, V> LockableInternals<K, V> {
+    pub fn get<Q>(&self, key: &Q) -> Option<&V>
+    where
+        K: Borrow<Q> + Ord + Hash,
+        Q: Hash + Eq + ?Sized,
+    {
         if let Some(result) = self.difference.get(key) {
             result.as_ref()
         } else {
@@ -95,6 +97,15 @@ where
                     base_immutable_common_difference.get(key)
                 })
         }
+    }
+}
+
+impl<K, V> LockableInternals<K, V>
+where
+    K: Ord + Hash,
+{
+    fn insert(&mut self, key: K, value: V) {
+        self.difference.insert(key, Some(value));
     }
 
     fn contains(&self, key: &K) -> bool {
@@ -137,16 +148,16 @@ where
 }
 
 pub struct LockableInternalsIterator<'a, K, V> {
-    differences_iterators: Vec<std::collections::hash_map::Iter<'a, Arc<K>, Option<Arc<V>>>>,
+    differences_iterators: Vec<std::collections::hash_map::Iter<'a, K, Option<V>>>,
     current_difference_iterator_index: usize,
-    already_yielded_keys: HashSet<&'a Arc<K>>,
+    already_yielded_keys: HashSet<&'a K>,
 }
 
 impl<'a, K, V> Iterator for LockableInternalsIterator<'a, K, V>
 where
     K: Hash + Eq,
 {
-    type Item = (&'a Arc<K>, &'a Arc<V>);
+    type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -205,10 +216,8 @@ where
         D: Deserializer<'de>,
     {
         let map = BTreeMap::<K, V>::deserialize(deserializer)?;
-        let difference: HashMap<Arc<K>, Option<Arc<V>>> = map
-            .into_iter()
-            .map(|(k, v)| (Arc::new(k), Some(Arc::new(v))))
-            .collect();
+        let difference: HashMap<K, Option<V>> =
+            map.into_iter().map(|(k, v)| (k, Some(v))).collect();
         Ok(ImmutableObject {
             lockable_internals: RwLock::new(LockableInternals {
                 base_immutable_common_difference_option: None,
@@ -307,7 +316,7 @@ impl<'a, K, V> Iterator for ImmutableObjectIterator<'a, K, V>
 where
     K: Ord + Hash,
 {
-    type Item = (&'a Arc<K>, &'a Arc<V>);
+    type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.lockable_internals_iterator_option.is_none() {
@@ -329,9 +338,29 @@ where
 
 impl<K, V> ImmutableObject<K, V>
 where
+    K: Ord + Hash + Clone,
+{
+    pub fn remove(&mut self, key: &K) {
+        self.lockable_internals.write().remove(key)
+    }
+}
+
+impl<K, V> ImmutableObject<K, V> {
+    pub fn get<Q>(&self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q> + Ord + Hash,
+        Q: Hash + Eq + ?Sized,
+        V: Clone,
+    {
+        self.lockable_internals.read().get(key).cloned()
+    }
+}
+
+impl<K, V> ImmutableObject<K, V>
+where
     K: Ord + Hash,
 {
-    pub fn from_iter(iterator: impl Iterator<Item = (Arc<K>, Arc<V>)>) -> Self {
+    pub fn from_iter(iterator: impl Iterator<Item = (K, V)>) -> Self {
         Self {
             lockable_internals: RwLock::new(LockableInternals {
                 base_immutable_common_difference_option: None,
@@ -342,16 +371,8 @@ where
         }
     }
 
-    pub fn insert(&mut self, key: Arc<K>, value: Arc<V>) {
+    pub fn insert(&mut self, key: K, value: V) {
         self.lockable_internals.write().insert(key, value)
-    }
-
-    pub fn remove(&mut self, key: &Arc<K>) {
-        self.lockable_internals.write().remove(key)
-    }
-
-    pub fn get(&self, key: &K) -> Option<Arc<V>> {
-        self.lockable_internals.read().get(key).cloned()
     }
 
     pub fn contains(&self, key: &K) -> bool {
@@ -383,17 +404,17 @@ impl<K, V> ImmutableObject<K, V>
 where
     K: Ord + Hash + Eq,
 {
-    pub fn keys(&self) -> impl Iterator<Item = &Arc<K>> {
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.iter().map(|element| element.0)
     }
 
-    pub fn values(&self) -> impl Iterator<Item = &Arc<V>> {
+    pub fn values(&self) -> impl Iterator<Item = &V> {
         self.iter().map(|element| element.1)
     }
 
     pub fn extend<A>(&mut self, addition: A)
     where
-        A: Iterator<Item = (Arc<K>, Arc<V>)>,
+        A: Iterator<Item = (K, V)>,
     {
         let mut lockable_internals_write_guard = self.lockable_internals.write();
         for key_value_pair in addition {
@@ -414,15 +435,15 @@ mod tests {
     #[test]
     fn test_generative() {
         let mut rng = WyRand::new_seed(0);
-        let mut normal_objects = vec![BTreeMap::<Arc<usize>, Arc<usize>>::new()];
+        let mut normal_objects = vec![BTreeMap::<usize, usize>::new()];
         let mut immutable_objects = vec![ImmutableObject::<usize, usize>::default()];
         for _ in 0..1000 {
             let current_object_index =
                 rng.generate_range(normal_objects.len().saturating_sub(20)..normal_objects.len());
             match rng.generate_range(1..=10) {
                 1..=9 => {
-                    let new_key = Arc::new(rng.generate_range(0..usize::MAX));
-                    let new_value = Arc::new(rng.generate_range(0..usize::MAX));
+                    let new_key = rng.generate_range(0..usize::MAX);
+                    let new_value = rng.generate_range(0..usize::MAX);
                     let mut new_normal_object = normal_objects[current_object_index].clone();
                     // println!(
                     //     "insert ({new_key:?} {new_value:?}) in {current_object_index} and save as \
