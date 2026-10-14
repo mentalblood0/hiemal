@@ -13,6 +13,18 @@ where
     pub inner: ImmutableObject<K, V>,
 }
 
+impl<K, V> FromIterator<(K, V)> for ObjectRaw<K, V>
+where
+    K: Hash + Ord,
+    V: Ord + Clone,
+{
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        Self {
+            inner: ImmutableObject::from_iter(iter),
+        }
+    }
+}
+
 impl<K, V> ObjectRaw<K, V>
 where
     K: Hash + Ord,
@@ -24,12 +36,6 @@ where
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-
-    pub fn new_from_iter(iterator: impl Iterator<Item = (K, V)>) -> Self {
-        Self {
-            inner: ImmutableObject::from_iter(iterator),
-        }
     }
 
     pub fn insert(&mut self, key: K, value: V) {
@@ -114,16 +120,21 @@ where
     pub inner: Vec<Arc<V>>,
 }
 
+impl<V> FromIterator<Arc<V>> for Vector<V>
+where
+    V: Ord + Clone,
+{
+    fn from_iter<I: IntoIterator<Item = Arc<V>>>(iter: I) -> Self {
+        Self {
+            inner: Vec::from_iter(iter),
+        }
+    }
+}
+
 impl<V> Vector<V>
 where
     V: Ord + Clone,
 {
-    pub fn new_from_iter(iterator: impl Iterator<Item = Arc<V>>) -> Self {
-        Self {
-            inner: Vec::from_iter(iterator),
-        }
-    }
-
     pub fn set(&mut self, index: usize, value: Arc<V>) {
         self.inner[index] = value
     }

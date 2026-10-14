@@ -560,7 +560,7 @@ impl Compiler {
         };
         compilation_context
             .available_constants
-            .insert(name, result.index.into());
+            .insert(name, result.index);
         result
     }
 

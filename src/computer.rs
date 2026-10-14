@@ -1182,7 +1182,7 @@ impl<'a> ComputationContext<'a> {
                     },
                     &result_mutex,
                 )?;
-                return Ok(Vector::new_from_iter(
+                return Ok(Vector::from_iter(
                     result_mutex.into_inner().into_iter().map(Option::unwrap),
                 ));
             }
@@ -1244,7 +1244,7 @@ impl<'a> ComputationContext<'a> {
             } => {
                 let object_values = object.values().cloned().collect::<Vec<_>>();
                 let object_values_len = object_values.len();
-                Ok(Some(Value::Object(Object::new_from_iter(
+                Ok(Some(Value::Object(Object::from_iter(
                     object.keys().cloned().zip(
                         self.unroll_intermediate_values(
                             object_values.into_iter(),
@@ -1671,7 +1671,7 @@ impl<'a> ComputationContext<'a> {
                                     .iter()
                                 {
                                     result.push(
-                                        Some(Value::Tuple(Vector::new_from_iter(
+                                        Some(Value::Tuple(Vector::from_iter(
                                             [
                                                 Some(Value::String(ropey::Rope::from_str(key)))
                                                     .into(),
@@ -1750,47 +1750,40 @@ impl<'a> ComputationContext<'a> {
                             self.build_regex(computed_regex.as_tuple().unwrap())
                         })?;
                     if let Some(captures) = compiled_regex.captures(&computed_string) {
-                        let result_value = Some(Value::Object(Object::new_from_iter(
-                            [
-                                (
-                                    "groups".to_string().into(),
-                                    Some(Value::Object(Object::new_from_iter(
-                                        compiled_regex.capture_names().flatten().filter_map(
-                                            |name| {
-                                                captures.name(name).map(|match_obj| {
-                                                    (
-                                                        name.to_string().into(),
-                                                        Some({
-                                                            let matched = match_obj.as_str();
-                                                            if let Ok(matched_as_number) =
-                                                                dashu::Rational::from_str(matched)
-                                                            {
-                                                                Value::Number(matched_as_number)
-                                                            } else {
-                                                                Value::String(matched.into())
-                                                            }
-                                                        })
-                                                        .into(),
-                                                    )
+                        let result_value = Some(Value::Object(Object::from_iter([
+                            (
+                                "groups".to_string().into(),
+                                Some(Value::Object(Object::from_iter(
+                                    compiled_regex.capture_names().flatten().filter_map(|name| {
+                                        captures.name(name).map(|match_obj| {
+                                            (
+                                                name.to_string().into(),
+                                                Some({
+                                                    let matched = match_obj.as_str();
+                                                    if let Ok(matched_as_number) =
+                                                        dashu::Rational::from_str(matched)
+                                                    {
+                                                        Value::Number(matched_as_number)
+                                                    } else {
+                                                        Value::String(matched.into())
+                                                    }
                                                 })
-                                            },
-                                        ),
-                                    )))
-                                    .into(),
-                                ),
-                                (
-                                    "start".to_string().into(),
-                                    Some(Value::Number(captures.get(0).unwrap().start().into()))
-                                        .into(),
-                                ),
-                                (
-                                    "end".to_string().into(),
-                                    Some(Value::Number(captures.get(0).unwrap().end().into()))
-                                        .into(),
-                                ),
-                            ]
-                            .into_iter(),
-                        )));
+                                                .into(),
+                                            )
+                                        })
+                                    }),
+                                )))
+                                .into(),
+                            ),
+                            (
+                                "start".to_string().into(),
+                                Some(Value::Number(captures.get(0).unwrap().start().into())).into(),
+                            ),
+                            (
+                                "end".to_string().into(),
+                                Some(Value::Number(captures.get(0).unwrap().end().into())).into(),
+                            ),
+                        ])));
                         let r#type = Value::type_kind(&result_value);
                         Ok(IntermediateValueAndMetadata {
                             intermediate_value: IntermediateValue::Value(result_value.into()),
@@ -2067,24 +2060,21 @@ impl<'a> ComputationContext<'a> {
                         .with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
-                            Some(Value::Object(Object::new_from_iter(
-                                [
-                                    (
-                                        "exit code".to_string().into(),
-                                        Some(Value::Number(result.status.code().unwrap().into()))
-                                            .into(),
-                                    ),
-                                    (
-                                        "standard output".to_string().into(),
-                                        Some(Value::Bytes(result.stdout.into())).into(),
-                                    ),
-                                    (
-                                        "standard error".to_string().into(),
-                                        Some(Value::Bytes(result.stderr.into())).into(),
-                                    ),
-                                ]
-                                .into_iter(),
-                            )))
+                            Some(Value::Object(Object::from_iter([
+                                (
+                                    "exit code".to_string().into(),
+                                    Some(Value::Number(result.status.code().unwrap().into()))
+                                        .into(),
+                                ),
+                                (
+                                    "standard output".to_string().into(),
+                                    Some(Value::Bytes(result.stdout.into())).into(),
+                                ),
+                                (
+                                    "standard error".to_string().into(),
+                                    Some(Value::Bytes(result.stderr.into())).into(),
+                                ),
+                            ])))
                             .into(),
                         ),
                         type_kind: node.r#type.kind.clone(),

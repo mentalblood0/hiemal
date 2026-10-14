@@ -82,10 +82,17 @@ where
     }
 }
 
-impl<K, V> LockableInternals<K, V> {
+impl<K, V> LockableInternals<K, V>
+where
+    K: Ord + Hash,
+{
+    fn insert(&mut self, key: K, value: V) {
+        self.difference.insert(key, Some(value));
+    }
+
     pub fn get<Q>(&self, key: &Q) -> Option<&V>
     where
-        K: Borrow<Q> + Ord + Hash,
+        K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
         if let Some(result) = self.difference.get(key) {
@@ -97,15 +104,6 @@ impl<K, V> LockableInternals<K, V> {
                     base_immutable_common_difference.get(key)
                 })
         }
-    }
-}
-
-impl<K, V> LockableInternals<K, V>
-where
-    K: Ord + Hash,
-{
-    fn insert(&mut self, key: K, value: V) {
-        self.difference.insert(key, Some(value));
     }
 
     fn contains(&self, key: &K) -> bool {
@@ -136,12 +134,7 @@ where
             already_yielded_keys: HashSet::default(),
         }
     }
-}
 
-impl<K, V> LockableInternals<K, V>
-where
-    K: Ord + Hash,
-{
     pub fn len(&self) -> usize {
         self.iter().count()
     }
@@ -336,23 +329,17 @@ where
     }
 }
 
-impl<K, V> ImmutableObject<K, V>
+impl<K, V> FromIterator<(K, V)> for ImmutableObject<K, V>
 where
-    K: Ord + Hash + Clone,
+    K: Ord + Hash,
 {
-    pub fn remove(&mut self, key: &K) {
-        self.lockable_internals.write().remove(key)
-    }
-}
-
-impl<K, V> ImmutableObject<K, V> {
-    pub fn get<Q>(&self, key: &Q) -> Option<V>
-    where
-        K: Borrow<Q> + Ord + Hash,
-        Q: Hash + Eq + ?Sized,
-        V: Clone,
-    {
-        self.lockable_internals.read().get(key).cloned()
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+        Self {
+            lockable_internals: RwLock::new(LockableInternals {
+                base_immutable_common_difference_option: None,
+                difference: iter.into_iter().map(|(k, v)| (k, Some(v))).collect(),
+            }),
+        }
     }
 }
 
@@ -360,19 +347,24 @@ impl<K, V> ImmutableObject<K, V>
 where
     K: Ord + Hash,
 {
-    pub fn from_iter(iterator: impl Iterator<Item = (K, V)>) -> Self {
-        Self {
-            lockable_internals: RwLock::new(LockableInternals {
-                base_immutable_common_difference_option: None,
-                difference: HashMap::from_iter(
-                    iterator.map(|key_value_pair| (key_value_pair.0, Some(key_value_pair.1))),
-                ),
-            }),
-        }
-    }
-
     pub fn insert(&mut self, key: K, value: V) {
         self.lockable_internals.write().insert(key, value)
+    }
+
+    pub fn get<Q>(&self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+        V: Clone,
+    {
+        self.lockable_internals.read().get(key).cloned()
+    }
+
+    pub fn remove(&mut self, key: &K)
+    where
+        K: Clone,
+    {
+        self.lockable_internals.write().remove(key)
     }
 
     pub fn contains(&self, key: &K) -> bool {
@@ -385,12 +377,7 @@ where
             lockable_internals_iterator_option: None,
         }
     }
-}
 
-impl<K, V> ImmutableObject<K, V>
-where
-    K: Ord + Hash,
-{
     pub fn len(&self) -> usize {
         self.lockable_internals.read().len()
     }
