@@ -13,7 +13,7 @@ use std::fmt;
 use crate::{
     containers::{Object, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
-    r#type::TypeKind,
+    r#type::{Embedded, TypeKind},
 };
 
 pub fn serialize_rope<S>(rope: &ropey::Rope, serializer: S) -> Result<S::Ok, S::Error>
@@ -52,6 +52,10 @@ pub enum Value {
         Bytes,
     ),
     Object(Object<String, Option<Value>>),
+    Runtime {
+        r#type: Embedded,
+        index: usize,
+    },
 }
 
 impl Default for Value {
@@ -246,6 +250,7 @@ impl Value {
                     )
                     .into(),
                 ),
+                Value::Runtime { r#type, index: _ } => TypeKind::Embedded(r#type.clone()),
             },
             None => TypeKind::Null,
         }

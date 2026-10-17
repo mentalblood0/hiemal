@@ -339,6 +339,14 @@ where
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum Embedded {
+    #[serde(rename = "compiled regex")]
+    CompiledRegex,
+    #[serde(rename = "file interface")]
+    FileInterface,
+}
+
 #[derive(Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum TypeKind {
     #[serde(rename = "number")]
@@ -374,6 +382,8 @@ pub enum TypeKind {
     Bytes,
     #[serde(rename = "constructed")]
     Constructed(Constructed),
+    #[serde(rename = "embedded")]
+    Embedded(Embedded),
     #[serde(skip_deserializing)]
     Unknown(MaybeType),
 }
@@ -420,6 +430,8 @@ pub enum KnownTypeKind {
     Bytes,
     #[serde(rename = "constructed")]
     Constructed(Constructed),
+    #[serde(rename = "embedded")]
+    Embedded(Embedded),
 }
 
 impl Serialize for TypeKind {
@@ -750,21 +762,17 @@ impl TypeKind {
                         for ((key, self_value_type), (_, other_value_type)) in
                             self_inner_types.iter().zip(other_inner_types.iter())
                         {
-                            if let Some(result_value_type_kind) =
-                                self_value_type.kind.substraction(&other_value_type.kind)
-                            {
-                                result_inner_types.insert(
-                                    key.clone(),
-                                    Type {
-                                        kind: result_value_type_kind,
-                                        properties: self_value_type
-                                            .properties
-                                            .unified(&other_value_type.properties),
-                                    },
-                                );
-                            } else {
-                                return None;
-                            }
+                            let result_value_type_kind =
+                                self_value_type.kind.substraction(&other_value_type.kind)?;
+                            result_inner_types.insert(
+                                key.clone(),
+                                Type {
+                                    kind: result_value_type_kind,
+                                    properties: self_value_type
+                                        .properties
+                                        .unified(&other_value_type.properties),
+                                },
+                            );
                         }
                         Some(TypeKind::Object(result_inner_types.into()))
                     } else {
@@ -775,18 +783,11 @@ impl TypeKind {
                     if self_types.len() == other_types.len() {
                         let mut result_types = Vec::new();
                         for (self_type, other_type) in self_types.iter().zip(other_types.iter()) {
-                            if let Some(result_type_kind) =
-                                self_type.kind.substraction(&other_type.kind)
-                            {
-                                result_types.push(Type {
-                                    kind: result_type_kind,
-                                    properties: self_type
-                                        .properties
-                                        .unified(&other_type.properties),
-                                });
-                            } else {
-                                return None;
-                            }
+                            let result_type_kind = self_type.kind.substraction(&other_type.kind)?;
+                            result_types.push(Type {
+                                kind: result_type_kind,
+                                properties: self_type.properties.unified(&other_type.properties),
+                            });
                         }
                         Some(TypeKind::Tuple(result_types.into()))
                     } else {
@@ -874,15 +875,11 @@ impl TypeKind {
                         let mut result_tuple_types =
                             Vec::with_capacity(self_tuple_elements_types.len());
                         for element_index in 0..self_tuple_elements_types.len() {
-                            if let Some(elements_types_intersection) = self_tuple_elements_types
+                            let elements_types_intersection = self_tuple_elements_types
                                 [element_index]
                                 .kind
-                                .intersection(&other_tuple_elements_types[element_index].kind)
-                            {
-                                result_tuple_types.push(elements_types_intersection.into());
-                            } else {
-                                return None;
-                            }
+                                .intersection(&other_tuple_elements_types[element_index].kind)?;
+                            result_tuple_types.push(elements_types_intersection.into());
                         }
                         Some(TypeKind::Tuple(result_tuple_types.into()))
                     }
@@ -892,14 +889,10 @@ impl TypeKind {
                     let mut result_tuple_elements_types =
                         Vec::with_capacity(tuple_elements_types.len());
                     for tuple_element_type in tuple_elements_types.iter() {
-                        if let Some(result_tuple_element_type) = tuple_element_type
+                        let result_tuple_element_type = tuple_element_type
                             .kind
-                            .intersection(&array_element_type.kind)
-                        {
-                            result_tuple_elements_types.push(result_tuple_element_type)
-                        } else {
-                            return None;
-                        }
+                            .intersection(&array_element_type.kind)?;
+                        result_tuple_elements_types.push(result_tuple_element_type)
                     }
                     Some(TypeKind::Tuple(tuple_elements_types.clone()))
                 }
@@ -911,14 +904,10 @@ impl TypeKind {
                         if self_key != other_key {
                             return None;
                         }
-                        if let Some(values_types_intersection) =
-                            self_value_type.kind.intersection(&other_value_type.kind)
-                        {
-                            result_inner_types
-                                .insert(self_key.clone(), values_types_intersection.into());
-                        } else {
-                            return None;
-                        }
+                        let values_types_intersection =
+                            self_value_type.kind.intersection(&other_value_type.kind)?;
+                        result_inner_types
+                            .insert(self_key.clone(), values_types_intersection.into());
                     }
                     if result_inner_types.is_empty() {
                         None
