@@ -30,6 +30,63 @@ use crate::{
 
 type Constants = rpds::VectorSync<Option<Arc<IntermediateValueAndMetadata>>>;
 
+enum RuntimeValue {
+    CompiledRegex(regex::Regex),
+    FileInterface(std::fs::File),
+}
+
+enum RuntimeValueCell {
+    Occupied(Arc<RuntimeValue>),
+    Empty,
+    NextEmptyIndex(usize),
+}
+
+impl RuntimeValue {
+    fn as_compiled_regex(&self) -> Option<&regex::Regex> {
+        match self {
+            RuntimeValue::CompiledRegex(result) => Some(result),
+            _ => None,
+        }
+    }
+
+    fn as_file_interface(&self) -> Option<&std::fs::File> {
+        match self {
+            RuntimeValue::FileInterface(result) => Some(result),
+            _ => None,
+        }
+    }
+}
+
+static RUNTIME_VALUES: LazyLock<Mutex<Vec<RuntimeValueCell>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
+
+fn insert_runtime_value(runtime_value: Arc<RuntimeValue>) -> usize {
+    let mut runtime_values = RUNTIME_VALUES.lock();
+    match runtime_values.first() {
+        None | Some(RuntimeValueCell::Occupied(_)) => {
+            runtime_values.push(RuntimeValueCell::Occupied(runtime_value));
+            runtime_values.len() - 1
+        }
+        Some(RuntimeValueCell::Empty) => {
+            runtime_values[0] = RuntimeValueCell::Occupied(runtime_value);
+            0
+        }
+        Some(RuntimeValueCell::NextEmptyIndex(next_empty_index_ref)) => {
+            let next_empty_index = *next_empty_index_ref;
+            let new_head = match &runtime_values[next_empty_index] {
+                RuntimeValueCell::Empty => RuntimeValueCell::Empty,
+                RuntimeValueCell::NextEmptyIndex(n) => RuntimeValueCell::NextEmptyIndex(*n),
+                RuntimeValueCell::Occupied(_) => {
+                    panic!("runtime values head points to an occupied slot")
+                }
+            };
+            runtime_values[0] = new_head;
+            runtime_values[next_empty_index] = RuntimeValueCell::Occupied(runtime_value);
+            next_empty_index
+        }
+    }
+}
+
 static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
     Mutex::new(
         (std::thread::available_parallelism()
@@ -1671,14 +1728,10 @@ impl<'a> ComputationContext<'a> {
                                     .iter()
                                 {
                                     result.push(
-                                        Some(Value::Tuple(Vector::from_iter(
-                                            [
-                                                Some(Value::String(ropey::Rope::from_str(key)))
-                                                    .into(),
-                                                value.clone(),
-                                            ]
-                                            .into_iter(),
-                                        )))
+                                        Some(Value::Tuple(Vector::from_iter([
+                                            Some(Value::String(ropey::Rope::from_str(key))).into(),
+                                            value.clone(),
+                                        ])))
                                         .into(),
                                     );
                                 }
