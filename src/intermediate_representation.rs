@@ -8,7 +8,7 @@ use serde_with::{DisplayFromStr, serde_as};
 use crate::{
     containers::{self, Vector},
     program::{EmbeddedFunction, Path},
-    r#type::{Type, TypeKind},
+    r#type::{Embedded, Type, TypeKind},
     value::{deserialize_bytes, serialize_bytes},
 };
 
@@ -34,6 +34,10 @@ pub enum Value {
         Bytes,
     ),
     Object(containers::Object<String, Option<Value>>),
+    Runtime {
+        r#type: Embedded,
+        index: usize,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
