@@ -1140,7 +1140,13 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Constructed(Constructed::Regex),
+                        &TypeKind::Union(
+                            BTreeSet::from_iter([
+                                TypeKind::GenericLiteralString.into(),
+                                TypeKind::Constructed(Constructed::Regex).into(),
+                            ])
+                            .into(),
+                        ),
                         &|compiled_argument_resolved_type| {
                             if let TypeKind::LiteralString(regex_literal_string) =
                                 &compiled_argument_resolved_type.kind

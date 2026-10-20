@@ -58,45 +58,37 @@ impl Hash for MaybeType {
 
 static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
     [
-        TypeKind::Union(
-            BTreeSet::from_iter([
-                TypeKind::GenericLiteralString.into(),
-                TypeKind::Array(Box::new(
-                    TypeKind::Union(
-                        BTreeSet::from_iter([
+        TypeKind::Array(Box::new(
+            TypeKind::Union(
+                BTreeSet::from_iter([
+                    TypeKind::Object(
+                        BTreeMap::from_iter([(
+                            "raw string".to_string().into(),
                             TypeKind::String.into(),
-                            TypeKind::Object(
-                                BTreeMap::from_iter([(
-                                    "raw string".to_string().into(),
-                                    TypeKind::String.into(),
-                                )])
-                                .into(),
-                            )
-                            .into(),
-                            TypeKind::Constructed(Constructed::OneOf).into(),
-                            TypeKind::Constructed(Constructed::CharacterExceptFromString).into(),
-                            TypeKind::Constructed(Constructed::Repeat).into(),
-                            TypeKind::Constructed(Constructed::Group).into(),
-                            TypeKind::LiteralString("character".into()).into(),
-                            TypeKind::LiteralString("whitespace character".into()).into(),
-                            TypeKind::LiteralString("non-whitespace character".into()).into(),
-                            TypeKind::LiteralString("digit".into()).into(),
-                            TypeKind::LiteralString("non-digit".into()).into(),
-                            TypeKind::LiteralString("word character".into()).into(),
-                            TypeKind::LiteralString("non-word character".into()).into(),
-                            TypeKind::LiteralString("start of string".into()).into(),
-                            TypeKind::LiteralString("end of string".into()).into(),
-                            TypeKind::LiteralString("word boundary".into()).into(),
-                            TypeKind::LiteralString("non-word boundary".into()).into(),
-                        ])
+                        )])
                         .into(),
                     )
                     .into(),
-                ))
+                    TypeKind::Constructed(Constructed::OneOf).into(),
+                    TypeKind::Constructed(Constructed::CharacterExceptFromString).into(),
+                    TypeKind::Constructed(Constructed::Repeat).into(),
+                    TypeKind::Constructed(Constructed::Group).into(),
+                    TypeKind::LiteralString("character".into()).into(),
+                    TypeKind::LiteralString("whitespace character".into()).into(),
+                    TypeKind::LiteralString("non-whitespace character".into()).into(),
+                    TypeKind::LiteralString("digit".into()).into(),
+                    TypeKind::LiteralString("non-digit".into()).into(),
+                    TypeKind::LiteralString("word character".into()).into(),
+                    TypeKind::LiteralString("non-word character".into()).into(),
+                    TypeKind::LiteralString("start of string".into()).into(),
+                    TypeKind::LiteralString("end of string".into()).into(),
+                    TypeKind::LiteralString("word boundary".into()).into(),
+                    TypeKind::LiteralString("non-word boundary".into()).into(),
+                ])
                 .into(),
-            ])
+            )
             .into(),
-        )
+        ))
         .into(),
         TypeKind::Object(
             BTreeMap::from_iter([(
