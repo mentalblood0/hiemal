@@ -42,16 +42,18 @@ hiemal examples/include.yml
 - parse yaml: "[1, 2, string, 3, 4]"
 - match regex:
     string: I categorically deny having triskaidekaphobia.
-    regex: \b\w{13}\b
+    regex:
+      compile regex: \b\w{13}\b
 - match regex:
     string: I categorically deny having triskaidekaphobia.
     regex:
-      - word boundary
-      - group:
-          - repeat: [word character]
-            exactly: 13
-        name: horror
-      - word boundary
+      compile regex:
+        - word boundary
+        - group:
+            - repeat: [word character]
+              exactly: 13
+          name: horror
+        - word boundary
 - read bytes from file: .gitignore
 - string from bytes:
     match: { read bytes from file: .gitignore }
@@ -90,79 +92,80 @@ compute:
     match regex:
       string: _
       regex:
-        - start of string
-        - name: timestamp
-          group:
-            - { repeat: [digit], exactly: 4 }
-            - raw string: "-"
-            - { repeat: [digit], exactly: 2 }
-            - raw string: "-"
-            - { repeat: [digit], exactly: 2 }
-            - whitespace character
-            - { repeat: [digit], exactly: 2 }
-            - raw string: ":"
-            - { repeat: [digit], exactly: 2 }
-            - raw string: ":"
-            - { repeat: [digit], exactly: 2 }
-            - raw string: .
-            - { repeat: [digit], exactly: 3 }
-        - { repeat: [whitespace character], min: 2 }
-        - name: log_level
-          group:
-            - one of:
-                map: { constant: log levels }
-                through: [{ raw string: _ }]
-        - { repeat: [whitespace character], min: 1 }
-        - name: module
-          group:
-            - { repeat: [word character], min: 1 }
-            - repeat:
-                - character
-                - { repeat: [word character], min: 1 }
-              min: 0
-        - { repeat: [whitespace character], min: 0 }
-        - raw string: "-"
-        - { repeat: [whitespace character], min: 0 }
-        - name: message
-          group:
-            - { repeat: [{ character except from string: "([" }], min: 0 }
-        - { repeat: [whitespace character], min: 0 }
-        - repeat:
-            - { repeat: [whitespace character], min: 1 }
-            - raw string: (ERR-
-            - name: error_code
-              group:
-                - { repeat: [digit], exactly: 3 }
-            - raw string: )
-          max: 1
-        - { repeat: [whitespace character], min: 0 }
-        - repeat:
-            - raw string: "["
-            - { repeat: [whitespace character], min: 0 }
-            - name: extra_data_key
-              group:
-                - { repeat: [word character], min: 1 }
-            - { repeat: [whitespace character], min: 0 }
-            - raw string: =
-            - { repeat: [whitespace character], min: 0 }
-            - one of:
-                map:
-                  - [number, digit]
-                  - [word, word character]
-                  - [string, non-whitespace character]
-                through:
-                  - name:
-                      concat:
-                        - extra_data_value_
-                        - { from: _, at: [0] }
-                    group:
-                      - repeat:
-                          - { from: _, at: [1] }
-                        min: 1
-            - { repeat: [whitespace character], min: 0 }
-            - raw string: "]"
-          max: 1
-        - end of string
+        compile regex:
+          - start of string
+          - name: timestamp
+            group:
+              - { repeat: [digit], exactly: 4 }
+              - raw string: "-"
+              - { repeat: [digit], exactly: 2 }
+              - raw string: "-"
+              - { repeat: [digit], exactly: 2 }
+              - whitespace character
+              - { repeat: [digit], exactly: 2 }
+              - raw string: ":"
+              - { repeat: [digit], exactly: 2 }
+              - raw string: ":"
+              - { repeat: [digit], exactly: 2 }
+              - raw string: .
+              - { repeat: [digit], exactly: 3 }
+          - { repeat: [whitespace character], min: 2 }
+          - name: log_level
+            group:
+              - one of:
+                  map: { constant: log levels }
+                  through: [{ raw string: _ }]
+          - { repeat: [whitespace character], min: 1 }
+          - name: module
+            group:
+              - { repeat: [word character], min: 1 }
+              - repeat:
+                  - character
+                  - { repeat: [word character], min: 1 }
+                min: 0
+          - { repeat: [whitespace character], min: 0 }
+          - raw string: "-"
+          - { repeat: [whitespace character], min: 0 }
+          - name: message
+            group:
+              - { repeat: [{ character except from string: "([" }], min: 0 }
+          - { repeat: [whitespace character], min: 0 }
+          - repeat:
+              - { repeat: [whitespace character], min: 1 }
+              - raw string: (ERR-
+              - name: error_code
+                group:
+                  - { repeat: [digit], exactly: 3 }
+              - raw string: )
+            max: 1
+          - { repeat: [whitespace character], min: 0 }
+          - repeat:
+              - raw string: "["
+              - { repeat: [whitespace character], min: 0 }
+              - name: extra_data_key
+                group:
+                  - { repeat: [word character], min: 1 }
+              - { repeat: [whitespace character], min: 0 }
+              - raw string: =
+              - { repeat: [whitespace character], min: 0 }
+              - one of:
+                  map:
+                    - [number, digit]
+                    - [word, word character]
+                    - [string, non-whitespace character]
+                  through:
+                    - name:
+                        concat:
+                          - extra_data_value_
+                          - { from: _, at: [0] }
+                      group:
+                        - repeat:
+                            - { from: _, at: [1] }
+                          min: 1
+              - { repeat: [whitespace character], min: 0 }
+              - raw string: "]"
+            max: 1
+          - end of string
 ```
 </details>
 

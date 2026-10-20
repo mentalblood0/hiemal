@@ -31,6 +31,12 @@ where
     Ok(ropey::Rope::from_str(&s))
 }
 
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, Eq, Hash, PartialOrd, Ord)]
+pub struct Runtime {
+    pub r#type: Embedded,
+    pub index: usize,
+}
+
 #[repr(u8)]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone, Eq, Hash, PartialOrd, Ord)]
 #[serde(untagged)]
@@ -52,10 +58,7 @@ pub enum Value {
         Bytes,
     ),
     Object(Object<String, Option<Value>>),
-    Runtime {
-        r#type: Embedded,
-        index: usize,
-    },
+    Runtime(Runtime),
 }
 
 impl Default for Value {
@@ -213,6 +216,13 @@ impl Value {
         }
     }
 
+    pub fn as_runtime(&self) -> Option<&Runtime> {
+        match self {
+            Value::Runtime(result) => Some(result),
+            _ => None,
+        }
+    }
+
     pub fn as_object(&self) -> Option<&Object<String, Option<Value>>> {
         match self {
             Value::Object(result) => Some(result),
@@ -250,7 +260,7 @@ impl Value {
                     )
                     .into(),
                 ),
-                Value::Runtime { r#type, index: _ } => TypeKind::Embedded(r#type.clone()),
+                Value::Runtime(Runtime { r#type, index: _ }) => TypeKind::Embedded(r#type.clone()),
             },
             None => TypeKind::Null,
         }

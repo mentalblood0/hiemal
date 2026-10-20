@@ -23,7 +23,9 @@ use crate::{
         self, AtSegment, Condition, EmbeddedFunction, EmbeddedFunctionCall, Match, Path,
         PathSegment, Program, RangeBound,
     },
-    r#type::{Capability, Constructed, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties},
+    r#type::{
+        Capability, Constructed, Embedded, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties,
+    },
     value::Value,
 };
 
@@ -1134,20 +1136,11 @@ impl Compiler {
                             }
                         },
                     )?,
-                    EmbeddedFunction::MatchRegex => self.compile_embedded_function_call(
+                    EmbeddedFunction::CompileRegex => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Object(
-                            BTreeMap::from_iter([
-                                ("string".to_string().into(), TypeKind::String.into()),
-                                (
-                                    "regex".to_string().into(),
-                                    TypeKind::Constructed(Constructed::Regex).into(),
-                                ),
-                            ])
-                            .into(),
-                        ),
+                        &TypeKind::Constructed(Constructed::Regex),
                         &|compiled_argument_resolved_type| {
                             if let TypeKind::LiteralString(regex_literal_string) =
                                 &compiled_argument_resolved_type.kind
@@ -1161,6 +1154,25 @@ impl Compiler {
                                     },
                                 )?;
                             };
+                            Ok(compiled_argument_resolved_type
+                                .with_kind(TypeKind::Embedded(Embedded::CompiledRegex)))
+                        },
+                    )?,
+                    EmbeddedFunction::MatchRegex => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &TypeKind::Object(
+                            BTreeMap::from_iter([
+                                ("string".to_string().into(), TypeKind::String.into()),
+                                (
+                                    "regex".to_string().into(),
+                                    TypeKind::Embedded(Embedded::CompiledRegex).into(),
+                                ),
+                            ])
+                            .into(),
+                        ),
+                        &|compiled_argument_resolved_type| {
                             Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
                                 BTreeSet::from_iter([
                                     compiled_argument_resolved_type.with_kind(TypeKind::Object(

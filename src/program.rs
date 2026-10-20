@@ -261,6 +261,8 @@ pub enum EmbeddedFunction {
     ParseYaml,
     #[serde(rename = "key-value pairs")]
     KeyValuePairs,
+    #[serde(rename = "compile regex")]
+    CompileRegex,
     #[serde(rename = "match regex")]
     MatchRegex,
     #[serde(rename = "concat")]
