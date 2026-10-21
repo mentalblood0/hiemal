@@ -13,7 +13,7 @@ struct LockableInternals<K, V> {
 
 impl<K, V> PartialEq for LockableInternals<K, V>
 where
-    K: Ord + Hash + Eq,
+    K: Ord + Eq,
     V: Ord + Eq,
 {
     fn eq(&self, other: &Self) -> bool {
@@ -27,14 +27,14 @@ where
 
 impl<K, V> Eq for LockableInternals<K, V>
 where
-    K: Ord + Hash + Eq,
+    K: Ord + Eq,
     V: Ord + Eq,
 {
 }
 
 impl<K, V> PartialOrd for LockableInternals<K, V>
 where
-    K: Ord + Hash + Eq,
+    K: Ord + Eq,
     V: Ord + Eq,
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -44,7 +44,7 @@ where
 
 impl<K, V> Ord for LockableInternals<K, V>
 where
-    K: Ord + Hash + Eq,
+    K: Ord + Eq,
     V: Ord + Eq,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -72,7 +72,7 @@ where
 
 impl<K, V> LockableInternals<K, V>
 where
-    K: Ord + Hash + Clone,
+    K: Ord + Clone,
 {
     fn remove(&mut self, key: &K) {
         if self.base_immutable_common_difference_option.is_some() {
@@ -85,7 +85,7 @@ where
 
 impl<K, V> LockableInternals<K, V>
 where
-    K: Ord + Hash,
+    K: Ord,
 {
     fn insert(&mut self, key: K, value: V) {
         self.difference.insert(key, Some(value));
@@ -155,7 +155,7 @@ pub struct ImmutableObject<K, V> {
 
 impl<K, V> Serialize for ImmutableObject<K, V>
 where
-    K: Ord + Hash + Serialize,
+    K: Ord + Serialize,
     V: Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -175,7 +175,7 @@ where
 
 impl<'de, K, V> Deserialize<'de> for ImmutableObject<K, V>
 where
-    K: Ord + Hash + Deserialize<'de>,
+    K: Ord + Deserialize<'de>,
     V: Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -196,7 +196,7 @@ where
 
 impl<K, V> PartialEq for ImmutableObject<K, V>
 where
-    K: Ord + Hash,
+    K: Ord,
     V: Ord,
 {
     fn eq(&self, other: &Self) -> bool {
@@ -206,14 +206,14 @@ where
 
 impl<K, V> Eq for ImmutableObject<K, V>
 where
-    K: Ord + Hash,
+    K: Ord,
     V: Ord,
 {
 }
 
 impl<K, V> PartialOrd for ImmutableObject<K, V>
 where
-    K: Ord + Hash,
+    K: Ord,
     V: Ord,
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -223,7 +223,7 @@ where
 
 impl<K, V> Ord for ImmutableObject<K, V>
 where
-    K: Ord + Hash,
+    K: Ord,
     V: Ord,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -281,7 +281,7 @@ pub struct ImmutableObjectIterator<'a, K, V> {
 
 impl<'a, K, V> Iterator for ImmutableObjectIterator<'a, K, V>
 where
-    K: Ord + Hash,
+    K: Ord,
 {
     type Item = (&'a K, &'a V);
 
@@ -305,7 +305,7 @@ where
 
 impl<K, V> FromIterator<(K, V)> for ImmutableObject<K, V>
 where
-    K: Ord + Hash,
+    K: Ord,
 {
     fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
         Self {
@@ -319,7 +319,7 @@ where
 
 impl<K, V> ImmutableObject<K, V>
 where
-    K: Ord + Hash,
+    K: Ord,
 {
     pub fn insert(&mut self, key: K, value: V) {
         self.lockable_internals.write().insert(key, value)
@@ -363,7 +363,7 @@ where
 
 impl<K, V> ImmutableObject<K, V>
 where
-    K: Ord + Hash + Eq,
+    K: Ord + Eq,
 {
     pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.iter().map(|element| element.0)
