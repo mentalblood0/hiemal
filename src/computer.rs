@@ -2431,18 +2431,10 @@ impl<'a> ComputationContext<'a> {
                     self.compute_node(&intermediate_representation_content.filter, constants)?,
                 );
                 let mut throughs_option = None;
-                println!(
-                    "computed_filter.type_kind:\n{}",
-                    serde_saphyr::to_string(&computed_filter.type_kind).unwrap()
-                );
                 for (filter_concrete_type, throughs) in intermediate_representation_content
                     .filter_concrete_type_and_throughs
                     .iter()
                 {
-                    println!(
-                        "filter_concrete_type.kind:\n{}",
-                        serde_saphyr::to_string(&filter_concrete_type.kind).unwrap()
-                    );
                     if filter_concrete_type
                         .kind
                         .contains(&computed_filter.type_kind)

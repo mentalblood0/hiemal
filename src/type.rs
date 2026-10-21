@@ -560,11 +560,6 @@ impl TypeKind {
     }
 
     pub fn contains(&self, other: &TypeKind) -> bool {
-        println!(
-            "contains\n{}{}",
-            serde_saphyr::to_string(self).unwrap(),
-            serde_saphyr::to_string(other).unwrap()
-        );
         if self == other {
             true
         } else {

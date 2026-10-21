@@ -512,6 +512,11 @@ impl Compiler {
         )?;
         if !compiled_program.node.r#type.properties.is_computable {
             Err(compilation_context.error(&"non-computible program", &"computible program"))
+        } else if !compiled_program.node.r#type.properties.is_serializable {
+            Err(compilation_context.error(
+                &"program with non-serializable result (it includes embedded, runtime-only types)",
+                &"program with serializable result",
+            ))
         } else {
             Ok(Arc::new(IntermediateRepresentation {
                 root: compiled_program.node.clone(),
@@ -576,7 +581,7 @@ impl Compiler {
         get_result_type_from_argument_resolved_type: &F,
     ) -> Result<Arc<NodeAndMetadata>>
     where
-        F: Fn(&Type) -> Result<Type>,
+        F: Fn(&mut Type) -> Result<Type>,
     {
         let mut argument_compilation_context = compilation_context.clone();
         argument_compilation_context
@@ -590,7 +595,7 @@ impl Compiler {
             &argument_compilation_context,
             global_compilation_context,
         )?;
-        let compiled_argument_resolved_type = resolve_type(
+        let mut compiled_argument_resolved_type = resolve_type(
             &compiled_argument.node.r#type,
             argument_type_kind,
             &argument_compilation_context,
@@ -602,7 +607,7 @@ impl Compiler {
             ));
         }
         let result_type =
-            get_result_type_from_argument_resolved_type(&compiled_argument_resolved_type)?;
+            get_result_type_from_argument_resolved_type(&mut compiled_argument_resolved_type)?;
         Ok(NodeAndMetadata {
             external_constants_name_clustered_indices: compiled_argument
                 .external_constants_name_clustered_indices
@@ -1121,7 +1126,6 @@ impl Compiler {
                             if let TypeKind::Object(argument_object_values_types) =
                                 &compiled_argument_resolved_type.kind
                             {
-                                dbg!(argument_object_values_types.keys().collect::<Vec<_>>());
                                 Ok(compiled_argument_resolved_type.with_kind(TypeKind::Tuple(
                                     argument_object_values_types
                                         .values()
@@ -1136,7 +1140,7 @@ impl Compiler {
                                 )))
                             } else {
                                 Err(compilation_context
-                                    .error(compiled_argument_resolved_type, &"object"))
+                                    .error(&compiled_argument_resolved_type, &"object"))
                             }
                         },
                     )?,
@@ -1191,6 +1195,7 @@ impl Compiler {
                             .into(),
                         ),
                         &|compiled_argument_resolved_type| {
+                            compiled_argument_resolved_type.properties.is_serializable = true;
                             Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
                                 BTreeSet::from_iter([
                                     compiled_argument_resolved_type.with_kind(TypeKind::Object(
