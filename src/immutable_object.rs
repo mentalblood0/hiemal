@@ -121,26 +121,20 @@ where
     }
 
     fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = (&'b K, &'b V)> + 'b> {
-        let mut differences_iterators = Vec::new();
-        let mut current_lockable_internals_option = Some(self);
-        while let Some(current_lockable_internals) = current_lockable_internals_option {
-            differences_iterators.push(current_lockable_internals.difference.iter());
-            current_lockable_internals_option = current_lockable_internals
-                .base_immutable_common_difference_option
-                .as_deref();
+        if let Some(base_immutable_common_difference) =
+            self.base_immutable_common_difference_option.as_ref()
+        {
+            Box::new(MergingIterator::new(
+                Box::new(self.difference.iter()),
+                base_immutable_common_difference.iter(),
+            ))
+        } else {
+            Box::new(
+                self.difference
+                    .iter()
+                    .map(|(key, value_option)| (key, value_option.as_ref().unwrap())),
+            )
         }
-        let oldest_difference_iterator = differences_iterators.pop().unwrap();
-        let mut result: Box<dyn Iterator<Item = (&'b K, &'b V)> + 'b> = Box::new(
-            oldest_difference_iterator
-                .map(|(key, value_option)| (key, value_option.as_ref().unwrap())),
-        );
-        while let Some(newer_difference_iterator) = differences_iterators.pop() {
-            result = Box::new(MergingIterator::new(
-                Box::new(newer_difference_iterator),
-                result,
-            ));
-        }
-        result
     }
 
     pub fn len(&self) -> usize {
