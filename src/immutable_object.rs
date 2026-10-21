@@ -1,7 +1,11 @@
 use std::{borrow::Borrow, collections::BTreeMap, hash::Hash, hash::Hasher, sync::Arc};
 
 use parking_lot::{RwLock, RwLockReadGuard};
-use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{MapAccess, Visitor},
+    ser::SerializeMap,
+};
 
 use crate::merging_iterator::MergingIterator;
 
@@ -17,11 +21,7 @@ where
     V: Ord + Eq,
 {
     fn eq(&self, other: &Self) -> bool {
-        let mut self_elements = self.iter().collect::<Vec<_>>();
-        self_elements.sort();
-        let mut other_elements = other.iter().collect::<Vec<_>>();
-        other_elements.sort();
-        self_elements == other_elements
+        self.iter().eq(other.iter())
     }
 }
 
@@ -48,11 +48,7 @@ where
     V: Ord + Eq,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let mut self_elements = self.iter().collect::<Vec<_>>();
-        self_elements.sort();
-        let mut other_elements = other.iter().collect::<Vec<_>>();
-        other_elements.sort();
-        self_elements.cmp(&other_elements)
+        self.iter().cmp(other.iter())
     }
 }
 
@@ -62,9 +58,7 @@ where
     V: Ord + Hash + Eq,
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let mut self_elements = self.iter().collect::<Vec<_>>();
-        self_elements.sort();
-        for element in self_elements {
+        for element in self.iter() {
             element.hash(state)
         }
     }
@@ -130,9 +124,9 @@ where
             ))
         } else {
             Box::new(
-                self.difference
-                    .iter()
-                    .map(|(key, value_option)| (key, value_option.as_ref().unwrap())),
+                self.difference.iter().filter_map(|(key, value_option)| {
+                    value_option.as_ref().map(|value| (key, value))
+                }),
             )
         }
     }
@@ -176,9 +170,34 @@ where
     where
         D: Deserializer<'de>,
     {
-        let map = BTreeMap::<K, V>::deserialize(deserializer)?;
-        let difference: BTreeMap<K, Option<V>> =
-            map.into_iter().map(|(k, v)| (k, Some(v))).collect();
+        struct DifferenceVisitor<K, V>(std::marker::PhantomData<(K, V)>);
+
+        impl<'de, K, V> Visitor<'de> for DifferenceVisitor<K, V>
+        where
+            K: Ord + Deserialize<'de>,
+            V: Deserialize<'de>,
+        {
+            type Value = BTreeMap<K, Option<V>>;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a map")
+            }
+
+            fn visit_map<A>(self, mut access: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut map = BTreeMap::new();
+                while let Some((k, v)) = access.next_entry::<K, V>()? {
+                    map.insert(k, Some(v));
+                }
+                Ok(map)
+            }
+        }
+
+        let difference =
+            deserializer.deserialize_map(DifferenceVisitor::<K, V>(std::marker::PhantomData))?;
+
         Ok(ImmutableObject {
             lockable_internals: RwLock::new(LockableInternals {
                 base_immutable_common_difference_option: None,
@@ -316,7 +335,7 @@ where
     K: Ord,
 {
     pub fn insert(&mut self, key: K, value: V) {
-        self.lockable_internals.write().insert(key, value)
+        self.lockable_internals.get_mut().insert(key, value)
     }
 
     pub fn get<Q>(&self, key: &Q) -> Option<V>
@@ -332,7 +351,7 @@ where
     where
         K: Clone,
     {
-        self.lockable_internals.write().remove(key)
+        self.lockable_internals.get_mut().remove(key)
     }
 
     pub fn contains(&self, key: &K) -> bool {
@@ -371,7 +390,7 @@ where
     where
         A: Iterator<Item = (K, V)>,
     {
-        let mut lockable_internals_write_guard = self.lockable_internals.write();
+        let lockable_internals_write_guard = self.lockable_internals.get_mut();
         for key_value_pair in addition {
             lockable_internals_write_guard.insert(key_value_pair.0, key_value_pair.1);
         }
