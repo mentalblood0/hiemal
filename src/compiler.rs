@@ -1046,6 +1046,7 @@ impl Compiler {
                                 properties: TypeProperties {
                                     capabilities: Capability::Error.into(),
                                     is_computable: true,
+                                    is_serializable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
@@ -1088,6 +1089,7 @@ impl Compiler {
                                         capabilities: Capability::ReadStandardInput
                                             | Capability::Error,
                                         is_computable: true,
+                                        is_serializable: true,
                                     }
                                     .unified(&compiled_argument_resolved_type.properties),
                                 })
@@ -1104,6 +1106,7 @@ impl Compiler {
                                 properties: TypeProperties {
                                     capabilities: Capability::Error.into(),
                                     is_computable: true,
+                                    is_serializable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
@@ -1118,6 +1121,7 @@ impl Compiler {
                             if let TypeKind::Object(argument_object_values_types) =
                                 &compiled_argument_resolved_type.kind
                             {
+                                dbg!(argument_object_values_types.keys().collect::<Vec<_>>());
                                 Ok(compiled_argument_resolved_type.with_kind(TypeKind::Tuple(
                                     argument_object_values_types
                                         .values()
@@ -1160,8 +1164,16 @@ impl Compiler {
                                     },
                                 )?;
                             };
-                            Ok(compiled_argument_resolved_type
-                                .with_kind(TypeKind::Embedded(Embedded::CompiledRegex)))
+                            Ok(Type {
+                                kind: TypeKind::Embedded(Embedded::CompiledRegex),
+                                properties: compiled_argument_resolved_type.properties.unified(
+                                    &TypeProperties {
+                                        capabilities: EnumSet::default(),
+                                        is_computable: true,
+                                        is_serializable: false,
+                                    },
+                                ),
+                            })
                         },
                     )?,
                     EmbeddedFunction::MatchRegex => self.compile_embedded_function_call(
@@ -1235,6 +1247,7 @@ impl Compiler {
                                 properties: TypeProperties {
                                     capabilities: Capability::ReadFile | Capability::Error,
                                     is_computable: true,
+                                    is_serializable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
@@ -1251,6 +1264,7 @@ impl Compiler {
                                 properties: TypeProperties {
                                     capabilities: Capability::Error.into(),
                                     is_computable: true,
+                                    is_serializable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
@@ -1267,6 +1281,7 @@ impl Compiler {
                                 properties: TypeProperties {
                                     capabilities: Capability::Error.into(),
                                     is_computable: true,
+                                    is_serializable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
@@ -1299,6 +1314,7 @@ impl Compiler {
                                 properties: TypeProperties {
                                     capabilities: Capability::CreateFile | Capability::Error,
                                     is_computable: true,
+                                    is_serializable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
@@ -1331,6 +1347,7 @@ impl Compiler {
                                 properties: TypeProperties {
                                     capabilities: Capability::OverwriteFile | Capability::Error,
                                     is_computable: true,
+                                    is_serializable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
@@ -1347,6 +1364,7 @@ impl Compiler {
                                 properties: TypeProperties {
                                     capabilities: Capability::RemoveFile | Capability::Error,
                                     is_computable: true,
+                                    is_serializable: true,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
@@ -1370,6 +1388,7 @@ impl Compiler {
                             let type_properties = TypeProperties {
                                 capabilities: Capability::RunCommand | Capability::Error,
                                 is_computable: true,
+                                is_serializable: true,
                             }
                             .unified(&compiled_argument_resolved_type.properties);
                             Ok(Type {
@@ -2287,6 +2306,7 @@ impl Compiler {
                     properties: TypeProperties {
                         capabilities: EnumSet::default(),
                         is_computable: compiled_while_node.is_some(),
+                        is_serializable: true,
                     }
                     .unified(&compiled_starting_with.node.r#type.properties)
                     .unified_all(

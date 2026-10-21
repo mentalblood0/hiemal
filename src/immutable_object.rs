@@ -1,13 +1,14 @@
 use std::{borrow::Borrow, collections::BTreeMap, hash::Hash, hash::Hasher, sync::Arc};
 
-use gxhash::{HashMap, HashSet};
 use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
+
+use crate::merging_iterator::MergingIterator;
 
 #[derive(Default, Clone, Debug)]
 struct LockableInternals<K, V> {
     base_immutable_common_difference_option: Option<Arc<LockableInternals<K, V>>>,
-    difference: HashMap<K, Option<V>>,
+    difference: BTreeMap<K, Option<V>>,
 }
 
 impl<K, V> PartialEq for LockableInternals<K, V>
@@ -93,7 +94,7 @@ where
     pub fn get<Q>(&self, key: &Q) -> Option<&V>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
+        Q: Ord + Eq + ?Sized,
     {
         if let Some(result) = self.difference.get(key) {
             result.as_ref()
@@ -119,7 +120,7 @@ where
         false
     }
 
-    fn iter<'b>(&'b self) -> LockableInternalsIterator<'b, K, V> {
+    fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = (&'b K, &'b V)> + 'b> {
         let mut differences_iterators = Vec::new();
         let mut current_lockable_internals_option = Some(self);
         while let Some(current_lockable_internals) = current_lockable_internals_option {
@@ -128,49 +129,22 @@ where
                 .base_immutable_common_difference_option
                 .as_deref();
         }
-        LockableInternalsIterator {
-            differences_iterators,
-            current_difference_iterator_index: 0,
-            already_yielded_keys: HashSet::default(),
+        let oldest_difference_iterator = differences_iterators.pop().unwrap();
+        let mut result: Box<dyn Iterator<Item = (&'b K, &'b V)> + 'b> = Box::new(
+            oldest_difference_iterator
+                .map(|(key, value_option)| (key, value_option.as_ref().unwrap())),
+        );
+        while let Some(newer_difference_iterator) = differences_iterators.pop() {
+            result = Box::new(MergingIterator::new(
+                Box::new(newer_difference_iterator),
+                result,
+            ));
         }
+        result
     }
 
     pub fn len(&self) -> usize {
         self.iter().count()
-    }
-}
-
-pub struct LockableInternalsIterator<'a, K, V> {
-    differences_iterators: Vec<std::collections::hash_map::Iter<'a, K, Option<V>>>,
-    current_difference_iterator_index: usize,
-    already_yielded_keys: HashSet<&'a K>,
-}
-
-impl<'a, K, V> Iterator for LockableInternalsIterator<'a, K, V>
-where
-    K: Hash + Eq,
-{
-    type Item = (&'a K, &'a V);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.current_difference_iterator_index == self.differences_iterators.len() {
-                return None;
-            } else {
-                let current_difference_iterator = self
-                    .differences_iterators
-                    .get_mut(self.current_difference_iterator_index)
-                    .unwrap();
-                for key_value_pair in current_difference_iterator {
-                    if self.already_yielded_keys.insert(key_value_pair.0)
-                        && let Some(value) = key_value_pair.1
-                    {
-                        return Some((key_value_pair.0, value));
-                    }
-                }
-                self.current_difference_iterator_index += 1;
-            }
-        }
     }
 }
 
@@ -209,7 +183,7 @@ where
         D: Deserializer<'de>,
     {
         let map = BTreeMap::<K, V>::deserialize(deserializer)?;
-        let difference: HashMap<K, Option<V>> =
+        let difference: BTreeMap<K, Option<V>> =
             map.into_iter().map(|(k, v)| (k, Some(v))).collect();
         Ok(ImmutableObject {
             lockable_internals: RwLock::new(LockableInternals {
@@ -293,7 +267,7 @@ where
             Self {
                 lockable_internals: RwLock::new(LockableInternals {
                     base_immutable_common_difference_option: Some(common_base),
-                    difference: HashMap::default(),
+                    difference: BTreeMap::new(),
                 }),
             }
         }
@@ -302,7 +276,7 @@ where
 
 pub struct ImmutableObjectIterator<'a, K, V> {
     lockable_internals_read_guard: RwLockReadGuard<'a, LockableInternals<K, V>>,
-    lockable_internals_iterator_option: Option<LockableInternalsIterator<'a, K, V>>,
+    lockable_internals_iterator_option: Option<Box<dyn Iterator<Item = (&'a K, &'a V)> + 'a>>,
 }
 
 impl<'a, K, V> Iterator for ImmutableObjectIterator<'a, K, V>
@@ -354,7 +328,7 @@ where
     pub fn get<Q>(&self, key: &Q) -> Option<V>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
+        Q: Ord + Eq + ?Sized,
         V: Clone,
     {
         self.lockable_internals.read().get(key).cloned()
@@ -464,18 +438,18 @@ mod tests {
                 }
                 _ => {}
             }
-        }
-        for object_index in 0..normal_objects.len() {
-            assert_eq!(
-                immutable_objects[object_index]
-                    .lockable_internals
-                    .read()
-                    .iter()
-                    .collect::<HashSet<_>>(),
-                normal_objects[object_index].iter().collect::<HashSet<_>>(),
-                "objects at index {}",
-                object_index
-            );
+            for object_index in 0..normal_objects.len() {
+                assert_eq!(
+                    immutable_objects[object_index]
+                        .lockable_internals
+                        .read()
+                        .iter()
+                        .collect::<Vec<_>>(),
+                    normal_objects[object_index].iter().collect::<Vec<_>>(),
+                    "objects at index {}",
+                    object_index
+                );
+            }
         }
     }
 }

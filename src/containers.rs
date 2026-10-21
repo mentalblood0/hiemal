@@ -45,7 +45,7 @@ where
     pub fn get<Q>(&self, key: &Q) -> Option<V>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
+        Q: Ord + Eq + ?Sized,
     {
         self.inner.get(key)
     }

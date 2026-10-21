@@ -217,6 +217,7 @@ pub enum Capability {
 pub struct TypeProperties {
     pub capabilities: EnumSet<Capability>,
     pub is_computable: bool,
+    pub is_serializable: bool,
 }
 
 impl Default for TypeProperties {
@@ -224,6 +225,7 @@ impl Default for TypeProperties {
         Self {
             capabilities: EnumSet::default(),
             is_computable: true,
+            is_serializable: true,
         }
     }
 }
@@ -233,6 +235,7 @@ impl<'a> TypeProperties {
         Self {
             capabilities: self.capabilities | another_type_properties.capabilities,
             is_computable: self.is_computable && another_type_properties.is_computable,
+            is_serializable: self.is_serializable && another_type_properties.is_serializable,
         }
     }
 
@@ -250,6 +253,7 @@ impl<'a> TypeProperties {
     pub fn unify(&mut self, another_type_properties: &TypeProperties) {
         self.capabilities |= another_type_properties.capabilities;
         self.is_computable = self.is_computable && another_type_properties.is_computable;
+        self.is_serializable = self.is_serializable && another_type_properties.is_serializable;
     }
 }
 
@@ -305,6 +309,7 @@ impl From<TypeKind> for Type {
             properties: TypeProperties {
                 capabilities: EnumSet::default(),
                 is_computable: true,
+                is_serializable: true,
             },
         }
     }
@@ -555,6 +560,11 @@ impl TypeKind {
     }
 
     pub fn contains(&self, other: &TypeKind) -> bool {
+        println!(
+            "contains\n{}{}",
+            serde_saphyr::to_string(self).unwrap(),
+            serde_saphyr::to_string(other).unwrap()
+        );
         if self == other {
             true
         } else {
