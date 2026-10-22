@@ -1849,6 +1849,104 @@ impl<'a> ComputationContext<'a> {
                         .into())
                     }
                 }
+                EmbeddedFunction::OpenFile => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let computed_path = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"path".to_string())
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .to_string();
+                    let computed_options = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"options".to_string())
+                        .unwrap();
+                    let mut open_options = std::fs::OpenOptions::new();
+                    open_options.read(
+                        computed_options
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_object()
+                            .unwrap()
+                            .get(&"read".to_string())
+                            .unwrap()
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_bool()
+                            .unwrap(),
+                    );
+                    match computed_options
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"write".to_string())
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .to_string()
+                        .as_str()
+                    {
+                        "append" => {
+                            open_options.append(true);
+                        }
+                        "overwrite" => {
+                            open_options.write(true);
+                        }
+                        "truncate" => {
+                            open_options.write(true).truncate(true);
+                        }
+                        "create or append" => {
+                            open_options.append(true).create(true);
+                        }
+                        "create or overwrite" => {
+                            open_options.write(true).create(true);
+                        }
+                        "create" => {
+                            open_options.write(true).create_new(true);
+                        }
+                        _ => {}
+                    };
+                    let file_interface_runtime_value_index = insert_runtime_value(
+                        RuntimeValue::FileInterface(
+                            open_options
+                                .open(computed_path)
+                                .with_context(embedded_function_error_context(path_option))?,
+                        )
+                        .into(),
+                    );
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Runtime(Runtime {
+                                r#type: Embedded::FileInterface,
+                                index: file_interface_runtime_value_index,
+                            }))
+                            .into(),
+                        ),
+                        type_kind: TypeKind::Bytes,
+                    }
+                    .into())
+                }
                 EmbeddedFunction::ReadBytesFromFile => {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(

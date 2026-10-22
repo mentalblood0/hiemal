@@ -101,19 +101,6 @@ where
         }
     }
 
-    fn contains(&self, key: &K) -> bool {
-        let mut current_lockable_internals_option = Some(self);
-        while let Some(current_lockable_internals) = current_lockable_internals_option {
-            if let Some(value_option) = current_lockable_internals.difference.get(key) {
-                return value_option.is_some();
-            }
-            current_lockable_internals_option = current_lockable_internals
-                .base_immutable_common_difference_option
-                .as_deref();
-        }
-        false
-    }
-
     fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = (&'b K, &'b V)> + 'b> {
         if let Some(base_immutable_common_difference) =
             self.base_immutable_common_difference_option.as_ref()
@@ -352,10 +339,6 @@ where
         K: Clone,
     {
         self.lockable_internals.get_mut().remove(key)
-    }
-
-    pub fn contains(&self, key: &K) -> bool {
-        self.lockable_internals.read().contains(key)
     }
 
     pub fn iter<'a>(&'a self) -> ImmutableObjectIterator<'a, K, V> {

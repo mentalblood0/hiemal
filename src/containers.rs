@@ -86,7 +86,7 @@ where
     V: Ord + Clone + Hash,
 {
     pub fn contains(&self, value: &V) -> bool {
-        self.inner.contains(value)
+        self.inner.get(value).is_some()
     }
 
     pub fn len(&self) -> usize {
