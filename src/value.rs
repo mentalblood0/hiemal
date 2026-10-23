@@ -1,8 +1,9 @@
-use std::{collections::BTreeMap, str::FromStr};
+use std::{collections::BTreeMap, str::FromStr, sync::Arc};
 
 use anyhow::Result;
 use bytes::Bytes;
 use dashu::{Decimal, Rational};
+use ignorable::{Hash, Ord, PartialEq, PartialOrd};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Unexpected, Visitor},
@@ -31,10 +32,70 @@ where
     Ok(ropey::Rope::from_str(&s))
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Debug, Clone, Eq, Hash, PartialOrd, Ord)]
-pub struct Runtime {
-    pub r#type: Embedded,
-    pub index: usize,
+#[derive(Debug, PartialOrd, PartialEq, Hash, Ord)]
+pub struct IdentifiedCompiledRegex {
+    pub source: String,
+    #[ignored(PartialOrd, PartialEq, Hash, Ord)]
+    pub compiled: regex::Regex,
+}
+impl Eq for IdentifiedCompiledRegex {}
+
+#[derive(Debug, PartialOrd, PartialEq, Hash, Ord)]
+pub struct IdentifiedFileInterface {
+    pub path: String,
+    #[ignored(PartialOrd, PartialEq, Hash, Ord)]
+    pub opened: std::fs::File,
+}
+impl Eq for IdentifiedFileInterface {}
+
+#[derive(Debug, PartialEq, PartialOrd, Hash, Eq, Ord)]
+pub enum Runtime {
+    CompiledRegex(IdentifiedCompiledRegex),
+    FileInterface(IdentifiedFileInterface),
+}
+
+impl Serialize for Runtime {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Err(serde::ser::Error::custom(
+            "Runtime contains runtime-only state and cannot be serialized",
+        ))
+    }
+}
+
+impl<'de> Deserialize<'de> for Runtime {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Err(serde::de::Error::custom(
+            "Runtime contains runtime-only state and cannot be deserialized",
+        ))
+    }
+}
+
+impl Runtime {
+    pub fn as_compiled_regex(&self) -> Option<&regex::Regex> {
+        match self {
+            Runtime::CompiledRegex(IdentifiedCompiledRegex {
+                source: _,
+                compiled,
+            }) => Some(compiled),
+            _ => None,
+        }
+    }
+
+    pub fn as_file_interface(&self) -> Option<&std::fs::File> {
+        match self {
+            Runtime::FileInterface(IdentifiedFileInterface {
+                path: _,
+                opened: compiled,
+            }) => Some(compiled),
+            _ => None,
+        }
+    }
 }
 
 #[repr(u8)]
@@ -58,7 +119,7 @@ pub enum Value {
         Bytes,
     ),
     Object(Object<String, Option<Value>>),
-    Runtime(Runtime),
+    Runtime(Arc<Runtime>),
 }
 
 impl Default for Value {
@@ -260,7 +321,10 @@ impl Value {
                     )
                     .into(),
                 ),
-                Value::Runtime(Runtime { r#type, index: _ }) => TypeKind::Embedded(r#type.clone()),
+                Value::Runtime(runtime) => match runtime.as_ref() {
+                    Runtime::CompiledRegex(_) => TypeKind::Embedded(Embedded::CompiledRegex),
+                    Runtime::FileInterface(_) => TypeKind::Embedded(Embedded::FileInterface),
+                },
             },
             None => TypeKind::Null,
         }

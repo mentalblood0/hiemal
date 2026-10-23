@@ -25,74 +25,10 @@ use crate::{
     },
     program::{EmbeddedFunction, Path},
     r#type::{Embedded, TypeKind},
-    value::{Runtime, Value},
+    value::{IdentifiedCompiledRegex, IdentifiedFileInterface, Runtime, Value},
 };
 
 type Constants = rpds::VectorSync<Option<Arc<IntermediateValueAndMetadata>>>;
-
-enum RuntimeValue {
-    CompiledRegex(regex::Regex),
-    FileInterface(std::fs::File),
-}
-
-enum RuntimeValueCell {
-    Occupied(Arc<RuntimeValue>),
-    Empty,
-    NextEmptyIndex(usize),
-}
-
-impl RuntimeValue {
-    fn as_compiled_regex(&self) -> Option<&regex::Regex> {
-        match self {
-            RuntimeValue::CompiledRegex(result) => Some(result),
-            _ => None,
-        }
-    }
-
-    fn as_file_interface(&self) -> Option<&std::fs::File> {
-        match self {
-            RuntimeValue::FileInterface(result) => Some(result),
-            _ => None,
-        }
-    }
-}
-
-static RUNTIME_VALUES: LazyLock<Mutex<Vec<RuntimeValueCell>>> =
-    LazyLock::new(|| Mutex::new(Vec::new()));
-
-fn insert_runtime_value(runtime_value: Arc<RuntimeValue>) -> usize {
-    let mut runtime_values = RUNTIME_VALUES.lock();
-    match runtime_values.first() {
-        None | Some(RuntimeValueCell::Occupied(_)) => {
-            runtime_values.push(RuntimeValueCell::Occupied(runtime_value));
-            runtime_values.len() - 1
-        }
-        Some(RuntimeValueCell::Empty) => {
-            runtime_values[0] = RuntimeValueCell::Occupied(runtime_value);
-            0
-        }
-        Some(RuntimeValueCell::NextEmptyIndex(next_empty_index_ref)) => {
-            let next_empty_index = *next_empty_index_ref;
-            let new_head = match &runtime_values[next_empty_index] {
-                RuntimeValueCell::Empty => RuntimeValueCell::Empty,
-                RuntimeValueCell::NextEmptyIndex(n) => RuntimeValueCell::NextEmptyIndex(*n),
-                RuntimeValueCell::Occupied(_) => {
-                    panic!("runtime values head points to an occupied slot")
-                }
-            };
-            runtime_values[0] = new_head;
-            runtime_values[next_empty_index] = RuntimeValueCell::Occupied(runtime_value);
-            next_empty_index
-        }
-    }
-}
-
-fn get_runtime_value(index: usize) -> Arc<RuntimeValue> {
-    match RUNTIME_VALUES.lock().get(index).unwrap() {
-        RuntimeValueCell::Occupied(result) => result.clone(),
-        _ => panic!("runtime value cell at index {index} is not occupied"),
-    }
-}
 
 static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
     Mutex::new(
@@ -1743,22 +1679,25 @@ impl<'a> ComputationContext<'a> {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,
                     )?;
-                    let computed_regex = computed_argument_unrolled.as_ref().as_ref().unwrap();
-                    let compiled_regex = Regex::new(
-                        &if let Value::String(computed_regex_string) = computed_regex {
+                    let computed_regex_value =
+                        computed_argument_unrolled.as_ref().as_ref().unwrap();
+                    let computed_regex_string = {
+                        if let Value::String(computed_regex_string) = computed_regex_value {
                             computed_regex_string.to_string()
                         } else {
-                            self.build_regex(computed_regex.as_tuple().unwrap())
-                        },
-                    )?;
-                    let compiled_regex_runtime_value_index =
-                        insert_runtime_value(RuntimeValue::CompiledRegex(compiled_regex).into());
+                            self.build_regex(computed_regex_value.as_tuple().unwrap())
+                        }
+                    };
+                    let compiled_regex = Regex::new(&computed_regex_string)?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
-                            Some(Value::Runtime(Runtime {
-                                r#type: Embedded::CompiledRegex,
-                                index: compiled_regex_runtime_value_index,
-                            }))
+                            Some(Value::Runtime(
+                                Runtime::CompiledRegex(IdentifiedCompiledRegex {
+                                    source: computed_regex_string,
+                                    compiled: compiled_regex,
+                                })
+                                .into(),
+                            ))
                             .into(),
                         ),
                         type_kind: TypeKind::Embedded(Embedded::CompiledRegex),
@@ -1783,23 +1722,22 @@ impl<'a> ComputationContext<'a> {
                         .as_string()
                         .unwrap()
                         .to_string();
-                    let computed_regex_runtime_value_index = computed_argument_unrolled
+                    let regex_value = computed_argument_unrolled
                         .as_ref()
                         .as_ref()
                         .unwrap()
                         .as_object()
                         .unwrap()
                         .get(&"regex".to_string())
-                        .unwrap()
+                        .unwrap();
+                    let compiled_regex = regex_value
                         .as_ref()
                         .as_ref()
                         .unwrap()
                         .as_runtime()
                         .unwrap()
-                        .index;
-                    let compiled_regex_runtime_value =
-                        get_runtime_value(computed_regex_runtime_value_index);
-                    let compiled_regex = compiled_regex_runtime_value.as_compiled_regex().unwrap();
+                        .as_compiled_regex()
+                        .unwrap();
                     if let Some(captures) = compiled_regex.captures(&computed_string) {
                         let result_value = Some(Value::Object(Object::from_iter([
                             (
@@ -1927,20 +1865,18 @@ impl<'a> ComputationContext<'a> {
                         }
                         _ => {}
                     };
-                    let file_interface_runtime_value_index = insert_runtime_value(
-                        RuntimeValue::FileInterface(
-                            open_options
-                                .open(computed_path)
-                                .with_context(embedded_function_error_context(path_option))?,
-                        )
-                        .into(),
-                    );
+                    let file_interface = open_options
+                        .open(&computed_path)
+                        .with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
-                            Some(Value::Runtime(Runtime {
-                                r#type: Embedded::FileInterface,
-                                index: file_interface_runtime_value_index,
-                            }))
+                            Some(Value::Runtime(
+                                Runtime::FileInterface(IdentifiedFileInterface {
+                                    path: computed_path,
+                                    opened: file_interface,
+                                })
+                                .into(),
+                            ))
                             .into(),
                         ),
                         type_kind: TypeKind::Bytes,
