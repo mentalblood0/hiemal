@@ -1873,7 +1873,7 @@ impl<'a> ComputationContext<'a> {
                             Some(Value::Runtime(
                                 Runtime::FileInterface(IdentifiedFileInterface {
                                     path: computed_path,
-                                    opened: file_interface,
+                                    opened: file_interface.into(),
                                 })
                                 .into(),
                             ))

@@ -4,6 +4,7 @@ use anyhow::Result;
 use bytes::Bytes;
 use dashu::{Decimal, Rational};
 use ignorable::{Hash, Ord, PartialEq, PartialOrd};
+use parking_lot::RwLock;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Unexpected, Visitor},
@@ -44,7 +45,7 @@ impl Eq for IdentifiedCompiledRegex {}
 pub struct IdentifiedFileInterface {
     pub path: String,
     #[ignored(PartialOrd, PartialEq, Hash, Ord)]
-    pub opened: std::fs::File,
+    pub opened: RwLock<std::fs::File>,
 }
 impl Eq for IdentifiedFileInterface {}
 
@@ -87,7 +88,7 @@ impl Runtime {
         }
     }
 
-    pub fn as_file_interface(&self) -> Option<&std::fs::File> {
+    pub fn as_file_interface(&self) -> Option<&RwLock<std::fs::File>> {
         match self {
             Runtime::FileInterface(IdentifiedFileInterface {
                 path: _,
