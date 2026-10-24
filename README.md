@@ -54,20 +54,24 @@ hiemal examples/include.yml
               exactly: 13
           name: horror
         - word boundary
-- read bytes from file: .gitignore
-- string from bytes:
-    match: { read bytes from file: .gitignore }
-    as: _
-    cases:
-      - [null, { bytes: "" }]
-      - [bytes, _]
+- read bytes:
+    source:
+      bufferized reader: .gitignore
+    amount: 1
+- string from bytes: { bytes: "62" }
 - create file:
     path: test overwrite file.txt
     content: a
-- overwrite file:
-    path: test overwrite file.txt
+- write bytes:
+    target:
+      bufferized writer:
+        path: test overwrite file.txt
+        mode: overwrite
     content: b
-- read bytes from file: test overwrite file.txt
+- read bytes:
+    source:
+      bufferized reader: test overwrite file.txt
+    amount: 1
 - remove file: test overwrite file.txt
 - run:
     command: echo
@@ -265,18 +269,25 @@ compute:
 
 ```yaml
 allow:
-  - remove file
-  - read file
-  - overwrite file
   - error
+  - create file
+  - write file
+  - read file
+  - remove file
 compute:
   pipe:
-    - overwrite file:
-        path: test overwrite file.txt
-        content: lalala
-    - read bytes from file: test overwrite file.txt
-    - - remove file: test overwrite file.txt
-      - _
+    - write bytes:
+        target:
+          bufferized writer:
+            path: test files.txt
+            mode: create
+        content: { bytes: "6262" }
+    - read bytes:
+        source:
+          bufferized reader: test files.txt
+        amount: 1
+    - - _
+      - remove file: test files.txt
   as: _
 ```
 
@@ -285,27 +296,35 @@ forbid:
   - remove file
 compute:
   pipe:
-    - overwrite file:
-        path: test overwrite file.txt
-        content: lalala
-    - read bytes from file: test overwrite file.txt
+    - write bytes:
+        target:
+          bufferized writer:
+            path: test files.txt
+            mode: create
+        content: { bytes: "6262" }
+    - read bytes:
+        source:
+          bufferized reader: test files.txt
+        amount: 1
   as: _
 ```
 
 ```yaml
 allow:
   - read file
-  - error
-compute: { read bytes from file: tests.yml }
+compute:
+  read bytes:
+    source:
+      bufferized reader: test files.txt
+    amount: 1
 ```
 
 available capabilities:
 
-- append to file
 - create file
-- overwrite file
-- remove file
+- write file
 - read file
+- remove file
 - read standard input
 - read network
 - write network
