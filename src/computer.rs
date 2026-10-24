@@ -25,7 +25,7 @@ use crate::{
     },
     program::{EmbeddedFunction, Path},
     r#type::{Embedded, TypeKind},
-    value::{IdentifiedBufferizedWriter, IdentifiedCompiledRegex, Runtime, Value},
+    value::{Identified,  Runtime, Value},
 };
 
 type Constants = rpds::VectorSync<Option<Arc<IntermediateValueAndMetadata>>>;
@@ -1444,6 +1444,9 @@ impl<'a> ComputationContext<'a> {
                 path_option,
                 embedded_function_call,
             } => match embedded_function_call.embedded_function {
+                EmbeddedFunction::HttpClient => {
+                    panic!();
+                }
                 EmbeddedFunction::Sum => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         Some(Value::Number(
@@ -1692,10 +1695,7 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Runtime(
-                                Runtime::CompiledRegex(IdentifiedCompiledRegex {
-                                    source: computed_regex_string,
-                                    compiled: compiled_regex,
-                                })
+                                Runtime::CompiledRegex(Identified::new(compiled_regex))
                                 .into(),
                             ))
                             .into(),
@@ -1848,10 +1848,7 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Runtime(
-                                Runtime::BufferizedWriter(IdentifiedBufferizedWriter {
-                                    path: computed_path,
-                                    writer: BufWriter::new(file).into(),
-                                })
+                                Runtime::BufferizedWriter(Identified::new(BufWriter::new(file).into()))
                                 .into(),
                             ))
                             .into(),
@@ -1879,10 +1876,7 @@ impl<'a> ComputationContext<'a> {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Runtime(
                                 Runtime::BufferizedReader(
-                                    crate::value::IdentifiedBufferizedReader {
-                                        path: computed_path,
-                                        reader: BufReader::new(file).into(),
-                                    },
+                                    crate::value::Identified::new(BufReader::new(file).into()),
                                 )
                                 .into(),
                             ))

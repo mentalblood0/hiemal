@@ -1340,7 +1340,6 @@ impl Compiler {
                             )
                             .contains(&compiled_argument_resolved_type.kind)
                             {
-                                println!("create file");
                                 capabilities |= Capability::CreateFile;
                             }
                             Ok(Type {
@@ -1429,6 +1428,435 @@ impl Compiler {
                                 kind: TypeKind::Null,
                                 properties: TypeProperties {
                                     capabilities: Capability::RemoveFile | Capability::Error,
+                                    is_computable: true,
+                                    is_serializable: true,
+                                }
+                                .unified(&compiled_argument_resolved_type.properties),
+                            })
+                        },
+                    )?,
+                    EmbeddedFunction::HttpClient => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &TypeKind::Array(Box::new(
+                            TypeKind::Union(
+                                BTreeSet::from_iter([
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "error on bad status code".to_string().into(),
+                                            TypeKind::Bool.into(),
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "HTTPS only".to_string().into(),
+                                            TypeKind::Bool.into(),
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "IP family".to_string().into(),
+                                            TypeKind::Union(
+                                                BTreeSet::from_iter([
+                                                    TypeKind::LiteralString(
+                                                        "any".to_string().into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "IPv4".to_string().into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "IPv6".to_string().into(),
+                                                    )
+                                                    .into(),
+                                                ])
+                                                .into(),
+                                            )
+                                            .into(),
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(BTreeMap::from_iter([(
+                                        "TLS".to_string().into(),
+                                        TypeKind::Object(
+                                            BTreeMap::from_iter([(
+                                                "client certificate".to_string().into(),
+                                                TypeKind::Object(
+                                                    BTreeMap::from_iter([
+                                                        (
+                                                            "chain".to_string().into(),
+                                                            TypeKind::Array(Box::new(
+                                                                TypeKind::Union(
+                                                                    BTreeSet::from_iter([
+                                                                        TypeKind::Object(
+                                                                            BTreeMap::from_iter([(
+                                                                                "DER"
+                                                                                    .to_string()
+                                                                                    .into(),
+                                                                                TypeKind::Bytes.into(),
+                                                                            )])
+                                                                            .into(),
+                                                                        )
+                                                                        .into(),
+                                                                        TypeKind::Object(
+                                                                            BTreeMap::from_iter([(
+                                                                                "PEM"
+                                                                                    .to_string()
+                                                                                    .into(),
+                                                                                TypeKind::String.into(),
+                                                                            )])
+                                                                            .into(),
+                                                                        )
+                                                                        .into(),
+                                                                    ])
+                                                                    .into(),
+                                                                )
+                                                                .into(),
+                                                            ))
+                                                            .into(),
+                                                        ),
+                                                        (
+                                                            "private key".to_string().into(),
+                                                            TypeKind::Union(
+                                                                BTreeSet::from_iter([
+                                                                    TypeKind::Object(
+                                                                        BTreeMap::from_iter([(
+                                                                            "DER".to_string().into(),
+                                                                            TypeKind::Object(BTreeMap::from_iter([
+                                                                                (
+                                                                                    "kind".to_string().into(),
+                                                                                    TypeKind::Union(BTreeSet::from_iter([
+                                                                                        TypeKind::LiteralString("PKCS1".to_string().into()).into(),
+                                                                                        TypeKind::LiteralString("PKCS8".to_string().into()).into(),
+                                                                                        TypeKind::LiteralString("SEC1".to_string().into()).into()
+                                                                                    ]).into()).into()
+                                                                                )
+                                                                            ]).into()).into(),
+                                                                        )])
+                                                                        .into(),
+                                                                    )
+                                                                    .into(),
+                                                                    TypeKind::Object(
+                                                                        BTreeMap::from_iter([(
+                                                                            "PEM".to_string().into(),
+                                                                            TypeKind::String.into(),
+                                                                        )])
+                                                                        .into(),
+                                                                    )
+                                                                    .into(),
+                                                                ])
+                                                                .into(),
+                                                            )
+                                                            .into(),
+                                                        ),
+                                                    ])
+                                                    .into(),
+                                                )
+                                                .into(),
+                                            ), (
+                                                    "root certificates".to_string().into(),
+                                                    TypeKind::Union(BTreeSet::from_iter([
+                                                        TypeKind::LiteralString("platform verifier".to_string().into()).into(),
+                                                        TypeKind::LiteralString("WebPKI".to_string().into()).into(),
+                                                        TypeKind::Array(Box::new(
+                                                            TypeKind::Union(
+                                                                BTreeSet::from_iter([
+                                                                    TypeKind::Object(
+                                                                        BTreeMap::from_iter([(
+                                                                            "DER"
+                                                                                .to_string()
+                                                                                .into(),
+                                                                            TypeKind::Bytes.into(),
+                                                                        )])
+                                                                        .into(),
+                                                                    )
+                                                                    .into(),
+                                                                    TypeKind::Object(
+                                                                        BTreeMap::from_iter([(
+                                                                            "PEM"
+                                                                                .to_string()
+                                                                                .into(),
+                                                                            TypeKind::String.into(),
+                                                                        )])
+                                                                        .into(),
+                                                                    )
+                                                                    .into(),
+                                                                ])
+                                                                .into(),
+                                                            )
+                                                            .into(),
+                                                        ))
+                                                        .into(),
+                                                    ]).into()).into()
+                                                )
+                                            ])
+                                            .into(),
+                                        )
+                                        .into()),
+                                        ("use SNI".to_string().into(), TypeKind::Bool.into()),
+                                    ]).into()).into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "proxy".to_string().into(),
+                                            TypeKind::Union(BTreeSet::from_iter([
+                                                TypeKind::LiteralFalse.into(),
+                                                TypeKind::String.into(),
+                                                TypeKind::Object(BTreeMap::from_iter([
+                                                    (
+                                                        "protocol".to_string().into(),
+                                                        TypeKind::Union(BTreeSet::from_iter([
+                                                            TypeKind::LiteralString("HTTP".to_string().into()).into(),
+                                                            TypeKind::LiteralString("HTTPS".to_string().into()).into(),
+                                                            TypeKind::LiteralString("SOCKS4".to_string().into()).into(),
+                                                            TypeKind::LiteralString("SOCKS4A".to_string().into()).into(),
+                                                            TypeKind::LiteralString("SOCKS5".to_string().into()).into(),
+                                                            TypeKind::LiteralString("SOCKS5h".to_string().into()).into(),
+                                                        ]).into()).into()
+                                                    ),
+                                                    (
+                                                        "configuration".to_string().into(),
+                                                        TypeKind::Array(Box::new(TypeKind::Union(BTreeSet::from_iter([
+                                                            TypeKind::Object(BTreeMap::from_iter([(                                                        
+                                                                "host".to_string().into(),
+                                                                TypeKind::String.into()
+                                                            )]).into()).into(),
+                                                            TypeKind::Object(BTreeMap::from_iter([(                                                        
+                                                                "port".to_string().into(),
+                                                                TypeKind::Number.into()
+                                                            )]).into()).into(),
+                                                            TypeKind::Object(BTreeMap::from_iter([(                                                        
+                                                                "user name".to_string().into(),
+                                                                TypeKind::String.into()
+                                                            )]).into()).into(),
+                                                            TypeKind::Object(BTreeMap::from_iter([(                                                        
+                                                                "password".to_string().into(),
+                                                                TypeKind::String.into()
+                                                            )]).into()).into(),
+                                                            TypeKind::Object(BTreeMap::from_iter([(                                                        
+                                                                "resolve locally".to_string().into(),
+                                                                TypeKind::Bool.into()
+                                                            )]).into()).into()
+                                                        ]).into()).into())).into(),
+                                                    ),
+                                                ]).into()).into()
+                                            ]).into()).into(),
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "no delay".to_string().into(),
+                                            TypeKind::Bool.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "max redirects".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "redirect authorization headers".to_string().into(),
+                                            TypeKind::Union(BTreeSet::from_iter([
+                                                TypeKind::LiteralString("never".to_string().into()).into(),
+                                                TypeKind::LiteralString("same host".to_string().into()).into(),
+                                            ]).into()).into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "user agent".to_string().into(),
+                                            TypeKind::Union(BTreeSet::from_iter([
+                                                TypeKind::LiteralFalse.into(),
+                                                TypeKind::String.into(),
+                                            ]).into()).into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "accept".to_string().into(),
+                                            TypeKind::Union(BTreeSet::from_iter([
+                                                TypeKind::LiteralFalse.into(),
+                                                TypeKind::String.into(),
+                                            ]).into()).into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "accept encoding".to_string().into(),
+                                            TypeKind::Union(BTreeSet::from_iter([
+                                                TypeKind::LiteralFalse.into(),
+                                                TypeKind::String.into(),
+                                            ]).into()).into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "max response header size".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "input buffer size".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "output buffer size".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "max idle connections".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "max idle connections per host".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "max idle age in seconds".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "allow non-standard methods".to_string().into(),
+                                            TypeKind::Bool.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "timeout global in seconds".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "timeout per call in seconds".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "timeout per read in seconds".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "timeout per write in seconds".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "timeout for resolve in seconds".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "timeout for connect in seconds".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "timeout for send request in seconds".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "timeout for await 100 in seconds".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "timeout for send body in seconds".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                    TypeKind::Object(
+                                        BTreeMap::from_iter([(
+                                            "timeout for receive body in seconds".to_string().into(),
+                                            TypeKind::Number.into()
+                                        )])
+                                        .into(),
+                                    )
+                                    .into(),
+                                ])
+                                .into(),
+                            )
+                            .into(),
+                        )),
+                        &|compiled_argument_resolved_type| {
+                            Ok(Type {
+                                kind: TypeKind::Embedded(Embedded::HttpClient),
+                                properties: TypeProperties {
+                                    capabilities: Capability::Error.into(),
                                     is_computable: true,
                                     is_serializable: true,
                                 }

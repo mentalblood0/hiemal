@@ -1,21 +1,24 @@
 use std::{
     collections::BTreeMap,
+    fmt,
+    hash::{Hash, Hasher},
     io::{BufReader, BufWriter},
     str::FromStr,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use anyhow::Result;
 use bytes::Bytes;
 use dashu::{Decimal, Rational};
-use ignorable::{Hash, Ord, PartialEq, PartialOrd};
 use parking_lot::RwLock;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Unexpected, Visitor},
     ser::SerializeMap,
 };
-use std::fmt;
 
 use crate::{
     containers::{Object, Vector},
@@ -38,35 +41,53 @@ where
     Ok(ropey::Rope::from_str(&s))
 }
 
-#[derive(Debug, PartialOrd, PartialEq, Hash, Ord)]
-pub struct IdentifiedCompiledRegex {
-    pub source: String,
-    #[ignored(PartialOrd, PartialEq, Hash, Ord)]
-    pub compiled: regex::Regex,
-}
-impl Eq for IdentifiedCompiledRegex {}
+static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
-#[derive(Debug, PartialOrd, PartialEq, Hash, Ord)]
-pub struct IdentifiedBufferizedWriter {
-    pub path: String,
-    #[ignored(PartialOrd, PartialEq, Hash, Ord)]
-    pub writer: RwLock<BufWriter<std::fs::File>>,
+#[derive(Clone, Debug)]
+pub struct Identified<T> {
+    id: u64,
+    pub content: T,
 }
-impl Eq for IdentifiedBufferizedWriter {}
 
-#[derive(Debug, PartialOrd, PartialEq, Hash, Ord)]
-pub struct IdentifiedBufferizedReader {
-    pub path: String,
-    #[ignored(PartialOrd, PartialEq, Hash, Ord)]
-    pub reader: RwLock<BufReader<std::fs::File>>,
+impl<T> Identified<T> {
+    pub fn new(content: T) -> Self {
+        Self {
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            content,
+        }
+    }
 }
-impl Eq for IdentifiedBufferizedReader {}
+
+impl<T> PartialEq for Identified<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+impl<T> Eq for Identified<T> {}
+
+impl<T> Hash for Identified<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl<T> PartialOrd for Identified<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<T> Ord for Identified<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id.cmp(&other.id)
+    }
+}
 
 #[derive(Debug, PartialEq, PartialOrd, Hash, Eq, Ord)]
 pub enum Runtime {
-    CompiledRegex(IdentifiedCompiledRegex),
-    BufferizedWriter(IdentifiedBufferizedWriter),
-    BufferizedReader(IdentifiedBufferizedReader),
+    CompiledRegex(Identified<regex::Regex>),
+    BufferizedWriter(Identified<RwLock<BufWriter<std::fs::File>>>),
+    BufferizedReader(Identified<RwLock<BufReader<std::fs::File>>>),
+    HttpClient(Identified<ureq::Agent>),
 }
 
 impl Serialize for Runtime {
@@ -94,28 +115,28 @@ impl<'de> Deserialize<'de> for Runtime {
 impl Runtime {
     pub fn as_compiled_regex(&self) -> Option<&regex::Regex> {
         match self {
-            Runtime::CompiledRegex(IdentifiedCompiledRegex {
-                source: _,
-                compiled,
-            }) => Some(compiled),
+            Runtime::CompiledRegex(Identified { id: _, content }) => Some(content),
             _ => None,
         }
     }
 
     pub fn as_bufferized_writer(&self) -> Option<&RwLock<BufWriter<std::fs::File>>> {
         match self {
-            Runtime::BufferizedWriter(IdentifiedBufferizedWriter { path: _, writer }) => {
-                Some(writer)
-            }
+            Runtime::BufferizedWriter(Identified { id: _, content }) => Some(content),
             _ => None,
         }
     }
 
     pub fn as_bufferized_reader(&self) -> Option<&RwLock<BufReader<std::fs::File>>> {
         match self {
-            Runtime::BufferizedReader(IdentifiedBufferizedReader { path: _, reader }) => {
-                Some(reader)
-            }
+            Runtime::BufferizedReader(Identified { id: _, content }) => Some(content),
+            _ => None,
+        }
+    }
+
+    pub fn as_http_client(&self) -> Option<&ureq::Agent> {
+        match self {
+            Runtime::HttpClient(Identified { id: _, content }) => Some(content),
             _ => None,
         }
     }
@@ -348,6 +369,7 @@ impl Value {
                     Runtime::CompiledRegex(_) => TypeKind::Embedded(Embedded::CompiledRegex),
                     Runtime::BufferizedWriter(_) => TypeKind::Embedded(Embedded::BufferizedWriter),
                     Runtime::BufferizedReader(_) => TypeKind::Embedded(Embedded::BufferizedReader),
+                    Runtime::HttpClient(_) => TypeKind::Embedded(Embedded::HttpClient),
                 },
             },
             None => TypeKind::Null,

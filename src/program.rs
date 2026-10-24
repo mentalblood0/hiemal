@@ -257,7 +257,7 @@ pub enum EmbeddedFunction {
     IsSorted,
     #[serde(rename = "standard input")]
     ReadBytesFromStandardInput,
-    #[serde(rename = "parse yaml")]
+    #[serde(rename = "parse YAML")]
     ParseYaml,
     #[serde(rename = "key-value pairs")]
     KeyValuePairs,
@@ -281,6 +281,8 @@ pub enum EmbeddedFunction {
     ReadBytes,
     #[serde(rename = "remove file")]
     RemoveFile,
+    #[serde(rename = "HTTP client")]
+    HttpClient,
     #[serde(rename = "run")]
     Run,
 }

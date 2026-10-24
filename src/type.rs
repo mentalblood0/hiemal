@@ -343,6 +343,8 @@ pub enum Embedded {
     BufferizedWriter,
     #[serde(rename = "bufferized reader")]
     BufferizedReader,
+    #[serde(rename = "HTTP client")]
+    HttpClient,
 }
 
 #[derive(Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

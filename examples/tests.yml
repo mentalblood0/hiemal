@@ -329,7 +329,7 @@ compute:
       test from-at array requires handling default:
         assert equal::
           found:
-            match: { parse yaml: "[1]" }
+            match: { parse YAML: "[1]" }
             as: _
             cases:
               - - { array: number }
@@ -510,14 +510,14 @@ compute:
           found:
             match:
               from:
-                match: { parse yaml: "s" }
+                match: { parse YAML: "s" }
                 cases:
                   - [number, { a: [1, 2, { b: s, t: 1 }] }]
                   - - any
                     - a:
                         - 1
                         - 2
-                        - match: { parse yaml: "s" }
+                        - match: { parse YAML: "s" }
                           cases:
                             - [number, { b: null, p: s }]
                             - [any, { b: 3, t: s }]
@@ -531,12 +531,12 @@ compute:
         assert equal::
           found:
             flatten:
-              match: { parse yaml: "[1]" }
+              match: { parse YAML: "[1]" }
               cases:
                 - [string, [[1, 2], [3, 4, 5]]]
                 - - any
                   - - [1, a, 3]
-                    - match: { parse yaml: "[2]" }
+                    - match: { parse YAML: "[2]" }
                       cases:
                         - [string, [1]]
                         - [any, [b]]
@@ -546,7 +546,7 @@ compute:
         assert equal::
           found:
             fold:
-              match: { parse yaml: "lalala" }
+              match: { parse YAML: "lalala" }
               cases:
                 - [number, [a, b, c]]
                 - [any, [4, 5, 6]]
@@ -563,7 +563,7 @@ compute:
         assert equal::
           found:
             filter:
-              match: { parse yaml: "[1]" }
+              match: { parse YAML: "[1]" }
               cases:
                 - [number, [1, 2, 3]]
                 - [{ array: number }, [s]]
@@ -627,7 +627,7 @@ compute:
         assert equal::
           found:
             map:
-              match: { parse yaml: "[1]" }
+              match: { parse YAML: "[1]" }
               cases:
                 - [number, [1, 2, 3]]
                 - [{ array: number }, [s]]
@@ -766,7 +766,7 @@ compute:
         assert equal::
           found:
             fold:
-              match: { parse yaml: "[1, 2, string, 3, 4]" }
+              match: { parse YAML: "[1, 2, string, 3, 4]" }
               as: _
               cases:
                 - [{ array: { union: [number, string] } }, _]
@@ -992,7 +992,7 @@ compute:
       test match by type refined branch:
         assert equal::
           found:
-            match: { parse yaml: "0x1A" }
+            match: { parse YAML: "0x1A" }
             cases:
               - [number, true]
               - [string, it's a string]
@@ -1001,7 +1001,7 @@ compute:
       test match by type any branch:
         assert equal::
           found:
-            match: { parse yaml: "[]" }
+            match: { parse YAML: "[]" }
             cases:
               - [number, it's a number]
               - [string, it's a string]
@@ -1011,7 +1011,7 @@ compute:
         assert equal::
           found:
             match:
-              match: { parse yaml: "[]" }
+              match: { parse YAML: "[]" }
               as: _
               cases:
                 - [number, _]
@@ -1025,7 +1025,7 @@ compute:
       test match by value:
         assert equal::
           found:
-            match: { parse yaml: "[1, 2, 3]" }
+            match: { parse YAML: "[1, 2, 3]" }
             cases:
               - [number, it's a number]
               - [string, it's a string]
