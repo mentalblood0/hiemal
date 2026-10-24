@@ -3,7 +3,7 @@ use std::{
     cell::LazyCell,
     collections::BTreeMap,
     hash::{Hash, Hasher},
-    io::{BufWriter, Read, Write},
+    io::{BufReader, BufWriter, Read, Write},
     ops::Range,
     str::FromStr,
     sync::{Arc, LazyLock},
@@ -25,7 +25,7 @@ use crate::{
     },
     program::{EmbeddedFunction, Path},
     r#type::{Embedded, TypeKind},
-    value::{IdentifiedCompiledRegex, IdentifiedFileInterface, Runtime, Value},
+    value::{IdentifiedBufferizedWriter, IdentifiedCompiledRegex, Runtime, Value},
 };
 
 type Constants = rpds::VectorSync<Option<Arc<IntermediateValueAndMetadata>>>;
@@ -1787,7 +1787,7 @@ impl<'a> ComputationContext<'a> {
                         .into())
                     }
                 }
-                EmbeddedFunction::OpenFile => {
+                EmbeddedFunction::BufferizedWriter => {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,
                     )?;
@@ -1805,37 +1805,14 @@ impl<'a> ComputationContext<'a> {
                         .as_string()
                         .unwrap()
                         .to_string();
-                    let computed_options = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap()
-                        .get(&"options".to_string())
-                        .unwrap();
                     let mut open_options = std::fs::OpenOptions::new();
-                    open_options.read(
-                        computed_options
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_object()
-                            .unwrap()
-                            .get(&"read".to_string())
-                            .unwrap()
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_bool()
-                            .unwrap(),
-                    );
-                    match computed_options
+                    match computed_argument_unrolled
                         .as_ref()
                         .as_ref()
                         .unwrap()
                         .as_object()
                         .unwrap()
-                        .get(&"write".to_string())
+                        .get(&"mode".to_string())
                         .unwrap()
                         .as_ref()
                         .as_ref()
@@ -1865,48 +1842,161 @@ impl<'a> ComputationContext<'a> {
                         }
                         _ => {}
                     };
-                    let file_interface = open_options
+                    let file = open_options
                         .open(&computed_path)
                         .with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Runtime(
-                                Runtime::FileInterface(IdentifiedFileInterface {
+                                Runtime::BufferizedWriter(IdentifiedBufferizedWriter {
                                     path: computed_path,
-                                    opened: file_interface.into(),
+                                    writer: BufWriter::new(file).into(),
                                 })
                                 .into(),
                             ))
                             .into(),
                         ),
-                        type_kind: TypeKind::Bytes,
+                        type_kind: TypeKind::Embedded(Embedded::BufferizedWriter),
                     }
                     .into())
                 }
-                EmbeddedFunction::ReadBytesFromFile => {
+                EmbeddedFunction::BufferizedReader => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let computed_path = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .to_string();
+                    let file = std::fs::OpenOptions::new()
+                        .read(true)
+                        .open(&computed_path)
+                        .with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bytes(
-                                std::fs::read(
-                                    self.unroll_intermediate_value(&self.compute_node(
-                                        &embedded_function_call.argument,
-                                        constants,
-                                    )?)?
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_string()
-                                    .unwrap()
-                                    .to_string(),
+                            Some(Value::Runtime(
+                                Runtime::BufferizedReader(
+                                    crate::value::IdentifiedBufferizedReader {
+                                        path: computed_path,
+                                        reader: BufReader::new(file).into(),
+                                    },
                                 )
-                                .with_context(embedded_function_error_context(path_option))?
                                 .into(),
                             ))
                             .into(),
                         ),
-                        type_kind: TypeKind::Bytes,
+                        type_kind: TypeKind::Embedded(Embedded::BufferizedReader),
                     }
                     .into())
+                }
+                EmbeddedFunction::WriteBytes => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let computed_target = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"target".to_string())
+                        .unwrap();
+                    let computed_bufferized_writer = computed_target
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_runtime()
+                        .unwrap()
+                        .as_bufferized_writer()
+                        .unwrap();
+                    let computed_content_value = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"content".to_string())
+                        .unwrap();
+                    let computed_content = computed_content_value
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_bytes()
+                        .unwrap();
+                    let bytes_written = computed_bufferized_writer
+                        .write()
+                        .write(computed_content)
+                        .with_context(embedded_function_error_context(path_option))?;
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Number(bytes_written.into())).into(),
+                        ),
+                        type_kind: TypeKind::Number,
+                    }
+                    .into())
+                }
+                EmbeddedFunction::ReadBytes => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let computed_source = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"source".to_string())
+                        .unwrap();
+                    let computed_bufferized_reader = computed_source
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_runtime()
+                        .unwrap()
+                        .as_bufferized_reader()
+                        .unwrap();
+                    let computed_amount = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .get(&"amount".to_string())
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_number()
+                        .unwrap()
+                        .to_f64()
+                        .value()
+                        .floor()
+                        .max(0f64) as usize;
+                    if computed_amount == 0 {
+                        Ok(IntermediateValueAndMetadata {
+                            intermediate_value: IntermediateValue::Value(
+                                Some(Value::Bytes(Bytes::new())).into(),
+                            ),
+                            type_kind: TypeKind::Bytes,
+                        }
+                        .into())
+                    } else {
+                        let mut result_raw = vec![0u8; computed_amount];
+                        computed_bufferized_reader
+                            .write()
+                            .read(&mut result_raw)
+                            .with_context(embedded_function_error_context(path_option))?;
+                        Ok(IntermediateValueAndMetadata {
+                            intermediate_value: IntermediateValue::Value(
+                                Some(Value::Bytes(result_raw.into())).into(),
+                            ),
+                            type_kind: TypeKind::Bytes,
+                        }
+                        .into())
+                    }
                 }
                 EmbeddedFunction::StringFromBytes => {
                     Ok(IntermediateValueAndMetadata {
@@ -1952,68 +2042,6 @@ impl<'a> ComputationContext<'a> {
                     type_kind: TypeKind::String,
                 }
                 .into()),
-                EmbeddedFunction::OverwriteFile => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let computed_path = std::path::PathBuf::from(
-                        computed_argument_unrolled
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_object()
-                            .unwrap()
-                            .get(&"path".to_string())
-                            .unwrap()
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_string()
-                            .unwrap()
-                            .to_string(),
-                    );
-                    let computed_content = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap()
-                        .get(&"content".to_string())
-                        .unwrap()
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .clone();
-                    if let Some(parent) = computed_path.parent() {
-                        std::fs::create_dir_all(parent)
-                            .with_context(embedded_function_error_context(path_option))?;
-                    }
-                    match computed_content {
-                        Value::String(string) => {
-                            let file = std::fs::File::create(computed_path)
-                                .with_context(embedded_function_error_context(path_option))?;
-                            let mut writer = BufWriter::new(file);
-                            for chunk in string.chunks() {
-                                writer
-                                    .write_all(chunk.as_bytes())
-                                    .with_context(embedded_function_error_context(path_option))?;
-                            }
-                            writer
-                                .flush()
-                                .with_context(embedded_function_error_context(path_option))?;
-                        }
-                        Value::Bytes(bytes) => {
-                            std::fs::write(computed_path, bytes)
-                                .with_context(embedded_function_error_context(path_option))?;
-                        }
-                        _ => panic!(),
-                    }
-                    Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(None.into()),
-                        type_kind: TypeKind::Null,
-                    }
-                    .into())
-                }
                 EmbeddedFunction::RemoveFile => {
                     std::fs::remove_file(std::path::PathBuf::from(
                         self.unroll_intermediate_value(
@@ -2027,72 +2055,6 @@ impl<'a> ComputationContext<'a> {
                         .to_string(),
                     ))
                     .with_context(embedded_function_error_context(path_option))?;
-                    Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(None.into()),
-                        type_kind: TypeKind::Null,
-                    }
-                    .into())
-                }
-                EmbeddedFunction::CreateFile => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let computed_path = std::path::PathBuf::from(
-                        computed_argument_unrolled
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_object()
-                            .unwrap()
-                            .get(&"path".to_string())
-                            .unwrap()
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_string()
-                            .unwrap()
-                            .to_string(),
-                    );
-                    let computed_content = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap()
-                        .get(&"content".to_string())
-                        .unwrap()
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .clone();
-                    if let Some(parent) = computed_path.parent() {
-                        std::fs::create_dir_all(parent)
-                            .with_context(embedded_function_error_context(path_option))?;
-                    }
-                    let file = std::fs::OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .open(&computed_path)
-                        .with_context(embedded_function_error_context(path_option))?;
-                    let mut writer = BufWriter::new(file);
-                    match computed_content {
-                        Value::String(string) => {
-                            for chunk in string.chunks() {
-                                writer
-                                    .write_all(chunk.as_bytes())
-                                    .with_context(embedded_function_error_context(path_option))?;
-                            }
-                        }
-                        Value::Bytes(bytes) => {
-                            writer
-                                .write_all(&bytes)
-                                .with_context(embedded_function_error_context(path_option))?;
-                        }
-                        _ => panic!(),
-                    }
-                    writer
-                        .flush()
-                        .with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(None.into()),
                         type_kind: TypeKind::Null,

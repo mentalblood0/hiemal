@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, str::FromStr, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    io::{BufReader, BufWriter},
+    str::FromStr,
+    sync::Arc,
+};
 
 use anyhow::Result;
 use bytes::Bytes;
@@ -42,17 +47,26 @@ pub struct IdentifiedCompiledRegex {
 impl Eq for IdentifiedCompiledRegex {}
 
 #[derive(Debug, PartialOrd, PartialEq, Hash, Ord)]
-pub struct IdentifiedFileInterface {
+pub struct IdentifiedBufferizedWriter {
     pub path: String,
     #[ignored(PartialOrd, PartialEq, Hash, Ord)]
-    pub opened: RwLock<std::fs::File>,
+    pub writer: RwLock<BufWriter<std::fs::File>>,
 }
-impl Eq for IdentifiedFileInterface {}
+impl Eq for IdentifiedBufferizedWriter {}
+
+#[derive(Debug, PartialOrd, PartialEq, Hash, Ord)]
+pub struct IdentifiedBufferizedReader {
+    pub path: String,
+    #[ignored(PartialOrd, PartialEq, Hash, Ord)]
+    pub reader: RwLock<BufReader<std::fs::File>>,
+}
+impl Eq for IdentifiedBufferizedReader {}
 
 #[derive(Debug, PartialEq, PartialOrd, Hash, Eq, Ord)]
 pub enum Runtime {
     CompiledRegex(IdentifiedCompiledRegex),
-    FileInterface(IdentifiedFileInterface),
+    BufferizedWriter(IdentifiedBufferizedWriter),
+    BufferizedReader(IdentifiedBufferizedReader),
 }
 
 impl Serialize for Runtime {
@@ -88,12 +102,20 @@ impl Runtime {
         }
     }
 
-    pub fn as_file_interface(&self) -> Option<&RwLock<std::fs::File>> {
+    pub fn as_bufferized_writer(&self) -> Option<&RwLock<BufWriter<std::fs::File>>> {
         match self {
-            Runtime::FileInterface(IdentifiedFileInterface {
-                path: _,
-                opened: compiled,
-            }) => Some(compiled),
+            Runtime::BufferizedWriter(IdentifiedBufferizedWriter { path: _, writer }) => {
+                Some(writer)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn as_bufferized_reader(&self) -> Option<&RwLock<BufReader<std::fs::File>>> {
+        match self {
+            Runtime::BufferizedReader(IdentifiedBufferizedReader { path: _, reader }) => {
+                Some(reader)
+            }
             _ => None,
         }
     }
@@ -324,7 +346,8 @@ impl Value {
                 ),
                 Value::Runtime(runtime) => match runtime.as_ref() {
                     Runtime::CompiledRegex(_) => TypeKind::Embedded(Embedded::CompiledRegex),
-                    Runtime::FileInterface(_) => TypeKind::Embedded(Embedded::FileInterface),
+                    Runtime::BufferizedWriter(_) => TypeKind::Embedded(Embedded::BufferizedWriter),
+                    Runtime::BufferizedReader(_) => TypeKind::Embedded(Embedded::BufferizedReader),
                 },
             },
             None => TypeKind::Null,

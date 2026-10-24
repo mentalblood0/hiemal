@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
     hash::{Hash, Hasher},
     sync::{Arc, LazyLock},
@@ -191,12 +192,10 @@ impl Constructed {
 #[derive(EnumSetType, Serialize, Deserialize, Debug, PartialOrd, Ord, Hash)]
 #[enumset(serialize_repr = "list")]
 pub enum Capability {
-    #[serde(rename = "append to file")]
-    AppendToFile,
     #[serde(rename = "create file")]
     CreateFile,
-    #[serde(rename = "overwrite file")]
-    OverwriteFile,
+    #[serde(rename = "write file")]
+    WriteFile,
     #[serde(rename = "remove file")]
     RemoveFile,
     #[serde(rename = "read file")]
@@ -340,8 +339,10 @@ where
 pub enum Embedded {
     #[serde(rename = "compiled regex")]
     CompiledRegex,
-    #[serde(rename = "file interface")]
-    FileInterface,
+    #[serde(rename = "bufferized writer")]
+    BufferizedWriter,
+    #[serde(rename = "bufferized reader")]
+    BufferizedReader,
 }
 
 #[derive(Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -647,16 +648,37 @@ impl TypeKind {
                     }
                     true
                 }
-
                 (TypeKind::Object(self_inner_types), TypeKind::Object(other_inner_types)) => {
-                    for ((self_key, self_value_type), (other_key, other_value_type)) in
-                        self_inner_types.iter().zip(other_inner_types.iter())
-                    {
-                        if self_key != other_key {
-                            return false;
-                        }
-                        if !self_value_type.kind.contains(&other_value_type.kind) {
-                            return false;
+                    let mut self_inner_types_iterator = self_inner_types.iter();
+                    let mut other_inner_types_iterator = other_inner_types.iter();
+                    let mut current_self_inner_type = self_inner_types_iterator.next();
+                    let mut current_other_inner_type = other_inner_types_iterator.next();
+                    loop {
+                        match (current_self_inner_type, current_other_inner_type) {
+                            (
+                                Some((self_key, self_value_type)),
+                                Some((other_key, other_value_type)),
+                            ) => match self_key.cmp(other_key) {
+                                Ordering::Less => {
+                                    current_self_inner_type = self_inner_types_iterator.next();
+                                }
+                                Ordering::Equal => {
+                                    if !self_value_type.kind.contains(&other_value_type.kind) {
+                                        return false;
+                                    }
+                                    current_self_inner_type = self_inner_types_iterator.next();
+                                    current_other_inner_type = other_inner_types_iterator.next();
+                                }
+                                Ordering::Greater => {
+                                    return false;
+                                }
+                            },
+                            (_, None) => {
+                                break;
+                            }
+                            (None, Some(_)) => {
+                                return false;
+                            }
                         }
                     }
                     true

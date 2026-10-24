@@ -267,18 +267,18 @@ pub enum EmbeddedFunction {
     MatchRegex,
     #[serde(rename = "concat")]
     Concat,
-    #[serde(rename = "read bytes from file")]
-    ReadBytesFromFile,
     #[serde(rename = "string from bytes")]
     StringFromBytes,
     #[serde(rename = "bytes from string")]
     BytesFromString,
-    #[serde(rename = "open file")]
-    OpenFile,
-    #[serde(rename = "overwrite file")]
-    OverwriteFile,
-    #[serde(rename = "create file")]
-    CreateFile,
+    #[serde(rename = "bufferized writer")]
+    BufferizedWriter,
+    #[serde(rename = "bufferized reader")]
+    BufferizedReader,
+    #[serde(rename = "write bytes")]
+    WriteBytes,
+    #[serde(rename = "read bytes")]
+    ReadBytes,
     #[serde(rename = "remove file")]
     RemoveFile,
     #[serde(rename = "run")]

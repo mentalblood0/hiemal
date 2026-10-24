@@ -164,8 +164,14 @@ compute:
         assert equal::
           found:
             try:
-              - read bytes from file: tests.yml
-              - read bytes from file: nonexistent file
+              - read bytes:
+                  source:
+                    bufferized reader: tests.yml
+                  amount: 1
+              - read bytes:
+                  source:
+                    bufferized reader: nonexistent file
+                  amount: 1
             or: false
           expected: false
       test heterogenous sequence:
@@ -265,23 +271,21 @@ compute:
             allow:
               - error
               - create file
-              - overwrite file
+              - write file
               - read file
               - remove file
             compute:
               pipe:
-                - create file:
-                    path: test files.txt
-                    content: a
-                - overwrite file:
-                    path: test files.txt
-                    content: b
-                - try:
-                    create file:
-                      path: test files.txt
-                      content: c
-                  or: null
-                - read bytes from file: test files.txt
+                - write bytes:
+                    target:
+                      bufferized writer:
+                        path: test files.txt
+                        mode: create
+                    content: { bytes: "6262" }
+                - read bytes:
+                    source:
+                      bufferized reader: test files.txt
+                    amount: 1
                 - - _
                   - remove file: test files.txt
               as: _
@@ -311,20 +315,6 @@ compute:
               - { sum: [_, 4] }
             as: _
           expected: 10
-      test read from file:
-        assert equal::
-          found:
-            - read bytes from file: .gitignore
-            - string from bytes:
-                match: { read bytes from file: .gitignore }
-                as: _
-                cases:
-                  - [null, { bytes: "" }]
-                  - [bytes, _]
-          expected:
-            - bytes: 2f7461726765740a
-            - |
-              /target
       test user functions caching:
         assert equal::
           found:
