@@ -1485,8 +1485,8 @@ impl Compiler {
                                     .into(),
                                     TypeKind::Object(BTreeMap::from_iter([(
                                         "TLS".to_string().into(),
-                                        TypeKind::Object(
-                                            BTreeMap::from_iter([(
+                                        TypeKind::Array(Box::new(TypeKind::Union(BTreeSet::from_iter([
+                                            TypeKind::Object(BTreeMap::from_iter([(
                                                 "client certificate".to_string().into(),
                                                 TypeKind::Object(
                                                     BTreeMap::from_iter([
@@ -1559,8 +1559,9 @@ impl Compiler {
                                                     ])
                                                     .into(),
                                                 )
-                                                .into(),
-                                            ), (
+                                                .into()),
+                                            ]).into()).into(),
+                                            TypeKind::Object(BTreeMap::from_iter([(
                                                     "root certificates".to_string().into(),
                                                     TypeKind::Union(BTreeSet::from_iter([
                                                         TypeKind::LiteralString("platform verifier".to_string().into()).into(),
@@ -1595,13 +1596,15 @@ impl Compiler {
                                                         ))
                                                         .into(),
                                                     ]).into()).into()
-                                                )
-                                            ])
-                                            .into(),
-                                        )
-                                        .into()),
-                                        ("use SNI".to_string().into(), TypeKind::Bool.into()),
-                                    ]).into()).into(),
+                                                                                                
+                                            )]).into()).into(),
+                                            TypeKind::Object(BTreeMap::from_iter([(
+                                                    "use SNI".to_string().into(),
+                                                    TypeKind::Bool.into()
+                                                                                                
+                                            )]).into()).into()
+                                        ]).into()).into())).into(),
+                                    )]).into()).into(),
                                     TypeKind::Object(
                                         BTreeMap::from_iter([(
                                             "proxy".to_string().into(),
