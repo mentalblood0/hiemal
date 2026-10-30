@@ -17,7 +17,10 @@ use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
 use regex::{Regex, escape};
 use serde::{Deserialize, Serialize};
-use ureq::config::{AutoHeaderValue, IpFamily, RedirectAuthHeaders};
+use ureq::{
+    ProxyProtocol,
+    config::{AutoHeaderValue, IpFamily, RedirectAuthHeaders},
+};
 
 use crate::{
     containers::{self, Object, Vector},
@@ -2047,6 +2050,132 @@ impl<'a> ComputationContext<'a> {
                                             .accept_encoding(AutoHeaderValue::Provided(
                                                 header_value.to_string().into(),
                                             ));
+                                    }
+                                    _ => panic!(),
+                                }
+                            }
+                            "proxy" => {
+                                match agent_config_builder_value.as_ref().as_ref().unwrap() {
+                                    Value::Bool(_) => {
+                                        agent_config_builder = agent_config_builder.proxy(None);
+                                    }
+                                    Value::String(proxy_string_value) => {
+                                        agent_config_builder = agent_config_builder.proxy(Some(
+                                            ureq::Proxy::new(&proxy_string_value.to_string())
+                                                .with_context(embedded_function_error_context(
+                                                    path_option,
+                                                ))?,
+                                        ));
+                                    }
+                                    Value::Object(proxy_builder_builder_key_value_pairs_object) => {
+                                        let mut proxy_builder = ureq::Proxy::builder(
+                                            match proxy_builder_builder_key_value_pairs_object
+                                                .inner
+                                                .get(&"protocol".to_string())
+                                                .unwrap()
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_string()
+                                                .unwrap()
+                                                .to_string()
+                                                .as_str()
+                                            {
+                                                "HTTP" => ProxyProtocol::Http,
+                                                "HTTPS" => ProxyProtocol::Https,
+                                                "SOCKS4" => ProxyProtocol::Socks4,
+                                                "SOCKS4A" => ProxyProtocol::Socks4A,
+                                                "SOCKS5" => ProxyProtocol::Socks5,
+                                                "SOCKS5h" => ProxyProtocol::Socks5h,
+                                                _ => panic!(),
+                                            },
+                                        );
+                                        for (proxy_builder_key, proxy_builder_value) in
+                                            proxy_builder_builder_key_value_pairs_object
+                                                .inner
+                                                .get(&"configuration".to_string())
+                                                .unwrap()
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_tuple()
+                                                .unwrap()
+                                                .inner
+                                                .iter()
+                                                .map(|object_value| {
+                                                    let object = object_value
+                                                        .as_ref()
+                                                        .as_ref()
+                                                        .unwrap()
+                                                        .as_object()
+                                                        .unwrap();
+                                                    let (key, value) =
+                                                        object.inner.iter().next().unwrap();
+                                                    (key.as_str(), value.clone())
+                                                })
+                                        {
+                                            match proxy_builder_key {
+                                                "host" => {
+                                                    proxy_builder = proxy_builder.host(
+                                                        &proxy_builder_value
+                                                            .as_ref()
+                                                            .as_ref()
+                                                            .unwrap()
+                                                            .as_string()
+                                                            .unwrap()
+                                                            .to_string(),
+                                                    );
+                                                }
+                                                "port" => {
+                                                    proxy_builder = proxy_builder.port(
+                                                        proxy_builder_value
+                                                            .as_ref()
+                                                            .as_ref()
+                                                            .unwrap()
+                                                            .as_number()
+                                                            .unwrap()
+                                                            .to_f64()
+                                                            .value()
+                                                            .max(0f64)
+                                                            .min(u16::MAX as f64)
+                                                            as u16,
+                                                    );
+                                                }
+                                                "user name" => {
+                                                    proxy_builder = proxy_builder.username(
+                                                        &proxy_builder_value
+                                                            .as_ref()
+                                                            .as_ref()
+                                                            .unwrap()
+                                                            .as_string()
+                                                            .unwrap()
+                                                            .to_string(),
+                                                    );
+                                                }
+                                                "password" => {
+                                                    proxy_builder = proxy_builder.password(
+                                                        &proxy_builder_value
+                                                            .as_ref()
+                                                            .as_ref()
+                                                            .unwrap()
+                                                            .as_string()
+                                                            .unwrap()
+                                                            .to_string(),
+                                                    );
+                                                }
+                                                "resolve locally" => {
+                                                    proxy_builder = proxy_builder.resolve_target(
+                                                        proxy_builder_value
+                                                            .as_ref()
+                                                            .as_ref()
+                                                            .unwrap()
+                                                            .as_bool()
+                                                            .unwrap(),
+                                                    );
+                                                }
+                                                _ => panic!()
+                                            }
+                                        }
                                     }
                                     _ => panic!(),
                                 }
