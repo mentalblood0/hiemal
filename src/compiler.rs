@@ -1788,22 +1788,6 @@ impl Compiler {
                                     .into(),
                                     TypeKind::Object(
                                         BTreeMap::from_iter([(
-                                            "timeout per read in seconds".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "timeout per write in seconds".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
                                             "timeout for resolve in seconds".to_string().into(),
                                             TypeKind::Number.into()
                                         )])

@@ -7,6 +7,7 @@ use std::{
     ops::Range,
     str::FromStr,
     sync::{Arc, LazyLock},
+    time::Duration,
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -16,6 +17,7 @@ use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
 use regex::{Regex, escape};
 use serde::{Deserialize, Serialize};
+use ureq::config::{AutoHeaderValue, IpFamily, RedirectAuthHeaders};
 
 use crate::{
     containers::{self, Object, Vector},
@@ -25,7 +27,7 @@ use crate::{
     },
     program::{EmbeddedFunction, Path},
     r#type::{Embedded, TypeKind},
-    value::{Identified,  Runtime, Value},
+    value::{Identified, Runtime, Value},
 };
 
 type Constants = rpds::VectorSync<Option<Arc<IntermediateValueAndMetadata>>>;
@@ -1444,9 +1446,6 @@ impl<'a> ComputationContext<'a> {
                 path_option,
                 embedded_function_call,
             } => match embedded_function_call.embedded_function {
-                EmbeddedFunction::HttpClient => {
-                    panic!();
-                }
                 EmbeddedFunction::Sum => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         Some(Value::Number(
@@ -1695,12 +1694,377 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Runtime(
-                                Runtime::CompiledRegex(Identified::new(compiled_regex))
-                                .into(),
+                                Runtime::CompiledRegex(Identified::new(compiled_regex)).into(),
                             ))
                             .into(),
                         ),
                         type_kind: TypeKind::Embedded(Embedded::CompiledRegex),
+                    }
+                    .into())
+                }
+                EmbeddedFunction::HttpClient => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let mut agent_config_builder = ureq::config::Config::builder();
+                    for (agent_config_builder_key, agent_config_builder_value) in
+                        computed_argument_unrolled
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_tuple()
+                            .unwrap()
+                            .inner
+                            .iter()
+                            .map(|object_value| {
+                                let object =
+                                    object_value.as_ref().as_ref().unwrap().as_object().unwrap();
+                                let (key, value) = object.inner.iter().next().unwrap();
+                                (key.as_str(), value.clone())
+                            })
+                    {
+                        match agent_config_builder_key {
+                            "error on bad status code" => {
+                                agent_config_builder = agent_config_builder.http_status_as_error(
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_bool()
+                                        .unwrap(),
+                                );
+                            }
+                            "HTTPS only" => {
+                                agent_config_builder = agent_config_builder.https_only(
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_bool()
+                                        .unwrap(),
+                                );
+                            }
+                            "no delay" => {
+                                agent_config_builder = agent_config_builder.no_delay(
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_bool()
+                                        .unwrap(),
+                                );
+                            }
+                            "max redirects" => {
+                                agent_config_builder = agent_config_builder.max_redirects(
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_number()
+                                        .unwrap()
+                                        .to_f64()
+                                        .value()
+                                        .max(0f64)
+                                        .min(u32::MAX as f64)
+                                        as u32,
+                                );
+                            }
+                            "max response header size" => {
+                                agent_config_builder = agent_config_builder
+                                    .max_response_header_size(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            .max(0f64)
+                                            as usize,
+                                    );
+                            }
+                            "input buffer size" => {
+                                agent_config_builder = agent_config_builder.input_buffer_size(
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_number()
+                                        .unwrap()
+                                        .to_f64()
+                                        .value()
+                                        .max(0f64) as usize,
+                                );
+                            }
+                            "max idle connections" => {
+                                agent_config_builder = agent_config_builder.max_idle_connections(
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_number()
+                                        .unwrap()
+                                        .to_f64()
+                                        .value()
+                                        .max(0f64) as usize,
+                                );
+                            }
+                            "max idle connections per host" => {
+                                agent_config_builder = agent_config_builder
+                                    .max_idle_connections_per_host(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            .max(0f64)
+                                            as usize,
+                                    );
+                            }
+                            "max idle age in seconds" => {
+                                agent_config_builder =
+                                    agent_config_builder.max_idle_age(Duration::from_secs_f64(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            .max(0f64),
+                                    ));
+                            }
+                            "allow non-standard methods" => {
+                                agent_config_builder = agent_config_builder
+                                    .allow_non_standard_methods(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_bool()
+                                            .unwrap(),
+                                    )
+                            }
+                            "timeout global in seconds" => {
+                                agent_config_builder = agent_config_builder.timeout_global(Some(
+                                    Duration::from_secs_f64(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            .max(0f64),
+                                    ),
+                                ));
+                            }
+                            "timeout per call in seconds" => {
+                                agent_config_builder = agent_config_builder.timeout_per_call(Some(
+                                    Duration::from_secs_f64(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            .max(0f64),
+                                    ),
+                                ));
+                            }
+                            "timeout for resolve in seconds" => {
+                                agent_config_builder = agent_config_builder.timeout_resolve(Some(
+                                    Duration::from_secs_f64(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            .max(0f64),
+                                    ),
+                                ));
+                            }
+                            "timeout for connect in seconds" => {
+                                agent_config_builder = agent_config_builder.timeout_connect(Some(
+                                    Duration::from_secs_f64(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            .max(0f64),
+                                    ),
+                                ));
+                            }
+                            "timeout for send request in seconds" => {
+                                agent_config_builder = agent_config_builder.timeout_send_request(
+                                    Some(Duration::from_secs_f64(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            .max(0f64),
+                                    )),
+                                );
+                            }
+                            "timeout for await 100 in seconds" => {
+                                agent_config_builder = agent_config_builder.timeout_await_100(
+                                    Some(Duration::from_secs_f64(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            .max(0f64),
+                                    )),
+                                );
+                            }
+                            "timeout for send body in seconds" => {
+                                agent_config_builder = agent_config_builder.timeout_send_body(
+                                    Some(Duration::from_secs_f64(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            .max(0f64),
+                                    )),
+                                );
+                            }
+                            "timeout for receive body in seconds" => {
+                                agent_config_builder = agent_config_builder.timeout_recv_body(
+                                    Some(Duration::from_secs_f64(
+                                        agent_config_builder_value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value()
+                                            .max(0f64),
+                                    )),
+                                );
+                            }
+                            "IP family" => {
+                                agent_config_builder = agent_config_builder.ip_family(
+                                    match agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_string()
+                                        .unwrap()
+                                        .to_string()
+                                        .as_str()
+                                    {
+                                        "any" => IpFamily::Any,
+                                        "IPv4" => IpFamily::Ipv4Only,
+                                        "IPv6" => IpFamily::Ipv6Only,
+                                        _ => panic!(),
+                                    },
+                                );
+                            }
+                            "redirect authorization headers" => {
+                                agent_config_builder = agent_config_builder.redirect_auth_headers(
+                                    match agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_string()
+                                        .unwrap()
+                                        .to_string()
+                                        .as_str()
+                                    {
+                                        "never" => RedirectAuthHeaders::Never,
+                                        "same host" => RedirectAuthHeaders::SameHost,
+                                        _ => panic!(),
+                                    },
+                                );
+                            }
+                            "user agent" => {
+                                match agent_config_builder_value.as_ref().as_ref().unwrap() {
+                                    Value::Bool(_) => {
+                                        agent_config_builder =
+                                            agent_config_builder.user_agent(AutoHeaderValue::None);
+                                    }
+                                    Value::String(header_value) => {
+                                        agent_config_builder = agent_config_builder.user_agent(
+                                            AutoHeaderValue::Provided(
+                                                header_value.to_string().into(),
+                                            ),
+                                        );
+                                    }
+                                    _ => panic!(),
+                                }
+                            }
+                            "accept" => {
+                                match agent_config_builder_value.as_ref().as_ref().unwrap() {
+                                    Value::Bool(_) => {
+                                        agent_config_builder =
+                                            agent_config_builder.accept(AutoHeaderValue::None);
+                                    }
+                                    Value::String(header_value) => {
+                                        agent_config_builder =
+                                            agent_config_builder.accept(AutoHeaderValue::Provided(
+                                                header_value.to_string().into(),
+                                            ));
+                                    }
+                                    _ => panic!(),
+                                }
+                            }
+                            "accept encoding" => {
+                                match agent_config_builder_value.as_ref().as_ref().unwrap() {
+                                    Value::Bool(_) => {
+                                        agent_config_builder = agent_config_builder
+                                            .accept_encoding(AutoHeaderValue::None);
+                                    }
+                                    Value::String(header_value) => {
+                                        agent_config_builder = agent_config_builder
+                                            .accept_encoding(AutoHeaderValue::Provided(
+                                                header_value.to_string().into(),
+                                            ));
+                                    }
+                                    _ => panic!(),
+                                }
+                            }
+                            _ => panic!(),
+                        }
+                    }
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Runtime(
+                                Runtime::HttpClient(Identified::new(ureq::Agent::new_with_config(
+                                    agent_config_builder.build(),
+                                )))
+                                .into(),
+                            ))
+                            .into(),
+                        ),
+                        type_kind: TypeKind::Embedded(Embedded::BufferizedWriter),
                     }
                     .into())
                 }
@@ -1848,7 +2212,9 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Runtime(
-                                Runtime::BufferizedWriter(Identified::new(BufWriter::new(file).into()))
+                                Runtime::BufferizedWriter(Identified::new(
+                                    BufWriter::new(file).into(),
+                                ))
                                 .into(),
                             ))
                             .into(),
@@ -1875,9 +2241,9 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Runtime(
-                                Runtime::BufferizedReader(
-                                    crate::value::Identified::new(BufReader::new(file).into()),
-                                )
+                                Runtime::BufferizedReader(crate::value::Identified::new(
+                                    BufReader::new(file).into(),
+                                ))
                                 .into(),
                             ))
                             .into(),
