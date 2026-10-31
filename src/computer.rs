@@ -2173,12 +2173,221 @@ impl<'a> ComputationContext<'a> {
                                                             .unwrap(),
                                                     );
                                                 }
-                                                _ => panic!()
+                                                _ => panic!(),
                                             }
                                         }
                                     }
                                     _ => panic!(),
                                 }
+                            }
+                            "TLS" => {
+                                let mut tls_config_builder = ureq::tls::TlsConfig::builder();
+                                for (tls_config_builder_key, tls_config_builder_value) in
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_tuple()
+                                        .unwrap()
+                                        .inner
+                                        .iter()
+                                        .map(|object_value| {
+                                            let object = object_value
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_object()
+                                                .unwrap();
+                                            let (key, value) = object.inner.iter().next().unwrap();
+                                            (key.as_str(), value.clone())
+                                        })
+                                {
+                                    match tls_config_builder_key {
+                                        "use SNI" => {
+                                            tls_config_builder = tls_config_builder.use_sni(
+                                                tls_config_builder_value
+                                                    .as_ref()
+                                                    .as_ref()
+                                                    .unwrap()
+                                                    .as_bool()
+                                                    .unwrap(),
+                                            );
+                                        }
+                                        "client certificate" => {
+                                            let client_certificate_config =
+                                                tls_config_builder_value
+                                                    .as_ref()
+                                                    .as_ref()
+                                                    .unwrap()
+                                                    .as_object()
+                                                    .unwrap();
+                                            let mut chain = Vec::new();
+                                            let chain_config = client_certificate_config
+                                                .get(&"chain".to_string())
+                                                .unwrap();
+                                            for (
+                                                certificate_config_key,
+                                                certificate_config_value,
+                                            ) in chain_config
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_tuple()
+                                                .unwrap()
+                                                .inner
+                                                .iter()
+                                                .map(|object_value| {
+                                                    let object = object_value
+                                                        .as_ref()
+                                                        .as_ref()
+                                                        .unwrap()
+                                                        .as_object()
+                                                        .unwrap();
+                                                    let (key, value) =
+                                                        object.inner.iter().next().unwrap();
+                                                    (key.as_str(), value.clone())
+                                                })
+                                            {
+                                                chain.push(match certificate_config_key {
+                                                    "DER" => ureq::tls::Certificate::from_der(
+                                                        certificate_config_value
+                                                            .as_ref()
+                                                            .as_ref()
+                                                            .unwrap()
+                                                            .as_bytes()
+                                                            .unwrap(),
+                                                    )
+                                                    .to_owned(),
+                                                    "PEM" => ureq::tls::Certificate::from_pem(
+                                                        certificate_config_value
+                                                            .as_ref()
+                                                            .as_ref()
+                                                            .unwrap()
+                                                            .as_string()
+                                                            .unwrap()
+                                                            .to_string()
+                                                            .as_bytes(),
+                                                    )
+                                                    .with_context(embedded_function_error_context(
+                                                        path_option,
+                                                    ))?
+                                                    .to_owned(),
+                                                    _ => panic!(),
+                                                });
+                                            }
+                                            let private_key = ureq::tls::PrivateKey::from_pem(
+                                                client_certificate_config
+                                                    .get(&"private key PEM".to_string())
+                                                    .unwrap()
+                                                    .as_ref()
+                                                    .as_ref()
+                                                    .unwrap()
+                                                    .as_string()
+                                                    .unwrap()
+                                                    .to_string()
+                                                    .as_bytes(),
+                                            )
+                                            .with_context(embedded_function_error_context(
+                                                path_option,
+                                            ))?;
+                                            tls_config_builder = tls_config_builder.client_cert(
+                                                Some(ureq::tls::ClientCert::new_with_certs(
+                                                    &chain,
+                                                    private_key,
+                                                )),
+                                            );
+                                        }
+                                        "root certificates" => {
+                                            match tls_config_builder_value
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                            {
+                                                Value::String(root_certificates_config_string) => {
+                                                    match root_certificates_config_string
+                                                        .to_string()
+                                                        .as_str()
+                                                    {
+                                                        "platform verifier" => {
+                                                            tls_config_builder = tls_config_builder.root_certs(ureq::tls::RootCerts::PlatformVerifier);
+                                                        }
+                                                        "WebPKI" => {
+                                                            tls_config_builder = tls_config_builder
+                                                                .root_certs(
+                                                                    ureq::tls::RootCerts::WebPki,
+                                                                );
+                                                        }
+                                                        _ => panic!(),
+                                                    }
+                                                }
+                                                Value::Tuple(root_certificates_config_tuple) => {
+                                                    let mut chain = Vec::new();
+                                                    for (
+                                                        certificate_config_key,
+                                                        certificate_config_value,
+                                                    ) in root_certificates_config_tuple
+                                                        .inner
+                                                        .iter()
+                                                        .map(|object_value| {
+                                                            let object = object_value
+                                                                .as_ref()
+                                                                .as_ref()
+                                                                .unwrap()
+                                                                .as_object()
+                                                                .unwrap();
+                                                            let (key, value) =
+                                                                object.inner.iter().next().unwrap();
+                                                            (key.as_str(), value.clone())
+                                                        })
+                                                    {
+                                                        chain.push(match certificate_config_key {
+                                                            "DER" => {
+                                                                ureq::tls::Certificate::from_der(
+                                                                    certificate_config_value
+                                                                        .as_ref()
+                                                                        .as_ref()
+                                                                        .unwrap()
+                                                                        .as_bytes()
+                                                                        .unwrap(),
+                                                                )
+                                                                .to_owned()
+                                                            }
+                                                            "PEM" => {
+                                                                ureq::tls::Certificate::from_pem(
+                                                                    certificate_config_value
+                                                                        .as_ref()
+                                                                        .as_ref()
+                                                                        .unwrap()
+                                                                        .as_string()
+                                                                        .unwrap()
+                                                                        .to_string()
+                                                                        .as_bytes(),
+                                                                )
+                                                                .with_context(
+                                                                    embedded_function_error_context(
+                                                                        path_option,
+                                                                    ),
+                                                                )?
+                                                                .to_owned()
+                                                            }
+                                                            _ => panic!(),
+                                                        });
+                                                    }
+                                                    tls_config_builder = tls_config_builder
+                                                        .root_certs(
+                                                            ureq::tls::RootCerts::Specific(
+                                                                chain.into(),
+                                                            ),
+                                                        );
+                                                }
+                                                _ => panic!(),
+                                            }
+                                        }
+                                        _ => panic!(),
+                                    }
+                                }
+                                agent_config_builder =
+                                    agent_config_builder.tls_config(tls_config_builder.build());
                             }
                             _ => panic!(),
                         }

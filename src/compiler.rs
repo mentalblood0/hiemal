@@ -1523,38 +1523,8 @@ impl Compiler {
                                                             .into(),
                                                         ),
                                                         (
-                                                            "private key".to_string().into(),
-                                                            TypeKind::Union(
-                                                                BTreeSet::from_iter([
-                                                                    TypeKind::Object(
-                                                                        BTreeMap::from_iter([(
-                                                                            "DER".to_string().into(),
-                                                                            TypeKind::Object(BTreeMap::from_iter([
-                                                                                (
-                                                                                    "kind".to_string().into(),
-                                                                                    TypeKind::Union(BTreeSet::from_iter([
-                                                                                        TypeKind::LiteralString("PKCS1".to_string().into()).into(),
-                                                                                        TypeKind::LiteralString("PKCS8".to_string().into()).into(),
-                                                                                        TypeKind::LiteralString("SEC1".to_string().into()).into()
-                                                                                    ]).into()).into()
-                                                                                )
-                                                                            ]).into()).into(),
-                                                                        )])
-                                                                        .into(),
-                                                                    )
-                                                                    .into(),
-                                                                    TypeKind::Object(
-                                                                        BTreeMap::from_iter([(
-                                                                            "PEM".to_string().into(),
-                                                                            TypeKind::String.into(),
-                                                                        )])
-                                                                        .into(),
-                                                                    )
-                                                                    .into(),
-                                                                ])
-                                                                .into(),
-                                                            )
-                                                            .into(),
+                                                            "private key PEM".to_string().into(),
+                                                            TypeKind::String.into()
                                                         ),
                                                     ])
                                                     .into(),
