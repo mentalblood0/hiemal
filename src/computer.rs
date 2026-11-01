@@ -2406,6 +2406,180 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
+                EmbeddedFunction::SendRequest => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let argument_object = computed_argument_unrolled.as_ref().as_ref().unwrap().as_object().unwrap();
+                    let agent_value = argument_object.get(&"client".to_string()).unwrap();
+                    let agent = agent_value.as_ref().as_ref().unwrap().as_runtime().unwrap().as_http_client().unwrap();
+                    let request_arguments = argument_object.get(&"request".to_string()).unwrap();
+                    let request_arguments_object = request_arguments.as_ref().as_ref().unwrap().as_object().unwrap();
+                    let url = request_arguments_object.get(&"URL".to_string()).unwrap().as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                    let method = request_arguments_object.get(&"method".to_string()).unwrap().as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                    let mut request_builder = match method.as_str() {
+                        "GET" => agent.get(url).force_send_body(),
+                        "POST" => agent.post(url),
+                        "PUT" => agent.put(url),
+                        "DELETE" => agent.delete(url).force_send_body(),
+                        "HEAD" => agent.head(url).force_send_body(),
+                        "OPTIONS" => agent.options(url).force_send_body(),
+                        "CONNECT" => agent.connect(url).force_send_body(),
+                        "PATCH" => agent.patch(url),
+                        "TRACE" => agent.trace(url).force_send_body(),
+                        _ => panic!()
+                    };
+                    let parameters_value = request_arguments_object.get(&"parameters".to_string()).unwrap();
+                    for (
+                        parameter_key,
+                        parameter_value,
+                    ) in parameters_value.as_ref().as_ref().unwrap().as_tuple().unwrap()
+                        .inner
+                        .iter()
+                        .map(|object_value| {
+                            let object = object_value
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_object()
+                                .unwrap();
+                            let (key, value) =
+                                object.inner.iter().next().unwrap();
+                            (key.as_str(), value)
+                        })
+                    {
+                        match parameter_key {
+                            "content type" => {
+                                let content_value_object = parameter_value.as_ref().as_ref().unwrap().as_object().unwrap();
+                                let r#type = content_value_object.get(&"type".to_string()).unwrap().as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                                let subtype = content_value_object.get(&"subtype".to_string()).unwrap().as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                                let parameters_arguments = content_value_object.get(&"parameters".to_string()).unwrap();
+                                let parameters_arguments_object = parameters_arguments.as_ref().as_ref().unwrap().as_object().unwrap();
+                                let mut content_type_string = format!("{type}/{subtype}");
+                                if !parameters_arguments_object.is_empty() {
+                                    content_type_string.push(';');
+                                    for (parameter_key, parameter_value) in parameters_arguments_object.inner.iter().map(|(key, value)| (&**key, value.as_ref().as_ref().unwrap().as_string().unwrap().to_string())) {
+                                        content_type_string.push(' ');
+                                        content_type_string.push_str(parameter_key);
+                                        content_type_string.push_str(&parameter_value);
+                                    }
+                                }
+                                request_builder = request_builder.content_type(content_type_string);
+                            }
+                            "headers" => {
+                                let content_value_tuple = parameter_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
+                                for (header_key, header_value) in content_value_tuple.inner.iter()
+                                    .map(|key_value_value| {
+                                        let key_value_tuple = key_value_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
+                                        let key = key_value_tuple.inner[0].as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                                        let value = key_value_tuple.inner[1].as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                                        (key, value)
+                                    }) {
+                                    request_builder = request_builder.header(header_key, header_value);
+                                }
+                            }
+                            "query" => {
+                                let content_value_object = parameter_value.as_ref().as_ref().unwrap().as_object().unwrap();
+                                let query_key_value_pairs_iterator = content_value_object.inner.iter().map(|(key, value)| (&**key, value.as_ref().as_ref().unwrap().as_string().unwrap().to_string()));
+                                request_builder = request_builder.query_pairs(query_key_value_pairs_iterator);
+                            }
+                            "version" => {
+                                let version = match parameter_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string().as_str() {
+                                    "HTTP/0.9" => ureq::http::version::Version::HTTP_09,
+                                    "HTTP/1.0" => ureq::http::version::Version::HTTP_10,
+                                    "HTTP/1.1" => ureq::http::version::Version::HTTP_11,
+                                    "HTTP/2.0" => ureq::http::version::Version::HTTP_2,
+                                    "HTTP/3.0" => ureq::http::version::Version::HTTP_3,
+                                    _ => panic!()
+                                };
+                                request_builder = request_builder.version(version);
+                            }
+                            _ => panic!()
+                        }
+                    }
+                    let content_value_option = request_arguments_object.get(&"content".to_string()).unwrap();
+                    let response = if let Some(content_value) = content_value_option.as_ref().as_ref() {
+                        let content_object = content_value.as_object().unwrap();
+                        let (content_key, content_value) = content_object.inner.iter().next().unwrap();
+                        match content_key.as_str() {
+                            "data" => {
+                                request_builder.send(&**content_value.as_ref().as_ref().unwrap().as_bytes().unwrap())
+                            }
+                            "form" => {
+                                request_builder.send_form(
+                                    content_value.as_ref().as_ref().unwrap().as_object().unwrap().inner.iter()
+                                        .map(|(key, value)| {
+                                            (key.as_str(), value.as_ref().as_ref().unwrap().as_string().unwrap().to_string())
+                                        })
+                                )
+                            }
+                            _ => panic!()
+                        }
+                    } else {
+                        request_builder.send_empty()
+                    }.with_context(embedded_function_error_context(path_option))?;
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Object(Object::from_iter([
+                                (
+                                    "status".to_string().into(),
+                                    response.status().canonical_reason().map(|status_code_string| Value::String(status_code_string.into())).into()
+                                ),
+                                (
+                                    "is informational".to_string().into(),
+                                    Some(Value::Bool(response.status().is_informational())).into()
+                                ),
+                                (
+                                    "is success".to_string().into(),
+                                    Some(Value::Bool(response.status().is_success())).into()
+                                ),
+                                (
+                                    "is redirection".to_string().into(),
+                                    Some(Value::Bool(response.status().is_redirection())).into()
+                                ),
+                                (
+                                    "is client error".to_string().into(),
+                                    Some(Value::Bool(response.status().is_client_error())).into()
+                                ),
+                                (
+                                    "is server error".to_string().into(),
+                                    Some(Value::Bool(response.status().is_server_error())).into()
+                                ),
+                                (
+                                    "version".to_string().into(),
+                                    Some(Value::String(match response.version() {
+                                        ureq::http::version::Version::HTTP_09 => "HTTP/0.9",
+                                        ureq::http::version::Version::HTTP_10 => "HTTP/1.0",
+                                        ureq::http::version::Version::HTTP_11 => "HTTP/1.1",
+                                        ureq::http::version::Version::HTTP_2 => "HTTP/2",
+                                        ureq::http::version::Version::HTTP_3 => "HTTP/3",
+                                        _ => panic!()
+                                    }.into())).into()
+                                ),
+                                (
+                                    "headers".to_string().into(),
+                                    Some(Value::Object(Object::from_iter(response.headers().iter()
+                                        .map(|(header_key, header_value)| (
+                                            header_key.to_string().into(),
+                                            Some(Value::String(header_value.to_str().unwrap().into())).into()
+                                        ))
+                                    ))).into()
+                                ),
+                                (
+                                    "body".to_string().into(),
+                                    Some(Value::Bytes({
+                                        let mut body_buffer = Vec::new();
+                                        response.into_body().into_reader().read_to_end(&mut body_buffer).with_context(embedded_function_error_context(path_option))?;
+                                        body_buffer.into()
+                                    })).into()
+                                ),
+                            ])))
+                            .into(),
+                        ),
+                        type_kind: TypeKind::Embedded(Embedded::BufferizedWriter),
+                    }
+                    .into())
+                }
                 EmbeddedFunction::MatchRegex => {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,

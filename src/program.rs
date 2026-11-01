@@ -283,6 +283,8 @@ pub enum EmbeddedFunction {
     RemoveFile,
     #[serde(rename = "HTTP client")]
     HttpClient,
+    #[serde(rename = "send request")]
+    SendRequest,
     #[serde(rename = "run")]
     Run,
 }
