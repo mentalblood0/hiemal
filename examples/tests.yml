@@ -116,12 +116,13 @@ compute:
               client:
                 HTTP client:
                   - error on bad status code: false
+                  - proxy: false
             compute:
               from:
                 send request:
                   client: { constant: client }
                   request:
-                    URL: http://httpbin.org/get
+                    URL: https://httpbingo.org/get
                     method: GET
                     body: null
                     parameters: []
