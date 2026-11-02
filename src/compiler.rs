@@ -2333,6 +2333,12 @@ impl Compiler {
                             )]),
                         ));
                     }
+                    1 => NodeAndMetadata {
+                        node: result_cases.into_iter().next().unwrap().node,
+                        external_constants_name_clustered_indices:
+                            result_external_constants_name_clustered_indices,
+                    }
+                    .into(),
                     _ => NodeAndMetadata {
                         node: Node {
                             content: Content::Match {
