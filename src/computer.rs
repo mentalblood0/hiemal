@@ -2402,7 +2402,7 @@ impl<'a> ComputationContext<'a> {
                             ))
                             .into(),
                         ),
-                        type_kind: TypeKind::Embedded(Embedded::BufferizedWriter),
+                        type_kind: TypeKind::Embedded(Embedded::HttpClient),
                     }
                     .into())
                 }
@@ -2497,17 +2497,17 @@ impl<'a> ComputationContext<'a> {
                             _ => panic!()
                         }
                     }
-                    let content_value_option = request_arguments_object.get(&"content".to_string()).unwrap();
-                    let response = if let Some(content_value) = content_value_option.as_ref().as_ref() {
-                        let content_object = content_value.as_object().unwrap();
-                        let (content_key, content_value) = content_object.inner.iter().next().unwrap();
-                        match content_key.as_str() {
+                    let body_value_option = request_arguments_object.get(&"body".to_string()).unwrap();
+                    let response = if let Some(body_value) = body_value_option.as_ref().as_ref() {
+                        let body_object = body_value.as_object().unwrap();
+                        let (body_key, body_value) = body_object.inner.iter().next().unwrap();
+                        match body_key.as_str() {
                             "data" => {
-                                request_builder.send(&**content_value.as_ref().as_ref().unwrap().as_bytes().unwrap())
+                                request_builder.send(&**body_value.as_ref().as_ref().unwrap().as_bytes().unwrap())
                             }
                             "form" => {
                                 request_builder.send_form(
-                                    content_value.as_ref().as_ref().unwrap().as_object().unwrap().inner.iter()
+                                    body_value.as_ref().as_ref().unwrap().as_object().unwrap().inner.iter()
                                         .map(|(key, value)| {
                                             (key.as_str(), value.as_ref().as_ref().unwrap().as_string().unwrap().to_string())
                                         })
@@ -2576,7 +2576,7 @@ impl<'a> ComputationContext<'a> {
                             ])))
                             .into(),
                         ),
-                        type_kind: TypeKind::Embedded(Embedded::BufferizedWriter),
+                        type_kind: node.r#type.kind.clone(),
                     }
                     .into())
                 }
