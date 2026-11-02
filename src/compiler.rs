@@ -2329,7 +2329,7 @@ impl Compiler {
                         external_constants_name_clustered_indices: BTreeSet::new(),
                         node: Node {
                             content: Content::Value(r#type.kind.literal_value().into()),
-                            r#type
+                            r#type: r#type.kind.into()
                         }
                         .into(),
                     }
