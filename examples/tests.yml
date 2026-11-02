@@ -109,6 +109,22 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test optimize match:
+        assert equal::
+          found:
+            match:
+              pipe:
+                - functions:
+                    fibonacci::
+                      from: examples/fibonacci.yml
+                      at: [functions, { object key: "fibonacci:" }]
+                  compute:
+                    fibonacci:: 1000 # attempt to compute will result in stack overflow
+                - lalala
+            cases:
+              - [lalala, true]
+              - [any, false]
+          expected: true
       test send request:
         assert equal::
           found:

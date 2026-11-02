@@ -14,6 +14,8 @@ use crate::{
     intermediate_representation::RangeBound,
     intermediate_representation::ValuePathSegment,
     value::{deserialize_rope, serialize_rope},
+    intermediate_representation::Value,
+    containers::{Vector, Object}
 };
 
 #[derive(Debug, Clone)]
@@ -552,6 +554,46 @@ impl TypeKind {
             TypeKind::Union(_) | TypeKind::Any | TypeKind::Unknown(_) => false,
             TypeKind::Constructed(constructed) => constructed.inner().kind.is_concrete(),
             _ => true,
+        }
+    }
+
+    pub fn is_literal(&self) -> bool {
+        match self {
+            TypeKind::Null | TypeKind::LiteralTrue | TypeKind::LiteralFalse => true,
+            TypeKind::LiteralString(_) => true,
+            TypeKind::Tuple(elements_types) => elements_types
+                .iter()
+                .all(|element_type| element_type.kind.is_literal()),
+            TypeKind::Object(inner_types) => inner_types
+                .values()
+                .all(|value_type| value_type.kind.is_literal()),
+            TypeKind::Constructed(constructed) => constructed.inner().kind.is_literal(),
+            _ => false,
+        }
+    }
+
+    pub fn literal_value(&self) -> Option<Value> {
+        match self {
+            TypeKind::Null => None,
+            TypeKind::LiteralTrue => Some(Value::Bool(true)),
+            TypeKind::LiteralFalse => Some(Value::Bool(false)),
+            TypeKind::LiteralString(string) => Some(Value::String(string.clone())),
+            TypeKind::Tuple(elements_types) => {
+                let mut result_raw = Vector::default();
+                for element_type in elements_types.iter() {
+                    result_raw.push(element_type.kind.literal_value().into());
+                }
+                Some(Value::Tuple(result_raw))
+            }
+            TypeKind::Object(inner_types) => {
+                let mut result_raw = Object::from_iter([]);
+                for (key, value_type) in inner_types.iter() {
+                    result_raw.insert(key.clone(), value_type.kind.literal_value().into());
+                }
+                Some(Value::Object(result_raw))
+            }
+            TypeKind::Constructed(constructed) => constructed.inner().kind.literal_value(),
+            _ => panic!()
         }
     }
 

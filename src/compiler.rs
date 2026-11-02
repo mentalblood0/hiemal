@@ -856,7 +856,7 @@ impl Compiler {
                         &BTreeMap::from_iter([(
                             &"one of available constants names",
                             &compilation_context
-                                .available_functions
+                                .available_constants
                                 .keys()
                                 .collect::<Vec<_>>(),
                         )]),
@@ -2227,12 +2227,12 @@ impl Compiler {
                                             .clone(),
                                     );
                                     covered_types_kinds.insert(case_match_type.kind.clone());
-                                    result_cases.push(Case {
+                                    result_cases.push((compiled_case.clone(), Case {
                                         condition: intermediate_representation::Condition::Type(
                                             case_match_type.clone(),
                                         ),
                                         node: compiled_case.node.clone(),
-                                    });
+                                    }));
                                     current_match_type_kind_option =
                                         current_match_type_kind.substraction(&case_match_type.kind);
                                     if current_match_type_kind_option.is_none() {
@@ -2275,12 +2275,12 @@ impl Compiler {
                                             .external_constants_name_clustered_indices
                                             .clone(),
                                     );
-                                    result_cases.push(Case {
+                                    result_cases.push((compiled_case.clone(), Case {
                                         condition: intermediate_representation::Condition::Value(
                                             compiled_condition.node.clone(),
                                         ),
                                         node: compiled_case.node.clone(),
-                                    });
+                                    }));
                                     if matches!(
                                         refined_match_type_kind,
                                         TypeKind::LiteralTrue
@@ -2323,36 +2323,44 @@ impl Compiler {
                 if !covered.kind.contains(&compiled_match.node.r#type.kind) {
                     return Err(compilation_context.error(&covered, &compiled_match.node.r#type));
                 }
-                match result_cases.len() {
-                    0 => {
-                        return Err(match_compilation_context.error(
-                            &Option::<String>::None,
-                            &BTreeMap::from_iter([(
-                                "at least one valid case for match",
-                                &compiled_match.node.r#type,
-                            )]),
-                        ));
-                    }
-                    1 => NodeAndMetadata {
-                        node: result_cases.into_iter().next().unwrap().node,
-                        external_constants_name_clustered_indices:
-                            result_external_constants_name_clustered_indices,
-                    }
-                    .into(),
-                    _ => NodeAndMetadata {
+                let r#type = Type::from(result_types);
+                if r#type.kind.is_literal() {
+                    NodeAndMetadata {
+                        external_constants_name_clustered_indices: BTreeSet::new(),
                         node: Node {
-                            content: Content::Match {
-                                r#match: compiled_match.node.clone(),
-                                cases: result_cases,
-                                match_constant_name_clustered_index_option,
-                            },
-                            r#type: Type::from(result_types),
+                            content: Content::Value(r#type.kind.literal_value().into()),
+                            r#type
                         }
                         .into(),
-                        external_constants_name_clustered_indices:
-                            result_external_constants_name_clustered_indices,
                     }
-                    .into(),
+                    .into()
+                } else {
+                    match result_cases.len() {
+                        0 => {
+                            return Err(match_compilation_context.error(
+                                &Option::<String>::None,
+                                &BTreeMap::from_iter([(
+                                    "at least one valid case for match",
+                                    &compiled_match.node.r#type,
+                                )]),
+                            ));
+                        }
+                        // 1 => result_cases.into_iter().next().unwrap().0,
+                        _ => NodeAndMetadata {
+                            node: Node {
+                                content: Content::Match {
+                                    r#match: compiled_match.node.clone(),
+                                    cases: result_cases.into_iter().map(|(_, case)| case).collect(),
+                                    match_constant_name_clustered_index_option,
+                                },
+                                r#type,
+                            }
+                            .into(),
+                            external_constants_name_clustered_indices:
+                                result_external_constants_name_clustered_indices,
+                        }
+                        .into(),
+                    }
                 }
             }
             Program::Map { map, r#as, through } => {
