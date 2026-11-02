@@ -68,6 +68,7 @@ impl CompilationContext {
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq)]
 pub struct ConstantDefinition {
+    pub name: Arc<String>,
     pub name_clustered_index: usize,
     pub index: usize,
 }
@@ -300,18 +301,45 @@ struct UserFunctionCallDefinition {
     body: MaybeCompiledProgram,
 }
 
-#[derive(Default, Clone, Hash, Debug)]
-struct ConstantMetadata {
-    r#type: Type,
-}
-
 #[derive(Default)]
 struct GlobalCompilationContext {
     user_function_to_index_and_type_option: HashMap<MaybeCompiledProgram, (usize, Type)>,
     user_functions_definitions: Vec<UserFunctionCallDefinition>,
     constants_names_to_name_clustered_constants_indices: HashMap<Arc<String>, usize>,
-    constants: Vec<ConstantMetadata>,
+    constants: Vec<Type>,
     includes_cache: IncludesCache,
+}
+
+impl GlobalCompilationContext {
+    fn define_constant(
+        &mut self,
+        name: Arc<String>,
+        r#type: Type,
+    ) -> ConstantDefinition {
+        ConstantDefinition {
+            name: name.clone(),
+            index: {
+                let result = self.constants.len();
+                self.constants.push(r#type);
+                result
+            },
+            name_clustered_index: if let Some(constant_name_clustered_index) =
+                self
+                    .constants_names_to_name_clustered_constants_indices
+                    .get(&*name)
+            {
+                *constant_name_clustered_index
+            } else {
+                let result = self
+                    .constants_names_to_name_clustered_constants_indices
+                    .len();
+                self
+                    .constants_names_to_name_clustered_constants_indices
+                    .insert(name.clone(), result);
+                result
+            },
+        }
+    }
 }
 
 fn process_from_at_program_path_part(
@@ -539,14 +567,15 @@ impl Compiler {
     fn define_constant(
         &self,
         name: Arc<String>,
-        constant_metadata: ConstantMetadata,
+        r#type: Type,
         compilation_context: &mut CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
     ) -> ConstantDefinition {
         let result = ConstantDefinition {
+            name: name.clone(),
             index: {
                 let result = global_compilation_context.constants.len();
-                global_compilation_context.constants.push(constant_metadata);
+                global_compilation_context.constants.push(r#type);
                 result
             },
             name_clustered_index: if let Some(constant_name_clustered_index) =
@@ -748,9 +777,7 @@ impl Compiler {
                     );
                     let constant_definition = self.define_constant(
                         constant_name.clone(),
-                        ConstantMetadata {
-                            r#type: compiled_constant.node.r#type.clone(),
-                        },
+                        compiled_constant.node.r#type.clone(),
                         &mut compute_compilation_context,
                         global_compilation_context,
                     );
@@ -833,7 +860,7 @@ impl Compiler {
                 if let Some(constant_index) =
                     compilation_context.available_constants.get(constant_name)
                 {
-                    let constant_metadata =
+                    let constant_type =
                         global_compilation_context.constants[constant_index].clone();
                     let name_clustered_constant_index = *global_compilation_context
                         .constants_names_to_name_clustered_constants_indices
@@ -845,7 +872,7 @@ impl Compiler {
                         ]),
                         node: Node {
                             content: Content::Constant(name_clustered_constant_index),
-                            r#type: constant_metadata.r#type,
+                            r#type: constant_type,
                         }
                         .into(),
                     }
@@ -2170,51 +2197,33 @@ impl Compiler {
                 let mut current_match_type_kind_option =
                     Some(compiled_match.node.r#type.kind.clone());
                 let mut covered_types_kinds = BTreeSet::new();
-                let match_constant_name_clustered_index_option =
-                    if let Some(match_constant_name) = r#as {
-                        Some(
-                            if let Some(result) = global_compilation_context
-                                .constants_names_to_name_clustered_constants_indices
-                                .get(match_constant_name)
-                            {
-                                *result
-                            } else {
-                                global_compilation_context
-                                    .constants_names_to_name_clustered_constants_indices
-                                    .len()
-                            },
-                        )
-                    } else {
-                        None
-                    };
+                let defined_match_constant_option = r#as.as_ref().or(match_constant_name).map(|match_constant_name| global_compilation_context.define_constant(
+                        match_constant_name.clone(),
+                        compiled_match
+                            .node
+                            .r#type
+                            .with_kind(TypeKind::Null)
+                    ));
                 let mut has_effective_values_conditions = false;
                 for (case_index, (case_condition, case)) in cases.iter().enumerate() {
-                    let mut case_compilation_context = compilation_context.clone();
-                    case_compilation_context
-                        .path
-                        .0
-                        .extend([PathSegment::Cases, PathSegment::Case(case_index)]);
                     if let Some(ref current_match_type_kind) = current_match_type_kind_option {
                         match case_condition {
                             Condition::Type(case_match_type) => {
                                 if let Some(refined_match_type_kind) =
                                     current_match_type_kind.intersection(&case_match_type.kind)
                                 {
-                                    if let Some(match_constant_name) =
-                                        r#as.as_ref().or(match_constant_name)
-                                    {
-                                        self.define_constant(
-                                            match_constant_name.clone(),
-                                            ConstantMetadata {
-                                                r#type: compiled_match
-                                                    .node
-                                                    .r#type
-                                                    .with_kind(refined_match_type_kind),
-                                            },
-                                            &mut case_compilation_context,
-                                            global_compilation_context,
-                                        );
-                                    };
+                                    let mut case_compilation_context = compilation_context.clone();
+                                    case_compilation_context
+                                        .path
+                                        .0
+                                        .extend([PathSegment::Cases, PathSegment::Case(case_index)]);
+                                    if let Some(ref defined_match_constant) = defined_match_constant_option {
+                                        global_compilation_context.constants[defined_match_constant.index] = compiled_match
+                                            .node
+                                            .r#type
+                                            .with_kind(refined_match_type_kind);
+                                        case_compilation_context.available_constants.insert(defined_match_constant.name.clone(), defined_match_constant.index);
+                                    }
                                     let compiled_case = self.compile_with_context(
                                         case,
                                         &case_compilation_context,
@@ -2243,7 +2252,7 @@ impl Compiler {
                             Condition::Value(condition) => {
                                 let compiled_condition = self.compile_with_context(
                                     condition,
-                                    &case_compilation_context,
+                                    compilation_context,
                                     global_compilation_context,
                                 )?;
                                 if let Some(refined_match_type_kind) = compiled_match
@@ -2252,17 +2261,14 @@ impl Compiler {
                                     .kind
                                     .intersection(&compiled_condition.node.r#type.kind)
                                 {
-                                    if let Some(match_constant_name) =
-                                        r#as.as_ref().or(match_constant_name)
-                                    {
-                                        self.define_constant(
-                                            match_constant_name.clone(),
-                                            ConstantMetadata {
-                                                r#type: refined_match_type_kind.clone().into(),
-                                            },
-                                            &mut case_compilation_context,
-                                            global_compilation_context,
-                                        );
+                                    let mut case_compilation_context = compilation_context.clone();
+                                    case_compilation_context
+                                        .path
+                                        .0
+                                        .extend([PathSegment::Cases, PathSegment::Case(case_index)]);
+                                    if let Some(ref defined_match_constant) = defined_match_constant_option {
+                                        global_compilation_context.constants[defined_match_constant.index] = refined_match_type_kind.clone().into();
+                                        case_compilation_context.available_constants.insert(defined_match_constant.name.clone(), defined_match_constant.index);
                                     }
                                     let compiled_case = self.compile_with_context(
                                         case,
@@ -2345,13 +2351,13 @@ impl Compiler {
                                 )]),
                             ));
                         }
-                        // 1 => result_cases.into_iter().next().unwrap().0,
+                        1 => result_cases.into_iter().next().unwrap().0,
                         _ => NodeAndMetadata {
                             node: Node {
                                 content: Content::Match {
                                     r#match: compiled_match.node.clone(),
                                     cases: result_cases.into_iter().map(|(_, case)| case).collect(),
-                                    match_constant_name_clustered_index_option,
+                                    match_constant_name_clustered_index_option: defined_match_constant_option.map(|defined_match_constant| defined_match_constant.name_clustered_index),
                                 },
                                 r#type,
                             }
@@ -2426,9 +2432,7 @@ impl Compiler {
                                             .extend([PathSegment::Through(element_type_index)]);
                                         self.define_constant(
                                             r#as.clone(),
-                                            ConstantMetadata {
-                                                r#type: element_type.clone(),
-                                            },
+                                            element_type.clone(),
                                             &mut through_compilation_context,
                                             global_compilation_context,
                                         );
@@ -2476,9 +2480,7 @@ impl Compiler {
                                     .extend([PathSegment::Through(0)]);
                                 self.define_constant(
                                     r#as.clone(),
-                                    ConstantMetadata {
-                                        r#type: *map_array_element_type.clone(),
-                                    },
+                                    *map_array_element_type.clone(),
                                     &mut through_compilation_context,
                                     global_compilation_context,
                                 );
@@ -2603,9 +2605,7 @@ impl Compiler {
                                         .extend([PathSegment::Through(element_type_index)]);
                                     self.define_constant(
                                         r#as.clone(),
-                                        ConstantMetadata {
-                                            r#type: element_type.clone(),
-                                        },
+                                        element_type.clone(),
                                         &mut through_compilation_context,
                                         global_compilation_context,
                                     );
@@ -2657,9 +2657,7 @@ impl Compiler {
                                     .extend([PathSegment::Through(0)]);
                                 self.define_constant(
                                     r#as.clone(),
-                                    ConstantMetadata {
-                                        r#type: *filter_array_element_type.clone(),
-                                    },
+                                    *filter_array_element_type.clone(),
                                     &mut through_compilation_context,
                                     global_compilation_context,
                                 );
@@ -2794,17 +2792,13 @@ impl Compiler {
                                             .extend([PathSegment::Through(current_type_index)]);
                                         self.define_constant(
                                             r#as.clone(),
-                                            ConstantMetadata {
-                                                r#type: current_type.clone(),
-                                            },
+                                            current_type.clone(),
                                             &mut through_compilation_context,
                                             global_compilation_context,
                                         );
                                         self.define_constant(
                                             accumulating_in.clone(),
-                                            ConstantMetadata {
-                                                r#type: result_type.clone(),
-                                            },
+                                            result_type.clone(),
                                             &mut through_compilation_context,
                                             global_compilation_context,
                                         );
@@ -2856,17 +2850,13 @@ impl Compiler {
                                 let starting_with_type = compiled_starting_with.node.r#type.clone();
                                 self.define_constant(
                                     r#as.clone(),
-                                    ConstantMetadata {
-                                        r#type: *fold_array_element_type.clone(),
-                                    },
+                                    *fold_array_element_type.clone(),
                                     &mut through_compilation_context,
                                     global_compilation_context,
                                 );
                                 self.define_constant(
                                     accumulating_in.clone(),
-                                    ConstantMetadata {
-                                        r#type: starting_with_type.clone(),
-                                    },
+                                    starting_with_type.clone(),
                                     &mut through_compilation_context,
                                     global_compilation_context,
                                 );
@@ -2967,9 +2957,7 @@ impl Compiler {
                     current_constant_name_clustered_index = self
                         .define_constant(
                             r#as.clone(),
-                            ConstantMetadata {
-                                r#type: current_concrete_type.clone(),
-                            },
+                            current_concrete_type.clone(),
                             &mut next_compilation_context,
                             global_compilation_context,
                         )
@@ -3005,9 +2993,7 @@ impl Compiler {
                     while_compilation_context.path.0.push(PathSegment::While);
                     self.define_constant(
                         r#as.clone(),
-                        ConstantMetadata {
-                            r#type: element_type.clone(),
-                        },
+                        element_type.clone(),
                         &mut while_compilation_context,
                         global_compilation_context,
                     );
@@ -3082,9 +3068,7 @@ impl Compiler {
                         as_constant_name_clustered_index_option = Some(
                             self.define_constant(
                                 r#as.clone(),
-                                ConstantMetadata {
-                                    r#type: compiled_previous_pipe_element.node.r#type.clone(),
-                                },
+                                compiled_previous_pipe_element.node.r#type.clone(),
                                 &mut pipe_element_compilation_context,
                                 global_compilation_context,
                             )
@@ -3152,9 +3136,7 @@ impl Compiler {
                 let as_constant_name_clustered_index = self
                     .define_constant(
                         r#as.clone(),
-                        ConstantMetadata {
-                            r#type: compiled_try.node.r#type.with_kind(TypeKind::String),
-                        },
+                        compiled_try.node.r#type.with_kind(TypeKind::String),
                         &mut or_compilation_context,
                         global_compilation_context,
                     )
@@ -3274,9 +3256,7 @@ impl Compiler {
                                         );
                                         let constant_definition = self.define_constant(
                                             function_argument_name.clone(),
-                                            ConstantMetadata {
-                                                r#type: compiled_constant.node.r#type.clone(),
-                                            },
+                                            compiled_constant.node.r#type.clone(),
                                             &mut body_compilation_context,
                                             global_compilation_context,
                                         );
