@@ -310,38 +310,6 @@ struct GlobalCompilationContext {
     includes_cache: IncludesCache,
 }
 
-impl GlobalCompilationContext {
-    fn define_constant(
-        &mut self,
-        name: Arc<String>,
-        r#type: Type,
-    ) -> ConstantDefinition {
-        ConstantDefinition {
-            name: name.clone(),
-            index: {
-                let result = self.constants.len();
-                self.constants.push(r#type);
-                result
-            },
-            name_clustered_index: if let Some(constant_name_clustered_index) =
-                self
-                    .constants_names_to_name_clustered_constants_indices
-                    .get(&*name)
-            {
-                *constant_name_clustered_index
-            } else {
-                let result = self
-                    .constants_names_to_name_clustered_constants_indices
-                    .len();
-                self
-                    .constants_names_to_name_clustered_constants_indices
-                    .insert(name.clone(), result);
-                result
-            },
-        }
-    }
-}
-
 fn process_from_at_program_path_part(
     from: &program::From,
     at: &Vec<AtSegment>,
@@ -2197,13 +2165,23 @@ impl Compiler {
                 let mut current_match_type_kind_option =
                     Some(compiled_match.node.r#type.kind.clone());
                 let mut covered_types_kinds = BTreeSet::new();
-                let defined_match_constant_option = r#as.as_ref().or(match_constant_name).map(|match_constant_name| global_compilation_context.define_constant(
-                        match_constant_name.clone(),
-                        compiled_match
-                            .node
-                            .r#type
-                            .with_kind(TypeKind::Null)
-                    ));
+                let match_constant_name_clustered_index_option =
+                    if let Some(match_constant_name) = r#as {
+                        Some(
+                            if let Some(result) = global_compilation_context
+                                .constants_names_to_name_clustered_constants_indices
+                                .get(match_constant_name)
+                            {
+                                *result
+                            } else {
+                                global_compilation_context
+                                    .constants_names_to_name_clustered_constants_indices
+                                    .len()
+                            },
+                        )
+                    } else {
+                        None
+                    };
                 let mut has_effective_values_conditions = false;
                 for (case_index, (case_condition, case)) in cases.iter().enumerate() {
                     if let Some(ref current_match_type_kind) = current_match_type_kind_option {
@@ -2217,12 +2195,16 @@ impl Compiler {
                                         .path
                                         .0
                                         .extend([PathSegment::Cases, PathSegment::Case(case_index)]);
-                                    if let Some(ref defined_match_constant) = defined_match_constant_option {
-                                        global_compilation_context.constants[defined_match_constant.index] = compiled_match
-                                            .node
-                                            .r#type
-                                            .with_kind(refined_match_type_kind);
-                                        case_compilation_context.available_constants.insert(defined_match_constant.name.clone(), defined_match_constant.index);
+                                    if let Some(match_constant_name) = r#as.as_ref().or(match_constant_name) {
+                                        self.define_constant(
+                                            match_constant_name.clone(),
+                                            compiled_match
+                                                .node
+                                                .r#type
+                                                .with_kind(refined_match_type_kind),
+                                            &mut case_compilation_context,
+                                            global_compilation_context
+                                        );
                                     }
                                     let compiled_case = self.compile_with_context(
                                         case,
@@ -2236,12 +2218,12 @@ impl Compiler {
                                             .clone(),
                                     );
                                     covered_types_kinds.insert(case_match_type.kind.clone());
-                                    result_cases.push((compiled_case.clone(), Case {
+                                    result_cases.push(Case {
                                         condition: intermediate_representation::Condition::Type(
                                             case_match_type.clone(),
                                         ),
                                         node: compiled_case.node.clone(),
-                                    }));
+                                    });
                                     current_match_type_kind_option =
                                         current_match_type_kind.substraction(&case_match_type.kind);
                                     if current_match_type_kind_option.is_none() {
@@ -2250,9 +2232,14 @@ impl Compiler {
                                 }
                             }
                             Condition::Value(condition) => {
+                                let mut case_compilation_context = compilation_context.clone();
+                                case_compilation_context
+                                    .path
+                                    .0
+                                    .extend([PathSegment::Cases, PathSegment::Case(case_index)]);
                                 let compiled_condition = self.compile_with_context(
                                     condition,
-                                    compilation_context,
+                                    &case_compilation_context,
                                     global_compilation_context,
                                 )?;
                                 if let Some(refined_match_type_kind) = compiled_match
@@ -2261,14 +2248,13 @@ impl Compiler {
                                     .kind
                                     .intersection(&compiled_condition.node.r#type.kind)
                                 {
-                                    let mut case_compilation_context = compilation_context.clone();
-                                    case_compilation_context
-                                        .path
-                                        .0
-                                        .extend([PathSegment::Cases, PathSegment::Case(case_index)]);
-                                    if let Some(ref defined_match_constant) = defined_match_constant_option {
-                                        global_compilation_context.constants[defined_match_constant.index] = refined_match_type_kind.clone().into();
-                                        case_compilation_context.available_constants.insert(defined_match_constant.name.clone(), defined_match_constant.index);
+                                    if let Some(match_constant_name) = r#as.as_ref().or(match_constant_name) {
+                                        self.define_constant(
+                                            match_constant_name.clone(),
+                                            refined_match_type_kind.clone().into(),
+                                            &mut case_compilation_context,
+                                            global_compilation_context
+                                        );
                                     }
                                     let compiled_case = self.compile_with_context(
                                         case,
@@ -2281,12 +2267,12 @@ impl Compiler {
                                             .external_constants_name_clustered_indices
                                             .clone(),
                                     );
-                                    result_cases.push((compiled_case.clone(), Case {
+                                    result_cases.push(Case {
                                         condition: intermediate_representation::Condition::Value(
                                             compiled_condition.node.clone(),
                                         ),
                                         node: compiled_case.node.clone(),
-                                    }));
+                                    });
                                     if matches!(
                                         refined_match_type_kind,
                                         TypeKind::LiteralTrue
@@ -2331,11 +2317,18 @@ impl Compiler {
                 }
                 let r#type = Type::from(result_types);
                 if r#type.kind.is_literal() {
+                    let literal_value = r#type.kind.literal_value();
+                    let r#type = Value::type_kind(&literal_value).into();
                     NodeAndMetadata {
                         external_constants_name_clustered_indices: BTreeSet::new(),
                         node: Node {
-                            content: Content::Value(r#type.kind.literal_value().into()),
-                            r#type: r#type.kind.into()
+                            content: Content::Value(unsafe {
+                                std::mem::transmute::<
+                                    Arc<Option<Value>>,
+                                    Arc<Option<intermediate_representation::Value>>,
+                                >(literal_value.into())
+                            }),
+                            r#type
                         }
                         .into(),
                     }
@@ -2351,13 +2344,18 @@ impl Compiler {
                                 )]),
                             ));
                         }
-                        1 => result_cases.into_iter().next().unwrap().0,
+                        // 1 => {
+                        //     NodeAndMetadata {
+                        //         node: result_cases.into_iter().next().unwrap().node,
+                        //         external_constants_name_clustered_indices: result_external_constants_name_clustered_indices
+                        //     }.into()
+                        // }
                         _ => NodeAndMetadata {
                             node: Node {
                                 content: Content::Match {
                                     r#match: compiled_match.node.clone(),
-                                    cases: result_cases.into_iter().map(|(_, case)| case).collect(),
-                                    match_constant_name_clustered_index_option: defined_match_constant_option.map(|defined_match_constant| defined_match_constant.name_clustered_index),
+                                    cases: result_cases,
+                                    match_constant_name_clustered_index_option,
                                 },
                                 r#type,
                             }

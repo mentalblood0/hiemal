@@ -13,8 +13,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use crate::{
     intermediate_representation::RangeBound,
     intermediate_representation::ValuePathSegment,
-    value::{deserialize_rope, serialize_rope},
-    intermediate_representation::Value,
+    value::{deserialize_rope, serialize_rope, Value},
     containers::{Vector, Object}
 };
 

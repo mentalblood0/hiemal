@@ -137,7 +137,7 @@ where
     where
         S: Serializer,
     {
-        let mut map = serializer.serialize_map(None)?;
+        let mut map = serializer.serialize_map(Some(self.len()))?;
         {
             let lockable_internals_read_guard = self.lockable_internals.read();
             for (k, v) in lockable_internals_read_guard.iter() {
