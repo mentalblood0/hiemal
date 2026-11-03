@@ -177,10 +177,15 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Constructed {
     #[default]
+    #[serde(rename = "regex")]
     Regex,
+    #[serde(rename = "one of")]
     OneOf,
+    #[serde(rename = "character except from string")]
     CharacterExceptFromString,
+    #[serde(rename = "repeat")]
     Repeat,
+    #[serde(rename = "group")]
     Group,
 }
 

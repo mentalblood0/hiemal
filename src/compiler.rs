@@ -14,6 +14,7 @@ use crate::{
     computer::Computer,
     containers::{Object, ObjectRaw, Set, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
+    embedded_functions::EMBEDDED_FUNCTIONS,
     includes_cache::IncludesCache,
     intermediate_representation::{
         self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction,
@@ -24,7 +25,7 @@ use crate::{
         PathSegment, Program, RangeBound,
     },
     r#type::{
-        Capability, Constructed, Embedded, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties,
+        Capability, Embedded, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties,
     },
     value::Value,
 };
@@ -1028,7 +1029,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Array(Box::new(TypeKind::Number.into())),
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::Sum as usize],
                         &|compiled_argument_resolved_type| {
                             Ok(compiled_argument_resolved_type.with_kind(TypeKind::Number))
                         },
@@ -1037,9 +1038,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Tuple(
-                            vec![TypeKind::Number.into(), TypeKind::Number.into()].into(),
-                        ),
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::Mod as usize],
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
                                 kind: TypeKind::Number,
@@ -1052,20 +1051,11 @@ impl Compiler {
                             })
                         },
                     )?,
-                    EmbeddedFunction::Concat => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        &TypeKind::Array(Box::new(TypeKind::String.into())),
-                        &|compiled_argument_resolved_type| {
-                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::String))
-                        },
-                    )?,
                     EmbeddedFunction::IsSorted => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Array(Box::new(TypeKind::Any.into())),
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::IsSorted as usize],
                         &|compiled_argument_resolved_type| {
                             Ok(compiled_argument_resolved_type.with_kind(TypeKind::Bool))
                         },
@@ -1075,13 +1065,8 @@ impl Compiler {
                             compilation_context,
                             global_compilation_context,
                             embedded_function_call,
-                            &TypeKind::Union(
-                                BTreeSet::from_iter([
-                                    TypeKind::Number.into(),
-                                    TypeKind::LiteralString("all".into()).into(),
-                                ])
-                                .into(),
-                            ),
+                            &EMBEDDED_FUNCTIONS
+                                [EmbeddedFunction::ReadBytesFromStandardInput as usize],
                             &|compiled_argument_resolved_type| {
                                 Ok(Type {
                                     kind: TypeKind::Bytes,
@@ -1099,7 +1084,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::String,
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::ParseYaml as usize],
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
                                 kind: TypeKind::Any,
@@ -1116,7 +1101,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::GenericObject(Box::new(TypeKind::Any.into())),
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::KeyValuePairs as usize],
                         &|compiled_argument_resolved_type| {
                             if let TypeKind::Object(argument_object_values_types) =
                                 &compiled_argument_resolved_type.kind
@@ -1143,13 +1128,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Union(
-                            BTreeSet::from_iter([
-                                TypeKind::GenericLiteralString.into(),
-                                TypeKind::Constructed(Constructed::Regex).into(),
-                            ])
-                            .into(),
-                        ),
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::CompileRegex as usize],
                         &|compiled_argument_resolved_type| {
                             if let TypeKind::LiteralString(regex_literal_string) =
                                 &compiled_argument_resolved_type.kind
@@ -1179,16 +1158,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Object(
-                            BTreeMap::from_iter([
-                                ("string".to_string().into(), TypeKind::String.into()),
-                                (
-                                    "regex".to_string().into(),
-                                    TypeKind::Embedded(Embedded::CompiledRegex).into(),
-                                ),
-                            ])
-                            .into(),
-                        ),
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::MatchRegex as usize],
                         &|compiled_argument_resolved_type| {
                             compiled_argument_resolved_type.properties.is_serializable = true;
                             Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
@@ -1236,11 +1206,20 @@ impl Compiler {
                             )))
                         },
                     )?,
+                    EmbeddedFunction::Concat => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::Concat as usize],
+                        &|compiled_argument_resolved_type| {
+                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::String))
+                        },
+                    )?,
                     EmbeddedFunction::StringFromBytes => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Bytes,
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::StringFromBytes as usize],
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
                                 kind: TypeKind::String,
@@ -1257,7 +1236,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::String,
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::BytesFromString as usize],
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
                                 kind: TypeKind::Bytes,
@@ -1274,29 +1253,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Object(
-                            BTreeMap::from_iter([
-                                ("path".to_string().into(), TypeKind::String.into()),
-                                (
-                                    "mode".to_string().into(),
-                                    TypeKind::Union(
-                                        BTreeSet::from_iter([
-                                            TypeKind::LiteralString("append".into()).into(),
-                                            TypeKind::LiteralString("overwrite".into()).into(),
-                                            TypeKind::LiteralString("truncate".into()).into(),
-                                            TypeKind::LiteralString("create or append".into())
-                                                .into(),
-                                            TypeKind::LiteralString("create or overwrite".into())
-                                                .into(),
-                                            TypeKind::LiteralString("create".into()).into(),
-                                        ])
-                                        .into(),
-                                    )
-                                    .into(),
-                                ),
-                            ])
-                            .into(),
-                        ),
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::BufferizedWriter as usize],
                         &|compiled_argument_resolved_type| {
                             let mut capabilities = Capability::Error.into();
                             if compiled_argument_resolved_type
@@ -1352,7 +1309,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::String,
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::BufferizedReader as usize],
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
                                 kind: TypeKind::Embedded(Embedded::BufferizedReader),
@@ -1369,16 +1326,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Object(
-                            BTreeMap::from_iter([
-                                (
-                                    "target".to_string().into(),
-                                    TypeKind::Embedded(Embedded::BufferizedWriter).into(),
-                                ),
-                                ("content".to_string().into(), TypeKind::Bytes.into()),
-                            ])
-                            .into(),
-                        ),
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::WriteBytes as usize],
                         &|compiled_argument_resolved_type| {
                             let mut properties = compiled_argument_resolved_type.properties.clone();
                             properties.capabilities |= Capability::Error | Capability::WriteFile;
@@ -1393,16 +1341,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Object(
-                            BTreeMap::from_iter([
-                                (
-                                    "source".to_string().into(),
-                                    TypeKind::Embedded(Embedded::BufferizedReader).into(),
-                                ),
-                                ("amount".to_string().into(), TypeKind::Number.into()),
-                            ])
-                            .into(),
-                        ),
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::ReadBytes as usize],
                         &|compiled_argument_resolved_type| {
                             let mut properties = compiled_argument_resolved_type.properties.clone();
                             properties.capabilities |= Capability::Error | Capability::ReadFile;
@@ -1417,7 +1356,7 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::String,
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::RemoveFile as usize],
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
                                 kind: TypeKind::Null,
@@ -1430,639 +1369,11 @@ impl Compiler {
                             })
                         },
                     )?,
-                    EmbeddedFunction::SendRequest => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        &TypeKind::Object(
-                            BTreeMap::from_iter([
-                                (
-                                    "client".to_string().into(),
-                                    TypeKind::Embedded(Embedded::HttpClient).into(),
-                                ),
-                                (
-                                    "request".to_string().into(),
-                                    TypeKind::Object(BTreeMap::from_iter([
-                                        ("URL".to_string().into(), TypeKind::String.into()),
-                                        (
-                                            "method".to_string().into(),
-                                            TypeKind::Union(BTreeSet::from_iter([
-                                                TypeKind::LiteralString("GET".into()).into(),
-                                                TypeKind::LiteralString("POST".into()).into(),
-                                                TypeKind::LiteralString("PUT".into()).into(),
-                                                TypeKind::LiteralString("DELETE".into()).into(),
-                                                TypeKind::LiteralString("HEAD".into()).into(),
-                                                TypeKind::LiteralString("OPTIONS".into()).into(),
-                                                TypeKind::LiteralString("CONNECT".into()).into(),
-                                                TypeKind::LiteralString("PATCH".into()).into(),
-                                                TypeKind::LiteralString("TRACE".into()).into(),
-                                            ]).into()).into()
-                                        ),
-                                        (
-                                            "body".to_string().into(),
-                                            TypeKind::Union(BTreeSet::from_iter([
-                                                TypeKind::Null.into(),
-                                                TypeKind::Object(BTreeMap::from_iter([
-                                                    ("data".to_string().into(), TypeKind::Bytes.into()),
-                                                ]).into()).into(),
-                                                TypeKind::Object(BTreeMap::from_iter([(
-                                                    "form".to_string().into(),
-                                                    TypeKind::GenericObject(Box::new(TypeKind::String.into())).into()
-                                                )]).into()).into()
-                                            ]).into()).into(),
-                                        ),
-                                        (
-                                            "parameters".to_string().into(),
-                                            TypeKind::Array(Box::new(TypeKind::Union(BTreeSet::from_iter([
-                                                TypeKind::Object(BTreeMap::from_iter([(
-                                                    "content type".to_string().into(),
-                                                    TypeKind::Object(BTreeMap::from_iter([
-                                                        ("type".to_string().into(), TypeKind::String.into()),
-                                                        ("subtype".to_string().into(), TypeKind::String.into()),
-                                                        ("parameters".to_string().into(), TypeKind::GenericObject(Box::new(TypeKind::String.into())).into())
-                                                    ]).into()).into()
-                                                )]).into()).into(),
-                                                TypeKind::Object(BTreeMap::from_iter([(
-                                                    "headers".to_string().into(),
-                                                    TypeKind::Array(Box::new(TypeKind::Tuple(Vec::from_iter([
-                                                        TypeKind::Union(BTreeSet::from_iter([
-                                                            TypeKind::LiteralString("accept".into()).into(),
-                                                            TypeKind::LiteralString("accept-charset".into()).into(),
-                                                            TypeKind::LiteralString("accept-encoding".into()).into(),
-                                                            TypeKind::LiteralString("accept-language".into()).into(),
-                                                            TypeKind::LiteralString("accept-ranges".into()).into(),
-                                                            TypeKind::LiteralString("access-control-allow-credentials".into()).into(),
-                                                            TypeKind::LiteralString("access-control-allow-headers".into()).into(),
-                                                            TypeKind::LiteralString("access-control-allow-methods".into()).into(),
-                                                            TypeKind::LiteralString("access-control-allow-origin".into()).into(),
-                                                            TypeKind::LiteralString("access-control-expose-headers".into()).into(),
-                                                            TypeKind::LiteralString("access-control-max-age".into()).into(),
-                                                            TypeKind::LiteralString("access-control-request-headers".into()).into(),
-                                                            TypeKind::LiteralString("access-control-request-method".into()).into(),
-                                                            TypeKind::LiteralString("age".into()).into(),
-                                                            TypeKind::LiteralString("allow".into()).into(),
-                                                            TypeKind::LiteralString("alt-svc".into()).into(),
-                                                            TypeKind::LiteralString("authorization".into()).into(),
-                                                            TypeKind::LiteralString("cache-control".into()).into(),
-                                                            TypeKind::LiteralString("cache-status".into()).into(),
-                                                            TypeKind::LiteralString("cdn-cache-control".into()).into(),
-                                                            TypeKind::LiteralString("connection".into()).into(),
-                                                            TypeKind::LiteralString("content-disposition".into()).into(),
-                                                            TypeKind::LiteralString("content-encoding".into()).into(),
-                                                            TypeKind::LiteralString("content-language".into()).into(),
-                                                            TypeKind::LiteralString("content-length".into()).into(),
-                                                            TypeKind::LiteralString("content-location".into()).into(),
-                                                            TypeKind::LiteralString("content-range".into()).into(),
-                                                            TypeKind::LiteralString("content-security-policy".into()).into(),
-                                                            TypeKind::LiteralString("content-security-policy-report-only".into()).into(),
-                                                            TypeKind::LiteralString("content-type".into()).into(),
-                                                            TypeKind::LiteralString("cookie".into()).into(),
-                                                            TypeKind::LiteralString("date".into()).into(),
-                                                            TypeKind::LiteralString("dnt".into()).into(),
-                                                            TypeKind::LiteralString("etag".into()).into(),
-                                                            TypeKind::LiteralString("expect".into()).into(),
-                                                            TypeKind::LiteralString("expires".into()).into(),
-                                                            TypeKind::LiteralString("forwarded".into()).into(),
-                                                            TypeKind::LiteralString("from".into()).into(),
-                                                            TypeKind::LiteralString("host".into()).into(),
-                                                            TypeKind::LiteralString("if-match".into()).into(),
-                                                            TypeKind::LiteralString("if-modified-since".into()).into(),
-                                                            TypeKind::LiteralString("if-none-match".into()).into(),
-                                                            TypeKind::LiteralString("if-range".into()).into(),
-                                                            TypeKind::LiteralString("if-unmodified-since".into()).into(),
-                                                            TypeKind::LiteralString("last-modified".into()).into(),
-                                                            TypeKind::LiteralString("link".into()).into(),
-                                                            TypeKind::LiteralString("location".into()).into(),
-                                                            TypeKind::LiteralString("max-forwards".into()).into(),
-                                                            TypeKind::LiteralString("origin".into()).into(),
-                                                            TypeKind::LiteralString("pragma".into()).into(),
-                                                            TypeKind::LiteralString("proxy-authenticate".into()).into(),
-                                                            TypeKind::LiteralString("proxy-authorization".into()).into(),
-                                                            TypeKind::LiteralString("public-key-pins".into()).into(),
-                                                            TypeKind::LiteralString("public-key-pins-report-only".into()).into(),
-                                                            TypeKind::LiteralString("range".into()).into(),
-                                                            TypeKind::LiteralString("referer".into()).into(),
-                                                            TypeKind::LiteralString("referrer-policy".into()).into(),
-                                                            TypeKind::LiteralString("refresh".into()).into(),
-                                                            TypeKind::LiteralString("retry-after".into()).into(),
-                                                            TypeKind::LiteralString("sec-websocket-accept".into()).into(),
-                                                            TypeKind::LiteralString("sec-websocket-extensions".into()).into(),
-                                                            TypeKind::LiteralString("sec-websocket-key".into()).into(),
-                                                            TypeKind::LiteralString("sec-websocket-protocol".into()).into(),
-                                                            TypeKind::LiteralString("sec-websocket-version".into()).into(),
-                                                            TypeKind::LiteralString("server".into()).into(),
-                                                            TypeKind::LiteralString("set-cookie".into()).into(),
-                                                            TypeKind::LiteralString("strict-transport-security".into()).into(),
-                                                            TypeKind::LiteralString("te".into()).into(),
-                                                            TypeKind::LiteralString("trailer".into()).into(),
-                                                            TypeKind::LiteralString("transfer-encoding".into()).into(),
-                                                            TypeKind::LiteralString("upgrade".into()).into(),
-                                                            TypeKind::LiteralString("upgrade-insecure-requests".into()).into(),
-                                                            TypeKind::LiteralString("user-agent".into()).into(),
-                                                            TypeKind::LiteralString("vary".into()).into(),
-                                                            TypeKind::LiteralString("via".into()).into(),
-                                                            TypeKind::LiteralString("warning".into()).into(),
-                                                            TypeKind::LiteralString("www-authenticate".into()).into(),
-                                                            TypeKind::LiteralString("x-content-type-options".into()).into(),
-                                                            TypeKind::LiteralString("x-dns-prefetch-control".into()).into(),
-                                                            TypeKind::LiteralString("x-frame-options".into()).into(),
-                                                            TypeKind::LiteralString("x-xss-protection".into()).into(),
-                                                        ]).into()).into(),
-                                                        TypeKind::String.into()
-                                                    ]).into()).into())).into()
-                                                )]).into()).into(),
-                                                TypeKind::Object(BTreeMap::from_iter([(
-                                                    "query".to_string().into(),
-                                                    TypeKind::GenericObject(Box::new(TypeKind::String.into())).into()
-                                                )]).into()).into(),
-                                                TypeKind::Object(BTreeMap::from_iter([(
-                                                    "version".to_string().into(),
-                                                    TypeKind::Union(BTreeSet::from_iter([
-                                                        TypeKind::LiteralString("HTTP/0.9".into()).into(),
-                                                        TypeKind::LiteralString("HTTP/1.0".into()).into(),
-                                                        TypeKind::LiteralString("HTTP/1.1".into()).into(),
-                                                        TypeKind::LiteralString("HTTP/2.0".into()).into(),
-                                                        TypeKind::LiteralString("HTTP/3.0".into()).into(),
-                                                    ]).into()).into()
-                                                )]).into()).into(),
-                                            ]).into()).into())).into()
-                                        )
-                                    ]).into()).into()
-                                ),
-                            ])
-                            .into(),
-                        ),
-                        &|compiled_argument_resolved_type| {
-                            let mut properties = compiled_argument_resolved_type.properties.clone();
-                            properties.capabilities |= Capability::Error | Capability::ReadFile;
-                            properties.is_serializable = true;
-                            Ok(Type {
-                                kind: TypeKind::Object(BTreeMap::from_iter([
-                                    (
-                                        "status".to_string().into(),
-                                        TypeKind::Union(BTreeSet::from_iter([
-                                            TypeKind::Null.into(),
-                                            TypeKind::LiteralString("Accepted".into()).into(),
-                                            TypeKind::LiteralString("Continue".into()).into(),
-                                            TypeKind::LiteralString("Switching Protocols".into()).into(),
-                                            TypeKind::LiteralString("Processing".into()).into(),
-                                            TypeKind::LiteralString("Early Hints".into()).into(),
-                                            TypeKind::LiteralString("OK".into()).into(),
-                                            TypeKind::LiteralString("Created".into()).into(),
-                                            TypeKind::LiteralString("Accepted".into()).into(),
-                                            TypeKind::LiteralString("Non Authoritative Information".into()).into(),
-                                            TypeKind::LiteralString("No Content".into()).into(),
-                                            TypeKind::LiteralString("Reset Content".into()).into(),
-                                            TypeKind::LiteralString("Partial Content".into()).into(),
-                                            TypeKind::LiteralString("Multi-Status".into()).into(),
-                                            TypeKind::LiteralString("Already Reported".into()).into(),
-                                            TypeKind::LiteralString("IM Used".into()).into(),
-                                            TypeKind::LiteralString("Multiple Choices".into()).into(),
-                                            TypeKind::LiteralString("Moved Permanently".into()).into(),
-                                            TypeKind::LiteralString("Found".into()).into(),
-                                            TypeKind::LiteralString("See Other".into()).into(),
-                                            TypeKind::LiteralString("Not Modified".into()).into(),
-                                            TypeKind::LiteralString("Use Proxy".into()).into(),
-                                            TypeKind::LiteralString("Temporary Redirect".into()).into(),
-                                            TypeKind::LiteralString("Permanent Redirect".into()).into(),
-                                            TypeKind::LiteralString("Bad Request".into()).into(),
-                                            TypeKind::LiteralString("Unauthorized".into()).into(),
-                                            TypeKind::LiteralString("Payment Required".into()).into(),
-                                            TypeKind::LiteralString("Forbidden".into()).into(),
-                                            TypeKind::LiteralString("Not Found".into()).into(),
-                                            TypeKind::LiteralString("Method Not Allowed".into()).into(),
-                                            TypeKind::LiteralString("Not Acceptable".into()).into(),
-                                            TypeKind::LiteralString("Proxy Authentication Required".into()).into(),
-                                            TypeKind::LiteralString("Request Timeout".into()).into(),
-                                            TypeKind::LiteralString("Conflict".into()).into(),
-                                            TypeKind::LiteralString("Gone".into()).into(),
-                                            TypeKind::LiteralString("Length Required".into()).into(),
-                                            TypeKind::LiteralString("Precondition Failed".into()).into(),
-                                            TypeKind::LiteralString("Payload Too Large".into()).into(),
-                                            TypeKind::LiteralString("URI Too Long".into()).into(),
-                                            TypeKind::LiteralString("Unsupported Media Type".into()).into(),
-                                            TypeKind::LiteralString("Range Not Satisfiable".into()).into(),
-                                            TypeKind::LiteralString("Expectation Failed".into()).into(),
-                                            TypeKind::LiteralString("I'm a teapot".into()).into(),
-                                            TypeKind::LiteralString("Misdirected Request".into()).into(),
-                                            TypeKind::LiteralString("Unprocessable Entity".into()).into(),
-                                            TypeKind::LiteralString("Locked".into()).into(),
-                                            TypeKind::LiteralString("Failed Dependency".into()).into(),
-                                            TypeKind::LiteralString("Too Early".into()).into(),
-                                            TypeKind::LiteralString("Upgrade Required".into()).into(),
-                                            TypeKind::LiteralString("Precondition Required".into()).into(),
-                                            TypeKind::LiteralString("Too Many Requests".into()).into(),
-                                            TypeKind::LiteralString("Request Header Fields Too Large".into()).into(),
-                                            TypeKind::LiteralString("Unavailable For Legal Reasons".into()).into(),
-                                            TypeKind::LiteralString("Internal Server Error".into()).into(),
-                                            TypeKind::LiteralString("Not Implemented".into()).into(),
-                                            TypeKind::LiteralString("Bad Gateway".into()).into(),
-                                            TypeKind::LiteralString("Service Unavailable".into()).into(),
-                                            TypeKind::LiteralString("Gateway Timeout".into()).into(),
-                                            TypeKind::LiteralString("HTTP Version Not Supported".into()).into(),
-                                            TypeKind::LiteralString("Variant Also Negotiates".into()).into(),
-                                            TypeKind::LiteralString("Insufficient Storage".into()).into(),
-                                            TypeKind::LiteralString("Loop Detected".into()).into(),
-                                            TypeKind::LiteralString("Not Extended".into()).into(),
-                                            TypeKind::LiteralString("Network Authentication Required".into()).into(),
-                                        ]).into()).into(),
-                                    ),
-                                    ("is informational".to_string().into(), TypeKind::Bool.into()),
-                                    ("is success".to_string().into(), TypeKind::Bool.into()),
-                                    ("is redirection".to_string().into(), TypeKind::Bool.into()),
-                                    ("is client error".to_string().into(), TypeKind::Bool.into()),
-                                    ("is server error".to_string().into(), TypeKind::Bool.into()),
-                                    (
-                                        "version".to_string().into(),
-                                        TypeKind::Union(BTreeSet::from_iter([
-                                            TypeKind::LiteralString("HTTP/0.9".into()).into(),
-                                            TypeKind::LiteralString("HTTP/1.0".into()).into(),
-                                            TypeKind::LiteralString("HTTP/1.1".into()).into(),
-                                            TypeKind::LiteralString("HTTP/2.0".into()).into(),
-                                            TypeKind::LiteralString("HTTP/3.0".into()).into(),
-                                        ]).into()).into()
-                                    ),
-                                    ("headers".to_string().into(), TypeKind::GenericObject(Box::new(TypeKind::String.into())).into()),
-                                    ("body".to_string().into(), TypeKind::Bytes.into()),
-                                ]).into()),
-                                properties,
-                            })
-                        },
-                    )?,
                     EmbeddedFunction::HttpClient => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Array(Box::new(
-                            TypeKind::Union(
-                                BTreeSet::from_iter([
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "error on bad status code".to_string().into(),
-                                            TypeKind::Bool.into(),
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "HTTPS only".to_string().into(),
-                                            TypeKind::Bool.into(),
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "IP family".to_string().into(),
-                                            TypeKind::Union(
-                                                BTreeSet::from_iter([
-                                                    TypeKind::LiteralString(
-                                                        "any".to_string().into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "IPv4".to_string().into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "IPv6".to_string().into(),
-                                                    )
-                                                    .into(),
-                                                ])
-                                                .into(),
-                                            )
-                                            .into(),
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(BTreeMap::from_iter([(
-                                        "TLS".to_string().into(),
-                                        TypeKind::Array(Box::new(TypeKind::Union(BTreeSet::from_iter([
-                                            TypeKind::Object(BTreeMap::from_iter([(
-                                                "client certificate".to_string().into(),
-                                                TypeKind::Object(
-                                                    BTreeMap::from_iter([
-                                                        (
-                                                            "chain".to_string().into(),
-                                                            TypeKind::Array(Box::new(
-                                                                TypeKind::Union(
-                                                                    BTreeSet::from_iter([
-                                                                        TypeKind::Object(
-                                                                            BTreeMap::from_iter([(
-                                                                                "DER"
-                                                                                    .to_string()
-                                                                                    .into(),
-                                                                                TypeKind::Bytes.into(),
-                                                                            )])
-                                                                            .into(),
-                                                                        )
-                                                                        .into(),
-                                                                        TypeKind::Object(
-                                                                            BTreeMap::from_iter([(
-                                                                                "PEM"
-                                                                                    .to_string()
-                                                                                    .into(),
-                                                                                TypeKind::String.into(),
-                                                                            )])
-                                                                            .into(),
-                                                                        )
-                                                                        .into(),
-                                                                    ])
-                                                                    .into(),
-                                                                )
-                                                                .into(),
-                                                            ))
-                                                            .into(),
-                                                        ),
-                                                        (
-                                                            "private key PEM".to_string().into(),
-                                                            TypeKind::String.into()
-                                                        ),
-                                                    ])
-                                                    .into(),
-                                                )
-                                                .into()),
-                                            ]).into()).into(),
-                                            TypeKind::Object(BTreeMap::from_iter([(
-                                                    "root certificates".to_string().into(),
-                                                    TypeKind::Union(BTreeSet::from_iter([
-                                                        TypeKind::LiteralString("platform verifier".to_string().into()).into(),
-                                                        TypeKind::LiteralString("WebPKI".to_string().into()).into(),
-                                                        TypeKind::Array(Box::new(
-                                                            TypeKind::Union(
-                                                                BTreeSet::from_iter([
-                                                                    TypeKind::Object(
-                                                                        BTreeMap::from_iter([(
-                                                                            "DER"
-                                                                                .to_string()
-                                                                                .into(),
-                                                                            TypeKind::Bytes.into(),
-                                                                        )])
-                                                                        .into(),
-                                                                    )
-                                                                    .into(),
-                                                                    TypeKind::Object(
-                                                                        BTreeMap::from_iter([(
-                                                                            "PEM"
-                                                                                .to_string()
-                                                                                .into(),
-                                                                            TypeKind::String.into(),
-                                                                        )])
-                                                                        .into(),
-                                                                    )
-                                                                    .into(),
-                                                                ])
-                                                                .into(),
-                                                            )
-                                                            .into(),
-                                                        ))
-                                                        .into(),
-                                                    ]).into()).into()
-                                                                                                
-                                            )]).into()).into(),
-                                            TypeKind::Object(BTreeMap::from_iter([(
-                                                    "use SNI".to_string().into(),
-                                                    TypeKind::Bool.into()
-                                                                                                
-                                            )]).into()).into()
-                                        ]).into()).into())).into(),
-                                    )]).into()).into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "proxy".to_string().into(),
-                                            TypeKind::Union(BTreeSet::from_iter([
-                                                TypeKind::LiteralFalse.into(),
-                                                TypeKind::String.into(),
-                                                TypeKind::Object(BTreeMap::from_iter([
-                                                    (
-                                                        "protocol".to_string().into(),
-                                                        TypeKind::Union(BTreeSet::from_iter([
-                                                            TypeKind::LiteralString("HTTP".to_string().into()).into(),
-                                                            TypeKind::LiteralString("HTTPS".to_string().into()).into(),
-                                                            TypeKind::LiteralString("SOCKS4".to_string().into()).into(),
-                                                            TypeKind::LiteralString("SOCKS4A".to_string().into()).into(),
-                                                            TypeKind::LiteralString("SOCKS5".to_string().into()).into(),
-                                                            TypeKind::LiteralString("SOCKS5h".to_string().into()).into(),
-                                                        ]).into()).into()
-                                                    ),
-                                                    (
-                                                        "configuration".to_string().into(),
-                                                        TypeKind::Array(Box::new(TypeKind::Union(BTreeSet::from_iter([
-                                                            TypeKind::Object(BTreeMap::from_iter([(                                                        
-                                                                "host".to_string().into(),
-                                                                TypeKind::String.into()
-                                                            )]).into()).into(),
-                                                            TypeKind::Object(BTreeMap::from_iter([(                                                        
-                                                                "port".to_string().into(),
-                                                                TypeKind::Number.into()
-                                                            )]).into()).into(),
-                                                            TypeKind::Object(BTreeMap::from_iter([(                                                        
-                                                                "user name".to_string().into(),
-                                                                TypeKind::String.into()
-                                                            )]).into()).into(),
-                                                            TypeKind::Object(BTreeMap::from_iter([(                                                        
-                                                                "password".to_string().into(),
-                                                                TypeKind::String.into()
-                                                            )]).into()).into(),
-                                                            TypeKind::Object(BTreeMap::from_iter([(                                                        
-                                                                "resolve locally".to_string().into(),
-                                                                TypeKind::Bool.into()
-                                                            )]).into()).into()
-                                                        ]).into()).into())).into(),
-                                                    ),
-                                                ]).into()).into()
-                                            ]).into()).into(),
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "no delay".to_string().into(),
-                                            TypeKind::Bool.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "max redirects".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "redirect authorization headers".to_string().into(),
-                                            TypeKind::Union(BTreeSet::from_iter([
-                                                TypeKind::LiteralString("never".to_string().into()).into(),
-                                                TypeKind::LiteralString("same host".to_string().into()).into(),
-                                            ]).into()).into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "user agent".to_string().into(),
-                                            TypeKind::Union(BTreeSet::from_iter([
-                                                TypeKind::LiteralFalse.into(),
-                                                TypeKind::String.into(),
-                                            ]).into()).into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "accept".to_string().into(),
-                                            TypeKind::Union(BTreeSet::from_iter([
-                                                TypeKind::LiteralFalse.into(),
-                                                TypeKind::String.into(),
-                                            ]).into()).into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "accept encoding".to_string().into(),
-                                            TypeKind::Union(BTreeSet::from_iter([
-                                                TypeKind::LiteralFalse.into(),
-                                                TypeKind::String.into(),
-                                            ]).into()).into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "max response header size".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "input buffer size".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "output buffer size".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "max idle connections".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "max idle connections per host".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "max idle age in seconds".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "allow non-standard methods".to_string().into(),
-                                            TypeKind::Bool.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "timeout global in seconds".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "timeout per call in seconds".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "timeout for resolve in seconds".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "timeout for connect in seconds".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "timeout for send request in seconds".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "timeout for await 100 in seconds".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "timeout for send body in seconds".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                    TypeKind::Object(
-                                        BTreeMap::from_iter([(
-                                            "timeout for receive body in seconds".to_string().into(),
-                                            TypeKind::Number.into()
-                                        )])
-                                        .into(),
-                                    )
-                                    .into(),
-                                ])
-                                .into(),
-                            )
-                            .into(),
-                        )),
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::HttpClient as usize],
                         &|compiled_argument_resolved_type| {
                             Ok(Type {
                                 kind: TypeKind::Embedded(Embedded::HttpClient),
@@ -2075,20 +1386,276 @@ impl Compiler {
                             })
                         },
                     )?,
+                    EmbeddedFunction::SendRequest => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::SendRequest as usize],
+                        &|compiled_argument_resolved_type| {
+                            let mut properties = compiled_argument_resolved_type.properties.clone();
+                            properties.capabilities |= Capability::Error | Capability::ReadFile;
+                            properties.is_serializable = true;
+                            Ok(Type {
+                                kind: TypeKind::Object(
+                                    BTreeMap::from_iter([
+                                        (
+                                            "status".to_string().into(),
+                                            TypeKind::Union(
+                                                BTreeSet::from_iter([
+                                                    TypeKind::Null.into(),
+                                                    TypeKind::LiteralString("Accepted".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("Continue".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Switching Protocols".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("Processing".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("Early Hints".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("OK".into()).into(),
+                                                    TypeKind::LiteralString("Created".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("Accepted".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Non Authoritative Information".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("No Content".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("Reset Content".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Partial Content".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("Multi-Status".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Already Reported".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("IM Used".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Multiple Choices".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Moved Permanently".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("Found".into()).into(),
+                                                    TypeKind::LiteralString("See Other".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("Not Modified".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("Use Proxy".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Temporary Redirect".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Permanent Redirect".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("Bad Request".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("Unauthorized".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Payment Required".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("Forbidden".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("Not Found".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Method Not Allowed".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Not Acceptable".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Proxy Authentication Required".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Request Timeout".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("Conflict".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("Gone".into()).into(),
+                                                    TypeKind::LiteralString(
+                                                        "Length Required".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Precondition Failed".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Payload Too Large".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("URI Too Long".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Unsupported Media Type".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Range Not Satisfiable".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Expectation Failed".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("I'm a teapot".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Misdirected Request".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Unprocessable Entity".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("Locked".into()).into(),
+                                                    TypeKind::LiteralString(
+                                                        "Failed Dependency".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("Too Early".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Upgrade Required".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Precondition Required".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Too Many Requests".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Request Header Fields Too Large".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Unavailable For Legal Reasons".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Internal Server Error".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Not Implemented".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("Bad Gateway".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Service Unavailable".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Gateway Timeout".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "HTTP Version Not Supported".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Variant Also Negotiates".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Insufficient Storage".into(),
+                                                    )
+                                                    .into(),
+                                                    TypeKind::LiteralString("Loop Detected".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("Not Extended".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString(
+                                                        "Network Authentication Required".into(),
+                                                    )
+                                                    .into(),
+                                                ])
+                                                .into(),
+                                            )
+                                            .into(),
+                                        ),
+                                        (
+                                            "is informational".to_string().into(),
+                                            TypeKind::Bool.into(),
+                                        ),
+                                        ("is success".to_string().into(), TypeKind::Bool.into()),
+                                        (
+                                            "is redirection".to_string().into(),
+                                            TypeKind::Bool.into(),
+                                        ),
+                                        (
+                                            "is client error".to_string().into(),
+                                            TypeKind::Bool.into(),
+                                        ),
+                                        (
+                                            "is server error".to_string().into(),
+                                            TypeKind::Bool.into(),
+                                        ),
+                                        (
+                                            "version".to_string().into(),
+                                            TypeKind::Union(
+                                                BTreeSet::from_iter([
+                                                    TypeKind::LiteralString("HTTP/0.9".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("HTTP/1.0".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("HTTP/1.1".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("HTTP/2.0".into())
+                                                        .into(),
+                                                    TypeKind::LiteralString("HTTP/3.0".into())
+                                                        .into(),
+                                                ])
+                                                .into(),
+                                            )
+                                            .into(),
+                                        ),
+                                        (
+                                            "headers".to_string().into(),
+                                            TypeKind::GenericObject(Box::new(
+                                                TypeKind::String.into(),
+                                            ))
+                                            .into(),
+                                        ),
+                                        ("body".to_string().into(), TypeKind::Bytes.into()),
+                                    ])
+                                    .into(),
+                                ),
+                                properties,
+                            })
+                        },
+                    )?,
                     EmbeddedFunction::Run => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &TypeKind::Object(
-                            BTreeMap::from_iter([
-                                ("command".to_string().into(), TypeKind::String.into()),
-                                (
-                                    "arguments".to_string().into(),
-                                    TypeKind::Array(Box::new(TypeKind::String.into())).into(),
-                                ),
-                            ])
-                            .into(),
-                        ),
+                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::Run as usize],
                         &|compiled_argument_resolved_type| {
                             let type_properties = TypeProperties {
                                 capabilities: Capability::RunCommand | Capability::Error,
@@ -2191,11 +1758,13 @@ impl Compiler {
                                     current_match_type_kind.intersection(&case_match_type.kind)
                                 {
                                     let mut case_compilation_context = compilation_context.clone();
-                                    case_compilation_context
-                                        .path
-                                        .0
-                                        .extend([PathSegment::Cases, PathSegment::Case(case_index)]);
-                                    if let Some(match_constant_name) = r#as.as_ref().or(match_constant_name) {
+                                    case_compilation_context.path.0.extend([
+                                        PathSegment::Cases,
+                                        PathSegment::Case(case_index),
+                                    ]);
+                                    if let Some(match_constant_name) =
+                                        r#as.as_ref().or(match_constant_name)
+                                    {
                                         self.define_constant(
                                             match_constant_name.clone(),
                                             compiled_match
@@ -2203,7 +1772,7 @@ impl Compiler {
                                                 .r#type
                                                 .with_kind(refined_match_type_kind),
                                             &mut case_compilation_context,
-                                            global_compilation_context
+                                            global_compilation_context,
                                         );
                                     }
                                     let compiled_case = self.compile_with_context(
@@ -2248,12 +1817,14 @@ impl Compiler {
                                     .kind
                                     .intersection(&compiled_condition.node.r#type.kind)
                                 {
-                                    if let Some(match_constant_name) = r#as.as_ref().or(match_constant_name) {
+                                    if let Some(match_constant_name) =
+                                        r#as.as_ref().or(match_constant_name)
+                                    {
                                         self.define_constant(
                                             match_constant_name.clone(),
                                             refined_match_type_kind.clone().into(),
                                             &mut case_compilation_context,
-                                            global_compilation_context
+                                            global_compilation_context,
                                         );
                                     }
                                     let compiled_case = self.compile_with_context(
@@ -2328,7 +1899,7 @@ impl Compiler {
                                     Arc<Option<intermediate_representation::Value>>,
                                 >(literal_value.into())
                             }),
-                            r#type
+                            r#type,
                         }
                         .into(),
                     }
@@ -2344,12 +1915,12 @@ impl Compiler {
                                 )]),
                             ));
                         }
-                        (1, None) => {
-                            NodeAndMetadata {
-                                node: result_cases.into_iter().next().unwrap().node,
-                                external_constants_name_clustered_indices: result_external_constants_name_clustered_indices
-                            }.into()
+                        (1, None) => NodeAndMetadata {
+                            node: result_cases.into_iter().next().unwrap().node,
+                            external_constants_name_clustered_indices:
+                                result_external_constants_name_clustered_indices,
                         }
+                        .into(),
                         _ => NodeAndMetadata {
                             node: Node {
                                 content: Content::Match {

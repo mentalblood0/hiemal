@@ -1,0 +1,9 @@
+   Compiling hiemal v0.1.0 (/home/mentalblood/repositories/hiemal)
+warning: unused import: `Constructed`
+  --> src/compiler.rs:28:21
+   |
+28 |         Capability, Constructed, Embedded, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties,
+   |                     ^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
