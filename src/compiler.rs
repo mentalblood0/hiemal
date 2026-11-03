@@ -14,7 +14,7 @@ use crate::{
     computer::Computer,
     containers::{Object, ObjectRaw, Set, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
-    embedded_functions::{EMBEDDED_FUNCTIONS, StaticOrDynamic},
+    embedded_functions::{EMBEDDED_FUNCTIONS},
     includes_cache::IncludesCache,
     intermediate_representation::{
         self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction,
@@ -608,8 +608,8 @@ impl Compiler {
                     .r#return
                     .properties
                 {
-                    StaticOrDynamic::Static(static_properties) => static_properties.clone(),
-                    StaticOrDynamic::Dynamic => TypeProperties::default(),
+                    Some(static_properties) => static_properties.clone(),
+                    None => TypeProperties::default(),
                 },
             )
             .unified_recursively(
@@ -624,8 +624,8 @@ impl Compiler {
                         .r#return
                         .r#type
                     {
-                        StaticOrDynamic::Static(ref return_type) => return_type.clone().into(),
-                        StaticOrDynamic::Dynamic => panic!(),
+                        Some(ref return_type) => return_type.clone().into(),
+                        None => panic!(),
                     }
                 },
             );

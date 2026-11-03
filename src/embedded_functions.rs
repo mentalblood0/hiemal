@@ -7,23 +7,12 @@ use crate::{
     r#type::{TypeKind, TypeProperties},
 };
 
-
-#[derive(Deserialize, Default)]
-#[serde(bound = "T: Deserialize<'de>")]
-pub enum StaticOrDynamic<T> {
-    #[serde(rename = "static")]
-    Static(T),
-    #[default]
-    #[serde(rename = "dynamic")]
-    Dynamic
-}
-
 #[derive(Deserialize, Default)]
 pub struct Return {
     #[serde(default)]
-    pub r#type: StaticOrDynamic<TypeKind>,
+    pub r#type: Option<TypeKind>,
     #[serde(default)]
-    pub properties: StaticOrDynamic<TypeProperties>,
+    pub properties: Option<TypeProperties>,
 }
 
 #[derive(Deserialize)]

@@ -1,23 +1,19 @@
 sum:
   argument: { array: number }
   return:
-    type:
-      static: number
+    type: number
 
 mod:
   argument: { tuple: [ number, number ] }
   return:
-    type:
-      static: number
+    type: number
     properties:
-      static:
-        capabilities: [ error ]
+      capabilities: [ error ]
 
 is sorted:
   argument: { array: any }
   return:
-    type:
-      static: bool
+    type: bool
 
 read bytes from standard input:
   argument:
@@ -25,22 +21,18 @@ read bytes from standard input:
     - number
     - literal string: all
   return:
-    type:
-      static: bytes
+    type: bytes
     properties:
-      static:
-        capabilities:
-        - read standard input
-        - error
+      capabilities:
+      - read standard input
+      - error
 
 parse YAML:
   argument: string
   return:
-    type:
-      static: any
+    type: any
     properties:
-      static:
-        capabilities: [ error ]
+      capabilities: [ error ]
 
 key-value pairs:
   argument: { generic object: any }
@@ -51,11 +43,9 @@ compile regex:
     - generic literal string
     - constructed: regex
   return:
-    type:
-      static: { embedded: compiled regex }
+    type: { embedded: compiled regex }
     properties:
-      static:
-        capabilities: [ error ]
+      capabilities: [ error ]
     is serializable: false
 
 match regex:
@@ -65,35 +55,30 @@ match regex:
       regex: { embedded: compiled regex }
   return:
     type:
-      static:
-        union:
-        - "null"
-        - object:
-            groups:
-              generic object: { union: [ string, number ] }
-            start: number
-            end: number
+      union:
+      - "null"
+      - object:
+          groups:
+            generic object: { union: [ string, number ] }
+          start: number
+          end: number
 
 concat:
   argument: { array: string }
   return:
-    type:
-      static: string
+    type: string
 
 string from bytes:
   argument: bytes
   return:
-    type:
-      static: string
+    type: string
     properties:
-      static:
-        capabilities: [ error ]
+      capabilities: [ error ]
 
 bytes from string:
   argument: string
   return:
-    type:
-      static: bytes
+    type: bytes
 
 run:
   argument:
@@ -102,16 +87,14 @@ run:
       arguments: { array: string }
   return:
     type:
-      static:
-        object:
-          exit code: number
-          standard output: bytes
-          standard error: bytes
+      object:
+        exit code: number
+        standard output: bytes
+        standard error: bytes
     properties:
-      static:
-        capabilities:
-        - run command
-        - error
+      capabilities:
+      - run command
+      - error
 
 bufferized writer:
   argument:
@@ -126,18 +109,15 @@ bufferized writer:
         - literal string: create or overwrite
         - literal string: create
   return:
-    type:
-      static: { embedded: bufferized writer }
+    type: { embedded: bufferized writer }
 
 bufferized reader:
   argument: string
   return:
-    type:
-      static: { embedded: bufferized reader }
+    type: { embedded: bufferized reader }
     properties:
-      static:
-        capabilities: [ error ]
-        is serializable: false
+      capabilities: [ error ]
+      is serializable: false
 
 write bytes:
   argument:
@@ -145,13 +125,11 @@ write bytes:
       target: { embedded: bufferized writer }
       content: bytes
   return:
-    type:
-      static: number
+    type: number
     properties:
-      static:
-        capabilities:
-        - write file
-        - error
+      capabilities:
+      - write file
+      - error
 
 read bytes:
   argument:
@@ -159,24 +137,20 @@ read bytes:
       source: { embedded: bufferized reader }
       amount: number
   return:
-    type:
-      static: bytes
+    type: bytes
     properties:
-      static:
-        capabilities:
-        - read file
-        - error
+      capabilities:
+      - read file
+      - error
 
 remove file:
   argument: string
   return:
-    type:
-      static: "null"
+    type: "null"
     properties:
-      static:
-        capabilities:
-        - remove file
-        - error
+      capabilities:
+      - remove file
+      - error
 
 HTTP client:
   argument:
@@ -267,11 +241,9 @@ HTTP client:
           user agent:
             union: [ string, literal false ]
   return:
-    type:
-      static: { embedded: HTTP client }
+    type: { embedded: HTTP client }
     properties:
-      static:
-        capabilities: [ error ]
+      capabilities: [ error ]
 
 send request:
   argument:
@@ -405,90 +377,88 @@ send request:
                     - literal string: HTTP/3.0
   return:
     type:
-      static:
-        object:
-          status:
-            union:
-            - "null"
-            - literal string: Accepted
-            - literal string: Continue
-            - literal string: Switching Protocols
-            - literal string: Processing
-            - literal string: Early Hints
-            - literal string: OK
-            - literal string: Created
-            - literal string: Accepted
-            - literal string: Non Authoritative Information
-            - literal string: No Content
-            - literal string: Reset Content
-            - literal string: Partial Content
-            - literal string: Multi-Status
-            - literal string: Already Reported
-            - literal string: IM Used
-            - literal string: Multiple Choices
-            - literal string: Moved Permanently
-            - literal string: Found
-            - literal string: See Other
-            - literal string: Not Modified
-            - literal string: Use Proxy
-            - literal string: Temporary Redirect
-            - literal string: Permanent Redirect
-            - literal string: Bad Request
-            - literal string: Unauthorized
-            - literal string: Payment Required
-            - literal string: Forbidden
-            - literal string: Not Found
-            - literal string: Method Not Allowed
-            - literal string: Not Acceptable
-            - literal string: Proxy Authentication Required
-            - literal string: Request Timeout
-            - literal string: Conflict
-            - literal string: Gone
-            - literal string: Length Required
-            - literal string: Precondition Failed
-            - literal string: Payload Too Large
-            - literal string: URI Too Long
-            - literal string: Unsupported Media Type
-            - literal string: Range Not Satisfiable
-            - literal string: Expectation Failed
-            - literal string: I'm a teapot
-            - literal string: Misdirected Request
-            - literal string: Unprocessable Entity
-            - literal string: Locked
-            - literal string: Failed Dependency
-            - literal string: Too Early
-            - literal string: Upgrade Required
-            - literal string: Precondition Required
-            - literal string: Too Many Requests
-            - literal string: Request Header Fields Too Large
-            - literal string: Unavailable For Legal Reasons
-            - literal string: Internal Server Error
-            - literal string: Not Implemented
-            - literal string: Bad Gateway
-            - literal string: Service Unavailable
-            - literal string: Gateway Timeout
-            - literal string: HTTP Version Not Supported
-            - literal string: Variant Also Negotiates
-            - literal string: Insufficient Storage
-            - literal string: Loop Detected
-            - literal string: Not Extended
-            - literal string: Network Authentication Required
-          is informational: bool
-          is success: bool
-          is redirection: bool
-          is client error: bool
-          is server error: bool
-          version:
-            union:
-            - literal string: HTTP/0.9
-            - literal string: HTTP/1.0
-            - literal string: HTTP/1.1
-            - literal string: HTTP/2.0
-            - literal string: HTTP/3.0
-          headers: { generic object: string }
-          body: bytes
-    properties:
-      static:
-        capabilities:
-        - network
-        - error
+      object:
+        status:
+          union:
+          - "null"
+          - literal string: Accepted
+          - literal string: Continue
+          - literal string: Switching Protocols
+          - literal string: Processing
+          - literal string: Early Hints
+          - literal string: OK
+          - literal string: Created
+          - literal string: Accepted
+          - literal string: Non Authoritative Information
+          - literal string: No Content
+          - literal string: Reset Content
+          - literal string: Partial Content
+          - literal string: Multi-Status
+          - literal string: Already Reported
+          - literal string: IM Used
+          - literal string: Multiple Choices
+          - literal string: Moved Permanently
+          - literal string: Found
+          - literal string: See Other
+          - literal string: Not Modified
+          - literal string: Use Proxy
+          - literal string: Temporary Redirect
+          - literal string: Permanent Redirect
+          - literal string: Bad Request
+          - literal string: Unauthorized
+          - literal string: Payment Required
+          - literal string: Forbidden
+          - literal string: Not Found
+          - literal string: Method Not Allowed
+          - literal string: Not Acceptable
+          - literal string: Proxy Authentication Required
+          - literal string: Request Timeout
+          - literal string: Conflict
+          - literal string: Gone
+          - literal string: Length Required
+          - literal string: Precondition Failed
+          - literal string: Payload Too Large
+          - literal string: URI Too Long
+          - literal string: Unsupported Media Type
+          - literal string: Range Not Satisfiable
+          - literal string: Expectation Failed
+          - literal string: I'm a teapot
+          - literal string: Misdirected Request
+          - literal string: Unprocessable Entity
+          - literal string: Locked
+          - literal string: Failed Dependency
+          - literal string: Too Early
+          - literal string: Upgrade Required
+          - literal string: Precondition Required
+          - literal string: Too Many Requests
+          - literal string: Request Header Fields Too Large
+          - literal string: Unavailable For Legal Reasons
+          - literal string: Internal Server Error
+          - literal string: Not Implemented
+          - literal string: Bad Gateway
+          - literal string: Service Unavailable
+          - literal string: Gateway Timeout
+          - literal string: HTTP Version Not Supported
+          - literal string: Variant Also Negotiates
+          - literal string: Insufficient Storage
+          - literal string: Loop Detected
+          - literal string: Not Extended
+          - literal string: Network Authentication Required
+        is informational: bool
+        is success: bool
+        is redirection: bool
+        is client error: bool
+        is server error: bool
+        version:
+          union:
+          - literal string: HTTP/0.9
+          - literal string: HTTP/1.0
+          - literal string: HTTP/1.1
+          - literal string: HTTP/2.0
+          - literal string: HTTP/3.0
+        headers: { generic object: string }
+        body: bytes
+  properties:
+    capabilities:
+    - network
+    - error
