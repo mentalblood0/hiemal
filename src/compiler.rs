@@ -2334,8 +2334,8 @@ impl Compiler {
                     }
                     .into()
                 } else {
-                    match result_cases.len() {
-                        0 => {
+                    match (result_cases.len(), r#as.as_ref().or(match_constant_name)) {
+                        (0, _) => {
                             return Err(match_compilation_context.error(
                                 &Option::<String>::None,
                                 &BTreeMap::from_iter([(
@@ -2344,12 +2344,12 @@ impl Compiler {
                                 )]),
                             ));
                         }
-                        // 1 => {
-                        //     NodeAndMetadata {
-                        //         node: result_cases.into_iter().next().unwrap().node,
-                        //         external_constants_name_clustered_indices: result_external_constants_name_clustered_indices
-                        //     }.into()
-                        // }
+                        (1, None) => {
+                            NodeAndMetadata {
+                                node: result_cases.into_iter().next().unwrap().node,
+                                external_constants_name_clustered_indices: result_external_constants_name_clustered_indices
+                            }.into()
+                        }
                         _ => NodeAndMetadata {
                             node: Node {
                                 content: Content::Match {
