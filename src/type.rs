@@ -11,10 +11,10 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::{
+    containers::{Object, Vector},
     intermediate_representation::RangeBound,
     intermediate_representation::ValuePathSegment,
-    value::{deserialize_rope, serialize_rope, Value},
-    containers::{Vector, Object}
+    value::{Value, deserialize_rope, serialize_rope},
 };
 
 #[derive(Debug, Clone)]
@@ -208,10 +208,8 @@ pub enum Capability {
     ReadFile,
     #[serde(rename = "read standard input")]
     ReadStandardInput,
-    #[serde(rename = "read network")]
-    ReadNetwork,
-    #[serde(rename = "write network")]
-    WriteNetwork,
+    #[serde(rename = "network")]
+    Network,
     #[serde(rename = "run command")]
     RunCommand,
     #[serde(rename = "error")]
@@ -221,8 +219,20 @@ pub enum Capability {
 #[derive(Serialize, Deserialize, Debug, PartialOrd, Ord, Hash, PartialEq, Eq, Clone)]
 pub struct TypeProperties {
     pub capabilities: EnumSet<Capability>,
+    #[serde(rename = "is computable")]
+    #[serde(default = "default_is_computable")]
     pub is_computable: bool,
+    #[serde(rename = "is serializable")]
+    #[serde(default = "default_is_serializable")]
     pub is_serializable: bool,
+}
+
+fn default_is_computable() -> bool {
+    true
+}
+
+fn default_is_serializable() -> bool {
+    true
 }
 
 impl Default for TypeProperties {
@@ -259,6 +269,49 @@ impl<'a> TypeProperties {
         self.capabilities |= another_type_properties.capabilities;
         self.is_computable = self.is_computable && another_type_properties.is_computable;
         self.is_serializable = self.is_serializable && another_type_properties.is_serializable;
+    }
+
+    pub fn unified_recursively(&self, r#type: Type) -> Type {
+        Type {
+            kind: match r#type.kind {
+                TypeKind::Array(element_type) => {
+                    TypeKind::Array(Box::new(self.unified_recursively(*element_type)))
+                }
+                TypeKind::Tuple(elements_types) => TypeKind::Tuple(
+                    elements_types
+                        .iter()
+                        .cloned()
+                        .map(|element_type| self.unified_recursively(element_type))
+                        .collect::<Vec<_>>()
+                        .into(),
+                ),
+                TypeKind::Object(inner_types) => TypeKind::Object(
+                    inner_types
+                        .iter()
+                        .map(|(key, value_type)| {
+                            (
+                                key.clone(),
+                                self.unified_recursively(value_type.clone()),
+                            )
+                        })
+                        .collect::<BTreeMap<_, _>>()
+                        .into(),
+                ),
+                TypeKind::GenericObject(value_type) => {
+                    TypeKind::GenericObject(Box::new(self.unified_recursively(*value_type)))
+                }
+                TypeKind::Union(union_types) => TypeKind::Union(
+                    union_types
+                        .iter()
+                        .cloned()
+                        .map(|element_type| self.unified_recursively(element_type))
+                        .collect::<BTreeSet<_>>()
+                        .into(),
+                ),
+                kind => kind,
+            },
+            properties: self.unified(&r#type.properties),
+        }
     }
 }
 
@@ -597,7 +650,7 @@ impl TypeKind {
                 Some(Value::Object(result_raw))
             }
             TypeKind::Constructed(constructed) => constructed.inner().kind.literal_value(),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 

@@ -33,7 +33,7 @@ hiemal examples/include.yml
 
 ### Embedded functions
 
-See [embedded functions arguments specification](src/embedded_functions.yml)
+See [embedded functions specification](src/embedded_functions.yml)
 
 ### Clauses
 
@@ -188,8 +188,7 @@ available capabilities:
 - read file
 - remove file
 - read standard input
-- read network
-- write network
+- network
 - error
 
 #### match cases

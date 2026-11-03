@@ -14,7 +14,7 @@ use crate::{
     computer::Computer,
     containers::{Object, ObjectRaw, Set, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
-    embedded_functions::EMBEDDED_FUNCTIONS,
+    embedded_functions::{EMBEDDED_FUNCTIONS, StaticOrDynamic},
     includes_cache::IncludesCache,
     intermediate_representation::{
         self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction,
@@ -24,9 +24,7 @@ use crate::{
         self, AtSegment, Condition, EmbeddedFunction, EmbeddedFunctionCall, Match, Path,
         PathSegment, Program, RangeBound,
     },
-    r#type::{
-        Capability, Embedded, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties,
-    },
+    r#type::{Capability, Embedded, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties},
     value::Value,
 };
 
@@ -570,17 +568,15 @@ impl Compiler {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn compile_embedded_function_call<F>(
+    fn compile_embedded_function_call(
         &self,
         compilation_context: &CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
         embedded_function_call: &EmbeddedFunctionCall,
-        argument_type_kind: &TypeKind,
-        get_result_type_from_argument_resolved_type: &F,
-    ) -> Result<Arc<NodeAndMetadata>>
-    where
-        F: Fn(&mut Type) -> Result<Type>,
-    {
+        get_result_type_from_argument_resolved_type_option: Option<
+            &dyn Fn(&mut Type) -> Result<Type>,
+        >,
+    ) -> Result<Arc<NodeAndMetadata>> {
         let mut argument_compilation_context = compilation_context.clone();
         argument_compilation_context
             .path
@@ -595,7 +591,7 @@ impl Compiler {
         )?;
         let mut compiled_argument_resolved_type = resolve_type(
             &compiled_argument.node.r#type,
-            argument_type_kind,
+            &EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize].argument,
             &argument_compilation_context,
         )?;
         if !compiled_argument_resolved_type.properties.is_computable {
@@ -604,8 +600,35 @@ impl Compiler {
                 &"computible embedded function argument",
             ));
         }
-        let result_type =
-            get_result_type_from_argument_resolved_type(&mut compiled_argument_resolved_type)?;
+        compiled_argument_resolved_type.properties.is_serializable = true;
+        let result_type = compiled_argument_resolved_type
+            .properties
+            .unified(
+                &match &EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize]
+                    .r#return
+                    .properties
+                {
+                    StaticOrDynamic::Static(static_properties) => static_properties.clone(),
+                    StaticOrDynamic::Dynamic => TypeProperties::default(),
+                },
+            )
+            .unified_recursively(
+                if let Some(get_result_type_kind_from_argument_resolved_type) =
+                    get_result_type_from_argument_resolved_type_option
+                {
+                    get_result_type_kind_from_argument_resolved_type(
+                        &mut compiled_argument_resolved_type,
+                    )?
+                } else {
+                    match EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize]
+                        .r#return
+                        .r#type
+                    {
+                        StaticOrDynamic::Static(ref return_type) => return_type.clone().into(),
+                        StaticOrDynamic::Dynamic => panic!(),
+                    }
+                },
+            );
         Ok(NodeAndMetadata {
             external_constants_name_clustered_indices: compiled_argument
                 .external_constants_name_clustered_indices
@@ -1029,84 +1052,42 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::Sum as usize],
-                        &|compiled_argument_resolved_type| {
-                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Number))
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::Mod => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::Mod as usize],
-                        &|compiled_argument_resolved_type| {
-                            Ok(Type {
-                                kind: TypeKind::Number,
-                                properties: TypeProperties {
-                                    capabilities: Capability::Error.into(),
-                                    is_computable: true,
-                                    is_serializable: true,
-                                }
-                                .unified(&compiled_argument_resolved_type.properties),
-                            })
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::IsSorted => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::IsSorted as usize],
-                        &|compiled_argument_resolved_type| {
-                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Bool))
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::ReadBytesFromStandardInput => self
                         .compile_embedded_function_call(
                             compilation_context,
                             global_compilation_context,
                             embedded_function_call,
-                            &EMBEDDED_FUNCTIONS
-                                [EmbeddedFunction::ReadBytesFromStandardInput as usize],
-                            &|compiled_argument_resolved_type| {
-                                Ok(Type {
-                                    kind: TypeKind::Bytes,
-                                    properties: TypeProperties {
-                                        capabilities: Capability::ReadStandardInput
-                                            | Capability::Error,
-                                        is_computable: true,
-                                        is_serializable: true,
-                                    }
-                                    .unified(&compiled_argument_resolved_type.properties),
-                                })
-                            },
+                            None,
                         )?,
                     EmbeddedFunction::ParseYaml => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::ParseYaml as usize],
-                        &|compiled_argument_resolved_type| {
-                            Ok(Type {
-                                kind: TypeKind::Any,
-                                properties: TypeProperties {
-                                    capabilities: Capability::Error.into(),
-                                    is_computable: true,
-                                    is_serializable: true,
-                                }
-                                .unified(&compiled_argument_resolved_type.properties),
-                            })
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::KeyValuePairs => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::KeyValuePairs as usize],
-                        &|compiled_argument_resolved_type| {
+                        Some(&|compiled_argument_resolved_type: &mut Type| {
                             if let TypeKind::Object(argument_object_values_types) =
                                 &compiled_argument_resolved_type.kind
                             {
-                                Ok(compiled_argument_resolved_type.with_kind(TypeKind::Tuple(
+                                Ok(TypeKind::Tuple(
                                     argument_object_values_types
                                         .values()
                                         .map(|value| {
@@ -1117,19 +1098,19 @@ impl Compiler {
                                         })
                                         .collect::<Vec<_>>()
                                         .into(),
-                                )))
+                                )
+                                .into())
                             } else {
                                 Err(compilation_context
                                     .error(&compiled_argument_resolved_type, &"object"))
                             }
-                        },
+                        }),
                     )?,
                     EmbeddedFunction::CompileRegex => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::CompileRegex as usize],
-                        &|compiled_argument_resolved_type| {
+                        Some(&|compiled_argument_resolved_type: &mut Type| {
                             if let TypeKind::LiteralString(regex_literal_string) =
                                 &compiled_argument_resolved_type.kind
                             {
@@ -1142,119 +1123,38 @@ impl Compiler {
                                     },
                                 )?;
                             };
-                            Ok(Type {
-                                kind: TypeKind::Embedded(Embedded::CompiledRegex),
-                                properties: compiled_argument_resolved_type.properties.unified(
-                                    &TypeProperties {
-                                        capabilities: EnumSet::default(),
-                                        is_computable: true,
-                                        is_serializable: false,
-                                    },
-                                ),
-                            })
-                        },
+                            Ok(TypeKind::Embedded(Embedded::CompiledRegex).into())
+                        }),
                     )?,
                     EmbeddedFunction::MatchRegex => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::MatchRegex as usize],
-                        &|compiled_argument_resolved_type| {
-                            compiled_argument_resolved_type.properties.is_serializable = true;
-                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::Union(
-                                BTreeSet::from_iter([
-                                    compiled_argument_resolved_type.with_kind(TypeKind::Object(
-                                        BTreeMap::from_iter([
-                                            (
-                                                "groups".to_string().into(),
-                                                compiled_argument_resolved_type.with_kind(
-                                                    TypeKind::GenericObject(Box::new(
-                                                        compiled_argument_resolved_type.with_kind(
-                                                            TypeKind::Union(
-                                                                BTreeSet::from_iter(vec![
-                                                                    compiled_argument_resolved_type
-                                                                        .with_kind(
-                                                                            TypeKind::String,
-                                                                        ),
-                                                                    compiled_argument_resolved_type
-                                                                        .with_kind(
-                                                                            TypeKind::Number,
-                                                                        ),
-                                                                ])
-                                                                .into(),
-                                                            ),
-                                                        ),
-                                                    )),
-                                                ),
-                                            ),
-                                            (
-                                                "start".to_string().into(),
-                                                compiled_argument_resolved_type
-                                                    .with_kind(TypeKind::Number),
-                                            ),
-                                            (
-                                                "end".to_string().into(),
-                                                compiled_argument_resolved_type
-                                                    .with_kind(TypeKind::Number),
-                                            ),
-                                        ])
-                                        .into(),
-                                    )),
-                                    compiled_argument_resolved_type.with_kind(TypeKind::Null),
-                                ])
-                                .into(),
-                            )))
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::Concat => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::Concat as usize],
-                        &|compiled_argument_resolved_type| {
-                            Ok(compiled_argument_resolved_type.with_kind(TypeKind::String))
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::StringFromBytes => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::StringFromBytes as usize],
-                        &|compiled_argument_resolved_type| {
-                            Ok(Type {
-                                kind: TypeKind::String,
-                                properties: TypeProperties {
-                                    capabilities: Capability::Error.into(),
-                                    is_computable: true,
-                                    is_serializable: true,
-                                }
-                                .unified(&compiled_argument_resolved_type.properties),
-                            })
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::BytesFromString => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::BytesFromString as usize],
-                        &|compiled_argument_resolved_type| {
-                            Ok(Type {
-                                kind: TypeKind::Bytes,
-                                properties: TypeProperties {
-                                    capabilities: Capability::Error.into(),
-                                    is_computable: true,
-                                    is_serializable: true,
-                                }
-                                .unified(&compiled_argument_resolved_type.properties),
-                            })
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::BufferizedWriter => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::BufferizedWriter as usize],
-                        &|compiled_argument_resolved_type| {
+                        Some(&|compiled_argument_resolved_type: &mut Type| {
                             let mut capabilities = Capability::Error.into();
                             if compiled_argument_resolved_type
                                 .kind
@@ -1303,396 +1203,49 @@ impl Compiler {
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
-                        },
+                        }),
                     )?,
                     EmbeddedFunction::BufferizedReader => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::BufferizedReader as usize],
-                        &|compiled_argument_resolved_type| {
-                            Ok(Type {
-                                kind: TypeKind::Embedded(Embedded::BufferizedReader),
-                                properties: TypeProperties {
-                                    capabilities: Capability::Error.into(),
-                                    is_computable: true,
-                                    is_serializable: false,
-                                }
-                                .unified(&compiled_argument_resolved_type.properties),
-                            })
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::WriteBytes => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::WriteBytes as usize],
-                        &|compiled_argument_resolved_type| {
-                            let mut properties = compiled_argument_resolved_type.properties.clone();
-                            properties.capabilities |= Capability::Error | Capability::WriteFile;
-                            properties.is_serializable = true;
-                            Ok(Type {
-                                kind: TypeKind::Number,
-                                properties,
-                            })
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::ReadBytes => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::ReadBytes as usize],
-                        &|compiled_argument_resolved_type| {
-                            let mut properties = compiled_argument_resolved_type.properties.clone();
-                            properties.capabilities |= Capability::Error | Capability::ReadFile;
-                            properties.is_serializable = true;
-                            Ok(Type {
-                                kind: TypeKind::Bytes,
-                                properties,
-                            })
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::RemoveFile => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::RemoveFile as usize],
-                        &|compiled_argument_resolved_type| {
-                            Ok(Type {
-                                kind: TypeKind::Null,
-                                properties: TypeProperties {
-                                    capabilities: Capability::RemoveFile | Capability::Error,
-                                    is_computable: true,
-                                    is_serializable: true,
-                                }
-                                .unified(&compiled_argument_resolved_type.properties),
-                            })
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::HttpClient => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::HttpClient as usize],
-                        &|compiled_argument_resolved_type| {
-                            Ok(Type {
-                                kind: TypeKind::Embedded(Embedded::HttpClient),
-                                properties: TypeProperties {
-                                    capabilities: Capability::Error.into(),
-                                    is_computable: true,
-                                    is_serializable: true,
-                                }
-                                .unified(&compiled_argument_resolved_type.properties),
-                            })
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::SendRequest => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::SendRequest as usize],
-                        &|compiled_argument_resolved_type| {
-                            let mut properties = compiled_argument_resolved_type.properties.clone();
-                            properties.capabilities |= Capability::Error | Capability::ReadFile;
-                            properties.is_serializable = true;
-                            Ok(Type {
-                                kind: TypeKind::Object(
-                                    BTreeMap::from_iter([
-                                        (
-                                            "status".to_string().into(),
-                                            TypeKind::Union(
-                                                BTreeSet::from_iter([
-                                                    TypeKind::Null.into(),
-                                                    TypeKind::LiteralString("Accepted".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("Continue".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Switching Protocols".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("Processing".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("Early Hints".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("OK".into()).into(),
-                                                    TypeKind::LiteralString("Created".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("Accepted".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Non Authoritative Information".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("No Content".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("Reset Content".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Partial Content".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("Multi-Status".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Already Reported".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("IM Used".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Multiple Choices".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Moved Permanently".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("Found".into()).into(),
-                                                    TypeKind::LiteralString("See Other".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("Not Modified".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("Use Proxy".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Temporary Redirect".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Permanent Redirect".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("Bad Request".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("Unauthorized".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Payment Required".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("Forbidden".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("Not Found".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Method Not Allowed".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Not Acceptable".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Proxy Authentication Required".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Request Timeout".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("Conflict".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("Gone".into()).into(),
-                                                    TypeKind::LiteralString(
-                                                        "Length Required".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Precondition Failed".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Payload Too Large".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("URI Too Long".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Unsupported Media Type".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Range Not Satisfiable".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Expectation Failed".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("I'm a teapot".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Misdirected Request".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Unprocessable Entity".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("Locked".into()).into(),
-                                                    TypeKind::LiteralString(
-                                                        "Failed Dependency".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("Too Early".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Upgrade Required".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Precondition Required".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Too Many Requests".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Request Header Fields Too Large".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Unavailable For Legal Reasons".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Internal Server Error".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Not Implemented".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("Bad Gateway".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Service Unavailable".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Gateway Timeout".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "HTTP Version Not Supported".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Variant Also Negotiates".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Insufficient Storage".into(),
-                                                    )
-                                                    .into(),
-                                                    TypeKind::LiteralString("Loop Detected".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("Not Extended".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString(
-                                                        "Network Authentication Required".into(),
-                                                    )
-                                                    .into(),
-                                                ])
-                                                .into(),
-                                            )
-                                            .into(),
-                                        ),
-                                        (
-                                            "is informational".to_string().into(),
-                                            TypeKind::Bool.into(),
-                                        ),
-                                        ("is success".to_string().into(), TypeKind::Bool.into()),
-                                        (
-                                            "is redirection".to_string().into(),
-                                            TypeKind::Bool.into(),
-                                        ),
-                                        (
-                                            "is client error".to_string().into(),
-                                            TypeKind::Bool.into(),
-                                        ),
-                                        (
-                                            "is server error".to_string().into(),
-                                            TypeKind::Bool.into(),
-                                        ),
-                                        (
-                                            "version".to_string().into(),
-                                            TypeKind::Union(
-                                                BTreeSet::from_iter([
-                                                    TypeKind::LiteralString("HTTP/0.9".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("HTTP/1.0".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("HTTP/1.1".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("HTTP/2.0".into())
-                                                        .into(),
-                                                    TypeKind::LiteralString("HTTP/3.0".into())
-                                                        .into(),
-                                                ])
-                                                .into(),
-                                            )
-                                            .into(),
-                                        ),
-                                        (
-                                            "headers".to_string().into(),
-                                            TypeKind::GenericObject(Box::new(
-                                                TypeKind::String.into(),
-                                            ))
-                                            .into(),
-                                        ),
-                                        ("body".to_string().into(), TypeKind::Bytes.into()),
-                                    ])
-                                    .into(),
-                                ),
-                                properties,
-                            })
-                        },
+                        None,
                     )?,
                     EmbeddedFunction::Run => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
-                        &EMBEDDED_FUNCTIONS[EmbeddedFunction::Run as usize],
-                        &|compiled_argument_resolved_type| {
-                            let type_properties = TypeProperties {
-                                capabilities: Capability::RunCommand | Capability::Error,
-                                is_computable: true,
-                                is_serializable: true,
-                            }
-                            .unified(&compiled_argument_resolved_type.properties);
-                            Ok(Type {
-                                kind: TypeKind::Object(
-                                    BTreeMap::from_iter([
-                                        (
-                                            "exit code".to_string().into(),
-                                            Type {
-                                                kind: TypeKind::Number,
-                                                properties: type_properties.clone(),
-                                            },
-                                        ),
-                                        (
-                                            "standard output".to_string().into(),
-                                            Type {
-                                                kind: TypeKind::Bytes,
-                                                properties: type_properties.clone(),
-                                            },
-                                        ),
-                                        (
-                                            "standard error".to_string().into(),
-                                            Type {
-                                                kind: TypeKind::Bytes,
-                                                properties: type_properties.clone(),
-                                            },
-                                        ),
-                                    ])
-                                    .into(),
-                                ),
-                                properties: type_properties.clone(),
-                            })
-                        },
+                        None,
                     )?,
                 }
             }

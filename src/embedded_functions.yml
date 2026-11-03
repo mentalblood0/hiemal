@@ -1,295 +1,494 @@
-# sum
-- array: number
+sum:
+  argument: { array: number }
+  return:
+    type:
+      static: number
 
-# mod
-- tuple: [ number, number ]
+mod:
+  argument: { tuple: [ number, number ] }
+  return:
+    type:
+      static: number
+    properties:
+      static:
+        capabilities: [ error ]
 
-# is sorted
-- array: any
+is sorted:
+  argument: { array: any }
+  return:
+    type:
+      static: bool
 
-# read bytes from standard input
-- union:
-  - number
-  - literal string: all
-
-# parse yaml
-- string
-
-# key-value pairs
-- generic object: any
-
-# compile regex
-- union:
-  - generic literal string
-  - constructed: regex
-
-# match regex
-- object:
-    string: string
-    regex: { embedded: compiled regex }
-
-# concat
-- array: string
-
-# string from bytes
-- bytes
-
-# bytes from string
-- string
-
-# bufferized writer
-- object:
-    path: string
-    mode:
-      union:
-      - literal string: append
-      - literal string: overwrite
-      - literal string: truncate
-      - literal string: create or append
-      - literal string: create or overwrite
-      - literal string: create
-
-# bufferized reader
-- string
-
-# write bytes
-- object:
-    target: { embedded: bufferized writer }
-    content: bytes
-
-# read bytes
-- object:
-    source: { embedded: bufferized reader }
-    amount: number
-
-# remove file
-- string
-
-# HTTP client
-- array:
+read bytes from standard input:
+  argument:
     union:
-    - object:
-        HTTPS only: bool
-    - object:
-        IP family:
-          union:
-          - literal string: IPv4
-          - literal string: IPv6
-          - literal string: any
-    - object:
-        TLS:
-          array:
+    - number
+    - literal string: all
+  return:
+    type:
+      static: bytes
+    properties:
+      static:
+        capabilities:
+        - read standard input
+        - error
+
+parse YAML:
+  argument: string
+  return:
+    type:
+      static: any
+    properties:
+      static:
+        capabilities: [ error ]
+
+key-value pairs:
+  argument: { generic object: any }
+
+compile regex:
+  argument:
+    union:
+    - generic literal string
+    - constructed: regex
+  return:
+    type:
+      static: { embedded: compiled regex }
+    properties:
+      static:
+        capabilities: [ error ]
+    is serializable: false
+
+match regex:
+  argument:
+    object:
+      string: string
+      regex: { embedded: compiled regex }
+  return:
+    type:
+      static:
+        union:
+        - "null"
+        - object:
+            groups:
+              generic object: { union: [ string, number ] }
+            start: number
+            end: number
+
+concat:
+  argument: { array: string }
+  return:
+    type:
+      static: string
+
+string from bytes:
+  argument: bytes
+  return:
+    type:
+      static: string
+    properties:
+      static:
+        capabilities: [ error ]
+
+bytes from string:
+  argument: string
+  return:
+    type:
+      static: bytes
+
+run:
+  argument:
+    object:
+      command: string
+      arguments: { array: string }
+  return:
+    type:
+      static:
+        object:
+          exit code: number
+          standard output: bytes
+          standard error: bytes
+    properties:
+      static:
+        capabilities:
+        - run command
+        - error
+
+bufferized writer:
+  argument:
+    object:
+      path: string
+      mode:
+        union:
+        - literal string: append
+        - literal string: overwrite
+        - literal string: truncate
+        - literal string: create or append
+        - literal string: create or overwrite
+        - literal string: create
+  return:
+    type:
+      static: { embedded: bufferized writer }
+
+bufferized reader:
+  argument: string
+  return:
+    type:
+      static: { embedded: bufferized reader }
+    properties:
+      static:
+        capabilities: [ error ]
+        is serializable: false
+
+write bytes:
+  argument:
+    object:
+      target: { embedded: bufferized writer }
+      content: bytes
+  return:
+    type:
+      static: number
+    properties:
+      static:
+        capabilities:
+        - write file
+        - error
+
+read bytes:
+  argument:
+    object:
+      source: { embedded: bufferized reader }
+      amount: number
+  return:
+    type:
+      static: bytes
+    properties:
+      static:
+        capabilities:
+        - read file
+        - error
+
+remove file:
+  argument: string
+  return:
+    type:
+      static: "null"
+    properties:
+      static:
+        capabilities:
+        - remove file
+        - error
+
+HTTP client:
+  argument:
+    array:
+      union:
+      - object: { HTTPS only: bool }
+      - object:
+          IP family:
             union:
-            - object:
-                client certificate:
-                  object:
-                    chain:
-                      array:
+            - literal string: IPv4
+            - literal string: IPv6
+            - literal string: any
+      - object:
+          TLS:
+            array:
+              union:
+              - object:
+                  client certificate:
+                    object:
+                      chain:
+                        array:
+                          union:
+                          - object: { DER: bytes }
+                          - object: { PEM: string }
+                      private key PEM: string
+              - object:
+                  root certificates:
+                    union:
+                    - array:
                         union:
-                        - object:
-                            DER: bytes
-                        - object:
-                            PEM: string
-                    private key PEM: string
-            - object:
-                root certificates:
-                  union:
-                  - array:
-                      union:
-                      - object:
-                          DER: bytes
-                      - object:
-                          PEM: string
-                  - literal string: WebPKI
-                  - literal string: platform verifier
-            - object:
-                use SNI: bool
-    - object:
-        accept:
-          union: [ string, literal false ]
-    - object:
-        accept encoding:
-          union: [ string, literal false ]
-    - object: { allow non-standard methods: bool }
-    - object: { error on bad status code: bool }
-    - object: { input buffer size: number }
-    - object: { max idle age in seconds: number }
-    - object: { max idle connections: number }
-    - object: { max idle connections per host: number }
-    - object: { max redirects: number }
-    - object: { max response header size: number }
-    - object: { no delay: bool }
-    - object: { output buffer size: number }
-    - object:
-        proxy:
-          union:
-          - string
-          - object:
-              configuration:
-                array:
-                  union:
-                  - object: { host: string }
-                  - object: { password: string }
-                  - object: { port: number }
-                  - object: { resolve locally: bool }
-                  - object: { user name: string }
-              protocol:
-                union:
-                - literal string: HTTP
-                - literal string: HTTPS
-                - literal string: SOCKS4
-                - literal string: SOCKS4A
-                - literal string: SOCKS5
-                - literal string: SOCKS5h
-          - literal false
-    - object:
-        redirect authorization headers:
-          union:
-          - literal string: never
-          - literal string: same host
-    - object: { timeout for await 100 in seconds: number }
-    - object: { timeout for connect in seconds: number }
-    - object: { timeout for receive body in seconds: number }
-    - object: { timeout for resolve in seconds: number }
-    - object: { timeout for send body in seconds: number }
-    - object: { timeout for send request in seconds: number }
-    - object: { timeout global in seconds: number }
-    - object: { timeout per call in seconds: number }
-    - object:
-        user agent:
-          union: [ string, literal false ]
-
-# send request
-- object:
-    client: { embedded: HTTP client }
-    request:
-      object:
-        URL: string
-        body:
-          union:
-          - "null"
-          - object: { data: bytes }
-          - object:
-              form: { generic object: string }
-        method:
-          union:
-          - literal string: CONNECT
-          - literal string: DELETE
-          - literal string: GET
-          - literal string: HEAD
-          - literal string: OPTIONS
-          - literal string: PATCH
-          - literal string: POST
-          - literal string: PUT
-          - literal string: TRACE
-        parameters:
-          array:
+                        - object: { DER: bytes }
+                        - object: { PEM: string }
+                    - literal string: WebPKI
+                    - literal string: platform verifier
+              - object: { use SNI: bool }
+      - object:
+          accept:
+            union: [ string, literal false ]
+      - object:
+          accept encoding:
+            union: [ string, literal false ]
+      - object: { allow non-standard methods: bool }
+      - object: { error on bad status code: bool }
+      - object: { input buffer size: number }
+      - object: { max idle age in seconds: number }
+      - object: { max idle connections: number }
+      - object: { max idle connections per host: number }
+      - object: { max redirects: number }
+      - object: { max response header size: number }
+      - object: { no delay: bool }
+      - object: { output buffer size: number }
+      - object:
+          proxy:
             union:
+            - string
             - object:
-                content type:
-                  object:
-                    parameters: { generic object: string }
-                    subtype: string
-                    type: string
-            - object:
-                headers:
+                configuration:
                   array:
-                    tuple:
-                    - union:
-                      - literal string: accept
-                      - literal string: accept-charset
-                      - literal string: accept-encoding
-                      - literal string: accept-language
-                      - literal string: accept-ranges
-                      - literal string: access-control-allow-credentials
-                      - literal string: access-control-allow-headers
-                      - literal string: access-control-allow-methods
-                      - literal string: access-control-allow-origin
-                      - literal string: access-control-expose-headers
-                      - literal string: access-control-max-age
-                      - literal string: access-control-request-headers
-                      - literal string: access-control-request-method
-                      - literal string: age
-                      - literal string: allow
-                      - literal string: alt-svc
-                      - literal string: authorization
-                      - literal string: cache-control
-                      - literal string: cache-status
-                      - literal string: cdn-cache-control
-                      - literal string: connection
-                      - literal string: content-disposition
-                      - literal string: content-encoding
-                      - literal string: content-language
-                      - literal string: content-length
-                      - literal string: content-location
-                      - literal string: content-range
-                      - literal string: content-security-policy
-                      - literal string: content-security-policy-report-only
-                      - literal string: content-type
-                      - literal string: cookie
-                      - literal string: date
-                      - literal string: dnt
-                      - literal string: etag
-                      - literal string: expect
-                      - literal string: expires
-                      - literal string: forwarded
-                      - literal string: from
-                      - literal string: host
-                      - literal string: if-match
-                      - literal string: if-modified-since
-                      - literal string: if-none-match
-                      - literal string: if-range
-                      - literal string: if-unmodified-since
-                      - literal string: last-modified
-                      - literal string: link
-                      - literal string: location
-                      - literal string: max-forwards
-                      - literal string: origin
-                      - literal string: pragma
-                      - literal string: proxy-authenticate
-                      - literal string: proxy-authorization
-                      - literal string: public-key-pins
-                      - literal string: public-key-pins-report-only
-                      - literal string: range
-                      - literal string: referer
-                      - literal string: referrer-policy
-                      - literal string: refresh
-                      - literal string: retry-after
-                      - literal string: sec-websocket-accept
-                      - literal string: sec-websocket-extensions
-                      - literal string: sec-websocket-key
-                      - literal string: sec-websocket-protocol
-                      - literal string: sec-websocket-version
-                      - literal string: server
-                      - literal string: set-cookie
-                      - literal string: strict-transport-security
-                      - literal string: te
-                      - literal string: trailer
-                      - literal string: transfer-encoding
-                      - literal string: upgrade
-                      - literal string: upgrade-insecure-requests
-                      - literal string: user-agent
-                      - literal string: vary
-                      - literal string: via
-                      - literal string: warning
-                      - literal string: www-authenticate
-                      - literal string: x-content-type-options
-                      - literal string: x-dns-prefetch-control
-                      - literal string: x-frame-options
-                      - literal string: x-xss-protection
-                    - string
-            - object:
-                query: { generic object: string }
-            - object:
-                version:
+                    union:
+                    - object: { host: string }
+                    - object: { password: string }
+                    - object: { port: number }
+                    - object: { resolve locally: bool }
+                    - object: { user name: string }
+                protocol:
                   union:
-                  - literal string: HTTP/0.9
-                  - literal string: HTTP/1.0
-                  - literal string: HTTP/1.1
-                  - literal string: HTTP/2.0
-                  - literal string: HTTP/3.0
+                  - literal string: HTTP
+                  - literal string: HTTPS
+                  - literal string: SOCKS4
+                  - literal string: SOCKS4A
+                  - literal string: SOCKS5
+                  - literal string: SOCKS5h
+            - literal false
+      - object:
+          redirect authorization headers:
+            union:
+            - literal string: never
+            - literal string: same host
+      - object: { timeout for await 100 in seconds: number }
+      - object: { timeout for connect in seconds: number }
+      - object: { timeout for receive body in seconds: number }
+      - object: { timeout for resolve in seconds: number }
+      - object: { timeout for send body in seconds: number }
+      - object: { timeout for send request in seconds: number }
+      - object: { timeout global in seconds: number }
+      - object: { timeout per call in seconds: number }
+      - object:
+          user agent:
+            union: [ string, literal false ]
+  return:
+    type:
+      static: { embedded: HTTP client }
+    properties:
+      static:
+        capabilities: [ error ]
 
-# run
-- object:
-    command: string
-    arguments: { array: string }
+send request:
+  argument:
+    object:
+      client: { embedded: HTTP client }
+      request:
+        object:
+          URL: string
+          body:
+            union:
+            - "null"
+            - object: { data: bytes }
+            - object:
+                form: { generic object: string }
+          method:
+            union:
+            - literal string: CONNECT
+            - literal string: DELETE
+            - literal string: GET
+            - literal string: HEAD
+            - literal string: OPTIONS
+            - literal string: PATCH
+            - literal string: POST
+            - literal string: PUT
+            - literal string: TRACE
+          parameters:
+            array:
+              union:
+              - object:
+                  content type:
+                    object:
+                      parameters: { generic object: string }
+                      subtype: string
+                      type: string
+              - object:
+                  headers:
+                    array:
+                      tuple:
+                      - union:
+                        - literal string: accept
+                        - literal string: accept-charset
+                        - literal string: accept-encoding
+                        - literal string: accept-language
+                        - literal string: accept-ranges
+                        - literal string: access-control-allow-credentials
+                        - literal string: access-control-allow-headers
+                        - literal string: access-control-allow-methods
+                        - literal string: access-control-allow-origin
+                        - literal string: access-control-expose-headers
+                        - literal string: access-control-max-age
+                        - literal string: access-control-request-headers
+                        - literal string: access-control-request-method
+                        - literal string: age
+                        - literal string: allow
+                        - literal string: alt-svc
+                        - literal string: authorization
+                        - literal string: cache-control
+                        - literal string: cache-status
+                        - literal string: cdn-cache-control
+                        - literal string: connection
+                        - literal string: content-disposition
+                        - literal string: content-encoding
+                        - literal string: content-language
+                        - literal string: content-length
+                        - literal string: content-location
+                        - literal string: content-range
+                        - literal string: content-security-policy
+                        - literal string: content-security-policy-report-only
+                        - literal string: content-type
+                        - literal string: cookie
+                        - literal string: date
+                        - literal string: dnt
+                        - literal string: etag
+                        - literal string: expect
+                        - literal string: expires
+                        - literal string: forwarded
+                        - literal string: from
+                        - literal string: host
+                        - literal string: if-match
+                        - literal string: if-modified-since
+                        - literal string: if-none-match
+                        - literal string: if-range
+                        - literal string: if-unmodified-since
+                        - literal string: last-modified
+                        - literal string: link
+                        - literal string: location
+                        - literal string: max-forwards
+                        - literal string: origin
+                        - literal string: pragma
+                        - literal string: proxy-authenticate
+                        - literal string: proxy-authorization
+                        - literal string: public-key-pins
+                        - literal string: public-key-pins-report-only
+                        - literal string: range
+                        - literal string: referer
+                        - literal string: referrer-policy
+                        - literal string: refresh
+                        - literal string: retry-after
+                        - literal string: sec-websocket-accept
+                        - literal string: sec-websocket-extensions
+                        - literal string: sec-websocket-key
+                        - literal string: sec-websocket-protocol
+                        - literal string: sec-websocket-version
+                        - literal string: server
+                        - literal string: set-cookie
+                        - literal string: strict-transport-security
+                        - literal string: te
+                        - literal string: trailer
+                        - literal string: transfer-encoding
+                        - literal string: upgrade
+                        - literal string: upgrade-insecure-requests
+                        - literal string: user-agent
+                        - literal string: vary
+                        - literal string: via
+                        - literal string: warning
+                        - literal string: www-authenticate
+                        - literal string: x-content-type-options
+                        - literal string: x-dns-prefetch-control
+                        - literal string: x-frame-options
+                        - literal string: x-xss-protection
+                      - string
+              - object:
+                  query: { generic object: string }
+              - object:
+                  version:
+                    union:
+                    - literal string: HTTP/0.9
+                    - literal string: HTTP/1.0
+                    - literal string: HTTP/1.1
+                    - literal string: HTTP/2.0
+                    - literal string: HTTP/3.0
+  return:
+    type:
+      static:
+        object:
+          status:
+            union:
+            - "null"
+            - literal string: Accepted
+            - literal string: Continue
+            - literal string: Switching Protocols
+            - literal string: Processing
+            - literal string: Early Hints
+            - literal string: OK
+            - literal string: Created
+            - literal string: Accepted
+            - literal string: Non Authoritative Information
+            - literal string: No Content
+            - literal string: Reset Content
+            - literal string: Partial Content
+            - literal string: Multi-Status
+            - literal string: Already Reported
+            - literal string: IM Used
+            - literal string: Multiple Choices
+            - literal string: Moved Permanently
+            - literal string: Found
+            - literal string: See Other
+            - literal string: Not Modified
+            - literal string: Use Proxy
+            - literal string: Temporary Redirect
+            - literal string: Permanent Redirect
+            - literal string: Bad Request
+            - literal string: Unauthorized
+            - literal string: Payment Required
+            - literal string: Forbidden
+            - literal string: Not Found
+            - literal string: Method Not Allowed
+            - literal string: Not Acceptable
+            - literal string: Proxy Authentication Required
+            - literal string: Request Timeout
+            - literal string: Conflict
+            - literal string: Gone
+            - literal string: Length Required
+            - literal string: Precondition Failed
+            - literal string: Payload Too Large
+            - literal string: URI Too Long
+            - literal string: Unsupported Media Type
+            - literal string: Range Not Satisfiable
+            - literal string: Expectation Failed
+            - literal string: I'm a teapot
+            - literal string: Misdirected Request
+            - literal string: Unprocessable Entity
+            - literal string: Locked
+            - literal string: Failed Dependency
+            - literal string: Too Early
+            - literal string: Upgrade Required
+            - literal string: Precondition Required
+            - literal string: Too Many Requests
+            - literal string: Request Header Fields Too Large
+            - literal string: Unavailable For Legal Reasons
+            - literal string: Internal Server Error
+            - literal string: Not Implemented
+            - literal string: Bad Gateway
+            - literal string: Service Unavailable
+            - literal string: Gateway Timeout
+            - literal string: HTTP Version Not Supported
+            - literal string: Variant Also Negotiates
+            - literal string: Insufficient Storage
+            - literal string: Loop Detected
+            - literal string: Not Extended
+            - literal string: Network Authentication Required
+          is informational: bool
+          is success: bool
+          is redirection: bool
+          is client error: bool
+          is server error: bool
+          version:
+            union:
+            - literal string: HTTP/0.9
+            - literal string: HTTP/1.0
+            - literal string: HTTP/1.1
+            - literal string: HTTP/2.0
+            - literal string: HTTP/3.0
+          headers: { generic object: string }
+          body: bytes
+    properties:
+      static:
+        capabilities:
+        - network
+        - error

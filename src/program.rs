@@ -249,44 +249,44 @@ impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
 pub enum EmbeddedFunction {
-    #[serde(rename = "sum")]
-    Sum,
-    #[serde(rename = "mod")]
-    Mod,
-    #[serde(rename = "is sorted")]
-    IsSorted,
-    #[serde(rename = "standard input")]
-    ReadBytesFromStandardInput,
-    #[serde(rename = "parse YAML")]
-    ParseYaml,
-    #[serde(rename = "key-value pairs")]
-    KeyValuePairs,
-    #[serde(rename = "compile regex")]
-    CompileRegex,
-    #[serde(rename = "match regex")]
-    MatchRegex,
-    #[serde(rename = "concat")]
-    Concat,
-    #[serde(rename = "string from bytes")]
-    StringFromBytes,
-    #[serde(rename = "bytes from string")]
-    BytesFromString,
-    #[serde(rename = "bufferized writer")]
-    BufferizedWriter,
     #[serde(rename = "bufferized reader")]
     BufferizedReader,
-    #[serde(rename = "write bytes")]
-    WriteBytes,
-    #[serde(rename = "read bytes")]
-    ReadBytes,
-    #[serde(rename = "remove file")]
-    RemoveFile,
+    #[serde(rename = "bufferized writer")]
+    BufferizedWriter,
+    #[serde(rename = "bytes from string")]
+    BytesFromString,
+    #[serde(rename = "compile regex")]
+    CompileRegex,
+    #[serde(rename = "concat")]
+    Concat,
     #[serde(rename = "HTTP client")]
     HttpClient,
-    #[serde(rename = "send request")]
-    SendRequest,
+    #[serde(rename = "is sorted")]
+    IsSorted,
+    #[serde(rename = "key-value pairs")]
+    KeyValuePairs,
+    #[serde(rename = "match regex")]
+    MatchRegex,
+    #[serde(rename = "mod")]
+    Mod,
+    #[serde(rename = "parse YAML")]
+    ParseYaml,
+    #[serde(rename = "read bytes")]
+    ReadBytes,
+    #[serde(rename = "read bytes from standard input")]
+    ReadBytesFromStandardInput,
+    #[serde(rename = "remove file")]
+    RemoveFile,
     #[serde(rename = "run")]
     Run,
+    #[serde(rename = "send request")]
+    SendRequest,
+    #[serde(rename = "string from bytes")]
+    StringFromBytes,
+    #[serde(rename = "sum")]
+    Sum,
+    #[serde(rename = "write bytes")]
+    WriteBytes,
 }
 
 #[repr(u8)]
