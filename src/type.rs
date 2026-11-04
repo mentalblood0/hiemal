@@ -227,6 +227,9 @@ pub struct TypeProperties {
     #[serde(rename = "is serializable")]
     #[serde(default = "default_is_serializable")]
     pub is_serializable: bool,
+    #[serde(rename = "is pure")]
+    #[serde(default = "default_is_pure")]
+    pub is_pure: bool
 }
 
 fn default_is_computable() -> bool {
@@ -237,12 +240,17 @@ fn default_is_serializable() -> bool {
     true
 }
 
+fn default_is_pure() -> bool {
+    true
+}
+
 impl Default for TypeProperties {
     fn default() -> Self {
         Self {
             capabilities: EnumSet::default(),
             is_computable: true,
             is_serializable: true,
+            is_pure: true
         }
     }
 }
@@ -253,6 +261,7 @@ impl<'a> TypeProperties {
             capabilities: self.capabilities | another_type_properties.capabilities,
             is_computable: self.is_computable && another_type_properties.is_computable,
             is_serializable: self.is_serializable && another_type_properties.is_serializable,
+            is_pure: self.is_pure && another_type_properties.is_pure,
         }
     }
 
@@ -366,11 +375,7 @@ impl From<TypeKind> for Type {
     fn from(type_kind: TypeKind) -> Self {
         Self {
             kind: type_kind,
-            properties: TypeProperties {
-                capabilities: EnumSet::default(),
-                is_computable: true,
-                is_serializable: true,
-            },
+            properties: TypeProperties::default(),
         }
     }
 }

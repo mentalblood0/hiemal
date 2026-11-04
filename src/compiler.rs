@@ -21,8 +21,8 @@ use crate::{
         ValuePathSegment,
     },
     program::{
-        self, AtSegment, Condition, EmbeddedFunctionCall, Match, Path,
-        PathSegment, Program, RangeBound,
+        self, AtSegment, Condition, EmbeddedFunctionCall, Match, Path, PathSegment, Program,
+        RangeBound,
     },
     r#type::{Capability, Embedded, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties},
     value::Value,
@@ -1205,6 +1205,7 @@ impl Compiler {
                                     capabilities,
                                     is_computable: true,
                                     is_serializable: false,
+                                    is_pure: false,
                                 }
                                 .unified(&compiled_argument_resolved_type.properties),
                             })
@@ -1426,38 +1427,39 @@ impl Compiler {
                         .into(),
                     }
                     .into()
-                } else {
-                    match (result_cases.len(), r#as.as_ref().or(match_constant_name)) {
-                        (0, _) => {
-                            return Err(match_compilation_context.error(
-                                &Option::<String>::None,
-                                &BTreeMap::from_iter([(
-                                    "at least one valid case for match",
-                                    &compiled_match.node.r#type,
-                                )]),
-                            ));
-                        }
-                        (1, None) => NodeAndMetadata {
-                            node: result_cases.into_iter().next().unwrap().node,
-                            external_constants_name_clustered_indices:
-                                result_external_constants_name_clustered_indices,
-                        }
-                        .into(),
-                        _ => NodeAndMetadata {
-                            node: Node {
-                                content: Content::Match {
-                                    r#match: compiled_match.node.clone(),
-                                    cases: result_cases,
-                                    match_constant_name_clustered_index_option,
-                                },
-                                r#type,
-                            }
-                            .into(),
-                            external_constants_name_clustered_indices:
-                                result_external_constants_name_clustered_indices,
-                        }
-                        .into(),
+                } else if result_cases.len() == 1
+                    && r#as.as_ref().or(match_constant_name).is_none()
+                    && r#type.properties.is_pure
+                {
+                    NodeAndMetadata {
+                        node: result_cases.into_iter().next().unwrap().node,
+                        external_constants_name_clustered_indices:
+                            result_external_constants_name_clustered_indices,
                     }
+                    .into()
+                } else if result_cases.is_empty() {
+                    return Err(match_compilation_context.error(
+                        &Option::<String>::None,
+                        &BTreeMap::from_iter([(
+                            "at least one valid case for match",
+                            &compiled_match.node.r#type,
+                        )]),
+                    ));
+                } else {
+                    NodeAndMetadata {
+                        node: Node {
+                            content: Content::Match {
+                                r#match: compiled_match.node.clone(),
+                                cases: result_cases,
+                                match_constant_name_clustered_index_option,
+                            },
+                            r#type,
+                        }
+                        .into(),
+                        external_constants_name_clustered_indices:
+                            result_external_constants_name_clustered_indices,
+                    }
+                    .into()
                 }
             }
             Program::Map { map, r#as, through } => {
@@ -2098,6 +2100,11 @@ impl Compiler {
                         &TypeKind::Bool,
                         compilation_context,
                     )?;
+                    result_external_constants_name_clustered_indices.append(
+                        &mut compiled_while
+                            .external_constants_name_clustered_indices
+                            .clone(),
+                    );
                     Some(compiled_while.node.clone())
                 } else {
                     None
@@ -2108,6 +2115,7 @@ impl Compiler {
                         capabilities: EnumSet::default(),
                         is_computable: compiled_while_node.is_some(),
                         is_serializable: true,
+                        is_pure: true,
                     }
                     .unified(&compiled_starting_with.node.r#type.properties)
                     .unified_all(

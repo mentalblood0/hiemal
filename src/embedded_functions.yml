@@ -53,6 +53,7 @@ read bytes from standard input:
       capabilities:
       - read standard input
       - error
+      is pure: false
 
 parse:
   argument:
@@ -100,8 +101,7 @@ hash:
         - literal string: XXH3_128
         - literal string: BLAKE3
         - object: { BLAKE3: bytes }
-        - object:
-            BLAKE3 derive key: string
+        - object: { BLAKE3 derive key: string }
       data: bytes
   return:
     type: any
@@ -167,6 +167,7 @@ run:
       capabilities:
       - run command
       - error
+      is pure: false
 
 bufferized writer:
   argument:
@@ -190,6 +191,7 @@ bufferized reader:
     properties:
       capabilities: [ error ]
       is serializable: false
+      is pure: false
 
 write bytes:
   argument:
@@ -202,6 +204,7 @@ write bytes:
       capabilities:
       - write file
       - error
+      is pure: false
 
 read bytes:
   argument:
@@ -214,6 +217,7 @@ read bytes:
       capabilities:
       - read file
       - error
+      is pure: false
 
 remove file:
   argument: string
@@ -223,6 +227,7 @@ remove file:
       capabilities:
       - remove file
       - error
+      is pure: false
 
 HTTP client:
   argument:
@@ -534,3 +539,4 @@ send request:
     capabilities:
     - network
     - error
+    is pure: false
