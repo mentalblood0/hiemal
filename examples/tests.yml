@@ -151,10 +151,7 @@ compute:
                     algorithm: { BLAKE3: { bytes from string: first 32 bytes only } }
                     data: { constant: data }
                 - hash:
-                    algorithm:
-                      BLAKE3:
-                        context: some context
-                        seed: { bytes from string: some key material (not a password) }
+                    algorithm: { BLAKE3 derive key: some context }
                     data: { constant: data }
             expected:
               - bytes: 2f05477fc24bb4faefd86517156dafdecec45b8ad3cf2522a563582b
@@ -172,7 +169,7 @@ compute:
               - bytes: cebb6622
               - bytes: 45ab6734b21e6968
               - bytes: e5c1f826bb9c23f2bf25707566f49593a5f0f646fd3e2d8b1558de923608c8b9
-              - bytes: 5ccbbd5b7c9fca4f9e7b193c9f5d8e7842fa50644dc1192dd99a53aac32d856f
+              - bytes: 4fd11ce7b1bea157e56f8aa6939a78a015bf117765170b3f0e98d59ea38c9dba
       test encode to:
         constants:
           source: [1, 2, { lalala: null }, 3]

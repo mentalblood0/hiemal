@@ -1989,39 +1989,25 @@ impl<'a> ComputationContext<'a> {
                                 )
                                 .to_be_bytes()
                                 .to_vec(),
-                                "BLAKE3" => match parameters.as_ref().as_ref().unwrap() {
-                                    Value::Bytes(provided_key) => {
-                                        let mut key = [0u8; 32];
-                                        let bytes_amount_to_take = provided_key.len().min(32);
-                                        key[..bytes_amount_to_take]
-                                            .copy_from_slice(&provided_key[..bytes_amount_to_take]);
-                                        blake3::keyed_hash(&key, data).as_bytes().to_vec()
-                                    }
-                                    Value::Object(context_and_seed_object) => {
-                                        let context = context_and_seed_object
-                                            .inner
-                                            .get(&"context".to_string())
-                                            .unwrap()
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_string()
-                                            .unwrap()
-                                            .to_string();
-                                        let seed_value = context_and_seed_object
-                                            .inner
-                                            .get(&"seed".to_string())
-                                            .unwrap();
-                                        let seed = seed_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_bytes()
-                                            .unwrap();
-                                        blake3::derive_key(&context, seed).to_vec()
-                                    }
-                                    _ => panic!(),
-                                },
+                                "BLAKE3" => {
+                                    let provided_key =
+                                        parameters.as_ref().as_ref().unwrap().as_bytes().unwrap();
+                                    let mut key = [0u8; 32];
+                                    let bytes_amount_to_take = provided_key.len().min(32);
+                                    key[..bytes_amount_to_take]
+                                        .copy_from_slice(&provided_key[..bytes_amount_to_take]);
+                                    blake3::keyed_hash(&key, data).as_bytes().to_vec()
+                                }
+                                "BLAKE3 derive key" => {
+                                    let context = parameters
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_string()
+                                        .unwrap()
+                                        .to_string();
+                                    blake3::derive_key(&context, data).to_vec()
+                                }
                                 _ => panic!(),
                             }
                         }

@@ -101,10 +101,7 @@ hash:
         - literal string: BLAKE3
         - object: { BLAKE3: bytes }
         - object:
-            BLAKE3:
-              object:
-                context: string
-                seed: bytes
+            BLAKE3 derive key: string
       data: bytes
   return:
     type: any
