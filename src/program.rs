@@ -261,6 +261,8 @@ pub enum EmbeddedFunction {
     Concat,
     #[serde(rename = "divide")]
     Divide,
+    #[serde(rename = "encode to")]
+    EncodeTo,
     #[serde(rename = "exponentiate")]
     Exponentiate,
     #[serde(rename = "HTTP client")]

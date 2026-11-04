@@ -1769,28 +1769,44 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .as_object()
                         .unwrap();
-                    let (format, source) = argument_object
-                        .inner
-                        .iter()
-                        .map(|(key, value)| {
-                            (
-                                key.as_str(),
-                                value
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_string()
-                                    .unwrap()
-                                    .to_string(),
+                    let (format, source) = argument_object.inner.iter().next().unwrap();
+                    let result_value: Option<Value> = match format.as_str() {
+                        "YAML" => serde_saphyr::from_str(
+                            &source
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_string()
+                                .unwrap()
+                                .to_string(),
+                        )
+                        .with_context(embedded_function_error_context(path_option))?,
+                        "JSON" => serde_json::from_str(
+                            &source
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_string()
+                                .unwrap()
+                                .to_string(),
+                        )
+                        .with_context(embedded_function_error_context(path_option))?,
+                        "bincode" => {
+                            let intermediate_representation_value: Option<
+                                intermediate_representation::Value,
+                            > = bincode::serde::decode_from_slice(
+                                source.as_ref().as_ref().unwrap().as_bytes().unwrap(),
+                                bincode::config::standard(),
                             )
-                        })
-                        .next()
-                        .unwrap();
-                    let result_value: Option<Value> = match format {
-                        "YAML" => serde_saphyr::from_str(&source)
-                            .with_context(embedded_function_error_context(path_option))?,
-                        "JSON" => serde_json::from_str(&source)
-                            .with_context(embedded_function_error_context(path_option))?,
+                            .with_context(embedded_function_error_context(path_option))?
+                            .0;
+                            unsafe {
+                                std::mem::transmute::<
+                                    Option<intermediate_representation::Value>,
+                                    Option<Value>,
+                                >(intermediate_representation_value)
+                            }
+                        }
                         _ => panic!(),
                     };
                     let r#type = Value::type_kind(&result_value);
@@ -1817,10 +1833,8 @@ impl<'a> ComputationContext<'a> {
                         .next()
                         .unwrap();
                     let result_value = match format {
-                        "YAML" => serde_saphyr::to_string(&source)
-                            .with_context(embedded_function_error_context(path_option))?,
-                        "JSON" => serde_json::to_string(&source)
-                            .with_context(embedded_function_error_context(path_option))?,
+                        "YAML" => serde_saphyr::to_string(&source).unwrap(),
+                        "JSON" => serde_json::to_string(&source).unwrap(),
                         _ => panic!(),
                     };
                     Ok(IntermediateValueAndMetadata {
@@ -1828,6 +1842,46 @@ impl<'a> ComputationContext<'a> {
                             Some(Value::String(result_value.into())).into(),
                         ),
                         type_kind: TypeKind::String,
+                    }
+                    .into())
+                }
+                EmbeddedFunction::EncodeTo => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let argument_object = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap();
+                    let (format, source) = argument_object
+                        .inner
+                        .iter()
+                        .map(|(key, value)| (key.as_str(), value.as_ref().as_ref()))
+                        .next()
+                        .unwrap();
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Bytes(
+                                match format {
+                                    "bincode" => bincode::serde::encode_to_vec(
+                                        unsafe {
+                                            std::mem::transmute::<
+                                                Option<&Value>,
+                                                Option<&intermediate_representation::Value>,
+                                            >(source)
+                                        },
+                                        bincode::config::standard(),
+                                    )
+                                    .unwrap(),
+                                    _ => panic!(),
+                                }
+                                .into(),
+                            ))
+                            .into(),
+                        ),
+                        type_kind: TypeKind::Bytes,
                     }
                     .into())
                 }

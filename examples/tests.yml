@@ -109,6 +109,17 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test encode to:
+        constants:
+          source: [1, 2, { lalala: null }, 3]
+        compute:
+          assert equal::
+            found:
+              parse:
+                bincode:
+                  encode to:
+                    bincode: { constant: source }
+            expected: { constant: source }
       test stringify to:
         constants:
           source: [1, 2, { lalala: null }, 3]

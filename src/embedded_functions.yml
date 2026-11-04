@@ -59,6 +59,7 @@ parse:
     union:
     - object: { YAML: string }
     - object: { JSON: string }
+    - object: { bincode: bytes }
   return:
     type: any
     properties:
@@ -71,6 +72,13 @@ stringify to:
     - object: { JSON: any }
   return:
     type: string
+
+encode to:
+  argument:
+    union:
+    - object: { bincode: any }
+  return:
+    type: bytes
 
 key-value pairs:
   argument: { generic object: any }
