@@ -109,6 +109,17 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test stringify to:
+        constants:
+          source: [1, 2, { lalala: null }, 3]
+        compute:
+          assert equal::
+            found:
+              parse:
+                JSON:
+                  stringify to:
+                    JSON: { constant: source }
+            expected: { constant: source }
       test sort:
         assert equal::
           found:

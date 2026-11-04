@@ -291,6 +291,8 @@ pub enum EmbeddedFunction {
     Sort,
     #[serde(rename = "string from bytes")]
     StringFromBytes,
+    #[serde(rename = "stringify to")]
+    StringifyTo,
     #[serde(rename = "sum")]
     Sum,
     #[serde(rename = "write bytes")]

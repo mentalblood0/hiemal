@@ -64,6 +64,14 @@ parse:
     properties:
       capabilities: [ error ]
 
+stringify to:
+  argument:
+    union:
+    - object: { YAML: any }
+    - object: { JSON: any }
+  return:
+    type: string
+
 key-value pairs:
   argument: { generic object: any }
 

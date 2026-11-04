@@ -1800,6 +1800,37 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
+                EmbeddedFunction::StringifyTo => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let argument_object = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap();
+                    let (format, source) = argument_object
+                        .inner
+                        .iter()
+                        .map(|(key, value)| (key.as_str(), value.as_ref().as_ref()))
+                        .next()
+                        .unwrap();
+                    let result_value = match format {
+                        "YAML" => serde_saphyr::to_string(&source)
+                            .with_context(embedded_function_error_context(path_option))?,
+                        "JSON" => serde_json::to_string(&source)
+                            .with_context(embedded_function_error_context(path_option))?,
+                        _ => panic!(),
+                    };
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::String(result_value.into())).into(),
+                        ),
+                        type_kind: TypeKind::String,
+                    }
+                    .into())
+                }
                 EmbeddedFunction::KeyValuePairs => {
                     let unrolled_argument = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,
