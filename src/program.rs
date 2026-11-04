@@ -281,6 +281,8 @@ pub enum EmbeddedFunction {
     ReadBytesFromStandardInput,
     #[serde(rename = "remove file")]
     RemoveFile,
+    #[serde(rename = "round")]
+    Round,
     #[serde(rename = "run")]
     Run,
     #[serde(rename = "send request")]

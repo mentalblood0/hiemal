@@ -270,6 +270,11 @@ compute:
               precision: 64
               max result denominator: 1000
           expected: 2
+      test round:
+        assert equal::
+          found:
+            round: 1.4
+          expected: 1
       test divide:
         assert equal::
           found:

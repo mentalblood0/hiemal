@@ -17,6 +17,11 @@ divide:
     properties:
       capabilities: [ error ]
 
+round:
+  argument: number
+  return:
+    type: number
+
 exponentiate:
   argument:
     object:

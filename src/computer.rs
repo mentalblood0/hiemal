@@ -1564,6 +1564,25 @@ impl<'a> ComputationContext<'a> {
                     type_kind: TypeKind::Number,
                 }
                 .into()),
+                EmbeddedFunction::Round => Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Value(
+                        Some(Value::Number(
+                            self.unroll_intermediate_value(
+                                &self.compute_node(&embedded_function_call.argument, constants)?,
+                            )?
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_number()
+                            .unwrap()
+                            .round()
+                            .into(),
+                        ))
+                        .into(),
+                    ),
+                    type_kind: TypeKind::Number,
+                }
+                .into()),
                 EmbeddedFunction::Exponentiate => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         {
