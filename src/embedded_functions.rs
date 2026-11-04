@@ -1,11 +1,65 @@
 use std::{collections::BTreeMap, sync::LazyLock};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{
-    program::EmbeddedFunction,
-    r#type::{TypeKind, TypeProperties},
-};
+use crate::r#type::{TypeKind, TypeProperties};
+
+#[repr(u8)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
+pub enum EmbeddedFunction {
+    #[serde(rename = "bufferized reader")]
+    BufferizedReader,
+    #[serde(rename = "bufferized writer")]
+    BufferizedWriter,
+    #[serde(rename = "bytes from string")]
+    BytesFromString,
+    #[serde(rename = "compile regex")]
+    CompileRegex,
+    #[serde(rename = "concat")]
+    Concat,
+    #[serde(rename = "divide")]
+    Divide,
+    #[serde(rename = "encode to")]
+    EncodeTo,
+    #[serde(rename = "exponentiate")]
+    Exponentiate,
+    #[serde(rename = "hash")]
+    Hash,
+    #[serde(rename = "HTTP client")]
+    HttpClient,
+    #[serde(rename = "is sorted")]
+    IsSorted,
+    #[serde(rename = "key-value pairs")]
+    KeyValuePairs,
+    #[serde(rename = "match regex")]
+    MatchRegex,
+    #[serde(rename = "mod")]
+    Mod,
+    #[serde(rename = "parse")]
+    Parse,
+    #[serde(rename = "read bytes")]
+    ReadBytes,
+    #[serde(rename = "read bytes from standard input")]
+    ReadBytesFromStandardInput,
+    #[serde(rename = "remove file")]
+    RemoveFile,
+    #[serde(rename = "round")]
+    Round,
+    #[serde(rename = "run")]
+    Run,
+    #[serde(rename = "send request")]
+    SendRequest,
+    #[serde(rename = "sort")]
+    Sort,
+    #[serde(rename = "string from bytes")]
+    StringFromBytes,
+    #[serde(rename = "stringify to")]
+    StringifyTo,
+    #[serde(rename = "sum")]
+    Sum,
+    #[serde(rename = "write bytes")]
+    WriteBytes,
+}
 
 #[derive(Deserialize, Default)]
 pub struct Return {

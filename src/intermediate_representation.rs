@@ -7,7 +7,8 @@ use serde_with::{DisplayFromStr, serde_as};
 
 use crate::{
     containers::{self, Vector},
-    program::{EmbeddedFunction, Path},
+    embedded_functions::EmbeddedFunction,
+    program::Path,
     r#type::{Type, TypeKind},
     value::{deserialize_bytes, serialize_bytes},
 };

@@ -17,6 +17,7 @@ use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
 use regex::{Regex, escape};
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use ureq::{
     ProxyProtocol,
     config::{AutoHeaderValue, IpFamily, RedirectAuthHeaders},
@@ -24,11 +25,12 @@ use ureq::{
 
 use crate::{
     containers::{self, Object, Vector},
+    embedded_functions::EmbeddedFunction,
     intermediate_representation::{
         self, Condition, Content, IntermediateRepresentation, Node, RangeBound, Throughs,
         ValuePathSegment,
     },
-    program::{EmbeddedFunction, Path},
+    program::Path,
     r#type::{Embedded, TypeKind},
     value::{Identified, Runtime, Value},
 };
@@ -1880,6 +1882,45 @@ impl<'a> ComputationContext<'a> {
                                 .into(),
                             ))
                             .into(),
+                        ),
+                        type_kind: TypeKind::Bytes,
+                    }
+                    .into())
+                }
+                EmbeddedFunction::Hash => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let argument_object = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap();
+                    let algorithm = argument_object
+                        .inner
+                        .get(&"algorithm".to_string())
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .to_string();
+                    let data_value = argument_object.inner.get(&"data".to_string()).unwrap();
+                    let data = data_value.as_ref().as_ref().unwrap().as_bytes().unwrap();
+                    let result_raw = match algorithm.as_str() {
+                        "SHA224" => sha2::Sha224::digest(data).to_vec(),
+                        "SHA256" => sha2::Sha256::digest(data).to_vec(),
+                        "SHA384" => sha2::Sha384::digest(data).to_vec(),
+                        "SHA512" => sha2::Sha512::digest(data).to_vec(),
+                        "SHA512/224" => sha2::Sha512_224::digest(data).to_vec(),
+                        "SHA512/256" => sha2::Sha512_256::digest(data).to_vec(),
+                        _ => panic!(),
+                    };
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Bytes(result_raw.into())).into(),
                         ),
                         type_kind: TypeKind::Bytes,
                     }

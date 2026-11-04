@@ -14,14 +14,14 @@ use crate::{
     computer::Computer,
     containers::{Object, ObjectRaw, Set, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
-    embedded_functions::EMBEDDED_FUNCTIONS,
+    embedded_functions::{EMBEDDED_FUNCTIONS, EmbeddedFunction},
     includes_cache::IncludesCache,
     intermediate_representation::{
         self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction,
         ValuePathSegment,
     },
     program::{
-        self, AtSegment, Condition, EmbeddedFunction, EmbeddedFunctionCall, Match, Path,
+        self, AtSegment, Condition, EmbeddedFunctionCall, Match, Path,
         PathSegment, Program, RangeBound,
     },
     r#type::{Capability, Embedded, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties},

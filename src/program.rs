@@ -8,6 +8,7 @@ use serde::{
 use url::Url;
 
 use crate::{
+    embedded_functions::EmbeddedFunction,
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     r#type::{Capability, Type},
     value::Value,
@@ -244,61 +245,6 @@ impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
 
         deserializer.deserialize_map(EFVisitor)
     }
-}
-
-#[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
-pub enum EmbeddedFunction {
-    #[serde(rename = "bufferized reader")]
-    BufferizedReader,
-    #[serde(rename = "bufferized writer")]
-    BufferizedWriter,
-    #[serde(rename = "bytes from string")]
-    BytesFromString,
-    #[serde(rename = "compile regex")]
-    CompileRegex,
-    #[serde(rename = "concat")]
-    Concat,
-    #[serde(rename = "divide")]
-    Divide,
-    #[serde(rename = "encode to")]
-    EncodeTo,
-    #[serde(rename = "exponentiate")]
-    Exponentiate,
-    #[serde(rename = "HTTP client")]
-    HttpClient,
-    #[serde(rename = "is sorted")]
-    IsSorted,
-    #[serde(rename = "key-value pairs")]
-    KeyValuePairs,
-    #[serde(rename = "match regex")]
-    MatchRegex,
-    #[serde(rename = "mod")]
-    Mod,
-    #[serde(rename = "parse")]
-    Parse,
-    #[serde(rename = "read bytes")]
-    ReadBytes,
-    #[serde(rename = "read bytes from standard input")]
-    ReadBytesFromStandardInput,
-    #[serde(rename = "remove file")]
-    RemoveFile,
-    #[serde(rename = "round")]
-    Round,
-    #[serde(rename = "run")]
-    Run,
-    #[serde(rename = "send request")]
-    SendRequest,
-    #[serde(rename = "sort")]
-    Sort,
-    #[serde(rename = "string from bytes")]
-    StringFromBytes,
-    #[serde(rename = "stringify to")]
-    StringifyTo,
-    #[serde(rename = "sum")]
-    Sum,
-    #[serde(rename = "write bytes")]
-    WriteBytes,
 }
 
 #[repr(u8)]

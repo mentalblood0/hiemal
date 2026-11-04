@@ -80,6 +80,21 @@ encode to:
   return:
     type: bytes
 
+hash:
+  argument:
+    object:
+      algorithm:
+        union:
+        - literal string: SHA224
+        - literal string: SHA256
+        - literal string: SHA384
+        - literal string: SHA512
+        - literal string: SHA512/224
+        - literal string: SHA512/256
+      data: bytes
+  return:
+    type: any
+
 key-value pairs:
   argument: { generic object: any }
 
