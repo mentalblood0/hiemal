@@ -285,6 +285,8 @@ pub enum EmbeddedFunction {
     Run,
     #[serde(rename = "send request")]
     SendRequest,
+    #[serde(rename = "sort")]
+    Sort,
     #[serde(rename = "string from bytes")]
     StringFromBytes,
     #[serde(rename = "sum")]

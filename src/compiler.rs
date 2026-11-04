@@ -1048,6 +1048,34 @@ impl Compiler {
             }
             Program::EmbeddedFunctionCall(embedded_function_call) => {
                 match embedded_function_call.embedded_function {
+                    EmbeddedFunction::Sort => self.compile_embedded_function_call(
+                        compilation_context,
+                        global_compilation_context,
+                        embedded_function_call,
+                        Some(&|compiled_argument_resolved_type: &mut Type| {
+                            if let TypeKind::Tuple(argument_elements_types) =
+                                &compiled_argument_resolved_type.kind
+                            {
+                                Ok(TypeKind::Tuple(
+                                    std::iter::repeat_n(
+                                        TypeKind::Union(
+                                            BTreeSet::from_iter(
+                                                argument_elements_types.iter().cloned(),
+                                            )
+                                            .into(),
+                                        )
+                                        .into(),
+                                        argument_elements_types.len(),
+                                    )
+                                    .collect::<Vec<_>>()
+                                    .into(),
+                                )
+                                .into())
+                            } else {
+                                Ok(compiled_argument_resolved_type.clone())
+                            }
+                        }),
+                    )?,
                     EmbeddedFunction::KeyValuePairs => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,

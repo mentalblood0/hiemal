@@ -109,6 +109,11 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test sort:
+        assert equal::
+          found:
+            sort: [2, 3, 1]
+          expected: [1, 2, 3]
       test optimize match:
         assert equal::
           found:

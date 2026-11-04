@@ -1684,6 +1684,26 @@ impl<'a> ComputationContext<'a> {
                     type_kind: TypeKind::Bool,
                 }
                 .into()),
+                EmbeddedFunction::Sort => {
+                    let mut argument_tuple = self
+                        .unroll_intermediate_value(
+                            &self.compute_node(&embedded_function_call.argument, constants)?,
+                        )?
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_tuple()
+                        .unwrap()
+                        .clone();
+                    argument_tuple.inner.sort();
+                    let result_value = Some(Value::Tuple(argument_tuple));
+                    let type_kind = Value::type_kind(&result_value);
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(result_value.into()),
+                        type_kind,
+                    }
+                    .into())
+                }
                 EmbeddedFunction::ReadBytesFromStandardInput => {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,

@@ -29,6 +29,9 @@ exponentiate:
     properties:
       capabilities: [ precision loss ]
 
+sort:
+  argument: { array: any }
+
 is sorted:
   argument: { array: any }
   return:
