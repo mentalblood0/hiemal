@@ -98,6 +98,13 @@ hash:
         - object: { XXH64: number }
         - literal string: XXH3_64
         - literal string: XXH3_128
+        - literal string: BLAKE3
+        - object: { BLAKE3: bytes }
+        - object:
+            BLAKE3:
+              object:
+                context: string
+                seed: bytes
       data: bytes
   return:
     type: any

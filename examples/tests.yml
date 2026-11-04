@@ -120,6 +120,7 @@ compute:
             - SHA512/256
             - XXH3_64
             - XXH3_128
+            - BLAKE3
           data: { bytes from string: hello world }
         compute:
           assert equal::
@@ -146,6 +147,15 @@ compute:
                 - hash:
                     algorithm: { XXH64: 0 }
                     data: { constant: data }
+                - hash:
+                    algorithm: { BLAKE3: { bytes from string: first 32 bytes only } }
+                    data: { constant: data }
+                - hash:
+                    algorithm:
+                      BLAKE3:
+                        context: some context
+                        seed: { bytes from string: some key material (not a password) }
+                    data: { constant: data }
             expected:
               - bytes: 2f05477fc24bb4faefd86517156dafdecec45b8ad3cf2522a563582b
               - bytes: b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
@@ -155,11 +165,14 @@ compute:
               - bytes: 0ac561fac838104e3f2e4ad107b4bee3e938bf15f2b15f009ccccd61a913f017
               - bytes: d447b1ea40e6988b
               - bytes: df8d09e93f874900a99b8775cc15b6c7
+              - bytes: d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24
               - bytes: 79e41ef3
               - bytes: 2700ced979e41ef3
               - bytes: 253091e654891f5e2700ced979e41ef3
               - bytes: cebb6622
               - bytes: 45ab6734b21e6968
+              - bytes: e5c1f826bb9c23f2bf25707566f49593a5f0f646fd3e2d8b1558de923608c8b9
+              - bytes: 5ccbbd5b7c9fca4f9e7b193c9f5d8e7842fa50644dc1192dd99a53aac32d856f
       test encode to:
         constants:
           source: [1, 2, { lalala: null }, 3]
