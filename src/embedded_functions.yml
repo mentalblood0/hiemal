@@ -91,6 +91,9 @@ hash:
         - literal string: SHA512
         - literal string: SHA512/224
         - literal string: SHA512/256
+        - object: { GxHash32: number }
+        - object: { GxHash64: number }
+        - object: { GxHash128: number }
       data: bytes
   return:
     type: any

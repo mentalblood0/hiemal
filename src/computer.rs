@@ -1897,25 +1897,48 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .as_object()
                         .unwrap();
-                    let algorithm = argument_object
-                        .inner
-                        .get(&"algorithm".to_string())
-                        .unwrap()
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_string()
-                        .unwrap()
-                        .to_string();
+                    let algorithm_value =
+                        argument_object.inner.get(&"algorithm".to_string()).unwrap();
                     let data_value = argument_object.inner.get(&"data".to_string()).unwrap();
                     let data = data_value.as_ref().as_ref().unwrap().as_bytes().unwrap();
-                    let result_raw = match algorithm.as_str() {
-                        "SHA224" => sha2::Sha224::digest(data).to_vec(),
-                        "SHA256" => sha2::Sha256::digest(data).to_vec(),
-                        "SHA384" => sha2::Sha384::digest(data).to_vec(),
-                        "SHA512" => sha2::Sha512::digest(data).to_vec(),
-                        "SHA512/224" => sha2::Sha512_224::digest(data).to_vec(),
-                        "SHA512/256" => sha2::Sha512_256::digest(data).to_vec(),
+                    let result_raw = match algorithm_value.as_ref().as_ref().unwrap() {
+                        Value::String(algorithm_string) => {
+                            match algorithm_string.to_string().as_str() {
+                                "SHA224" => sha2::Sha224::digest(data).to_vec(),
+                                "SHA256" => sha2::Sha256::digest(data).to_vec(),
+                                "SHA384" => sha2::Sha384::digest(data).to_vec(),
+                                "SHA512" => sha2::Sha512::digest(data).to_vec(),
+                                "SHA512/224" => sha2::Sha512_224::digest(data).to_vec(),
+                                "SHA512/256" => sha2::Sha512_256::digest(data).to_vec(),
+                                _ => panic!(),
+                            }
+                        }
+                        Value::Object(algorithm_object) => {
+                            let (algorithm, seed) = algorithm_object
+                                .inner
+                                .iter()
+                                .map(|(key, value)| {
+                                    (
+                                        key.as_str(),
+                                        value
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_number()
+                                            .unwrap()
+                                            .to_f64()
+                                            .value() as i64,
+                                    )
+                                })
+                                .next()
+                                .unwrap();
+                            match algorithm {
+                                "GxHash32" => gxhash::gxhash32(data, seed).to_be_bytes().to_vec(),
+                                "GxHash64" => gxhash::gxhash64(data, seed).to_be_bytes().to_vec(),
+                                "GxHash128" => gxhash::gxhash128(data, seed).to_be_bytes().to_vec(),
+                                _ => panic!(),
+                            }
+                        }
                         _ => panic!(),
                     };
                     Ok(IntermediateValueAndMetadata {
