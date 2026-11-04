@@ -259,6 +259,10 @@ pub enum EmbeddedFunction {
     CompileRegex,
     #[serde(rename = "concat")]
     Concat,
+    #[serde(rename = "divide")]
+    Divide,
+    #[serde(rename = "exponentiate")]
+    Exponentiate,
     #[serde(rename = "HTTP client")]
     HttpClient,
     #[serde(rename = "is sorted")]

@@ -14,7 +14,7 @@ use crate::{
     computer::Computer,
     containers::{Object, ObjectRaw, Set, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
-    embedded_functions::{EMBEDDED_FUNCTIONS},
+    embedded_functions::EMBEDDED_FUNCTIONS,
     includes_cache::IncludesCache,
     intermediate_representation::{
         self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction,
@@ -1048,37 +1048,6 @@ impl Compiler {
             }
             Program::EmbeddedFunctionCall(embedded_function_call) => {
                 match embedded_function_call.embedded_function {
-                    EmbeddedFunction::Sum => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::Mod => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::IsSorted => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::ReadBytesFromStandardInput => self
-                        .compile_embedded_function_call(
-                            compilation_context,
-                            global_compilation_context,
-                            embedded_function_call,
-                            None,
-                        )?,
-                    EmbeddedFunction::Parse => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
                     EmbeddedFunction::KeyValuePairs => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
@@ -1125,30 +1094,6 @@ impl Compiler {
                             };
                             Ok(TypeKind::Embedded(Embedded::CompiledRegex).into())
                         }),
-                    )?,
-                    EmbeddedFunction::MatchRegex => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::Concat => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::StringFromBytes => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::BytesFromString => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
                     )?,
                     EmbeddedFunction::BufferizedWriter => self.compile_embedded_function_call(
                         compilation_context,
@@ -1205,43 +1150,7 @@ impl Compiler {
                             })
                         }),
                     )?,
-                    EmbeddedFunction::BufferizedReader => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::WriteBytes => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::ReadBytes => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::RemoveFile => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::HttpClient => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::SendRequest => self.compile_embedded_function_call(
-                        compilation_context,
-                        global_compilation_context,
-                        embedded_function_call,
-                        None,
-                    )?,
-                    EmbeddedFunction::Run => self.compile_embedded_function_call(
+                    _ => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,

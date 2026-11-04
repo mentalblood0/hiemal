@@ -189,6 +189,7 @@ available capabilities:
 - remove file
 - read standard input
 - network
+- precision loss
 - error
 
 #### match cases

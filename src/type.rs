@@ -212,6 +212,8 @@ pub enum Capability {
     Network,
     #[serde(rename = "run command")]
     RunCommand,
+    #[serde(rename = "precision loss")]
+    PrecisionLoss,
     #[serde(rename = "error")]
     Error,
 }

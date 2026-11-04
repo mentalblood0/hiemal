@@ -10,6 +10,25 @@ mod:
     properties:
       capabilities: [ error ]
 
+divide:
+  argument: { tuple: [ number, number ] }
+  return:
+    type: number
+    properties:
+      capabilities: [ error ]
+
+exponentiate:
+  argument:
+    object:
+      base: number
+      exponent: number
+      precision: number
+      max result denominator: number
+  return:
+    type: number
+    properties:
+      capabilities: [ precision loss ]
+
 is sorted:
   argument: { array: any }
   return:

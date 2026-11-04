@@ -1520,6 +1520,120 @@ impl<'a> ComputationContext<'a> {
                     type_kind: TypeKind::Number,
                 }
                 .into()),
+                EmbeddedFunction::Divide => Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Value(
+                        {
+                            let unrolled_argument = self.unroll_intermediate_value(
+                                &self.compute_node(&embedded_function_call.argument, constants)?,
+                            )?;
+                            let divider = unrolled_argument
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_tuple()
+                                .unwrap()
+                                .get(1)
+                                .unwrap()
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_number()
+                                .unwrap();
+                            if divider == Rational::ZERO {
+                                return Err(anyhow!("can not devide by zero"))
+                                    .with_context(embedded_function_error_context(path_option))?;
+                            } else {
+                                let divided = unrolled_argument
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_tuple()
+                                    .unwrap()
+                                    .get(0)
+                                    .unwrap()
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_number()
+                                    .unwrap();
+                                Some(Value::Number(divided / divider))
+                            }
+                        }
+                        .into(),
+                    ),
+                    type_kind: TypeKind::Number,
+                }
+                .into()),
+                EmbeddedFunction::Exponentiate => Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Value(
+                        {
+                            let unrolled_argument = self.unroll_intermediate_value(
+                                &self.compute_node(&embedded_function_call.argument, constants)?,
+                            )?;
+                            let argument_object = unrolled_argument
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_object()
+                                .unwrap();
+                            let base = argument_object
+                                .inner
+                                .get(&"base".to_string())
+                                .unwrap()
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_number()
+                                .unwrap();
+                            let exponent = argument_object
+                                .inner
+                                .get(&"exponent".to_string())
+                                .unwrap()
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_number()
+                                .unwrap();
+                            let precision = argument_object
+                                .inner
+                                .get(&"precision".to_string())
+                                .unwrap()
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_number()
+                                .unwrap()
+                                .to_f64()
+                                .value()
+                                .max(1f64) as usize;
+                            let max_result_denominator = argument_object
+                                .inner
+                                .get(&"max result denominator".to_string())
+                                .unwrap()
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_number()
+                                .unwrap()
+                                .round()
+                                .as_ubig()
+                                .cloned()
+                                .unwrap_or(dashu::ubig!(1));
+                            let rational_result: Rational = (base
+                                .to_float::<dashu::float::round::mode::Zero, 2>(precision)
+                                .value()
+                                .powf(&exponent.to_float(64).value()))
+                            .try_into()
+                            .unwrap();
+                            Some(Value::Number(
+                                rational_result.nearest(&max_result_denominator).value(),
+                            ))
+                        }
+                        .into(),
+                    ),
+                    type_kind: TypeKind::Number,
+                }
+                .into()),
                 EmbeddedFunction::Concat => {
                     let mut result_rope = ropey::Rope::default();
                     for appendix in self
