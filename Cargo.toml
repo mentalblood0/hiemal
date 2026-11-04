@@ -34,6 +34,11 @@ hex = "0.4.3"
 enumset = { version = "1.1.14", features = ["serde"] }
 derive-where = "1.7.0"
 ignorable = "0.1.4"
+serde_json = { version = "1.0.154", features = [
+  "std",
+  "preserve_order",
+  "unbounded_depth",
+] }
 
 [dev-dependencies]
 nanorand = "0.8"

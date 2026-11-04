@@ -27,8 +27,11 @@ read bytes from standard input:
       - read standard input
       - error
 
-parse YAML:
-  argument: string
+parse:
+  argument:
+    union:
+    - object: { YAML: string }
+    - object: { JSON: string }
   return:
     type: any
     properties:

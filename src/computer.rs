@@ -1606,20 +1606,40 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
-                EmbeddedFunction::ParseYaml => {
-                    let result_value = serde_saphyr::from_str::<Option<Value>>(
-                        &self
-                            .unroll_intermediate_value(
-                                &self.compute_node(&embedded_function_call.argument, constants)?,
-                            )?
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_string()
-                            .unwrap()
-                            .to_string(),
-                    )
-                    .with_context(embedded_function_error_context(path_option))?;
+                EmbeddedFunction::Parse => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let argument_object = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap();
+                    let (format, source) = argument_object
+                        .inner
+                        .iter()
+                        .map(|(key, value)| {
+                            (
+                                key.as_str(),
+                                value
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_string()
+                                    .unwrap()
+                                    .to_string(),
+                            )
+                        })
+                        .next()
+                        .unwrap();
+                    let result_value: Option<Value> = match format {
+                        "YAML" => serde_saphyr::from_str(&source)
+                            .with_context(embedded_function_error_context(path_option))?,
+                        "JSON" => serde_json::from_str(&source)
+                            .with_context(embedded_function_error_context(path_option))?,
+                        _ => panic!(),
+                    };
                     let r#type = Value::type_kind(&result_value);
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(result_value.into()),

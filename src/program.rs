@@ -269,8 +269,8 @@ pub enum EmbeddedFunction {
     MatchRegex,
     #[serde(rename = "mod")]
     Mod,
-    #[serde(rename = "parse YAML")]
-    ParseYaml,
+    #[serde(rename = "parse")]
+    Parse,
     #[serde(rename = "read bytes")]
     ReadBytes,
     #[serde(rename = "read bytes from standard input")]

@@ -1073,7 +1073,7 @@ impl Compiler {
                             embedded_function_call,
                             None,
                         )?,
-                    EmbeddedFunction::ParseYaml => self.compile_embedded_function_call(
+                    EmbeddedFunction::Parse => self.compile_embedded_function_call(
                         compilation_context,
                         global_compilation_context,
                         embedded_function_call,
