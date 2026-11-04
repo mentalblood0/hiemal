@@ -1910,6 +1910,8 @@ impl<'a> ComputationContext<'a> {
                                 "SHA512" => sha2::Sha512::digest(data).to_vec(),
                                 "SHA512/224" => sha2::Sha512_224::digest(data).to_vec(),
                                 "SHA512/256" => sha2::Sha512_256::digest(data).to_vec(),
+                                "XXH3_64" => xxhash_rust::xxh3::xxh3_64(data).to_be_bytes().to_vec(),
+                                "XXH3_128" => xxhash_rust::xxh3::xxh3_128(data).to_be_bytes().to_vec(),
                                 _ => panic!(),
                             }
                         }
@@ -1927,15 +1929,17 @@ impl<'a> ComputationContext<'a> {
                                             .as_number()
                                             .unwrap()
                                             .to_f64()
-                                            .value() as i64,
+                                            .value()
                                     )
                                 })
                                 .next()
                                 .unwrap();
                             match algorithm {
-                                "GxHash32" => gxhash::gxhash32(data, seed).to_be_bytes().to_vec(),
-                                "GxHash64" => gxhash::gxhash64(data, seed).to_be_bytes().to_vec(),
-                                "GxHash128" => gxhash::gxhash128(data, seed).to_be_bytes().to_vec(),
+                                "GxHash32" => gxhash::gxhash32(data, seed as i64).to_be_bytes().to_vec(),
+                                "GxHash64" => gxhash::gxhash64(data, seed as i64).to_be_bytes().to_vec(),
+                                "GxHash128" => gxhash::gxhash128(data, seed as i64).to_be_bytes().to_vec(),
+                                "XXH32" => xxhash_rust::xxh32::xxh32(data, seed as u32).to_be_bytes().to_vec(),
+                                "XXH64" => xxhash_rust::xxh64::xxh64(data, seed as u64).to_be_bytes().to_vec(),
                                 _ => panic!(),
                             }
                         }

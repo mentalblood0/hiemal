@@ -40,6 +40,7 @@ serde_json = { version = "1.0.154", features = [
   "unbounded_depth",
 ] }
 sha2 = "0.11.1"
+xxhash-rust = { version = "0.8.19", features = ["xxh3", "xxh32", "xxh64"] }
 
 [dev-dependencies]
 nanorand = "0.8"

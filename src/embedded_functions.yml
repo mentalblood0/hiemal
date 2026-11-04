@@ -94,6 +94,10 @@ hash:
         - object: { GxHash32: number }
         - object: { GxHash64: number }
         - object: { GxHash128: number }
+        - object: { XXH32: number }
+        - object: { XXH64: number }
+        - literal string: XXH3_64
+        - literal string: XXH3_128
       data: bytes
   return:
     type: any
