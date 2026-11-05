@@ -2146,6 +2146,131 @@ impl Compiler {
                 }
                 .into()
             }
+            Program::Loop {
+                starting_with,
+                r#as,
+                r#loop,
+                r#while,
+            } => {
+                let mut starting_with_compilation_context = compilation_context.clone();
+                starting_with_compilation_context
+                    .path
+                    .0
+                    .extend([PathSegment::StartingWith]);
+                let compiled_starting_with = self.compile_with_context(
+                    starting_with,
+                    &starting_with_compilation_context,
+                    global_compilation_context,
+                )?;
+                let mut result_external_constants_name_clustered_indices = compiled_starting_with
+                    .external_constants_name_clustered_indices
+                    .clone();
+                let mut current_concrete_type = compiled_starting_with.node.r#type.clone();
+                let mut current_concrete_type_to_next = BTreeMap::new();
+                let mut current_constant_name_clustered_index;
+                loop {
+                    let mut next_compilation_context = compilation_context.clone();
+                    next_compilation_context.path.0.extend([PathSegment::Next(
+                        compiled_starting_with.node.r#type.clone(),
+                    )]);
+                    current_constant_name_clustered_index = self
+                        .define_constant(
+                            r#as.clone(),
+                            current_concrete_type.clone(),
+                            &mut next_compilation_context,
+                            global_compilation_context,
+                        )
+                        .name_clustered_index;
+                    let compiled_next = self.compile_with_context(
+                        r#loop,
+                        &next_compilation_context,
+                        global_compilation_context,
+                    )?;
+                    if current_concrete_type_to_next
+                        .insert(
+                            std::mem::take(&mut current_concrete_type),
+                            compiled_next.node.clone(),
+                        )
+                        .is_some()
+                    {
+                        break;
+                    }
+                    current_concrete_type = compiled_next.node.r#type.clone();
+                    result_external_constants_name_clustered_indices.append(
+                        &mut compiled_next
+                            .external_constants_name_clustered_indices
+                            .clone(),
+                    );
+                }
+                let intermediate_result_type = Type::from(BTreeSet::from_iter(
+                    [compiled_starting_with.node.r#type.clone()]
+                        .into_iter()
+                        .chain(current_concrete_type_to_next.keys().cloned()),
+                ))
+                .with_unified_properties(
+                    &TypeProperties {
+                        capabilities: EnumSet::default(),
+                        is_computable: true,
+                        is_serializable: true,
+                        is_pure: true,
+                    }
+                    .unified(&compiled_starting_with.node.r#type.properties)
+                    .unified_all(
+                        current_concrete_type_to_next
+                            .keys()
+                            .map(|r#type| &r#type.properties),
+                    ),
+                );
+                let (compiled_while_node, result_type) = if let Some(r#while) = r#while {
+                    let mut while_compilation_context = compilation_context.clone();
+                    while_compilation_context.path.0.push(PathSegment::While);
+                    self.define_constant(
+                        r#as.clone(),
+                        intermediate_result_type.clone(),
+                        &mut while_compilation_context,
+                        global_compilation_context,
+                    );
+                    let compiled_while = self.compile_with_context(
+                        r#while,
+                        &while_compilation_context,
+                        global_compilation_context,
+                    )?;
+                    resolve_type(
+                        &compiled_while.node.r#type,
+                        &TypeKind::Bool,
+                        compilation_context,
+                    )?;
+                    result_external_constants_name_clustered_indices.append(
+                        &mut compiled_while
+                            .external_constants_name_clustered_indices
+                            .clone(),
+                    );
+                    (Some(compiled_while.node.clone()), intermediate_result_type)
+                } else {
+                    let mut result_type = intermediate_result_type.with_kind(TypeKind::Never);
+                    result_type.properties.is_computable = false;
+                    (None, result_type)
+                };
+                NodeAndMetadata {
+                    node: Node {
+                        content: Content::Loop(intermediate_representation::Loop {
+                            starting_with: compiled_starting_with.node.clone(),
+                            current_constant_name_clustered_index,
+                            current_concrete_type_kind_and_next: current_concrete_type_to_next
+                                .into_iter()
+                                .map(|(r#type, node)| (r#type.kind, node))
+                                .collect::<Vec<_>>()
+                                .into(),
+                            r#while: compiled_while_node,
+                        }),
+                        r#type: result_type,
+                    }
+                    .into(),
+                    external_constants_name_clustered_indices:
+                        result_external_constants_name_clustered_indices,
+                }
+                .into()
+            }
             Program::Pipe { pipe, r#as } => {
                 if pipe.is_empty() {
                     return Err(compilation_context.error(&[0; 0], &"non-empty pipe"));

@@ -109,67 +109,54 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test loop:
+        assert equal::
+          found:
+            starting with: 1
+            loop: { sum: [_, 2] }
+            while: { is sorted: [_, 5] }
+          expected: 5
       test hash:
-        constants:
-          algorithms without seed:
-            - SHA224
-            - SHA256
-            - SHA384
-            - SHA512
-            - SHA512/224
-            - SHA512/256
-            - XXH3_64
-            - XXH3_128
-            - BLAKE3
-          data: { bytes from string: hello world }
-        compute:
-          assert equal::
-            found:
-              flatten:
-              - map: { constant: algorithms without seed }
-                as: _
-                through:
-                  hash:
-                    algorithm: _
-                    data: { constant: data }
-              - - hash:
-                    algorithm: { GxHash32: 0 }
-                    data: { constant: data }
-                - hash:
-                    algorithm: { GxHash64: 0 }
-                    data: { constant: data }
-                - hash:
-                    algorithm: { GxHash128: 0 }
-                    data: { constant: data }
-                - hash:
-                    algorithm: { XXH32: 0 }
-                    data: { constant: data }
-                - hash:
-                    algorithm: { XXH64: 0 }
-                    data: { constant: data }
-                - hash:
-                    algorithm: { BLAKE3: { bytes from string: first 32 bytes only } }
-                    data: { constant: data }
-                - hash:
-                    algorithm: { BLAKE3 derive key: some context }
-                    data: { constant: data }
-            expected:
-              - bytes: 2f05477fc24bb4faefd86517156dafdecec45b8ad3cf2522a563582b
-              - bytes: b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
-              - bytes: fdbd8e75a67f29f701a4e040385e2e23986303ea10239211af907fcbb83578b3e417cb71ce646efd0819dd8c088de1bd
-              - bytes: 309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f
-              - bytes: 22e0d52336f64a998085078b05a6e37b26f8120f43bf4db4c43a64ee
-              - bytes: 0ac561fac838104e3f2e4ad107b4bee3e938bf15f2b15f009ccccd61a913f017
-              - bytes: d447b1ea40e6988b
-              - bytes: df8d09e93f874900a99b8775cc15b6c7
-              - bytes: d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24
-              - bytes: 79e41ef3
-              - bytes: 2700ced979e41ef3
-              - bytes: 253091e654891f5e2700ced979e41ef3
-              - bytes: cebb6622
-              - bytes: 45ab6734b21e6968
-              - bytes: e5c1f826bb9c23f2bf25707566f49593a5f0f646fd3e2d8b1558de923608c8b9
-              - bytes: 4fd11ce7b1bea157e56f8aa6939a78a015bf117765170b3f0e98d59ea38c9dba
+        assert equal::
+          found:
+            map:
+              - SHA224
+              - SHA256
+              - SHA384
+              - SHA512
+              - SHA512/224
+              - SHA512/256
+              - XXH3_64
+              - XXH3_128
+              - BLAKE3
+              - { GxHash32: 0 }
+              - { GxHash64: 0 }
+              - { GxHash128: 0 }
+              - { XXH32: 0 }
+              - { XXH64: 0 }
+              - { BLAKE3: { bytes from string: first 32 bytes only } }
+              - { BLAKE3 derive key: some context }
+            through:
+              hash:
+                algorithm: _
+                data: { bytes from string: hello world }
+          expected:
+            - bytes: 2f05477fc24bb4faefd86517156dafdecec45b8ad3cf2522a563582b
+            - bytes: b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
+            - bytes: fdbd8e75a67f29f701a4e040385e2e23986303ea10239211af907fcbb83578b3e417cb71ce646efd0819dd8c088de1bd
+            - bytes: 309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f
+            - bytes: 22e0d52336f64a998085078b05a6e37b26f8120f43bf4db4c43a64ee
+            - bytes: 0ac561fac838104e3f2e4ad107b4bee3e938bf15f2b15f009ccccd61a913f017
+            - bytes: d447b1ea40e6988b
+            - bytes: df8d09e93f874900a99b8775cc15b6c7
+            - bytes: d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24
+            - bytes: 79e41ef3
+            - bytes: 2700ced979e41ef3
+            - bytes: 253091e654891f5e2700ced979e41ef3
+            - bytes: cebb6622
+            - bytes: 45ab6734b21e6968
+            - bytes: e5c1f826bb9c23f2bf25707566f49593a5f0f646fd3e2d8b1558de923608c8b9
+            - bytes: 4fd11ce7b1bea157e56f8aa6939a78a015bf117765170b3f0e98d59ea38c9dba
       test encode to:
         constants:
           source: [1, 2, { lalala: null }, 3]

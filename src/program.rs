@@ -86,6 +86,15 @@ pub enum Program {
         #[serde(default = "default_sequence_while")]
         r#while: Option<Box<Program>>,
     },
+    Loop {
+        #[serde(rename = "starting with")]
+        starting_with: Box<Program>,
+        #[serde(default = "default_sequence_as")]
+        r#as: Arc<String>,
+        r#loop: Box<Program>,
+        #[serde(default = "default_sequence_while")]
+        r#while: Option<Box<Program>>,
+    },
     Pipe {
         pipe: Vec<Arc<Program>>,
         #[serde(default = "default_pipe_as")]

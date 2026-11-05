@@ -264,6 +264,14 @@ next: { sum: [_, 2] }
 while: { is sorted: [_, 5] }
 ```
 
+#### starting with as loop while
+
+```yaml
+starting with: 1
+loop: { sum: [_, 2] }
+while: { is sorted: [_, 5] }
+```
+
 #### map as through
 
 ```yaml

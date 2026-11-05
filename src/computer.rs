@@ -3990,6 +3990,42 @@ impl<'a> ComputationContext<'a> {
                 }
                 .into())
             }
+            Content::Loop(intermediate_representation::Loop {
+                starting_with,
+                current_constant_name_clustered_index,
+                current_concrete_type_kind_and_next,
+                r#while,
+            }) => {
+                let mut result = self.compute_node(starting_with, constants)?;
+                let mut next_constants = constants.clone();
+                loop {
+                    next_constants[*current_constant_name_clustered_index] = Some(result.clone());
+                    if let Some(r#while) = r#while
+                        && !self
+                            .unroll_intermediate_value(
+                                &self.compute_node(r#while, &next_constants)?,
+                            )?
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_bool()
+                            .unwrap()
+                    {
+                        break Ok(result);
+                    }
+                    let next_node = current_concrete_type_kind_and_next
+                        .iter()
+                        .find_map(|(current_concrete_type_kind, possible_next_node)| {
+                            if current_concrete_type_kind.contains(&result.type_kind) {
+                                Some(possible_next_node)
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap();
+                    result = self.compute_node(next_node, &next_constants)?;
+                }
+            }
             Content::Pipe {
                 pipe,
                 as_constant_name_clustered_index_option,

@@ -102,6 +102,7 @@ pub enum Content {
         fold_concrete_type_and_throughs: Vec<(Type, Throughs)>,
     },
     Sequence(Arc<Sequence>),
+    Loop(Loop),
     Pipe {
         pipe: Vec<Arc<Node>>,
         as_constant_name_clustered_index_option: Option<usize>,
@@ -131,6 +132,14 @@ pub struct Filter {
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct Sequence {
+    pub starting_with: Arc<Node>,
+    pub current_constant_name_clustered_index: usize,
+    pub current_concrete_type_kind_and_next: Arc<Vec<(TypeKind, Arc<Node>)>>,
+    pub r#while: Option<Arc<Node>>,
+}
+
+#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
+pub struct Loop {
     pub starting_with: Arc<Node>,
     pub current_constant_name_clustered_index: usize,
     pub current_concrete_type_kind_and_next: Arc<Vec<(TypeKind, Arc<Node>)>>,

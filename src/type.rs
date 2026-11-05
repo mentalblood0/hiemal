@@ -229,7 +229,7 @@ pub struct TypeProperties {
     pub is_serializable: bool,
     #[serde(rename = "is pure")]
     #[serde(default = "default_is_pure")]
-    pub is_pure: bool
+    pub is_pure: bool,
 }
 
 fn default_is_computable() -> bool {
@@ -250,7 +250,7 @@ impl Default for TypeProperties {
             capabilities: EnumSet::default(),
             is_computable: true,
             is_serializable: true,
-            is_pure: true
+            is_pure: true,
         }
     }
 }
@@ -300,10 +300,7 @@ impl<'a> TypeProperties {
                     inner_types
                         .iter()
                         .map(|(key, value_type)| {
-                            (
-                                key.clone(),
-                                self.unified_recursively(value_type.clone()),
-                            )
+                            (key.clone(), self.unified_recursively(value_type.clone()))
                         })
                         .collect::<BTreeMap<_, _>>()
                         .into(),
@@ -450,6 +447,8 @@ pub enum TypeKind {
     Constructed(Constructed),
     #[serde(rename = "embedded")]
     Embedded(Embedded),
+    #[serde(rename = "never")]
+    Never,
     #[serde(skip_deserializing)]
     Unknown(MaybeType),
 }
@@ -498,6 +497,8 @@ pub enum KnownTypeKind {
     Constructed(Constructed),
     #[serde(rename = "embedded")]
     Embedded(Embedded),
+    #[serde(rename = "never")]
+    Never,
 }
 
 impl Serialize for TypeKind {
@@ -1081,6 +1082,11 @@ impl<'a> Type {
 
     pub fn with_unified_properties_from(mut self, another_type: &Type) -> Self {
         self.properties = self.properties.unified(&another_type.properties);
+        self
+    }
+
+    pub fn with_unified_properties(mut self, another_properties: &TypeProperties) -> Self {
+        self.properties = self.properties.unified(another_properties);
         self
     }
 
