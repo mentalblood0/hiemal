@@ -111,6 +111,8 @@ sleep:
   argument: number
   return:
     type: number
+    properties:
+      capabilities: [ sleep ]
 
 key-value pairs:
   argument: { generic object: any }
