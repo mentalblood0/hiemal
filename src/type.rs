@@ -662,6 +662,98 @@ impl TypeKind {
         }
     }
 
+    pub fn have_large_tuples(&self, threshold: usize) -> bool {
+        match &self {
+            TypeKind::Tuple(elements_types) => {
+                elements_types.len() > threshold
+                    || elements_types
+                        .iter()
+                        .any(|element_type| element_type.kind.have_large_tuples(threshold))
+            }
+            TypeKind::Array(element_type) | TypeKind::GenericObject(element_type) => {
+                element_type.kind.have_large_tuples(threshold)
+            }
+            TypeKind::Object(inner_types) => inner_types
+                .iter()
+                .any(|(_, element_type)| element_type.kind.have_large_tuples(threshold)),
+            TypeKind::Union(union_types) => union_types
+                .iter()
+                .any(|element_type| element_type.kind.have_large_tuples(threshold)),
+            _ => false,
+        }
+    }
+
+    pub fn with_tuples_weakened_to_arrays(self, threshold: usize) -> TypeKind {
+        match &self {
+            TypeKind::Tuple(elements_types) => {
+                let recursion_related_iterator = elements_types.iter().map(|element_type| {
+                    element_type.with_kind(
+                        element_type
+                            .kind
+                            .clone()
+                            .with_tuples_weakened_to_arrays(threshold),
+                    )
+                });
+                if elements_types.len() > threshold {
+                    TypeKind::Array(Box::new(
+                        TypeKind::Union(BTreeSet::from_iter(recursion_related_iterator).into())
+                            .into(),
+                    ))
+                } else {
+                    TypeKind::Tuple(recursion_related_iterator.collect::<Vec<_>>().into())
+                }
+            }
+            TypeKind::Array(element_type) => TypeKind::Array(Box::new(
+                element_type.with_kind(
+                    element_type
+                        .kind
+                        .clone()
+                        .with_tuples_weakened_to_arrays(threshold),
+                ),
+            )),
+            TypeKind::Object(inner_types) => TypeKind::Object(
+                inner_types
+                    .iter()
+                    .map(|(key, element_type)| {
+                        (
+                            key.clone(),
+                            element_type.with_kind(
+                                element_type
+                                    .kind
+                                    .clone()
+                                    .with_tuples_weakened_to_arrays(threshold),
+                            ),
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>()
+                    .into(),
+            ),
+            TypeKind::GenericObject(element_type) => TypeKind::GenericObject(Box::new(
+                element_type.with_kind(
+                    element_type
+                        .kind
+                        .clone()
+                        .with_tuples_weakened_to_arrays(threshold),
+                ),
+            )),
+            TypeKind::Union(union_types) => TypeKind::Union(
+                union_types
+                    .iter()
+                    .map(|element_type| {
+                        element_type.with_kind(
+                            element_type
+                                .kind
+                                .clone()
+                                .with_tuples_weakened_to_arrays(threshold),
+                        )
+                    })
+                    .collect::<BTreeSet<_>>()
+                    .into(),
+            ),
+            _ => self,
+        }
+    }
+
     pub fn as_object(&self) -> Option<&BTreeMap<Arc<String>, Type>> {
         match self {
             TypeKind::Object(result) => Some(result),

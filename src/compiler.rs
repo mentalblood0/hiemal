@@ -2186,16 +2186,33 @@ impl Compiler {
                         &next_compilation_context,
                         global_compilation_context,
                     )?;
+                    let compiled_next_node =
+                        if compiled_next.node.r#type.kind.have_large_tuples(128) {
+                            Node {
+                                content: compiled_next.node.content.clone(),
+                                r#type: compiled_next.node.r#type.with_kind(
+                                    compiled_next
+                                        .node
+                                        .r#type
+                                        .kind
+                                        .clone()
+                                        .with_tuples_weakened_to_arrays(128),
+                                ),
+                            }
+                            .into()
+                        } else {
+                            compiled_next.node.clone()
+                        };
                     if current_concrete_type_to_next
                         .insert(
                             std::mem::take(&mut current_concrete_type),
-                            compiled_next.node.clone(),
+                            compiled_next_node.clone(),
                         )
                         .is_some()
                     {
                         break;
                     }
-                    current_concrete_type = compiled_next.node.r#type.clone();
+                    current_concrete_type = compiled_next_node.r#type.clone();
                     result_external_constants_name_clustered_indices.append(
                         &mut compiled_next
                             .external_constants_name_clustered_indices
