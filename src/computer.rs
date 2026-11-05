@@ -2015,7 +2015,7 @@ impl<'a> ComputationContext<'a> {
                                 )
                                 .to_be_bytes()
                                 .to_vec(),
-                                "BLAKE3" => {
+                                "BLAKE3 with key" => {
                                     let provided_key =
                                         parameters.as_ref().as_ref().unwrap().as_bytes().unwrap();
                                     let mut key = [0u8; 32];
@@ -2023,6 +2023,24 @@ impl<'a> ComputationContext<'a> {
                                     key[..bytes_amount_to_take]
                                         .copy_from_slice(&provided_key[..bytes_amount_to_take]);
                                     blake3::keyed_hash(&key, data).as_bytes().to_vec()
+                                }
+                                "BLAKE3 with size" => {
+                                    let size = parameters
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_number()
+                                        .unwrap()
+                                        .trunc()
+                                        .to_f64()
+                                        .value()
+                                        as usize;
+                                    let mut result = vec![0u8; size];
+                                    blake3::Hasher::new()
+                                        .update(data)
+                                        .finalize_xof()
+                                        .fill(&mut result);
+                                    result.to_vec()
                                 }
                                 "BLAKE3 derive key" => {
                                     let context = parameters

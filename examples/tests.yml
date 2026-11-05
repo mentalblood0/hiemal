@@ -138,7 +138,8 @@ compute:
               - { GxHash128: 0 }
               - { XXH32: 0 }
               - { XXH64: 0 }
-              - { BLAKE3: { bytes from string: first 32 bytes only } }
+              - { BLAKE3 with size: 100 }
+              - { BLAKE3 with key: { bytes from string: first 32 bytes only } }
               - { BLAKE3 derive key: some context }
             through:
               hash:
@@ -159,6 +160,7 @@ compute:
             - bytes: 253091e654891f5e2700ced979e41ef3
             - bytes: cebb6622
             - bytes: 45ab6734b21e6968
+            - bytes: d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24a020ed55aed9a6ab2eaf3fd70d2c98c949e142d8f42a10250190b699e02cf9eb68612e1a556fee6cf726bcb0994f7d3e669eda394788f8c80a4f0ea056be3d4dffd8069d
             - bytes: e5c1f826bb9c23f2bf25707566f49593a5f0f646fd3e2d8b1558de923608c8b9
             - bytes: 4fd11ce7b1bea157e56f8aa6939a78a015bf117765170b3f0e98d59ea38c9dba
       test encode to:
