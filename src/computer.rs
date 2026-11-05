@@ -2035,7 +2035,6 @@ impl<'a> ComputationContext<'a> {
                                         .as_number()
                                         .unwrap()
                                         .trunc()
-                                        .trunc()
                                         .to_f64()
                                         .value()
                                         as usize;
