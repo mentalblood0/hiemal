@@ -189,6 +189,7 @@ available capabilities:
 - remove file
 - read standard input
 - network
+- sleep
 - precision loss
 - error
 

@@ -1451,6 +1451,32 @@ impl<'a> ComputationContext<'a> {
                 path_option,
                 embedded_function_call,
             } => match embedded_function_call.embedded_function {
+                EmbeddedFunction::Sleep => {
+                    let seconds_value = self
+                        .unroll_intermediate_value(
+                            &self.compute_node(&embedded_function_call.argument, constants)?,
+                        )?
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_number()
+                        .unwrap();
+                    let microseconds_to_sleep = (seconds_value * Rational::from(1_000_000))
+                        .trunc()
+                        .to_f64()
+                        .value() as u64;
+                    std::thread::sleep(Duration::from_micros(microseconds_to_sleep));
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Number(
+                                Rational::from(microseconds_to_sleep) / Rational::from(1_000_000),
+                            ))
+                            .into(),
+                        ),
+                        type_kind: TypeKind::Number,
+                    }
+                    .into())
+                }
                 EmbeddedFunction::Sum => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         Some(Value::Number(

@@ -55,6 +55,8 @@ pub enum EmbeddedFunction {
     StringFromBytes,
     #[serde(rename = "stringify to")]
     StringifyTo,
+    #[serde(rename = "sleep")]
+    Sleep,
     #[serde(rename = "sum")]
     Sum,
     #[serde(rename = "write bytes")]

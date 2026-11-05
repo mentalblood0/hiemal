@@ -109,6 +109,10 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test sleep:
+        assert equal::
+          found: { sleep: 0.001 }
+          expected: 0.001
       test loop:
         assert equal::
           found:
