@@ -447,6 +447,7 @@ impl<'a> ComputationContext<'a> {
                                     .unwrap()
                                     .as_number()
                                     .unwrap()
+                                    .trunc()
                                     .to_f64()
                                     .value() as i64)
                                     .max(0)
@@ -459,6 +460,7 @@ impl<'a> ComputationContext<'a> {
                                     .unwrap()
                                     .as_number()
                                     .unwrap()
+                                    .trunc()
                                     .to_f64()
                                     .value() as i64)
                                     .max(0)
@@ -475,6 +477,7 @@ impl<'a> ComputationContext<'a> {
                                         .unwrap()
                                         .as_number()
                                         .unwrap()
+                                        .trunc()
                                         .to_f64()
                                         .value() as i64)
                                         .max(min_number)
@@ -1461,17 +1464,10 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .as_number()
                         .unwrap();
-                    let microseconds_to_sleep = (seconds_value * Rational::from(1_000_000))
-                        .trunc()
-                        .to_f64()
-                        .value() as u64;
-                    std::thread::sleep(Duration::from_micros(microseconds_to_sleep));
+                    std::thread::sleep(Duration::from_secs_f64(seconds_value.to_f64().value()));
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
-                            Some(Value::Number(
-                                Rational::from(microseconds_to_sleep) / Rational::from(1_000_000),
-                            ))
-                            .into(),
+                            Some(Value::Number(seconds_value)).into(),
                         ),
                         type_kind: TypeKind::Number,
                     }
@@ -1650,6 +1646,7 @@ impl<'a> ComputationContext<'a> {
                                 .unwrap()
                                 .as_number()
                                 .unwrap()
+                                .trunc()
                                 .to_f64()
                                 .value()
                                 .max(1f64) as usize;
@@ -1770,6 +1767,7 @@ impl<'a> ComputationContext<'a> {
                             .unwrap()
                             .as_number()
                             .unwrap()
+                            .trunc()
                             .to_f64()
                             .value() as i64)
                             .max(0) as usize;
@@ -1958,6 +1956,7 @@ impl<'a> ComputationContext<'a> {
                                         .unwrap()
                                         .as_number()
                                         .unwrap()
+                                        .trunc()
                                         .to_f64()
                                         .value() as i64,
                                 )
@@ -1971,6 +1970,7 @@ impl<'a> ComputationContext<'a> {
                                         .unwrap()
                                         .as_number()
                                         .unwrap()
+                                        .trunc()
                                         .to_f64()
                                         .value() as i64,
                                 )
@@ -1984,6 +1984,7 @@ impl<'a> ComputationContext<'a> {
                                         .unwrap()
                                         .as_number()
                                         .unwrap()
+                                        .trunc()
                                         .to_f64()
                                         .value() as i64,
                                 )
@@ -1997,6 +1998,7 @@ impl<'a> ComputationContext<'a> {
                                         .unwrap()
                                         .as_number()
                                         .unwrap()
+                                        .trunc()
                                         .to_f64()
                                         .value() as u32,
                                 )
@@ -2010,6 +2012,7 @@ impl<'a> ComputationContext<'a> {
                                         .unwrap()
                                         .as_number()
                                         .unwrap()
+                                        .trunc()
                                         .to_f64()
                                         .value() as u64,
                                 )
@@ -2031,6 +2034,7 @@ impl<'a> ComputationContext<'a> {
                                         .unwrap()
                                         .as_number()
                                         .unwrap()
+                                        .trunc()
                                         .trunc()
                                         .to_f64()
                                         .value()
@@ -2203,6 +2207,7 @@ impl<'a> ComputationContext<'a> {
                                         .unwrap()
                                         .as_number()
                                         .unwrap()
+                                        .trunc()
                                         .to_f64()
                                         .value()
                                         .max(0f64)
@@ -2219,6 +2224,7 @@ impl<'a> ComputationContext<'a> {
                                             .unwrap()
                                             .as_number()
                                             .unwrap()
+                                            .trunc()
                                             .to_f64()
                                             .value()
                                             .max(0f64)
@@ -2233,6 +2239,7 @@ impl<'a> ComputationContext<'a> {
                                         .unwrap()
                                         .as_number()
                                         .unwrap()
+                                        .trunc()
                                         .to_f64()
                                         .value()
                                         .max(0f64) as usize,
@@ -2246,6 +2253,7 @@ impl<'a> ComputationContext<'a> {
                                         .unwrap()
                                         .as_number()
                                         .unwrap()
+                                        .trunc()
                                         .to_f64()
                                         .value()
                                         .max(0f64) as usize,
@@ -2260,6 +2268,7 @@ impl<'a> ComputationContext<'a> {
                                             .unwrap()
                                             .as_number()
                                             .unwrap()
+                                            .trunc()
                                             .to_f64()
                                             .value()
                                             .max(0f64)
@@ -2275,6 +2284,7 @@ impl<'a> ComputationContext<'a> {
                                             .unwrap()
                                             .as_number()
                                             .unwrap()
+                                            .trunc()
                                             .to_f64()
                                             .value()
                                             .max(0f64),
@@ -2572,6 +2582,7 @@ impl<'a> ComputationContext<'a> {
                                                             .unwrap()
                                                             .as_number()
                                                             .unwrap()
+                                                            .trunc()
                                                             .to_f64()
                                                             .value()
                                                             .max(0f64)
@@ -3445,6 +3456,7 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .as_number()
                         .unwrap()
+                        .trunc()
                         .to_f64()
                         .value()
                         .floor()
@@ -3710,6 +3722,7 @@ impl<'a> ComputationContext<'a> {
                                     .unwrap()
                                     .as_number()
                                     .unwrap()
+                                    .trunc()
                                     .to_f64()
                                     .value()
                                     .max(0f64) as usize
@@ -3727,6 +3740,7 @@ impl<'a> ComputationContext<'a> {
                                     .unwrap()
                                     .as_number()
                                     .unwrap()
+                                    .trunc()
                                     .to_f64()
                                     .value()
                                     .min(usize::MAX as f64)
