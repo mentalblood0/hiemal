@@ -307,7 +307,7 @@ struct GlobalCompilationContext {
     constants_names_to_name_clustered_constants_indices: HashMap<Arc<String>, usize>,
     constants: Vec<Type>,
     includes_cache: IncludesCache,
-    compiled_functions_cache: HashMap<u128, Arc<NodeAndMetadata>>,
+    // compiled_functions_cache: HashMap<u128, Arc<NodeAndMetadata>>,
 }
 
 fn process_from_at_program_path_part(
@@ -2642,29 +2642,30 @@ impl Compiler {
                                             );
                                             }
                                         }
-                                        let instantiated_function_hash = {
-                                            let mut hasher = gxhash::GxHasher::default();
-                                            function_body.hash(&mut hasher);
-                                            for (constant_name, constant_index) in
-                                                body_compilation_context.available_constants.iter()
-                                            {
-                                                constant_name.hash(&mut hasher);
-                                                global_compilation_context.constants
-                                                    [*constant_index]
-                                                    .hash(&mut hasher);
-                                            }
-                                            body_compilation_context
-                                                .available_functions
-                                                .hash(&mut hasher);
-                                            hasher.finish_u128()
-                                        };
-                                        if let Some(cached_compiled_function) =
-                                            global_compilation_context
-                                                .compiled_functions_cache
-                                                .get(&instantiated_function_hash)
-                                        {
-                                            return Ok(cached_compiled_function.clone());
-                                        }
+                                        // let instantiated_function_hash = {
+                                        //     let mut hasher = gxhash::GxHasher::default();
+                                        //     function_body.hash(&mut hasher);
+                                        //     for (constant_name, constant_index) in
+                                        //         body_compilation_context.available_constants.iter()
+                                        //     {
+                                        //         constant_name.hash(&mut hasher);
+                                        //         global_compilation_context.constants
+                                        //             [*constant_index]
+                                        //             .hash(&mut hasher); // this is only the type, not the body, so different values of type Any will be hashed as the same
+                                        //     }
+                                        //     body_compilation_context
+                                        //         .available_functions
+                                        //         .hash(&mut hasher);
+                                        //     hasher.finish_u128()
+                                        // };
+                                        // if let Some(cached_compiled_function) =
+                                        //     global_compilation_context
+                                        //         .compiled_functions_cache
+                                        //         .get(&instantiated_function_hash)
+                                        // {
+                                        //     println!("use cached {function_name}");
+                                        //     return Ok(cached_compiled_function.clone());
+                                        // }
                                         let function_body_as_maybe_compiled_program =
                                             MaybeCompiledProgram::from(function_body.clone());
                                         if compilation_context
@@ -2768,9 +2769,9 @@ impl Compiler {
                                                 }
                                                 .into(),
                                             });
-                                            global_compilation_context
-                                                .compiled_functions_cache
-                                                .insert(instantiated_function_hash, result.clone());
+                                            // global_compilation_context
+                                            //     .compiled_functions_cache
+                                            //     .insert(instantiated_function_hash, result.clone());
                                             return Ok(result);
                                         }
                                     } else {

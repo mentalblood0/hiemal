@@ -109,6 +109,14 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test a:
+        assert equal::
+          found: { parse: { YAML: "false" } }
+          expected: true
+      test b:
+        assert equal::
+          found: { parse: { YAML: "true" } }
+          expected: true
       test file metadata:
         assert equal::
           found:
