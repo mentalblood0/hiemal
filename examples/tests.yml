@@ -112,12 +112,12 @@ compute:
       test file metadata:
         assert equal::
           found:
-            from: { file metadata: "src/embedded_functions.yml" }
+            from: { file metadata: src/embedded_functions.yml }
             at: [ is file ]
           expected: true
       test glob:
         assert equal::
-          found: { glob: "src/*.yml" }
+          found: { glob: src/*.yml }
           expected: [ src/embedded_functions.yml ]
       test sleep:
         assert equal::

@@ -307,6 +307,7 @@ struct GlobalCompilationContext {
     constants_names_to_name_clustered_constants_indices: HashMap<Arc<String>, usize>,
     constants: Vec<Type>,
     includes_cache: IncludesCache,
+    compiled_functions_cache: HashMap<u128, Arc<NodeAndMetadata>>,
 }
 
 fn process_from_at_program_path_part(
@@ -2600,12 +2601,9 @@ impl Compiler {
                                             if function_argument_name.ends_with(":") {
                                                 body_compilation_context
                                                     .available_functions
-                                                    .extend(
-                                                        [(
-                                                            function_argument_name,
-                                                            function_argument_body,
-                                                        )]
-                                                        .into_iter(),
+                                                    .insert(
+                                                        function_argument_name,
+                                                        function_argument_body,
                                                     );
                                             } else {
                                                 let mut argument_compilation_context =
@@ -2644,6 +2642,29 @@ impl Compiler {
                                             );
                                             }
                                         }
+                                        let instantiated_function_hash = {
+                                            let mut hasher = gxhash::GxHasher::default();
+                                            function_body.hash(&mut hasher);
+                                            for (constant_name, constant_index) in
+                                                body_compilation_context.available_constants.iter()
+                                            {
+                                                constant_name.hash(&mut hasher);
+                                                global_compilation_context.constants
+                                                    [*constant_index]
+                                                    .hash(&mut hasher);
+                                            }
+                                            body_compilation_context
+                                                .available_functions
+                                                .hash(&mut hasher);
+                                            hasher.finish_u128()
+                                        };
+                                        if let Some(cached_compiled_function) =
+                                            global_compilation_context
+                                                .compiled_functions_cache
+                                                .get(&instantiated_function_hash)
+                                        {
+                                            return Ok(cached_compiled_function.clone());
+                                        }
                                         let function_body_as_maybe_compiled_program =
                                             MaybeCompiledProgram::from(function_body.clone());
                                         if compilation_context
@@ -2675,7 +2696,7 @@ impl Compiler {
                                         } else {
                                             body_compilation_context
                                                 .entered_user_functions
-                                                .extend([function_body.clone()].into_iter());
+                                                .insert(function_body.clone());
                                             let function_index = global_compilation_context
                                                 .user_functions_definitions
                                                 .len();
@@ -2728,7 +2749,7 @@ impl Compiler {
                                                         .external_constants_name_clustered_indices
                                                         .clone(),
                                                 );
-                                            return Ok(Arc::new(NodeAndMetadata {
+                                            let result = Arc::new(NodeAndMetadata {
                                                 external_constants_name_clustered_indices:
                                                     result_external_constants_name_clustered_indices
                                                         .clone(),
@@ -2746,7 +2767,11 @@ impl Compiler {
                                                     r#type: compiled_function.node.r#type.clone(),
                                                 }
                                                 .into(),
-                                            }));
+                                            });
+                                            global_compilation_context
+                                                .compiled_functions_cache
+                                                .insert(instantiated_function_hash, result.clone());
+                                            return Ok(result);
                                         }
                                     } else {
                                         return Err(compilation_context.error(
