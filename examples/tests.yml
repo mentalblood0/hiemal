@@ -109,6 +109,12 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test file metadata:
+        assert equal::
+          found:
+            from: { file metadata: "src/embedded_functions.yml" }
+            at: [ is file ]
+          expected: true
       test glob:
         assert equal::
           found: { glob: "src/*.yml" }

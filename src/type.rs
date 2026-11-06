@@ -447,6 +447,8 @@ pub enum TypeKind {
     GenericLiteralString,
     #[serde(rename = "bytes")]
     Bytes,
+    #[serde(rename = "time")]
+    Time,
     #[serde(rename = "constructed")]
     Constructed(Constructed),
     #[serde(rename = "embedded")]
@@ -497,6 +499,8 @@ pub enum KnownTypeKind {
     GenericLiteralString,
     #[serde(rename = "bytes")]
     Bytes,
+    #[serde(rename = "time")]
+    Time,
     #[serde(rename = "constructed")]
     Constructed(Constructed),
     #[serde(rename = "embedded")]

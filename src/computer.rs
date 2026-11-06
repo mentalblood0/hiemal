@@ -3588,6 +3588,90 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
+                EmbeddedFunction::FileMetadata => {
+                    let metadata = std::fs::metadata(
+                        self.unroll_intermediate_value(
+                            &self.compute_node(&embedded_function_call.argument, constants)?,
+                        )?
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .to_string(),
+                    )
+                    .with_context(embedded_function_error_context(path_option))?;
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Object(Object::from_iter([
+                                (
+                                    "is directory".to_string().into(),
+                                    Some(Value::Bool(metadata.is_dir())).into(),
+                                ),
+                                (
+                                    "is file".to_string().into(),
+                                    Some(Value::Bool(metadata.is_file())).into(),
+                                ),
+                                (
+                                    "is symlink".to_string().into(),
+                                    Some(Value::Bool(metadata.is_symlink())).into(),
+                                ),
+                                (
+                                    "size".to_string().into(),
+                                    Some(Value::Number(metadata.len().into())).into(),
+                                ),
+                                (
+                                    "is read-only".to_string().into(),
+                                    Some(Value::Bool(metadata.permissions().readonly())).into(),
+                                ),
+                                (
+                                    "when modified".to_string().into(),
+                                    Some(Value::Time {
+                                        time: metadata
+                                            .modified()
+                                            .with_context(embedded_function_error_context(
+                                                path_option,
+                                            ))?
+                                            .into(),
+                                    })
+                                    .into(),
+                                ),
+                                (
+                                    "when accessed".to_string().into(),
+                                    Some(Value::Time {
+                                        time: metadata
+                                            .accessed()
+                                            .with_context(embedded_function_error_context(
+                                                path_option,
+                                            ))?
+                                            .into(),
+                                    })
+                                    .into(),
+                                ),
+                                (
+                                    "when created".to_string().into(),
+                                    Some(Value::Time {
+                                        time: metadata
+                                            .created()
+                                            .with_context(embedded_function_error_context(
+                                                path_option,
+                                            ))?
+                                            .into(),
+                                    })
+                                    .into(),
+                                ),
+                            ])))
+                            .into(),
+                        ),
+                        type_kind: EMBEDDED_FUNCTIONS
+                            [embedded_function_call.embedded_function as usize]
+                            .r#return
+                            .r#type
+                            .clone()
+                            .unwrap(),
+                    }
+                    .into())
+                }
                 EmbeddedFunction::Run => {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,

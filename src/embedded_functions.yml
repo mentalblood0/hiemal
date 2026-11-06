@@ -124,6 +124,25 @@ glob:
       - error
       is pure: false
 
+file metadata:
+  argument: string
+  return:
+    type:
+      object:
+        is directory: bool
+        is file: bool
+        is symlink: bool
+        size: number
+        is read-only: bool
+        when modified: time
+        when accessed: time
+        when created: time
+    properties:
+      capabilities:
+      - read filesystem
+      - error
+      is pure: false
+
 key-value pairs:
   argument: { generic object: any }
 

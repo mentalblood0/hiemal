@@ -12,6 +12,7 @@ use std::{
 
 use anyhow::Result;
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use dashu::{Decimal, Rational};
 use parking_lot::RwLock;
 use serde::{
@@ -162,6 +163,9 @@ pub enum Value {
         )]
         Bytes,
     ),
+    Time {
+        time: DateTime<Utc>,
+    },
     Object(Object<String, Option<Value>>),
     Runtime(Arc<Runtime>),
 }
@@ -348,6 +352,7 @@ impl Value {
                 Value::Number(_) => TypeKind::Number,
                 Value::String(string) => TypeKind::LiteralString(string.clone()),
                 Value::Bytes(_) => TypeKind::Bytes,
+                Value::Time { time: _ } => TypeKind::Time,
                 Value::Bool(true) => TypeKind::LiteralTrue,
                 Value::Bool(false) => TypeKind::LiteralFalse,
                 Value::Tuple(tuple) => TypeKind::Tuple(
