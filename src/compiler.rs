@@ -301,7 +301,6 @@ struct UserFunctionCallDefinition {
 }
 
 struct CachedUserFunctionCall {
-    external_constants_name_clustered_indices: BTreeSet<usize>,
     function_index: usize,
     arguments_is_pure: bool,
     r#type: Type,
@@ -2672,7 +2671,8 @@ impl Compiler {
                                         {
                                             return Ok(Arc::new(NodeAndMetadata {
                                                 external_constants_name_clustered_indices:
-                                                    cached_compiled_user_function_call.external_constants_name_clustered_indices.clone(),
+                                                    result_external_constants_name_clustered_indices
+                                                        .clone(),
                                                 node: Node {
                                                     content: Content::UserFunctionCall {
                                                         arguments: new_constants_definitions,
@@ -2778,7 +2778,6 @@ impl Compiler {
                                                 .insert(
                                                     instantiated_function_hash,
                                                     CachedUserFunctionCall {
-                                                        external_constants_name_clustered_indices: result_external_constants_name_clustered_indices.clone(),
                                                         function_index,
                                                         arguments_is_pure,
                                                         r#type: compiled_function.node.r#type.clone()
