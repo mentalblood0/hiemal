@@ -23,6 +23,8 @@ pub enum EmbeddedFunction {
     EncodeTo,
     #[serde(rename = "exponentiate")]
     Exponentiate,
+    #[serde(rename = "glob")]
+    Glob,
     #[serde(rename = "hash")]
     Hash,
     #[serde(rename = "HTTP client")]

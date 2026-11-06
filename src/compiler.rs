@@ -1204,6 +1204,44 @@ impl Compiler {
                                     embedded_function_call,
                                     Some(&|compiled_argument_resolved_type: &mut Type| {
                                         let mut capabilities = Capability::Error.into();
+                                        if TypeKind::Object(
+                                            BTreeMap::from_iter([
+                                                (
+                                                    "path".to_string().into(),
+                                                    TypeKind::String.into(),
+                                                ),
+                                                (
+                                                    "mode".to_string().into(),
+                                                    TypeKind::Union(
+                                                        BTreeSet::from_iter([
+                                                            TypeKind::LiteralString(
+                                                                "create".into(),
+                                                            )
+                                                            .into(),
+                                                            TypeKind::LiteralString(
+                                                                "append".into(),
+                                                            )
+                                                            .into(),
+                                                            TypeKind::LiteralString(
+                                                                "overwrite".into(),
+                                                            )
+                                                            .into(),
+                                                            TypeKind::LiteralString(
+                                                                "truncate".into(),
+                                                            )
+                                                            .into(),
+                                                        ])
+                                                        .into(),
+                                                    )
+                                                    .into(),
+                                                ),
+                                            ])
+                                            .into(),
+                                        )
+                                        .contains(&compiled_argument_resolved_type.kind)
+                                        {
+                                            capabilities |= Capability::ReadFilesystem;
+                                        }
                                         if compiled_argument_resolved_type.kind.contains(
                                             &TypeKind::Object(
                                                 BTreeMap::from_iter([(
@@ -1478,7 +1516,6 @@ impl Compiler {
                                 compilation_context.error(&covered, &compiled_match.node.r#type)
                             );
                         }
-                        let r#type = Type::from(result_types);
                         if result_cases.len() == 1
                             && r#as.as_ref().or(match_constant_name).is_none()
                         {
@@ -1504,7 +1541,7 @@ impl Compiler {
                                         cases: result_cases,
                                         match_constant_name_clustered_index_option,
                                     },
-                                    r#type,
+                                    r#type: Type::from(result_types),
                                 }
                                 .into(),
                                 external_constants_name_clustered_indices:

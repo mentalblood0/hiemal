@@ -13,6 +13,7 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
 use dashu::Rational;
+use glob::glob;
 use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
 use regex::{Regex, escape};
@@ -25,7 +26,7 @@ use ureq::{
 
 use crate::{
     containers::{self, Object, Vector},
-    embedded_functions::EmbeddedFunction,
+    embedded_functions::{EMBEDDED_FUNCTIONS, EmbeddedFunction},
     intermediate_representation::{
         self, Condition, Content, IntermediateRepresentation, Node, RangeBound, Throughs,
         ValuePathSegment,
@@ -3543,6 +3544,47 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(None.into()),
                         type_kind: TypeKind::Null,
+                    }
+                    .into())
+                }
+                EmbeddedFunction::Glob => {
+                    let mut result = Vector::default();
+                    for entry in glob(
+                        self.unroll_intermediate_value(
+                            &self.compute_node(&embedded_function_call.argument, constants)?,
+                        )?
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .to_string()
+                        .as_str(),
+                    )
+                    .with_context(embedded_function_error_context(path_option))?
+                    {
+                        result.push(
+                            Some(Value::String(
+                                entry
+                                    .with_context(embedded_function_error_context(path_option))?
+                                    .to_str()
+                                    .with_context(embedded_function_error_context(path_option))?
+                                    .to_owned()
+                                    .into(),
+                            ))
+                            .into(),
+                        );
+                    }
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Tuple(result)).into(),
+                        ),
+                        type_kind: EMBEDDED_FUNCTIONS
+                            [embedded_function_call.embedded_function as usize]
+                            .r#return
+                            .r#type
+                            .clone()
+                            .unwrap(),
                     }
                     .into())
                 }

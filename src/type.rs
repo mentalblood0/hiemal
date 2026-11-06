@@ -206,6 +206,8 @@ pub enum Capability {
     RemoveFile,
     #[serde(rename = "read file")]
     ReadFile,
+    #[serde(rename = "read filesystem")]
+    ReadFilesystem,
     #[serde(rename = "read standard input")]
     ReadStandardInput,
     #[serde(rename = "network")]

@@ -186,6 +186,7 @@ available capabilities:
 - create file
 - write file
 - read file
+- read filesystem
 - remove file
 - read standard input
 - network

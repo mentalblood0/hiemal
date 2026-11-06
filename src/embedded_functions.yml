@@ -114,6 +114,16 @@ sleep:
     properties:
       capabilities: [ sleep ]
 
+glob:
+  argument: string
+  return:
+    type: { array: string }
+    properties:
+      capabilities:
+      - read filesystem
+      - error
+      is pure: false
+
 key-value pairs:
   argument: { generic object: any }
 
@@ -197,7 +207,9 @@ bufferized reader:
   return:
     type: { embedded: bufferized reader }
     properties:
-      capabilities: [ error ]
+      capabilities:
+      - read filesystem
+      - error
       is serializable: false
       is pure: false
 
