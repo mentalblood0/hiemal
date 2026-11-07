@@ -121,8 +121,8 @@ compute:
           expected: [ src/embedded_functions.yml ]
       test sleep:
         assert equal::
-          found: { sleep: 0.001 }
-          expected: 0.001
+          found: { sleep: { duration: 1ms } }
+          expected: { duration: 1ms }
       test loop:
         assert equal::
           found:

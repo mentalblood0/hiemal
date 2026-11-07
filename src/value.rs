@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    fmt,
     hash::{Hash, Hasher},
     io::{BufReader, BufWriter},
     str::FromStr,
@@ -17,7 +16,6 @@ use parking_lot::RwLock;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Unexpected, Visitor},
-    ser::SerializeMap,
 };
 
 use crate::{
@@ -155,13 +153,13 @@ pub enum Value {
     String(ropey::Rope),
     Bool(bool),
     Tuple(Vector<Option<Value>>),
-    Bytes(
+    Bytes {
         #[serde(
-            deserialize_with = "deserialize_bytes",
-            serialize_with = "serialize_bytes"
+            serialize_with = "serialize_bytes",
+            deserialize_with = "deserialize_bytes"
         )]
-        Bytes,
-    ),
+        bytes: Bytes,
+    },
     Time {
         #[serde(with = "humantime_serde")]
         time: std::time::SystemTime,
@@ -184,51 +182,16 @@ pub fn serialize_bytes<S>(bytes: &Bytes, serializer: S) -> Result<S::Ok, S::Erro
 where
     S: Serializer,
 {
-    let hex_string = hex::encode(bytes);
-    let mut map = serializer.serialize_map(Some(1))?;
-    map.serialize_entry("bytes", &hex_string)?;
-    map.end()
+    serializer.serialize_str(&hex::encode(bytes))
 }
 
 pub fn deserialize_bytes<'de, D>(deserializer: D) -> Result<Bytes, D::Error>
 where
     D: Deserializer<'de>,
 {
-    use serde::de::{Error, MapAccess, Visitor};
-
-    struct BytesVisitor;
-
-    impl<'de> Visitor<'de> for BytesVisitor {
-        type Value = Bytes;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a map with a 'bytes' key containing a hex string")
-        }
-
-        fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
-        where
-            M: MapAccess<'de>,
-        {
-            let mut hex_string: Option<String> = None;
-            while let Some(key) = access.next_key::<String>()? {
-                if key == "bytes" {
-                    if hex_string.is_some() {
-                        return Err(M::Error::duplicate_field("bytes"));
-                    }
-                    hex_string = Some(access.next_value()?);
-                } else {
-                    let _: serde::de::IgnoredAny = access.next_value()?;
-                }
-            }
-            let hex_string = hex_string.ok_or_else(|| M::Error::missing_field("bytes"))?;
-            let bytes = hex::decode(&hex_string)
-                .map_err(|_| M::Error::custom("invalid hex string"))?
-                .into();
-            Ok(bytes)
-        }
-    }
-
-    deserializer.deserialize_map(BytesVisitor)
+    Ok(Bytes::from(
+        hex::decode(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)?,
+    ))
 }
 
 pub fn deserialize_rational<'de, D>(deserializer: D) -> Result<Rational, D::Error>
@@ -301,6 +264,20 @@ impl Value {
         }
     }
 
+    pub fn as_time(&self) -> Option<std::time::SystemTime> {
+        match self {
+            Value::Time {time: result} => Some(*result),
+            _ => None,
+        }
+    }
+
+    pub fn as_duration(&self) -> Option<std::time::Duration> {
+        match self {
+            Value::Duration {duration: result} => Some(*result),
+            _ => None,
+        }
+    }
+
     pub fn as_string(&self) -> Option<&ropey::Rope> {
         match self {
             Value::String(result) => Some(result),
@@ -310,7 +287,7 @@ impl Value {
 
     pub fn as_bytes(&self) -> Option<&Bytes> {
         match self {
-            Value::Bytes(result) => Some(result),
+            Value::Bytes { bytes: result } => Some(result),
             _ => None,
         }
     }
@@ -355,9 +332,9 @@ impl Value {
             Some(value) => match value {
                 Value::Number(_) => TypeKind::Number,
                 Value::String(string) => TypeKind::LiteralString(string.clone()),
-                Value::Bytes(_) => TypeKind::Bytes,
+                Value::Bytes { bytes: _ } => TypeKind::Bytes,
                 Value::Time { time: _ } => TypeKind::Time,
-                Value::Duration{ duration: _ } => TypeKind::Duration,
+                Value::Duration { duration: _ } => TypeKind::Duration,
                 Value::Bool(true) => TypeKind::LiteralTrue,
                 Value::Bool(false) => TypeKind::LiteralFalse,
                 Value::Tuple(tuple) => TypeKind::Tuple(

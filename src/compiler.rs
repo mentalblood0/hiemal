@@ -670,20 +670,41 @@ impl Compiler {
         global_compilation_context: &mut GlobalCompilationContext,
     ) -> Result<Arc<NodeAndMetadata>> {
         Ok(match program {
-            Program::BytesValue { bytes: hex_string } => NodeAndMetadata {
+            Program::Bytes { bytes } => NodeAndMetadata {
                 external_constants_name_clustered_indices: BTreeSet::new(),
                 node: Node {
                     content: Content::Value(
-                        Some(intermediate_representation::Value::Bytes(
-                            hex::decode(hex_string)
-                                .with_context(|| {
-                                    compilation_context.error(hex_string, &"hexadecimal string")
-                                })?
-                                .into(),
-                        ))
+                        Some(intermediate_representation::Value::Bytes {
+                            bytes: bytes.clone(),
+                        })
                         .into(),
                     ),
                     r#type: TypeKind::Bytes.into(),
+                }
+                .into(),
+            }
+            .into(),
+            Program::Time { time } => NodeAndMetadata {
+                external_constants_name_clustered_indices: BTreeSet::new(),
+                node: Node {
+                    content: Content::Value(
+                        Some(intermediate_representation::Value::Time { time: *time }).into(),
+                    ),
+                    r#type: TypeKind::Time.into(),
+                }
+                .into(),
+            }
+            .into(),
+            Program::Duration { duration } => NodeAndMetadata {
+                external_constants_name_clustered_indices: BTreeSet::new(),
+                node: Node {
+                    content: Content::Value(
+                        Some(intermediate_representation::Value::Duration {
+                            duration: *duration,
+                        })
+                        .into(),
+                    ),
+                    r#type: TypeKind::Duration.into(),
                 }
                 .into(),
             }

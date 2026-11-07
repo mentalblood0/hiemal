@@ -1456,19 +1456,19 @@ impl<'a> ComputationContext<'a> {
                 embedded_function_call,
             } => match embedded_function_call.embedded_function {
                 EmbeddedFunction::Sleep => {
-                    let seconds_value = self
+                    let duration = self
                         .unroll_intermediate_value(
                             &self.compute_node(&embedded_function_call.argument, constants)?,
                         )?
                         .as_ref()
                         .as_ref()
                         .unwrap()
-                        .as_number()
+                        .as_duration()
                         .unwrap();
-                    std::thread::sleep(Duration::from_secs_f64(seconds_value.to_f64().value()));
+                    std::thread::sleep(duration);
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
-                            Some(Value::Number(seconds_value)).into(),
+                            Some(Value::Duration { duration }).into(),
                         ),
                         type_kind: TypeKind::Number,
                     }
@@ -1780,7 +1780,10 @@ impl<'a> ComputationContext<'a> {
                     };
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bytes(result.into())).into(),
+                            Some(Value::Bytes {
+                                bytes: result.into(),
+                            })
+                            .into(),
                         ),
                         type_kind: TypeKind::Bytes,
                     }
@@ -1890,8 +1893,8 @@ impl<'a> ComputationContext<'a> {
                         .unwrap();
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bytes(
-                                match format {
+                            Some(Value::Bytes {
+                                bytes: match format {
                                     "bincode" => bincode::serde::encode_to_vec(
                                         unsafe {
                                             std::mem::transmute::<
@@ -1905,7 +1908,7 @@ impl<'a> ComputationContext<'a> {
                                     _ => panic!(),
                                 }
                                 .into(),
-                            ))
+                            })
                             .into(),
                         ),
                         type_kind: TypeKind::Bytes,
@@ -2063,7 +2066,10 @@ impl<'a> ComputationContext<'a> {
                     };
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bytes(result_raw.into())).into(),
+                            Some(Value::Bytes {
+                                bytes: result_raw.into(),
+                            })
+                            .into(),
                         ),
                         type_kind: TypeKind::Bytes,
                     }
@@ -3173,17 +3179,19 @@ impl<'a> ComputationContext<'a> {
                                 ),
                                 (
                                     "body".to_string().into(),
-                                    Some(Value::Bytes({
-                                        let mut body_buffer = Vec::new();
-                                        response
-                                            .into_body()
-                                            .into_reader()
-                                            .read_to_end(&mut body_buffer)
-                                            .with_context(embedded_function_error_context(
-                                                path_option,
-                                            ))?;
-                                        body_buffer.into()
-                                    }))
+                                    Some(Value::Bytes {
+                                        bytes: {
+                                            let mut body_buffer = Vec::new();
+                                            response
+                                                .into_body()
+                                                .into_reader()
+                                                .read_to_end(&mut body_buffer)
+                                                .with_context(embedded_function_error_context(
+                                                    path_option,
+                                                ))?;
+                                            body_buffer.into()
+                                        },
+                                    })
                                     .into(),
                                 ),
                             ])))
@@ -3464,7 +3472,10 @@ impl<'a> ComputationContext<'a> {
                     if computed_amount == 0 {
                         Ok(IntermediateValueAndMetadata {
                             intermediate_value: IntermediateValue::Value(
-                                Some(Value::Bytes(Bytes::new())).into(),
+                                Some(Value::Bytes {
+                                    bytes: Bytes::new(),
+                                })
+                                .into(),
                             ),
                             type_kind: TypeKind::Bytes,
                         }
@@ -3477,7 +3488,10 @@ impl<'a> ComputationContext<'a> {
                             .with_context(embedded_function_error_context(path_option))?;
                         Ok(IntermediateValueAndMetadata {
                             intermediate_value: IntermediateValue::Value(
-                                Some(Value::Bytes(result_raw.into())).into(),
+                                Some(Value::Bytes {
+                                    bytes: result_raw.into(),
+                                })
+                                .into(),
                             ),
                             type_kind: TypeKind::Bytes,
                         }
@@ -3509,25 +3523,30 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
-                EmbeddedFunction::BytesFromString => Ok(IntermediateValueAndMetadata {
-                    intermediate_value: IntermediateValue::Value(
-                        Some(Value::Bytes(Bytes::from(
-                            self.unroll_intermediate_value(
-                                &self.compute_node(&embedded_function_call.argument, constants)?,
-                            )?
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_string()
-                            .unwrap()
-                            .bytes()
-                            .collect::<Vec<_>>(),
-                        )))
-                        .into(),
-                    ),
-                    type_kind: TypeKind::String,
+                EmbeddedFunction::BytesFromString => {
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Bytes {
+                                bytes: Bytes::from(
+                                    self.unroll_intermediate_value(&self.compute_node(
+                                        &embedded_function_call.argument,
+                                        constants,
+                                    )?)?
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_string()
+                                    .unwrap()
+                                    .bytes()
+                                    .collect::<Vec<_>>(),
+                                ),
+                            })
+                            .into(),
+                        ),
+                        type_kind: TypeKind::String,
+                    }
+                    .into())
                 }
-                .into()),
                 EmbeddedFunction::RemoveFile => {
                     std::fs::remove_file(std::path::PathBuf::from(
                         self.unroll_intermediate_value(
@@ -3627,33 +3646,27 @@ impl<'a> ComputationContext<'a> {
                                 (
                                     "when modified".to_string().into(),
                                     Some(Value::Time {
-                                        time: metadata
-                                            .modified()
-                                            .with_context(embedded_function_error_context(
-                                                path_option,
-                                            ))?
+                                        time: metadata.modified().with_context(
+                                            embedded_function_error_context(path_option),
+                                        )?,
                                     })
                                     .into(),
                                 ),
                                 (
                                     "when accessed".to_string().into(),
                                     Some(Value::Time {
-                                        time: metadata
-                                            .accessed()
-                                            .with_context(embedded_function_error_context(
-                                                path_option,
-                                            ))?
+                                        time: metadata.accessed().with_context(
+                                            embedded_function_error_context(path_option),
+                                        )?,
                                     })
                                     .into(),
                                 ),
                                 (
                                     "when created".to_string().into(),
                                     Some(Value::Time {
-                                        time: metadata
-                                            .created()
-                                            .with_context(embedded_function_error_context(
-                                                path_option,
-                                            ))?
+                                        time: metadata.created().with_context(
+                                            embedded_function_error_context(path_option),
+                                        )?,
                                     })
                                     .into(),
                                 ),
@@ -3723,11 +3736,17 @@ impl<'a> ComputationContext<'a> {
                                 ),
                                 (
                                     "standard output".to_string().into(),
-                                    Some(Value::Bytes(result.stdout.into())).into(),
+                                    Some(Value::Bytes {
+                                        bytes: result.stdout.into(),
+                                    })
+                                    .into(),
                                 ),
                                 (
                                     "standard error".to_string().into(),
-                                    Some(Value::Bytes(result.stderr.into())).into(),
+                                    Some(Value::Bytes {
+                                        bytes: result.stderr.into(),
+                                    })
+                                    .into(),
                                 ),
                             ])))
                             .into(),

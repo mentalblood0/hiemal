@@ -108,9 +108,9 @@ hash:
     type: any
 
 sleep:
-  argument: number
+  argument: duration
   return:
-    type: number
+    type: duration
     properties:
       capabilities: [ sleep ]
 

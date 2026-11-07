@@ -24,12 +24,12 @@ parking_lot = { version = "0.12.5", features = [
   "arc_lock",
 ] }
 bincode = { version = "2.0", features = ["derive", "serde"] }
-serde_with = "3.21.0"
+serde_with = { version = "3.21.0", features = ["hex"] }
 lz4_flex = "0.13.1"
 indexmap = "2.14.0"
 gxhash = { version = "3.5.0", features = ["std", "deterministic"] }
 regex = "1.13.1"
-bytes = "1.12.1"
+bytes = { version = "1.12.1" }
 hex = "0.4.3"
 enumset = { version = "1.1.14", features = ["serde"] }
 derive-where = "1.7.0"

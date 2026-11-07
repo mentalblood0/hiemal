@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use bytes::Bytes;
 use enumset::EnumSet;
 use serde::{
     Deserialize, Deserializer, Serialize,
@@ -8,10 +9,10 @@ use serde::{
 use url::Url;
 
 use crate::{
-    embedded_functions::EmbeddedFunction,
     default_argument_name::DEFAULT_ARGUMENT_NAME,
+    embedded_functions::EmbeddedFunction,
     r#type::{Capability, Type},
-    value::Value,
+    value::{Value, deserialize_bytes},
 };
 
 #[repr(u8)]
@@ -106,8 +107,17 @@ pub enum Program {
         r#as: Arc<String>,
         or: Arc<Program>,
     },
-    BytesValue {
-        bytes: String,
+    Bytes {
+        #[serde(deserialize_with = "deserialize_bytes")]
+        bytes: Bytes,
+    },
+    Time {
+        #[serde(with = "humantime_serde")]
+        time: std::time::SystemTime,
+    },
+    Duration {
+        #[serde(with = "humantime_serde")]
+        duration: std::time::Duration,
     },
     Object(BTreeMap<Arc<String>, Arc<Program>>),
     Value(Arc<Option<Value>>),
