@@ -2676,10 +2676,15 @@ impl Compiler {
                                                 node: Node {
                                                     content: Content::UserFunctionCall {
                                                         arguments: new_constants_definitions,
-                                                        body: cached_compiled_user_function_call.function_index,
-                                                        arguments_is_pure: cached_compiled_user_function_call.arguments_is_pure,
+                                                        body: cached_compiled_user_function_call
+                                                            .function_index,
+                                                        arguments_is_pure:
+                                                            cached_compiled_user_function_call
+                                                                .arguments_is_pure,
                                                     },
-                                                    r#type: cached_compiled_user_function_call.r#type.clone(),
+                                                    r#type: cached_compiled_user_function_call
+                                                        .r#type
+                                                        .clone(),
                                                 }
                                                 .into(),
                                             }));
@@ -2780,8 +2785,11 @@ impl Compiler {
                                                     CachedUserFunctionCall {
                                                         function_index,
                                                         arguments_is_pure,
-                                                        r#type: compiled_function.node.r#type.clone()
-                                                    }
+                                                        r#type: compiled_function
+                                                            .node
+                                                            .r#type
+                                                            .clone(),
+                                                    },
                                                 );
                                             return Ok(Arc::new(NodeAndMetadata {
                                                 external_constants_name_clustered_indices:

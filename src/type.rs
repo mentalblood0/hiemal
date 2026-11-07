@@ -422,6 +422,8 @@ pub enum TypeKind {
     String,
     #[serde(rename = "bool")]
     Bool,
+    #[serde(rename = "duration")]
+    Duration,
     #[serde(rename = "null")]
     Null,
     #[serde(rename = "array")]
@@ -468,6 +470,8 @@ pub enum KnownTypeKind {
     String,
     #[serde(rename = "bool")]
     Bool,
+    #[serde(rename = "duration")]
+    Duration,
     #[serde(rename = "null")]
     Null,
     #[serde(rename = "array")]

@@ -3632,7 +3632,6 @@ impl<'a> ComputationContext<'a> {
                                             .with_context(embedded_function_error_context(
                                                 path_option,
                                             ))?
-                                            .into(),
                                     })
                                     .into(),
                                 ),
@@ -3644,7 +3643,6 @@ impl<'a> ComputationContext<'a> {
                                             .with_context(embedded_function_error_context(
                                                 path_option,
                                             ))?
-                                            .into(),
                                     })
                                     .into(),
                                 ),
@@ -3656,7 +3654,6 @@ impl<'a> ComputationContext<'a> {
                                             .with_context(embedded_function_error_context(
                                                 path_option,
                                             ))?
-                                            .into(),
                                     })
                                     .into(),
                                 ),

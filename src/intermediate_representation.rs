@@ -1,7 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
 use dashu::Rational;
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
@@ -36,7 +35,12 @@ pub enum Value {
         Bytes,
     ),
     Time {
-        time: DateTime<Utc>,
+        #[serde(with = "humantime_serde")]
+        time: std::time::SystemTime,
+    },
+    Duration {
+        #[serde(with = "humantime_serde")]
+        duration: std::time::Duration,
     },
     Object(containers::Object<String, Option<Value>>),
 }
