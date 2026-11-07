@@ -182,16 +182,49 @@ pub fn serialize_bytes<S>(bytes: &Bytes, serializer: S) -> Result<S::Ok, S::Erro
 where
     S: Serializer,
 {
-    serializer.serialize_str(&hex::encode(bytes))
+    serializer.serialize_str(
+        &hex::encode(bytes)
+            .as_bytes()
+            .chunks(2)
+            .map(|c| unsafe { std::str::from_utf8_unchecked(c) })
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
+fn parse_spaced_hex(string: &str) -> Result<Bytes, String> {
+    if string.is_empty() {
+        return Ok(Bytes::new());
+    }
+    let mut result = Vec::with_capacity((string.len() + 1) / 3);
+    for (token_index, token) in string.split(' ').enumerate() {
+        let mut buf = [0u8; 1];
+        hex::decode_to_slice(token, &mut buf)
+            .map_err(|e| format!("bad token {:?} at index {}: {}", token, token_index, e))?;
+        result.push(buf[0]);
+    }
+    Ok(Bytes::from(result))
 }
 
 pub fn deserialize_bytes<'de, D>(deserializer: D) -> Result<Bytes, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Ok(Bytes::from(
-        hex::decode(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)?,
-    ))
+    struct SpacedHexVisitor;
+
+    impl<'de> de::Visitor<'de> for SpacedHexVisitor {
+        type Value = Bytes;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(r#"a space-separated hex byte string (e.g. "d4 47 b1 ea")"#)
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            parse_spaced_hex(v).map_err(E::custom)
+        }
+    }
+
+    deserializer.deserialize_str(SpacedHexVisitor)
 }
 
 pub fn deserialize_rational<'de, D>(deserializer: D) -> Result<Rational, D::Error>
@@ -266,14 +299,14 @@ impl Value {
 
     pub fn as_time(&self) -> Option<std::time::SystemTime> {
         match self {
-            Value::Time {time: result} => Some(*result),
+            Value::Time { time: result } => Some(*result),
             _ => None,
         }
     }
 
     pub fn as_duration(&self) -> Option<std::time::Duration> {
         match self {
-            Value::Duration {duration: result} => Some(*result),
+            Value::Duration { duration: result } => Some(*result),
             _ => None,
         }
     }

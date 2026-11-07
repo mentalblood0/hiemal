@@ -143,7 +143,7 @@ compute:
           bufferized writer:
             path: test files.txt
             mode: create
-        content: { bytes: "6262" }
+        content: { bytes: 62 62 }
     - read bytes:
         source:
           bufferized reader: test files.txt
@@ -163,7 +163,7 @@ compute:
           bufferized writer:
             path: test files.txt
             mode: create
-        content: { bytes: "6262" }
+        content: { bytes: 62 62 }
     - read bytes:
         source:
           bufferized reader: test files.txt

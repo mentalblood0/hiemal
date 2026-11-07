@@ -156,23 +156,23 @@ compute:
                 algorithm: _
                 data: { bytes from string: hello world }
           expected:
-            - bytes: 2f05477fc24bb4faefd86517156dafdecec45b8ad3cf2522a563582b
-            - bytes: b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
-            - bytes: fdbd8e75a67f29f701a4e040385e2e23986303ea10239211af907fcbb83578b3e417cb71ce646efd0819dd8c088de1bd
-            - bytes: 309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f
-            - bytes: 22e0d52336f64a998085078b05a6e37b26f8120f43bf4db4c43a64ee
-            - bytes: 0ac561fac838104e3f2e4ad107b4bee3e938bf15f2b15f009ccccd61a913f017
-            - bytes: d447b1ea40e6988b
-            - bytes: df8d09e93f874900a99b8775cc15b6c7
-            - bytes: d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24
-            - bytes: 79e41ef3
-            - bytes: 2700ced979e41ef3
-            - bytes: 253091e654891f5e2700ced979e41ef3
-            - bytes: cebb6622
-            - bytes: 45ab6734b21e6968
-            - bytes: d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24a020ed55aed9a6ab2eaf3fd70d2c98c949e142d8f42a10250190b699e02cf9eb68612e1a556fee6cf726bcb0994f7d3e669eda394788f8c80a4f0ea056be3d4dffd8069d
-            - bytes: e5c1f826bb9c23f2bf25707566f49593a5f0f646fd3e2d8b1558de923608c8b9
-            - bytes: 4fd11ce7b1bea157e56f8aa6939a78a015bf117765170b3f0e98d59ea38c9dba
+            - bytes: 2f 05 47 7f c2 4b b4 fa ef d8 65 17 15 6d af de ce c4 5b 8a d3 cf 25 22 a5 63 58 2b
+            - bytes: b9 4d 27 b9 93 4d 3e 08 a5 2e 52 d7 da 7d ab fa c4 84 ef e3 7a 53 80 ee 90 88 f7 ac e2 ef cd e9
+            - bytes: fd bd 8e 75 a6 7f 29 f7 01 a4 e0 40 38 5e 2e 23 98 63 03 ea 10 23 92 11 af 90 7f cb b8 35 78 b3 e4 17 cb 71 ce 64 6e fd 08 19 dd 8c 08 8d e1 bd
+            - bytes: 30 9e cc 48 9c 12 d6 eb 4c c4 0f 50 c9 02 f2 b4 d0 ed 77 ee 51 1a 7c 7a 9b cd 3c a8 6d 4c d8 6f 98 9d d3 5b c5 ff 49 96 70 da 34 25 5b 45 b0 cf d8 30 e8 1f 60 5d cf 7d c5 54 2e 93 ae 9c d7 6f
+            - bytes: 22 e0 d5 23 36 f6 4a 99 80 85 07 8b 05 a6 e3 7b 26 f8 12 0f 43 bf 4d b4 c4 3a 64 ee
+            - bytes: 0a c5 61 fa c8 38 10 4e 3f 2e 4a d1 07 b4 be e3 e9 38 bf 15 f2 b1 5f 00 9c cc cd 61 a9 13 f0 17
+            - bytes: d4 47 b1 ea 40 e6 98 8b
+            - bytes: df 8d 09 e9 3f 87 49 00 a9 9b 87 75 cc 15 b6 c7
+            - bytes: d7 49 81 ef a7 0a 0c 88 0b 8d 8c 19 85 d0 75 db cb f6 79 b9 9a 5f 99 14 e5 aa f9 6b 83 1a 9e 24
+            - bytes: 79 e4 1e f3
+            - bytes: 27 00 ce d9 79 e4 1e f3
+            - bytes: 25 30 91 e6 54 89 1f 5e 27 00 ce d9 79 e4 1e f3
+            - bytes: ce bb 66 22
+            - bytes: 45 ab 67 34 b2 1e 69 68
+            - bytes: d7 49 81 ef a7 0a 0c 88 0b 8d 8c 19 85 d0 75 db cb f6 79 b9 9a 5f 99 14 e5 aa f9 6b 83 1a 9e 24 a0 20 ed 55 ae d9 a6 ab 2e af 3f d7 0d 2c 98 c9 49 e1 42 d8 f4 2a 10 25 01 90 b6 99 e0 2c f9 eb 68 61 2e 1a 55 6f ee 6c f7 26 bc b0 99 4f 7d 3e 66 9e da 39 47 88 f8 c8 0a 4f 0e a0 56 be 3d 4d ff d8 06 9d
+            - bytes: e5 c1 f8 26 bb 9c 23 f2 bf 25 70 75 66 f4 95 93 a5 f0 f6 46 fd 3e 2d 8b 15 58 de 92 36 08 c8 b9
+            - bytes: 4f d1 1c e7 b1 be a1 57 e5 6f 8a a6 93 9a 78 a0 15 bf 11 77 65 17 0b 3f 0e 98 d5 9e a3 8c 9d ba
       test encode to:
         constants:
           source: [1, 2, { lalala: null }, 3]
@@ -423,7 +423,7 @@ compute:
                       bufferized writer:
                         path: test files.txt
                         mode: create
-                    content: { bytes: "6262" }
+                    content: { bytes: 62 62 }
                 - read bytes:
                     source:
                       bufferized reader: test files.txt
