@@ -311,7 +311,7 @@ HTTP client:
       - object: { allow non-standard methods: bool }
       - object: { error on bad status code: bool }
       - object: { input buffer size: number }
-      - object: { max idle age in seconds: number }
+      - object: { max idle age: duration }
       - object: { max idle connections: number }
       - object: { max idle connections per host: number }
       - object: { max redirects: number }
@@ -345,14 +345,14 @@ HTTP client:
             union:
             - literal string: never
             - literal string: same host
-      - object: { timeout for await 100 in seconds: number }
-      - object: { timeout for connect in seconds: number }
-      - object: { timeout for receive body in seconds: number }
-      - object: { timeout for resolve in seconds: number }
-      - object: { timeout for send body in seconds: number }
-      - object: { timeout for send request in seconds: number }
-      - object: { timeout global in seconds: number }
-      - object: { timeout per call in seconds: number }
+      - object: { timeout for await 100: duration }
+      - object: { timeout for connect: duration }
+      - object: { timeout for receive body: duration }
+      - object: { timeout for resolve: duration }
+      - object: { timeout for send body: duration }
+      - object: { timeout for send request: duration }
+      - object: { timeout global: duration }
+      - object: { timeout per call: duration }
       - object:
           user agent:
             union: [ string, literal false ]

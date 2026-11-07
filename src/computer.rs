@@ -7,7 +7,6 @@ use std::{
     ops::Range,
     str::FromStr,
     sync::{Arc, LazyLock},
-    time::Duration,
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -2281,20 +2280,15 @@ impl<'a> ComputationContext<'a> {
                                             as usize,
                                     );
                             }
-                            "max idle age in seconds" => {
-                                agent_config_builder =
-                                    agent_config_builder.max_idle_age(Duration::from_secs_f64(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_number()
-                                            .unwrap()
-                                            .trunc()
-                                            .to_f64()
-                                            .value()
-                                            .max(0f64),
-                                    ));
+                            "max idle age" => {
+                                agent_config_builder = agent_config_builder.max_idle_age(
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_duration()
+                                        .unwrap(),
+                                );
                             }
                             "allow non-standard methods" => {
                                 agent_config_builder = agent_config_builder
@@ -2307,125 +2301,89 @@ impl<'a> ComputationContext<'a> {
                                             .unwrap(),
                                     )
                             }
-                            "timeout global in seconds" => {
+                            "timeout global" => {
                                 agent_config_builder = agent_config_builder.timeout_global(Some(
-                                    Duration::from_secs_f64(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_number()
-                                            .unwrap()
-                                            .to_f64()
-                                            .value()
-                                            .max(0f64),
-                                    ),
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_duration()
+                                        .unwrap(),
                                 ));
                             }
-                            "timeout per call in seconds" => {
+                            "timeout per call" => {
                                 agent_config_builder = agent_config_builder.timeout_per_call(Some(
-                                    Duration::from_secs_f64(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_number()
-                                            .unwrap()
-                                            .to_f64()
-                                            .value()
-                                            .max(0f64),
-                                    ),
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_duration()
+                                        .unwrap(),
                                 ));
                             }
-                            "timeout for resolve in seconds" => {
+                            "timeout for resolve" => {
                                 agent_config_builder = agent_config_builder.timeout_resolve(Some(
-                                    Duration::from_secs_f64(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_number()
-                                            .unwrap()
-                                            .to_f64()
-                                            .value()
-                                            .max(0f64),
-                                    ),
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_duration()
+                                        .unwrap(),
                                 ));
                             }
-                            "timeout for connect in seconds" => {
+                            "timeout for connect" => {
                                 agent_config_builder = agent_config_builder.timeout_connect(Some(
-                                    Duration::from_secs_f64(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_number()
-                                            .unwrap()
-                                            .to_f64()
-                                            .value()
-                                            .max(0f64),
-                                    ),
+                                    agent_config_builder_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_duration()
+                                        .unwrap(),
                                 ));
                             }
-                            "timeout for send request in seconds" => {
-                                agent_config_builder = agent_config_builder.timeout_send_request(
-                                    Some(Duration::from_secs_f64(
+                            "timeout for send request" => {
+                                agent_config_builder =
+                                    agent_config_builder.timeout_send_request(Some(
                                         agent_config_builder_value
                                             .as_ref()
                                             .as_ref()
                                             .unwrap()
-                                            .as_number()
-                                            .unwrap()
-                                            .to_f64()
-                                            .value()
-                                            .max(0f64),
-                                    )),
-                                );
+                                            .as_duration()
+                                            .unwrap(),
+                                    ));
                             }
-                            "timeout for await 100 in seconds" => {
-                                agent_config_builder = agent_config_builder.timeout_await_100(
-                                    Some(Duration::from_secs_f64(
+                            "timeout for await 100" => {
+                                agent_config_builder =
+                                    agent_config_builder.timeout_await_100(Some(
                                         agent_config_builder_value
                                             .as_ref()
                                             .as_ref()
                                             .unwrap()
-                                            .as_number()
-                                            .unwrap()
-                                            .to_f64()
-                                            .value()
-                                            .max(0f64),
-                                    )),
-                                );
+                                            .as_duration()
+                                            .unwrap(),
+                                    ));
                             }
-                            "timeout for send body in seconds" => {
-                                agent_config_builder = agent_config_builder.timeout_send_body(
-                                    Some(Duration::from_secs_f64(
+                            "timeout for send body" => {
+                                agent_config_builder =
+                                    agent_config_builder.timeout_send_body(Some(
                                         agent_config_builder_value
                                             .as_ref()
                                             .as_ref()
                                             .unwrap()
-                                            .as_number()
-                                            .unwrap()
-                                            .to_f64()
-                                            .value()
-                                            .max(0f64),
-                                    )),
-                                );
+                                            .as_duration()
+                                            .unwrap(),
+                                    ));
                             }
-                            "timeout for receive body in seconds" => {
-                                agent_config_builder = agent_config_builder.timeout_recv_body(
-                                    Some(Duration::from_secs_f64(
+                            "timeout for receive body" => {
+                                agent_config_builder =
+                                    agent_config_builder.timeout_recv_body(Some(
                                         agent_config_builder_value
                                             .as_ref()
                                             .as_ref()
                                             .unwrap()
-                                            .as_number()
-                                            .unwrap()
-                                            .to_f64()
-                                            .value()
-                                            .max(0f64),
-                                    )),
-                                );
+                                            .as_duration()
+                                            .unwrap(),
+                                    ));
                             }
                             "IP family" => {
                                 agent_config_builder = agent_config_builder.ip_family(
