@@ -1577,11 +1577,9 @@ impl<'a> ComputationContext<'a> {
                                 },
                             ) => (
                                 Value::Duration {
-                                    duration: if minuend_duration > substrahend_duration {
-                                        *minuend_duration - *substrahend_duration
-                                    } else {
-                                        *substrahend_duration - *minuend_duration
-                                    },
+                                    duration: minuend_duration
+                                        .checked_sub(*substrahend_duration)
+                                        .unwrap_or(std::time::Duration::ZERO),
                                 },
                                 TypeKind::Duration,
                             ),
@@ -1594,8 +1592,7 @@ impl<'a> ComputationContext<'a> {
                                 Value::Time {
                                     time: minuend_time
                                         .checked_sub(*substrahend_duration)
-                                        .ok_or(std::time::SystemTime::UNIX_EPOCH)
-                                        .unwrap(),
+                                        .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
                                 },
                                 TypeKind::Time,
                             ),
@@ -1607,10 +1604,11 @@ impl<'a> ComputationContext<'a> {
                             ) => (
                                 Value::Duration {
                                     duration: if minuend_time > substrahend_time {
-                                        minuend_time.duration_since(*substrahend_time).unwrap()
+                                        minuend_time.duration_since(*substrahend_time)
                                     } else {
-                                        substrahend_time.duration_since(*minuend_time).unwrap()
-                                    },
+                                        substrahend_time.duration_since(*minuend_time)
+                                    }
+                                    .unwrap(),
                                 },
                                 TypeKind::Duration,
                             ),

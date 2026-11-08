@@ -124,7 +124,7 @@ compute:
             - time: 2026-11-08T15:45:50.308478485Z
           expected:
           - 1
-          - duration: 1ms
+          - duration: 0ms
           - time: 2026-11-08T15:45:50.307478485Z
           - duration: 1ms
       test sum time:
