@@ -109,15 +109,33 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test substract:
+        assert equal::
+          found:
+          - substract: [3, 2]
+          - substract:
+            - duration: 2ms
+            - duration: 3ms
+          - substract:
+            - time: 2026-11-08T15:45:50.308478485Z
+            - duration: 1ms
+          - substract:
+            - time: 2026-11-08T15:45:50.307478485Z
+            - time: 2026-11-08T15:45:50.308478485Z
+          expected:
+          - 1
+          - duration: 1ms
+          - time: 2026-11-08T15:45:50.307478485Z
+          - duration: 1ms
       test sum time:
         assert equal::
           found:
-            - sum time:
-              - duration: 1ms
-              - duration: 2ms
-            - sum time:
-              - time: 2026-11-08T15:45:50.308478485Z
-              - duration: 1ms
+          - sum time:
+            - duration: 1ms
+            - duration: 2ms
+          - sum time:
+            - time: 2026-11-08T15:45:50.308478485Z
+            - duration: 1ms
           expected:
           - { duration: 3ms }
           - { time: 2026-11-08T15:45:50.309478485Z }

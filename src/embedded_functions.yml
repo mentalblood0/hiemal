@@ -9,6 +9,14 @@ sum time:
     - { array: duration }
     - { tuple: [ time, duration ] }
 
+substract:
+  argument:
+    union:
+    - { tuple: [ number, number ] }
+    - { tuple: [ duration, duration ] }
+    - { tuple: [ time, duration ] }
+    - { tuple: [ time, time ] }
+
 mod:
   argument: { tuple: [ number, number ] }
   return:

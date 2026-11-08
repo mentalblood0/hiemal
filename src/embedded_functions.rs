@@ -61,6 +61,8 @@ pub enum EmbeddedFunction {
     StringifyTo,
     #[serde(rename = "sleep")]
     Sleep,
+    #[serde(rename = "substract")]
+    Substract,
     #[serde(rename = "sum")]
     Sum,
     #[serde(rename = "sum time")]

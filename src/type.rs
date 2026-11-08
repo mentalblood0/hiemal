@@ -773,6 +773,13 @@ impl TypeKind {
         }
     }
 
+    pub fn as_tuple(&self) -> Option<&Vec<Type>> {
+        match self {
+            TypeKind::Tuple(result) => Some(result),
+            _ => None,
+        }
+    }
+
     pub fn contains(&self, other: &TypeKind) -> bool {
         if self == other {
             true

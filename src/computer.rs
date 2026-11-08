@@ -1544,6 +1544,70 @@ impl<'a> ComputationContext<'a> {
                     type_kind: TypeKind::Number,
                 }
                 .into()),
+                EmbeddedFunction::Substract => Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Value(
+                        Some({
+                            let argument_value = self.unroll_intermediate_value(
+                                &self.compute_node(&embedded_function_call.argument, constants)?,
+                            )?;
+                            let argument_tuple = argument_value
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_tuple()
+                                .unwrap();
+                            let minuend = argument_tuple.inner[0].as_ref().as_ref().unwrap();
+                            let substrahend = argument_tuple.inner[1].as_ref().as_ref().unwrap();
+                            match (minuend, substrahend) {
+                                (
+                                    Value::Number(minuend_number),
+                                    Value::Number(substrahend_number),
+                                ) => Value::Number(minuend_number - substrahend_number),
+                                (
+                                    Value::Duration {
+                                        duration: minuend_duration,
+                                    },
+                                    Value::Duration {
+                                        duration: substrahend_duration,
+                                    },
+                                ) => Value::Duration {
+                                    duration: if minuend_duration > substrahend_duration {
+                                        *minuend_duration - *substrahend_duration
+                                    } else {
+                                        *substrahend_duration - *minuend_duration
+                                    },
+                                },
+                                (
+                                    Value::Time { time: minuend_time },
+                                    Value::Duration {
+                                        duration: substrahend_duration,
+                                    },
+                                ) => Value::Time {
+                                    time: minuend_time
+                                        .checked_sub(*substrahend_duration)
+                                        .ok_or(std::time::SystemTime::UNIX_EPOCH)
+                                        .unwrap(),
+                                },
+                                (
+                                    Value::Time { time: minuend_time },
+                                    Value::Time {
+                                        time: substrahend_time,
+                                    },
+                                ) => Value::Duration {
+                                    duration: if minuend_time > substrahend_time {
+                                        minuend_time.duration_since(*substrahend_time).unwrap()
+                                    } else {
+                                        substrahend_time.duration_since(*minuend_time).unwrap()
+                                    },
+                                },
+                                _ => panic!(),
+                            }
+                        })
+                        .into(),
+                    ),
+                    type_kind: TypeKind::Number,
+                }
+                .into()),
                 EmbeddedFunction::Mod => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         {
