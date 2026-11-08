@@ -1146,6 +1146,24 @@ impl Compiler {
                                     }
                                 }),
                             )?,
+                            EmbeddedFunction::SumTime => self.compile_embedded_function_call(
+                                compilation_context,
+                                global_compilation_context,
+                                embedded_function_call,
+                                Some(&|compiled_argument_resolved_type: &mut Type| {
+                                    Ok(if let TypeKind::Tuple(argument_elements_types) =
+                                        &compiled_argument_resolved_type.kind
+                                        && argument_elements_types.len() == 2
+                                        && argument_elements_types.first().unwrap().kind
+                                            == TypeKind::Time
+                                    {
+                                        TypeKind::Time
+                                    } else {
+                                        TypeKind::Duration
+                                    }
+                                    .into())
+                                }),
+                            )?,
                             EmbeddedFunction::Sort => self.compile_embedded_function_call(
                                 compilation_context,
                                 global_compilation_context,

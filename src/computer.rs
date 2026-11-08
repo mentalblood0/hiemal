@@ -1498,6 +1498,52 @@ impl<'a> ComputationContext<'a> {
                     type_kind: TypeKind::Number,
                 }
                 .into()),
+                EmbeddedFunction::SumTime => Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Value(
+                        Some({
+                            let argument_value = self.unroll_intermediate_value(
+                                &self.compute_node(&embedded_function_call.argument, constants)?,
+                            )?;
+                            let argument_tuple = argument_value
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_tuple()
+                                .unwrap();
+                            if let Some(first_element) = &*argument_tuple.inner[0]
+                                && matches!(first_element, Value::Time { time: _ })
+                            {
+                                Value::Time {
+                                    time: first_element.as_time().unwrap()
+                                        + argument_tuple.inner[1]
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_duration()
+                                            .unwrap(),
+                                }
+                            } else {
+                                Value::Duration {
+                                    duration: argument_tuple.inner.iter().fold(
+                                        std::time::Duration::ZERO,
+                                        |accumulator, current| {
+                                            accumulator
+                                                + current
+                                                    .as_ref()
+                                                    .as_ref()
+                                                    .unwrap()
+                                                    .as_duration()
+                                                    .unwrap()
+                                        },
+                                    ),
+                                }
+                            }
+                        })
+                        .into(),
+                    ),
+                    type_kind: TypeKind::Number,
+                }
+                .into()),
                 EmbeddedFunction::Mod => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         {

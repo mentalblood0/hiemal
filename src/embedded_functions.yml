@@ -3,6 +3,12 @@ sum:
   return:
     type: number
 
+sum time:
+  argument:
+    union:
+    - { array: duration }
+    - { tuple: [ time, duration ] }
+
 mod:
   argument: { tuple: [ number, number ] }
   return:

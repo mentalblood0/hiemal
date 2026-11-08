@@ -63,6 +63,8 @@ pub enum EmbeddedFunction {
     Sleep,
     #[serde(rename = "sum")]
     Sum,
+    #[serde(rename = "sum time")]
+    SumTime,
     #[serde(rename = "write bytes")]
     WriteBytes,
 }

@@ -109,6 +109,18 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test sum time:
+        assert equal::
+          found:
+            - sum time:
+              - duration: 1ms
+              - duration: 2ms
+            - sum time:
+              - time: 2026-11-08T15:45:50.308478485Z
+              - duration: 1ms
+          expected:
+          - { duration: 3ms }
+          - { time: 2026-11-08T15:45:50.309478485Z }
       test file metadata:
         assert equal::
           found:
