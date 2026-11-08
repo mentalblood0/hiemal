@@ -863,7 +863,6 @@ dependencies = [
  "enumset",
  "glob",
  "gxhash",
- "hex",
  "humantime-serde",
  "ignorable",
  "indexmap 2.14.2",

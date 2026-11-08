@@ -182,14 +182,15 @@ pub fn serialize_bytes<S>(bytes: &Bytes, serializer: S) -> Result<S::Ok, S::Erro
 where
     S: Serializer,
 {
-    serializer.serialize_str(
-        &hex::encode(bytes)
-            .as_bytes()
-            .chunks(2)
-            .map(|c| unsafe { std::str::from_utf8_unchecked(c) })
-            .collect::<Vec<_>>()
-            .join(" "),
-    )
+    use std::fmt::Write;
+    let mut string = String::with_capacity(bytes.len() * 3);
+    for (byte_index, byte) in bytes.iter().enumerate() {
+        if byte_index > 0 {
+            string.push(' ');
+        }
+        write!(string, "{:02x}", byte).unwrap();
+    }
+    serializer.serialize_str(&string)
 }
 
 fn parse_spaced_hex(string: &str) -> Result<Bytes, String> {
@@ -198,12 +199,30 @@ fn parse_spaced_hex(string: &str) -> Result<Bytes, String> {
     }
     let mut result = Vec::with_capacity((string.len() + 1) / 3);
     for (token_index, token) in string.split(' ').enumerate() {
-        let mut buf = [0u8; 1];
-        hex::decode_to_slice(token, &mut buf)
-            .map_err(|e| format!("bad token {:?} at index {}: {}", token, token_index, e))?;
-        result.push(buf[0]);
+        let bytes = token.as_bytes();
+        if bytes.len() != 2 {
+            return Err(format!(
+                "bad token {:?} at index {}: invalid token length",
+                token, token_index
+            ));
+        }
+        let high = hex_value(bytes[0], 0)?;
+        let low = hex_value(bytes[1], 1)?;
+        result.push((high << 4) | low);
     }
     Ok(Bytes::from(result))
+}
+
+fn hex_value(byte: u8, index: usize) -> Result<u8, String> {
+    match byte {
+        b'0'..=b'9' => Ok(byte - b'0'),
+        b'a'..=b'f' => Ok(byte - b'a' + 10),
+        b'A'..=b'F' => Ok(byte - b'A' + 10),
+        _ => Err(format!(
+            "Invalid character {:?} at position {}",
+            byte as char, index
+        )),
+    }
 }
 
 pub fn deserialize_bytes<'de, D>(deserializer: D) -> Result<Bytes, D::Error>
