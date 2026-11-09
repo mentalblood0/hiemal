@@ -870,28 +870,6 @@ compute:
               compute:
                 f:: 1
           expected: 2
-      test repeat:
-        assert equal::
-          found:
-            functions:
-              push back::
-                flatten: [{ constant: list }, [{ constant: value }]]
-              repeat::
-                match: amount
-                cases:
-                  - [1, [{ constant: value }]]
-                  - - any
-                    - push back::
-                        list:
-                          repeat::
-                            value: { constant: value }
-                            amount: { sum: [{ constant: amount }, -1] }
-                        value: { constant: value }
-            compute:
-              repeat::
-                value: [1, 2]
-                amount: 3
-          expected: [[1, 2], [1, 2], [1, 2]]
       test heterogenous branching:
         assert equal::
           found:

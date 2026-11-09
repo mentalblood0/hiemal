@@ -76,9 +76,9 @@ fn assert_type(
     got_type: &Type,
     expected_type_kind: &TypeKind,
     compilation_context: &CompilationContext,
-) -> Result<Type> {
+) -> Result<()> {
     if expected_type_kind == &TypeKind::Any || expected_type_kind.contains(&got_type.kind) {
-        Ok(got_type.clone())
+        Ok(())
     } else {
         match (&got_type.kind, expected_type_kind) {
             (
@@ -105,65 +105,55 @@ fn assert_type(
                     .path
                     .0
                     .push(PathSegment::ArrayIndex(0));
-                Ok(got_type.with_kind(TypeKind::Array(Box::new(assert_type(
+                assert_type(
                     got_element_type,
                     &expected_element_type.kind,
                     &inner_compilation_context,
-                )?))))
+                )
             }
             (TypeKind::Array(got_element_type), TypeKind::Tuple(expected_elements_types)) => {
-                let mut result_union_types = BTreeSet::new();
                 for expected_element_type in expected_elements_types.iter() {
-                    result_union_types.insert(assert_type(
+                    assert_type(
                         got_element_type,
                         &expected_element_type.kind,
                         compilation_context,
-                    )?);
+                    )?;
                 }
-                Ok(got_type.with_kind(TypeKind::Array(Box::new(Type::from(result_union_types)))))
+                Ok(())
             }
             (TypeKind::Tuple(got_elements_types), TypeKind::Array(expected_element_type)) => {
-                let mut result_tuple_types = Vec::with_capacity(got_elements_types.len());
                 for got_element_type in got_elements_types.iter() {
-                    result_tuple_types.push(assert_type(
+                    assert_type(
                         got_element_type,
                         &expected_element_type.kind,
                         compilation_context,
-                    )?);
+                    )?;
                 }
-                Ok(got_type.with_kind(TypeKind::Tuple(result_tuple_types.into())))
+                Ok(())
             }
             (TypeKind::Object(got_inner_types), TypeKind::Object(expected_inner_types)) => {
-                let mut result_inner_types = BTreeMap::new();
                 for (expected_value_key, expected_value_type) in expected_inner_types.iter() {
                     if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
-                        result_inner_types.insert(
-                            expected_value_key.clone(),
-                            assert_type(
-                                got_value_type,
-                                &expected_value_type.kind,
-                                compilation_context,
-                            )?,
-                        );
-                    } else {
-                        return Err(compilation_context.error(got_type, expected_type_kind));
-                    }
-                }
-                Ok(got_type.with_kind(TypeKind::Object(result_inner_types.into())))
-            }
-            (TypeKind::Object(got_inner_types), TypeKind::GenericObject(expected_value_type)) => {
-                let mut result_inner_types = BTreeMap::new();
-                for (got_value_key, got_value_type) in got_inner_types.iter() {
-                    result_inner_types.insert(
-                        got_value_key.clone(),
                         assert_type(
                             got_value_type,
                             &expected_value_type.kind,
                             compilation_context,
-                        )?,
-                    );
+                        )?;
+                    } else {
+                        return Err(compilation_context.error(got_type, expected_type_kind));
+                    }
                 }
-                Ok(got_type.with_kind(TypeKind::Object(result_inner_types.into())))
+                Ok(())
+            }
+            (TypeKind::Object(got_inner_types), TypeKind::GenericObject(expected_value_type)) => {
+                for got_value_type in got_inner_types.values() {
+                    assert_type(
+                        got_value_type,
+                        &expected_value_type.kind,
+                        compilation_context,
+                    )?;
+                }
+                Ok(())
             }
             (
                 TypeKind::GenericObject(got_value_type),
@@ -174,24 +164,24 @@ fn assert_type(
                     .path
                     .0
                     .push(PathSegment::ArrayIndex(0));
-                Ok(got_type.with_kind(TypeKind::Array(Box::new(assert_type(
+                assert_type(
                     got_value_type,
                     &expected_value_type.kind,
                     &inner_compilation_context,
-                )?))))
+                )
             }
             (TypeKind::Union(got_union_types), TypeKind::Union(expected_union_types)) => {
-                let mut result_union_types = BTreeSet::new();
                 if !got_union_types.is_subset(expected_union_types) {
                     for one_of_got_types in got_union_types.iter() {
                         let mut found = false;
                         for one_of_expected_types in expected_union_types.iter() {
-                            if let Ok(result_union_type) = assert_type(
+                            if assert_type(
                                 one_of_got_types,
                                 &one_of_expected_types.kind,
                                 compilation_context,
-                            ) {
-                                result_union_types.insert(result_union_type);
+                            )
+                            .is_ok()
+                            {
                                 found = true;
                                 break;
                             }
@@ -201,18 +191,13 @@ fn assert_type(
                         }
                     }
                 }
-                Ok(Type::from(result_union_types))
+                Ok(())
             }
             (TypeKind::Union(got_union_types), _) => {
-                let mut result_union_types = BTreeSet::new();
                 for one_of_got_types in got_union_types.iter() {
-                    result_union_types.insert(assert_type(
-                        one_of_got_types,
-                        expected_type_kind,
-                        compilation_context,
-                    )?);
+                    assert_type(one_of_got_types, expected_type_kind, compilation_context)?;
                 }
-                Ok(got_type.with_kind(TypeKind::Union(result_union_types.into())))
+                Ok(())
             }
             (_, TypeKind::Union(expected_union_types)) => {
                 if !expected_union_types.contains(&expected_type_kind.clone().into()) {
@@ -225,11 +210,11 @@ fn assert_type(
                     }
                     return Err(compilation_context.error(got_type, expected_type_kind));
                 }
-                Ok(got_type.clone())
+                Ok(())
             }
             (TypeKind::LiteralString(_), TypeKind::String)
             | (TypeKind::GenericLiteralString, TypeKind::String)
-            | (TypeKind::LiteralString(_), TypeKind::GenericLiteralString) => Ok(got_type.clone()),
+            | (TypeKind::LiteralString(_), TypeKind::GenericLiteralString) => Ok(()),
             _ => Err(compilation_context.error(got_type, expected_type_kind)),
         }
     }
@@ -578,19 +563,18 @@ impl Compiler {
             &argument_compilation_context,
             global_compilation_context,
         )?;
-        let mut compiled_argument_resolved_type = assert_type(
+        assert_type(
             &compiled_argument.node.r#type,
             &EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize].argument,
             &argument_compilation_context,
         )?;
-        if !compiled_argument_resolved_type.properties.is_computable {
+        if !compiled_argument.node.r#type.properties.is_computable {
             return Err(argument_compilation_context.error(
                 &"non-computible embedded function argument",
                 &"computible embedded function argument",
             ));
         }
-        compiled_argument_resolved_type.properties.is_serializable = true;
-        let result_type = compiled_argument_resolved_type
+        let mut result_type = compiled_argument.node.r#type
             .properties
             .unified(
                 &match &EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize]
@@ -606,7 +590,7 @@ impl Compiler {
                     get_result_type_from_argument_resolved_type_option
                 {
                     get_result_type_kind_from_argument_resolved_type(
-                        &mut compiled_argument_resolved_type,
+                        &mut compiled_argument.node.r#type.clone(),
                     )?
                 } else {
                     match EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize]
@@ -618,6 +602,7 @@ impl Compiler {
                     }
                 },
             );
+        result_type.properties.is_serializable = true;
         Ok(NodeAndMetadata {
             external_constants_name_clustered_indices: compiled_argument
                 .external_constants_name_clustered_indices
@@ -1770,7 +1755,7 @@ impl Compiler {
                             &flatten_compilation_context,
                             global_compilation_context,
                         )?;
-                        let flatten_resolved_type = assert_type(
+                        assert_type(
                             &compiled_flatten.node.r#type,
                             &TypeKind::Array(Box::new(
                                 TypeKind::Array(Box::new(TypeKind::Any.into())).into(),
@@ -1780,7 +1765,7 @@ impl Compiler {
                         NodeAndMetadata {
                             node: Node {
                                 content: Content::Flatten(compiled_flatten.node.clone()),
-                                r#type: flatten_resolved_type.flatten()?,
+                                r#type: compiled_flatten.node.r#type.flatten()?,
                             }
                             .into(),
                             external_constants_name_clustered_indices: compiled_flatten
@@ -2111,14 +2096,14 @@ impl Compiler {
                                     &through_compilation_context,
                                     global_compilation_context,
                                 )?;
-                                let compiled_through_resolved_type = assert_type(
+                                assert_type(
                                     &compiled_through.node.r#type,
                                     &starting_with_type.kind,
                                     &through_compilation_context,
                                 )?;
                                 result_external_constants_name_clustered_indices
                                     .extend(compiled_through.external_constants_name_clustered_indices.clone());
-                                result_union_types.insert(compiled_through_resolved_type);
+                                result_union_types.insert(compiled_through.node.r#type.clone());
                                 Throughs::Array(compiled_through.node.clone())
                             }
                             _ => {
