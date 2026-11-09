@@ -6,7 +6,7 @@
 - no own syntax, parsing is deserialization
 - static type checking without annotations
 - tuples, union types, literal strings
-- heterogenous fold and sequence
+- polymorphic fold, sequence and loop
 - match clause exhaustiveness checking
 - capabilities restrictions checking
 - pass-by-value, strings and containers are cheap to clone
