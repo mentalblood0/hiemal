@@ -183,15 +183,19 @@ pub fn serialize_bytes<S>(bytes: &Bytes, serializer: S) -> Result<S::Ok, S::Erro
 where
     S: Serializer,
 {
-    use std::fmt::Write;
-    let mut string = String::with_capacity(bytes.len() * 3);
-    for (byte_index, byte) in bytes.iter().enumerate() {
-        if byte_index > 0 {
-            string.push(' ');
+    if serializer.is_human_readable() {
+        use std::fmt::Write;
+        let mut string = String::with_capacity(bytes.len() * 3);
+        for (byte_index, byte) in bytes.iter().enumerate() {
+            if byte_index > 0 {
+                string.push(' ');
+            }
+            write!(string, "{:02x}", byte).unwrap();
         }
-        write!(string, "{:02x}", byte).unwrap();
+        serializer.serialize_str(&string)
+    } else {
+        serializer.serialize_bytes(bytes.as_ref())
     }
-    serializer.serialize_str(&string)
 }
 
 fn parse_spaced_hex(string: &str) -> Result<Bytes, String> {
@@ -236,15 +240,35 @@ where
         type Value = Bytes;
 
         fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str(r#"a space-separated hex byte string (e.g. "d4 47 b1 ea")"#)
+            f.write_str(r#"a space-separated hex byte string (e.g. "d4 47 b1 ea") or raw bytes"#)
         }
 
         fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
             parse_spaced_hex(v).map_err(E::custom)
         }
+
+        fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+            Ok(Bytes::copy_from_slice(v))
+        }
+
+        fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+            Ok(Bytes::from(v))
+        }
+
+        fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let mut bytes = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            while let Some(byte) = seq.next_element::<u8>()? {
+                bytes.push(byte);
+            }
+            Ok(Bytes::from(bytes))
+        }
     }
 
-    deserializer.deserialize_str(SpacedHexVisitor)
+    if deserializer.is_human_readable() {
+        deserializer.deserialize_str(SpacedHexVisitor)
+    } else {
+        deserializer.deserialize_bytes(SpacedHexVisitor)
+    }
 }
 
 pub fn deserialize_rational<'de, D>(deserializer: D) -> Result<Rational, D::Error>
