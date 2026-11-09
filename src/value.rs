@@ -144,13 +144,14 @@ impl Runtime {
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone, Eq, Hash, PartialOrd, Ord)]
 #[serde(untagged)]
 pub enum Value {
-    #[serde(deserialize_with = "deserialize_rational")]
-    Number(Rational),
-    #[serde(
-        deserialize_with = "deserialize_rope",
-        serialize_with = "serialize_rope"
-    )]
-    String(ropey::Rope),
+    Number(#[serde(deserialize_with = "deserialize_rational")] Rational),
+    String(
+        #[serde(
+            deserialize_with = "deserialize_rope",
+            serialize_with = "serialize_rope"
+        )]
+        ropey::Rope,
+    ),
     Bool(bool),
     Tuple(Vector<Option<Value>>),
     Bytes {

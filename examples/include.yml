@@ -1,9 +1,0 @@
-- functions:
-    fibonacci::
-      from: examples/fibonacci.yml
-      at: [functions, { object key: "fibonacci:" }]
-  compute:
-    fibonacci:: 10
-- from: examples/fibonacci.yml
-  at: [compute, { object key: "fibonacci:" }]
-  

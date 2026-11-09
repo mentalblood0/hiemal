@@ -234,12 +234,7 @@ compute:
         assert equal::
           found:
             pipe:
-              - functions:
-                  fibonacci::
-                    from: examples/fibonacci.yml
-                    at: [functions, { object key: "fibonacci:" }]
-                compute:
-                  fibonacci:: 1000 # attempt to compute will result in stack overflow
+              - { sleep: { duration: 8h } }
               - true
           expected: true
       test send request:
@@ -271,30 +266,6 @@ compute:
             exit code: 0
             standard output: { bytes from string: "lalala\n" }
             standard error: { bytes: "" }
-      test from at inner:
-        assert equal::
-          found:
-            - functions:
-                f::
-                  from: examples/fibonacci.yml
-                  at: [functions, { object key: "fibonacci:" }]
-              compute: 0
-            - functions:
-                fibonacci::
-                  from: examples/tests.yml
-                  at:
-                    - compute
-                    - { object key: "tests report:" }
-                    - { embedded function call: key-value pairs }
-                    - { object key: test from at inner}
-                    - { object key: "assert equal:" }
-                    - { object key: "found" }
-                    - { array index: 0 }
-                    - functions
-                    - { object key: "f:" }
-              compute:
-                fibonacci:: 10
-          expected: [0, 55]
       test sequence while:
         assert equal::
           found:
@@ -1023,66 +994,6 @@ compute:
               - "12345678901234567890123456789012345678901234567890123456789012345678901234567.890"
               - "12345678901234567890123456789012345678901234567890123456789012345678901234567/890"
           expected: 687415888874985338887498533888749853388874985338887498533888749853388874985613459297/55625
-      test recursive big:
-        assert equal::
-          found:
-            functions:
-              fibonacci 1::
-                match:
-                  is sorted: [_, 1]
-                cases:
-                  - [true, _]
-                  - - false
-                    - sum:
-                        - fibonacci 2::
-                            sum: [_, -1]
-                        - fibonacci 3::
-                            sum: [_, -2]
-              fibonacci 2::
-                match:
-                  is sorted: [_, 1]
-                cases:
-                  - [true, _]
-                  - - false
-                    - sum:
-                        - fibonacci 1::
-                            sum: [_, -1]
-                        - fibonacci 3::
-                            sum: [_, -2]
-              fibonacci 3::
-                match:
-                  is sorted: [_, 1]
-                cases:
-                  - [true, _]
-                  - - false
-                    - sum:
-                        - fibonacci 1::
-                            sum: [_, -1]
-                        - fibonacci 2::
-                            sum: [_, -2]
-            compute:
-              - fibonacci 1:: 10
-              - fibonacci 2:: 10
-              - fibonacci 3:: 10
-          expected: [55, 55, 55]
-      test recursive normal:
-        assert equal::
-          found:
-            functions:
-              fibonacci::
-                match:
-                  is sorted: [_, 1]
-                cases:
-                  - [true, _]
-                  - - false
-                    - sum:
-                        - fibonacci::
-                            sum: [_, -1]
-                        - fibonacci::
-                            sum: [_, -2]
-            compute:
-              fibonacci:: 10
-          expected: 55
       test compound context:
         assert equal::
           found:
@@ -1135,22 +1046,6 @@ compute:
               a: [1, 2, { b: 3 }, 4]
             at: [a, [{ sum: [-5, -10] }, { sum: [5, 10] }]]
           expected: [1, 2, { b: 3 }, 4]
-      test from at function:
-        assert equal::
-          found:
-            functions:
-              fibonacci::
-                from: examples/fibonacci.yml
-                at: [functions, { object key: "fibonacci:" }]
-            compute:
-              fibonacci:: 10
-          expected: 55
-      test from at compute:
-        assert equal::
-          found:
-            from: examples/fibonacci.yml
-            at: [compute, { object key: "fibonacci:" }]
-          expected: 24
       test from at default argument:
         assert equal::
           found:

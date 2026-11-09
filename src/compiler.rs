@@ -24,7 +24,7 @@ use crate::{
         self, AtSegment, Condition, EmbeddedFunctionCall, Match, Path, PathSegment, Program,
         RangeBound,
     },
-    r#type::{Capability, Embedded, MaybeType, Type, TypeAtResult, TypeKind, TypeProperties},
+    r#type::{Capability, Embedded, Type, TypeAtResult, TypeKind, TypeProperties},
     value::Value,
 };
 
@@ -72,7 +72,7 @@ pub struct ConstantDefinition {
     pub index: usize,
 }
 
-fn resolve_type(
+fn assert_type(
     got_type: &Type,
     expected_type_kind: &TypeKind,
     compilation_context: &CompilationContext,
@@ -81,37 +81,20 @@ fn resolve_type(
         Ok(got_type.clone())
     } else {
         match (&got_type.kind, expected_type_kind) {
-            (TypeKind::Unknown(unknown_type), expected_type_kind)
-            | (expected_type_kind, TypeKind::Unknown(unknown_type)) => {
-                let mut unknown_type_write_guard = unknown_type.lockable_internals.write();
-                match &*unknown_type_write_guard {
-                    Some(got_type) => {
-                        resolve_type(got_type, expected_type_kind, compilation_context)
-                    }
-                    None => {
-                        let result_type = Type {
-                            kind: expected_type_kind.clone(),
-                            properties: got_type.properties.clone(),
-                        };
-                        *unknown_type_write_guard = Some(result_type.clone());
-                        Ok(result_type)
-                    }
-                }
-            }
             (
                 TypeKind::Constructed(got_constructed),
                 TypeKind::Constructed(expected_constructed),
-            ) => resolve_type(
+            ) => assert_type(
                 got_constructed.inner(),
                 &expected_constructed.inner().kind,
                 compilation_context,
             ),
-            (TypeKind::Constructed(got_constructed), _) => resolve_type(
+            (TypeKind::Constructed(got_constructed), _) => assert_type(
                 got_constructed.inner(),
                 expected_type_kind,
                 compilation_context,
             ),
-            (_, TypeKind::Constructed(expected_constructed)) => resolve_type(
+            (_, TypeKind::Constructed(expected_constructed)) => assert_type(
                 got_type,
                 &expected_constructed.inner().kind,
                 compilation_context,
@@ -122,7 +105,7 @@ fn resolve_type(
                     .path
                     .0
                     .push(PathSegment::ArrayIndex(0));
-                Ok(got_type.with_kind(TypeKind::Array(Box::new(resolve_type(
+                Ok(got_type.with_kind(TypeKind::Array(Box::new(assert_type(
                     got_element_type,
                     &expected_element_type.kind,
                     &inner_compilation_context,
@@ -131,7 +114,7 @@ fn resolve_type(
             (TypeKind::Array(got_element_type), TypeKind::Tuple(expected_elements_types)) => {
                 let mut result_union_types = BTreeSet::new();
                 for expected_element_type in expected_elements_types.iter() {
-                    result_union_types.insert(resolve_type(
+                    result_union_types.insert(assert_type(
                         got_element_type,
                         &expected_element_type.kind,
                         compilation_context,
@@ -142,7 +125,7 @@ fn resolve_type(
             (TypeKind::Tuple(got_elements_types), TypeKind::Array(expected_element_type)) => {
                 let mut result_tuple_types = Vec::with_capacity(got_elements_types.len());
                 for got_element_type in got_elements_types.iter() {
-                    result_tuple_types.push(resolve_type(
+                    result_tuple_types.push(assert_type(
                         got_element_type,
                         &expected_element_type.kind,
                         compilation_context,
@@ -156,7 +139,7 @@ fn resolve_type(
                     if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
                         result_inner_types.insert(
                             expected_value_key.clone(),
-                            resolve_type(
+                            assert_type(
                                 got_value_type,
                                 &expected_value_type.kind,
                                 compilation_context,
@@ -173,7 +156,7 @@ fn resolve_type(
                 for (got_value_key, got_value_type) in got_inner_types.iter() {
                     result_inner_types.insert(
                         got_value_key.clone(),
-                        resolve_type(
+                        assert_type(
                             got_value_type,
                             &expected_value_type.kind,
                             compilation_context,
@@ -191,7 +174,7 @@ fn resolve_type(
                     .path
                     .0
                     .push(PathSegment::ArrayIndex(0));
-                Ok(got_type.with_kind(TypeKind::Array(Box::new(resolve_type(
+                Ok(got_type.with_kind(TypeKind::Array(Box::new(assert_type(
                     got_value_type,
                     &expected_value_type.kind,
                     &inner_compilation_context,
@@ -203,7 +186,7 @@ fn resolve_type(
                     for one_of_got_types in got_union_types.iter() {
                         let mut found = false;
                         for one_of_expected_types in expected_union_types.iter() {
-                            if let Ok(result_union_type) = resolve_type(
+                            if let Ok(result_union_type) = assert_type(
                                 one_of_got_types,
                                 &one_of_expected_types.kind,
                                 compilation_context,
@@ -223,7 +206,7 @@ fn resolve_type(
             (TypeKind::Union(got_union_types), _) => {
                 let mut result_union_types = BTreeSet::new();
                 for one_of_got_types in got_union_types.iter() {
-                    result_union_types.insert(resolve_type(
+                    result_union_types.insert(assert_type(
                         one_of_got_types,
                         expected_type_kind,
                         compilation_context,
@@ -235,7 +218,7 @@ fn resolve_type(
                 if !expected_union_types.contains(&expected_type_kind.clone().into()) {
                     for one_of_expected_types in expected_union_types.iter() {
                         if let Ok(result_type) =
-                            resolve_type(got_type, &one_of_expected_types.kind, compilation_context)
+                            assert_type(got_type, &one_of_expected_types.kind, compilation_context)
                         {
                             return Ok(result_type);
                         }
@@ -308,7 +291,6 @@ struct CachedUserFunctionCall {
 
 #[derive(Default)]
 struct GlobalCompilationContext {
-    user_function_to_index_and_type_option: HashMap<MaybeCompiledProgram, (usize, Type)>,
     user_functions_definitions: Vec<UserFunctionCallDefinition>,
     constants_names_to_name_clustered_constants_indices: HashMap<Arc<String>, usize>,
     constants: Vec<Type>,
@@ -596,7 +578,7 @@ impl Compiler {
             &argument_compilation_context,
             global_compilation_context,
         )?;
-        let mut compiled_argument_resolved_type = resolve_type(
+        let mut compiled_argument_resolved_type = assert_type(
             &compiled_argument.node.r#type,
             &EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize].argument,
             &argument_compilation_context,
@@ -988,7 +970,7 @@ impl Compiler {
                                                         compilation_context,
                                                         global_compilation_context,
                                                     )?;
-                                                resolve_type(
+                                                assert_type(
                                                     &compiled_from_dynamic.node.r#type,
                                                     &TypeKind::Number,
                                                     compilation_context,
@@ -1018,7 +1000,7 @@ impl Compiler {
                                                         compilation_context,
                                                         global_compilation_context,
                                                     )?;
-                                                resolve_type(
+                                                assert_type(
                                                     &compiled_to_dynamic.node.r#type,
                                                     &TypeKind::Number,
                                                     compilation_context,
@@ -1398,10 +1380,6 @@ impl Compiler {
                             &match_compilation_context,
                             global_compilation_context,
                         )?;
-                        if !compiled_match.node.r#type.kind.is_known() {
-                            return Err(match_compilation_context
-                                .error(&compiled_match.node.r#type, &"match of known type"));
-                        }
                         let mut result_cases = Vec::new();
                         let mut result_types = BTreeSet::new();
                         let mut result_external_constants_name_clustered_indices = compiled_match
@@ -1792,7 +1770,7 @@ impl Compiler {
                             &flatten_compilation_context,
                             global_compilation_context,
                         )?;
-                        let flatten_resolved_type = resolve_type(
+                        let flatten_resolved_type = assert_type(
                             &compiled_flatten.node.r#type,
                             &TypeKind::Array(Box::new(
                                 TypeKind::Array(Box::new(TypeKind::Any.into())).into(),
@@ -1873,7 +1851,7 @@ impl Compiler {
                                                 &through_compilation_context,
                                                 global_compilation_context,
                                             )?;
-                                            resolve_type(
+                                            assert_type(
                                                 &compiled_through.node.r#type,
                                                 &TypeKind::Bool,
                                                 compilation_context,
@@ -1932,7 +1910,7 @@ impl Compiler {
                                             &through_compilation_context,
                                             global_compilation_context,
                                         )?;
-                                        resolve_type(
+                                        assert_type(
                                             &compiled_through.node.r#type,
                                             &TypeKind::Bool,
                                             compilation_context,
@@ -2133,7 +2111,7 @@ impl Compiler {
                                     &through_compilation_context,
                                     global_compilation_context,
                                 )?;
-                                let compiled_through_resolved_type = resolve_type(
+                                let compiled_through_resolved_type = assert_type(
                                     &compiled_through.node.r#type,
                                     &starting_with_type.kind,
                                     &through_compilation_context,
@@ -2273,7 +2251,7 @@ impl Compiler {
                                 &while_compilation_context,
                                 global_compilation_context,
                             )?;
-                            resolve_type(
+                            assert_type(
                                 &compiled_while.node.r#type,
                                 &TypeKind::Bool,
                                 compilation_context,
@@ -2432,7 +2410,7 @@ impl Compiler {
                                 &while_compilation_context,
                                 global_compilation_context,
                             )?;
-                            resolve_type(
+                            assert_type(
                                 &compiled_while.node.r#type,
                                 &TypeKind::Bool,
                                 compilation_context,
@@ -2621,6 +2599,15 @@ impl Compiler {
                                     if let Some(function_body) =
                                         compilation_context.available_functions.get(function_name)
                                     {
+                                        if compilation_context
+                                            .entered_user_functions
+                                            .contains(&function_body)
+                                        {
+                                            return Err(compilation_context.error(
+                                                function_name,
+                                                &"non-recursive function call",
+                                            ));
+                                        }
                                         let mut body_compilation_context =
                                             compilation_context.clone();
                                         body_compilation_context.path.0.extend([
@@ -2748,123 +2735,67 @@ impl Compiler {
                                                 .into(),
                                             }));
                                         }
-                                        let function_body_as_maybe_compiled_program =
-                                            MaybeCompiledProgram::from(function_body.clone());
-                                        if compilation_context
+                                        body_compilation_context
                                             .entered_user_functions
-                                            .contains(&function_body)
-                                        {
-                                            let (function_index, function_type) =
-                                                global_compilation_context
-                                                    .user_function_to_index_and_type_option
-                                                    .get(&function_body_as_maybe_compiled_program)
-                                                    .unwrap(); // in different contexts the same function return type may be not the same, here this would mean polymorphic recursion which is not supported
-                                            return Ok(NodeAndMetadata {
-                                                external_constants_name_clustered_indices:
-                                                    BTreeSet::new(),
-                                                node: Node {
-                                                    content: Content::UserFunctionCall {
-                                                        arguments: new_constants_definitions,
-                                                        body: *function_index,
-                                                        arguments_is_pure: function_type
-                                                            .properties
-                                                            .capabilities
-                                                            .is_empty(),
-                                                    },
-                                                    r#type: function_type.clone(),
-                                                }
-                                                .into(),
-                                            }
-                                            .into());
-                                        } else {
-                                            body_compilation_context
-                                                .entered_user_functions
-                                                .insert(function_body.clone());
-                                            let function_index = global_compilation_context
-                                                .user_functions_definitions
-                                                .len();
-                                            global_compilation_context
-                                                .user_functions_definitions
-                                                .push(UserFunctionCallDefinition {
-                                                    external_constants_name_clustered_indices:
-                                                        Vec::new(),
-                                                    body: function_body_as_maybe_compiled_program
-                                                        .clone(),
-                                                });
-                                            global_compilation_context
-                                                .user_function_to_index_and_type_option
-                                                .insert(
-                                                    function_body_as_maybe_compiled_program.clone(),
-                                                    (
-                                                        function_index,
-                                                        TypeKind::Unknown(MaybeType::default())
-                                                            .into(),
-                                                    ),
-                                                );
-                                            let compiled_function = self.compile_with_context(
-                                                &function_body,
-                                                &body_compilation_context,
-                                                global_compilation_context,
-                                            )?;
-                                            global_compilation_context
-                                                .user_function_to_index_and_type_option
-                                                .get_mut(&function_body_as_maybe_compiled_program)
-                                                .unwrap()
-                                                .1 = compiled_function.node.r#type.clone();
-                                            global_compilation_context.user_functions_definitions[function_index] = UserFunctionCallDefinition {
-                                                external_constants_name_clustered_indices:
-                                                    Vec::from_iter(
-                                                        compiled_function
-                                                            .external_constants_name_clustered_indices
-                                                            .iter()
-                                                            .cloned(),
-                                                    ),
-                                                body: MaybeCompiledProgram {
-                                                    program: function_body_as_maybe_compiled_program
-                                                        .program,
-                                                    node: Some(compiled_function.node.clone()),
-                                                },
-                                            };
-                                            result_external_constants_name_clustered_indices
-                                                .append(
-                                                    &mut compiled_function
+                                            .insert(function_body.clone());
+                                        let compiled_function = self.compile_with_context(
+                                            &function_body,
+                                            &body_compilation_context,
+                                            global_compilation_context,
+                                        )?;
+                                        let function_index = global_compilation_context
+                                            .user_functions_definitions
+                                            .len();
+                                        global_compilation_context
+                                            .user_functions_definitions
+                                            .push(UserFunctionCallDefinition {
+                                            external_constants_name_clustered_indices:
+                                                Vec::from_iter(
+                                                    compiled_function
                                                         .external_constants_name_clustered_indices
-                                                        .clone(),
-                                                );
-                                            let arguments_is_pure = compiled_function
-                                                .node
-                                                .r#type
-                                                .properties
-                                                .capabilities
-                                                .is_empty();
-                                            global_compilation_context
-                                                .compiled_user_functions_calls_cache
-                                                .insert(
-                                                    instantiated_function_hash,
-                                                    CachedUserFunctionCall {
-                                                        function_index,
-                                                        arguments_is_pure,
-                                                        r#type: compiled_function
-                                                            .node
-                                                            .r#type
-                                                            .clone(),
-                                                    },
-                                                );
-                                            return Ok(Arc::new(NodeAndMetadata {
-                                                external_constants_name_clustered_indices:
-                                                    result_external_constants_name_clustered_indices
-                                                        .clone(),
-                                                node: Node {
-                                                    content: Content::UserFunctionCall {
-                                                        arguments: new_constants_definitions,
-                                                        body: function_index,
-                                                        arguments_is_pure,
-                                                    },
+                                                        .iter()
+                                                        .cloned(),
+                                                ),
+                                            body: MaybeCompiledProgram {
+                                                program: function_body.clone(),
+                                                node: Some(compiled_function.node.clone()),
+                                            },
+                                        });
+                                        result_external_constants_name_clustered_indices.append(
+                                            &mut compiled_function
+                                                .external_constants_name_clustered_indices
+                                                .clone(),
+                                        );
+                                        let arguments_is_pure = compiled_function
+                                            .node
+                                            .r#type
+                                            .properties
+                                            .capabilities
+                                            .is_empty();
+                                        global_compilation_context
+                                            .compiled_user_functions_calls_cache
+                                            .insert(
+                                                instantiated_function_hash,
+                                                CachedUserFunctionCall {
+                                                    function_index,
+                                                    arguments_is_pure,
                                                     r#type: compiled_function.node.r#type.clone(),
-                                                }
-                                                .into(),
-                                            }));
-                                        }
+                                                },
+                                            );
+                                        return Ok(Arc::new(NodeAndMetadata {
+                                            external_constants_name_clustered_indices:
+                                                result_external_constants_name_clustered_indices
+                                                    .clone(),
+                                            node: Node {
+                                                content: Content::UserFunctionCall {
+                                                    arguments: new_constants_definitions,
+                                                    body: function_index,
+                                                    arguments_is_pure,
+                                                },
+                                                r#type: compiled_function.node.r#type.clone(),
+                                            }
+                                            .into(),
+                                        }));
                                     } else {
                                         return Err(compilation_context.error(
                                             function_name,

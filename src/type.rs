@@ -7,8 +7,7 @@ use std::{
 
 use anyhow::{Result, anyhow};
 use enumset::{EnumSet, EnumSetType};
-use parking_lot::RwLock;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     containers::{Object, Vector},
@@ -16,47 +15,6 @@ use crate::{
     intermediate_representation::ValuePathSegment,
     value::{Value, deserialize_rope, serialize_rope},
 };
-
-#[derive(Debug, Clone)]
-pub struct MaybeType {
-    pub lockable_internals: Arc<RwLock<Option<Type>>>,
-}
-
-impl Default for MaybeType {
-    fn default() -> Self {
-        Self {
-            lockable_internals: Arc::new(RwLock::new(None)),
-        }
-    }
-}
-
-impl PartialEq for MaybeType {
-    fn eq(&self, other: &Self) -> bool {
-        *self.lockable_internals.read() == *other.lockable_internals.read()
-    }
-}
-
-impl Eq for MaybeType {}
-
-impl PartialOrd for MaybeType {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for MaybeType {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.lockable_internals
-            .read()
-            .cmp(&*other.lockable_internals.read())
-    }
-}
-
-impl Hash for MaybeType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.lockable_internals.read().hash(state);
-    }
-}
 
 static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
     [
@@ -414,7 +372,8 @@ pub enum Embedded {
     HttpClient,
 }
 
-#[derive(Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(u8)]
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum TypeKind {
     #[serde(rename = "number")]
     Number,
@@ -428,54 +387,6 @@ pub enum TypeKind {
     Null,
     #[serde(rename = "array")]
     Array(Box<Type>),
-    #[serde(rename = "tuple")]
-    Tuple(Arc<Vec<Type>>),
-    #[serde(rename = "object")]
-    Object(Arc<BTreeMap<Arc<String>, Type>>),
-    #[serde(rename = "generic object")]
-    GenericObject(Box<Type>),
-    #[serde(rename = "union")]
-    Union(Arc<BTreeSet<Type>>),
-    #[default]
-    #[serde(rename = "any")]
-    Any,
-    #[serde(rename = "literal true")]
-    LiteralTrue,
-    #[serde(rename = "literal false")]
-    LiteralFalse,
-    #[serde(rename = "literal string")]
-    LiteralString(#[serde(deserialize_with = "deserialize_rope")] ropey::Rope),
-    #[serde(rename = "generic literal string")]
-    GenericLiteralString,
-    #[serde(rename = "bytes")]
-    Bytes,
-    #[serde(rename = "time")]
-    Time,
-    #[serde(rename = "constructed")]
-    Constructed(Constructed),
-    #[serde(rename = "embedded")]
-    Embedded(Embedded),
-    #[serde(rename = "never")]
-    Never,
-    #[serde(skip_deserializing)]
-    Unknown(MaybeType),
-}
-
-#[repr(u8)]
-#[derive(Serialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub enum KnownTypeKind {
-    #[serde(rename = "number")]
-    Number,
-    #[serde(rename = "string")]
-    String,
-    #[serde(rename = "bool")]
-    Bool,
-    #[serde(rename = "duration")]
-    Duration,
-    #[serde(rename = "null")]
-    Null,
-    #[serde(rename = "array")]
-    Array(Box<TypeKind>),
     #[serde(rename = "tuple")]
     Tuple(Arc<Vec<Type>>),
     #[serde(rename = "object")]
@@ -511,25 +422,6 @@ pub enum KnownTypeKind {
     Embedded(Embedded),
     #[serde(rename = "never")]
     Never,
-}
-
-impl Serialize for TypeKind {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            TypeKind::Unknown(maybe_type) => match &*maybe_type.lockable_internals.read() {
-                Some(r#type) => r#type.serialize(serializer),
-                None => Result::Err(serde::ser::Error::custom(
-                    "unknown type have not been resolved",
-                )),
-            },
-            known_type => unsafe {
-                std::mem::transmute::<&TypeKind, &KnownTypeKind>(known_type).serialize(serializer)
-            },
-        }
-    }
 }
 
 impl From<BTreeSet<Type>> for Type {
@@ -599,25 +491,6 @@ pub enum TypeAtResult {
 }
 
 impl TypeKind {
-    pub fn is_known(&self) -> bool {
-        match self {
-            TypeKind::Unknown(maybe_type) => maybe_type.lockable_internals.read().is_some(),
-            TypeKind::Array(element_type) => element_type.kind.is_known(),
-            TypeKind::Tuple(elements_types) => elements_types
-                .iter()
-                .all(|element_type| element_type.kind.is_known()),
-            TypeKind::Object(inner_types) => inner_types
-                .values()
-                .all(|value_type| value_type.kind.is_known()),
-            TypeKind::GenericObject(value_type) => value_type.kind.is_known(),
-            TypeKind::Union(union_types) => union_types
-                .iter()
-                .all(|union_type| union_type.kind.is_known()),
-            TypeKind::Constructed(constructed) => constructed.inner().kind.is_known(),
-            _ => true,
-        }
-    }
-
     pub fn is_concrete(&self) -> bool {
         match self {
             TypeKind::Array(element_type) => element_type.kind.is_concrete(),
@@ -628,7 +501,7 @@ impl TypeKind {
                 .values()
                 .all(|value_type| value_type.kind.is_concrete()),
             TypeKind::GenericObject(value_type) => value_type.kind.is_concrete(),
-            TypeKind::Union(_) | TypeKind::Any | TypeKind::Unknown(_) => false,
+            TypeKind::Union(_) | TypeKind::Any => false,
             TypeKind::Constructed(constructed) => constructed.inner().kind.is_concrete(),
             _ => true,
         }
