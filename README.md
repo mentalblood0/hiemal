@@ -2,6 +2,7 @@
 
 [![tests](https://github.com/mentalblood0/hiemal/actions/workflows/tests.yml/badge.svg)](https://github.com/mentalblood0/hiemal/actions/workflows/tests.yml)
 
+- no recursive functions
 - no own syntax, parsing is deserialization
 - static type checking without annotations
 - tuples, union types, literal strings
@@ -27,7 +28,6 @@ cargo install --git https://github.com/mentalblood0/hiemal
 
 ```bash
 hiemal https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/tests.yml
-hiemal examples/fibonacci_from_standard_input.yml
 hiemal examples/include.yml
 ```
 
@@ -41,11 +41,11 @@ See [embedded functions specification](src/embedded_functions.yml)
 
 ```yaml
 functions:
-  fibonacci::
-    from: examples/fibonacci.yml
-    at: [functions, { object key: "fibonacci:" }]
+  f::
+    from: examples/arguments.yml
+    at: [functions, { object key: "f:" }]
 compute:
-  fibonacci:: 10
+  f:: 10
 ```
 
 ```yaml
@@ -85,23 +85,6 @@ compute:
 ```
 
 #### functions constants allow forbid compute
-
-```yaml
-functions:
-  fibonacci::
-    match: _
-    cases:
-      - [1, 1]
-      - [2, 1]
-      - - number
-        - sum:
-            - fibonacci::
-                sum: [_, -1]
-            - fibonacci::
-                sum: [_, -2]
-compute:
-  fibonacci:: 24
-```
 
 ```yaml
 functions:
