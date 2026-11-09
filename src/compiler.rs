@@ -574,7 +574,9 @@ impl Compiler {
                 &"computible embedded function argument",
             ));
         }
-        let mut result_type = compiled_argument.node.r#type
+        let mut result_type = compiled_argument
+            .node
+            .r#type
             .properties
             .unified(
                 &match &EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize]
