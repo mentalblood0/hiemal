@@ -120,6 +120,9 @@ compute:
             - time: 2026-11-08T15:45:50.308478485Z
             - duration: 1ms
           - substract:
+            - time: 2026-11-08T15:45:50.308478485Z
+            - time: 2026-11-08T15:45:50.307478485Z
+          - substract:
             - time: 2026-11-08T15:45:50.307478485Z
             - time: 2026-11-08T15:45:50.308478485Z
           expected:
@@ -127,6 +130,7 @@ compute:
           - duration: 0ms
           - time: 2026-11-08T15:45:50.307478485Z
           - duration: 1ms
+          - duration: 0ms
       test sum time:
         assert equal::
           found:
@@ -137,8 +141,8 @@ compute:
             - time: 2026-11-08T15:45:50.308478485Z
             - duration: 1ms
           expected:
-          - { duration: 3ms }
-          - { time: 2026-11-08T15:45:50.309478485Z }
+          - duration: 3ms
+          - time: 2026-11-08T15:45:50.309478485Z
       test file metadata:
         assert equal::
           found:

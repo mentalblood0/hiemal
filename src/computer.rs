@@ -1604,11 +1604,10 @@ impl<'a> ComputationContext<'a> {
                             ) => (
                                 Value::Duration {
                                     duration: if minuend_time > substrahend_time {
-                                        minuend_time.duration_since(*substrahend_time)
+                                        minuend_time.duration_since(*substrahend_time).unwrap()
                                     } else {
-                                        substrahend_time.duration_since(*minuend_time)
-                                    }
-                                    .unwrap(),
+                                        std::time::Duration::ZERO
+                                    },
                                 },
                                 TypeKind::Duration,
                             ),
