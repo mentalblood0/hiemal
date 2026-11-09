@@ -542,17 +542,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "derive-where"
-version = "1.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e2b94854e8576378ccda7c8de8a66ed8b4e8acbd2c50ec3418ea6c8aaf4b567"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.10",
-]
-
-[[package]]
 name = "diff"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -821,13 +810,11 @@ dependencies = [
  "bytes",
  "criterion",
  "dashu",
- "derive-where",
  "dirs",
  "enumset",
  "glob",
  "gxhash",
  "humantime-serde",
- "ignorable",
  "indexmap 2.14.2",
  "lz4_flex",
  "nanorand",
@@ -1019,17 +1006,6 @@ checksum = "cb68373c0d6620ef8105e855e7745e18b0d00d3bdb07fb532e434244cdb9a714"
 dependencies = [
  "icu_normalizer",
  "icu_properties",
-]
-
-[[package]]
-name = "ignorable"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77004198f639a008a2b257a39bd7daec149afe5f00003c064948d4a75dc46be7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -1523,7 +1499,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e025feb26210bc196b908e72deb063b1b4000754304341cbc168a1e72c857ebc"
 dependencies = [
  "archery",
- "rayon",
  "serde",
  "smallvec",
 ]

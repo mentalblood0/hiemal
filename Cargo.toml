@@ -17,7 +17,7 @@ dashu = { version = "0.4.1", features = [
   "serde",
   "num-traits",
 ] }
-rpds = { "version" = "1.2.1", "features" = ["std", "serde", "rayon"] }
+rpds = { "version" = "1.2.1", "features" = ["std", "serde"] }
 ropey = "1.6.1"
 parking_lot = { version = "0.12.5", features = [
   "hardware-lock-elision",
@@ -29,10 +29,8 @@ lz4_flex = "0.13.1"
 indexmap = "2.14.0"
 gxhash = { version = "3.5.0", features = ["std", "deterministic"] }
 regex = "1.13.1"
-bytes = { version = "1.12.1" }
+bytes = "1.12.1"
 enumset = { version = "1.1.14", features = ["serde"] }
-derive-where = "1.7.0"
-ignorable = "0.1.4"
 serde_json = { version = "1.0.154", features = [
   "std",
   "preserve_order",
