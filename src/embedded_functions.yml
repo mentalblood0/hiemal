@@ -1,16 +1,16 @@
 sum:
-  argument: { array: number }
+- argument: { array: number }
   return:
     type: number
 
 sum time:
-  argument:
+- argument:
     union:
     - { array: duration }
     - { tuple: [ time, duration ] }
 
 substract:
-  argument:
+- argument:
     union:
     - { tuple: [ number, number ] }
     - { tuple: [ duration, duration ] }
@@ -18,26 +18,26 @@ substract:
     - { tuple: [ time, time ] }
 
 mod:
-  argument: { tuple: [ number, number ] }
+- argument: { tuple: [ number, number ] }
   return:
     type: number
     properties:
       capabilities: [ error ]
 
 divide:
-  argument: { tuple: [ number, number ] }
+- argument: { tuple: [ number, number ] }
   return:
     type: number
     properties:
       capabilities: [ error ]
 
 round:
-  argument: number
+- argument: number
   return:
     type: number
 
 exponentiate:
-  argument:
+- argument:
     object:
       base: number
       exponent: number
@@ -49,15 +49,15 @@ exponentiate:
       capabilities: [ precision loss ]
 
 sort:
-  argument: { array: any }
+- argument: { array: any }
 
 is sorted:
-  argument: { array: any }
+- argument: { array: any }
   return:
     type: bool
 
 read bytes from standard input:
-  argument:
+- argument:
     union:
     - number
     - literal string: all
@@ -70,7 +70,7 @@ read bytes from standard input:
       is pure: false
 
 parse:
-  argument:
+- argument:
     union:
     - object: { YAML: string }
     - object: { JSON: string }
@@ -81,7 +81,7 @@ parse:
       capabilities: [ error ]
 
 stringify to:
-  argument:
+- argument:
     union:
     - object: { YAML: any }
     - object: { JSON: any }
@@ -89,14 +89,14 @@ stringify to:
     type: string
 
 encode to:
-  argument:
+- argument:
     union:
     - object: { bincode: any }
   return:
     type: bytes
 
 hash:
-  argument:
+- argument:
     object:
       algorithm:
         union:
@@ -122,14 +122,14 @@ hash:
     type: any
 
 sleep:
-  argument: duration
+- argument: duration
   return:
     type: duration
     properties:
       capabilities: [ sleep ]
 
 glob:
-  argument: string
+- argument: string
   return:
     type: { array: string }
     properties:
@@ -139,7 +139,7 @@ glob:
       is pure: false
 
 file metadata:
-  argument: string
+- argument: string
   return:
     type:
       object:
@@ -158,10 +158,10 @@ file metadata:
       is pure: false
 
 key-value pairs:
-  argument: { generic object: any }
+- argument: { generic object: any }
 
 compile regex:
-  argument:
+- argument:
     union:
     - generic literal string
     - constructed: regex
@@ -172,7 +172,7 @@ compile regex:
     is serializable: false
 
 match regex:
-  argument:
+- argument:
     object:
       string: string
       regex: { embedded: compiled regex }
@@ -187,24 +187,24 @@ match regex:
           end: number
 
 concat:
-  argument: { array: string }
+- argument: { array: string }
   return:
     type: string
 
 string from bytes:
-  argument: bytes
+- argument: bytes
   return:
     type: string
     properties:
       capabilities: [ error ]
 
 bytes from string:
-  argument: string
+- argument: string
   return:
     type: bytes
 
 run:
-  argument:
+- argument:
     object:
       command: string
       arguments: { array: string }
@@ -221,7 +221,7 @@ run:
       is pure: false
 
 bufferized writer:
-  argument:
+- argument:
     object:
       path: string
       mode:
@@ -236,7 +236,7 @@ bufferized writer:
     type: { embedded: bufferized writer }
 
 bufferized reader:
-  argument: string
+- argument: string
   return:
     type: { embedded: bufferized reader }
     properties:
@@ -247,7 +247,7 @@ bufferized reader:
       is pure: false
 
 write bytes:
-  argument:
+- argument:
     object:
       target: { embedded: bufferized writer }
       content: bytes
@@ -260,7 +260,7 @@ write bytes:
       is pure: false
 
 read bytes:
-  argument:
+- argument:
     object:
       source: { embedded: bufferized reader }
       amount: number
@@ -273,7 +273,7 @@ read bytes:
       is pure: false
 
 remove file:
-  argument: string
+- argument: string
   return:
     type: "null"
     properties:
@@ -283,7 +283,7 @@ remove file:
       is pure: false
 
 HTTP client:
-  argument:
+- argument:
     array:
       union:
       - object: { HTTPS only: bool }
@@ -376,7 +376,7 @@ HTTP client:
       capabilities: [ error ]
 
 send request:
-  argument:
+- argument:
     object:
       client: { embedded: HTTP client }
       request:

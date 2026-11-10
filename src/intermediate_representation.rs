@@ -167,6 +167,7 @@ pub enum Throughs {
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct EmbeddedFunctionCall {
     pub embedded_function: EmbeddedFunction,
+    pub variant_index: u8,
     pub argument: Arc<Node>,
 }
 

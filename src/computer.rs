@@ -3680,6 +3680,7 @@ impl<'a> ComputationContext<'a> {
                         ),
                         type_kind: EMBEDDED_FUNCTIONS
                             [embedded_function_call.embedded_function as usize]
+                            [embedded_function_call.variant_index as usize]
                             .r#return
                             .r#type
                             .clone()
@@ -3755,6 +3756,7 @@ impl<'a> ComputationContext<'a> {
                         ),
                         type_kind: EMBEDDED_FUNCTIONS
                             [embedded_function_call.embedded_function as usize]
+                            [embedded_function_call.variant_index as usize]
                             .r#return
                             .r#type
                             .clone()

@@ -526,11 +526,36 @@ impl Compiler {
             &argument_compilation_context,
             global_compilation_context,
         )?;
-        assert_type(
-            &compiled_argument.node.r#type,
-            &EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize].argument,
-            &argument_compilation_context,
-        )?;
+        let (signature, variant_index) = EMBEDDED_FUNCTIONS
+            [embedded_function_call.embedded_function as usize]
+            .iter()
+            .enumerate()
+            .find_map(|(signature_index, signature)| {
+                if assert_type(
+                    &compiled_argument.node.r#type,
+                    &signature.argument,
+                    &argument_compilation_context,
+                )
+                .is_ok()
+                {
+                    Some((signature, signature_index as u8))
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| {
+                argument_compilation_context.error(
+                    &compiled_argument.node.r#type,
+                    &TypeKind::Union(
+                        BTreeSet::from_iter(
+                            EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize]
+                                .iter()
+                                .map(|signature| signature.argument.clone().into()),
+                        )
+                        .into(),
+                    ),
+                )
+            })?;
         if !compiled_argument.node.r#type.properties.is_computable {
             return Err(argument_compilation_context.error(
                 &"non-computible embedded function argument",
@@ -541,15 +566,10 @@ impl Compiler {
             .node
             .r#type
             .properties
-            .unified(
-                &match &EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize]
-                    .r#return
-                    .properties
-                {
-                    Some(static_properties) => static_properties.clone(),
-                    None => TypeProperties::default(),
-                },
-            )
+            .unified(&match &signature.r#return.properties {
+                Some(static_properties) => static_properties.clone(),
+                None => TypeProperties::default(),
+            })
             .unified_recursively(
                 if let Some(get_result_type_kind_from_argument_resolved_type) =
                     get_result_type_from_argument_resolved_type_option
@@ -558,7 +578,7 @@ impl Compiler {
                         &mut compiled_argument.node.r#type.clone(),
                     )?
                 } else {
-                    match EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize]
+                    match signature
                         .r#return
                         .r#type
                     {
@@ -585,6 +605,7 @@ impl Compiler {
                     },
                     embedded_function_call: intermediate_representation::EmbeddedFunctionCall {
                         embedded_function: embedded_function_call.embedded_function,
+                        variant_index,
                         argument: compiled_argument.node.clone(),
                     },
                 },

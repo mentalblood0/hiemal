@@ -86,9 +86,9 @@ pub struct EmbeddedFunctionSignature {
     pub r#return: Return,
 }
 
-pub static EMBEDDED_FUNCTIONS: LazyLock<Vec<EmbeddedFunctionSignature>> = LazyLock::new(|| {
+pub static EMBEDDED_FUNCTIONS: LazyLock<Vec<Vec<EmbeddedFunctionSignature>>> = LazyLock::new(|| {
     let mut name_and_signature_pairs = serde_saphyr::from_str::<
-        BTreeMap<EmbeddedFunction, EmbeddedFunctionSignature>,
+        BTreeMap<EmbeddedFunction, Vec<EmbeddedFunctionSignature>>,
     >(include_str!("embedded_functions.yml"))
     .unwrap()
     .into_iter()
