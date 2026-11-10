@@ -10,12 +10,18 @@ sum:
     type: time
 
 substract:
-- argument:
-    union:
-    - { tuple: [ number, number ] }
-    - { tuple: [ duration, duration ] }
-    - { tuple: [ time, duration ] }
-    - { tuple: [ time, time ] }
+- argument: { tuple: [ number, number ] }
+  return:
+    type: number
+- argument: { tuple: [ duration, duration ] }
+  return:
+    type: duration
+- argument: { tuple: [ time, duration ] }
+  return:
+    type: time
+- argument: { tuple: [ time, time ] }
+  return:
+    type: duration
 
 mod:
 - argument: { tuple: [ number, number ] }

@@ -1571,50 +1571,43 @@ impl<'a> ComputationContext<'a> {
                             .unwrap();
                         let minuend = argument_tuple.inner[0].as_ref().as_ref().unwrap();
                         let substrahend = argument_tuple.inner[1].as_ref().as_ref().unwrap();
-                        match (minuend, substrahend) {
-                            (Value::Number(minuend_number), Value::Number(substrahend_number)) => (
-                                Value::Number(minuend_number - substrahend_number),
+                        match embedded_function_call.variant_index {
+                            0 => (
+                                Value::Number(
+                                    minuend.as_number().unwrap() - substrahend.as_number().unwrap(),
+                                ),
                                 TypeKind::Number,
                             ),
-                            (
+                            1 => (
                                 Value::Duration {
-                                    duration: minuend_duration,
-                                },
-                                Value::Duration {
-                                    duration: substrahend_duration,
-                                },
-                            ) => (
-                                Value::Duration {
-                                    duration: minuend_duration
-                                        .checked_sub(*substrahend_duration)
+                                    duration: minuend
+                                        .as_duration()
+                                        .unwrap()
+                                        .checked_sub(substrahend.as_duration().unwrap())
                                         .unwrap_or(std::time::Duration::ZERO),
                                 },
                                 TypeKind::Duration,
                             ),
-                            (
-                                Value::Time { time: minuend_time },
-                                Value::Duration {
-                                    duration: substrahend_duration,
-                                },
-                            ) => (
+                            2 => (
                                 Value::Time {
-                                    time: minuend_time
-                                        .checked_sub(*substrahend_duration)
+                                    time: minuend
+                                        .as_time()
+                                        .unwrap()
+                                        .checked_sub(substrahend.as_duration().unwrap())
                                         .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
                                 },
                                 TypeKind::Time,
                             ),
-                            (
-                                Value::Time { time: minuend_time },
-                                Value::Time {
-                                    time: substrahend_time,
-                                },
-                            ) => (
+                            3 => (
                                 Value::Duration {
-                                    duration: if minuend_time > substrahend_time {
-                                        minuend_time.duration_since(*substrahend_time).unwrap()
-                                    } else {
-                                        std::time::Duration::ZERO
+                                    duration: {
+                                        let minuend_time = minuend.as_time().unwrap();
+                                        let substrahend_time = substrahend.as_time().unwrap();
+                                        if minuend_time > substrahend_time {
+                                            minuend_time.duration_since(substrahend_time).unwrap()
+                                        } else {
+                                            std::time::Duration::ZERO
+                                        }
                                     },
                                 },
                                 TypeKind::Duration,

@@ -1099,26 +1099,6 @@ impl Compiler {
                                     }
                                 }),
                             )?,
-                            EmbeddedFunction::Substract => self.compile_embedded_function_call(
-                                compilation_context,
-                                global_compilation_context,
-                                embedded_function_call,
-                                Some(&|compiled_argument_resolved_type: &mut Type| {
-                                    let tuple_elements_types =
-                                        compiled_argument_resolved_type.kind.as_tuple().unwrap();
-                                    Ok(match (
-                                        &tuple_elements_types[0].kind,
-                                        &tuple_elements_types[1].kind,
-                                    ) {
-                                        (TypeKind::Number, _) => TypeKind::Number,
-                                        (TypeKind::Duration, _) => TypeKind::Duration,
-                                        (TypeKind::Time, TypeKind::Duration) => TypeKind::Time,
-                                        (TypeKind::Time, TypeKind::Time) => TypeKind::Duration,
-                                        _ => panic!(),
-                                    }
-                                    .into())
-                                }),
-                            )?,
                             EmbeddedFunction::Sort => self.compile_embedded_function_call(
                                 compilation_context,
                                 global_compilation_context,
