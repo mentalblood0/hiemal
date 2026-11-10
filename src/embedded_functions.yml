@@ -125,7 +125,7 @@ hash:
         - object: { BLAKE3 derive key: string }
       data: bytes
   return:
-    type: any
+    type: bytes
 
 sleep:
 - argument: duration
