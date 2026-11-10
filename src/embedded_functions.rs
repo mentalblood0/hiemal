@@ -65,8 +65,6 @@ pub enum EmbeddedFunction {
     Substract,
     #[serde(rename = "sum")]
     Sum,
-    #[serde(rename = "sum time")]
-    SumTime,
     #[serde(rename = "write bytes")]
     WriteBytes,
 }

@@ -2,12 +2,12 @@ sum:
 - argument: { array: number }
   return:
     type: number
-
-sum time:
-- argument:
-    union:
-    - { array: duration }
-    - { tuple: [ time, duration ] }
+- argument: { array: duration }
+  return:
+    type: duration
+- argument: { tuple: [ time, duration ] }
+  return:
+    type: time
 
 substract:
 - argument:

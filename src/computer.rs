@@ -1473,58 +1473,40 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
-                EmbeddedFunction::Sum => Ok(IntermediateValueAndMetadata {
-                    intermediate_value: IntermediateValue::Value(
-                        Some(Value::Number(
-                            self.unroll_intermediate_value(
-                                &self.compute_node(&embedded_function_call.argument, constants)?,
-                            )?
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_tuple()
-                            .unwrap()
-                            .iter()
-                            .fold(
-                                Rational::ZERO,
-                                |accumulator, current| {
-                                    accumulator
-                                        + current.as_ref().as_ref().unwrap().as_number().unwrap()
-                                },
+                EmbeddedFunction::Sum => {
+                    let argument_value = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let (value, type_kind) = match embedded_function_call.variant_index {
+                        0 => (
+                            Value::Number(
+                                argument_value
+                                    .as_ref()
+                                    .as_ref()
+                                    .unwrap()
+                                    .as_tuple()
+                                    .unwrap()
+                                    .iter()
+                                    .fold(Rational::ZERO, |accumulator, current| {
+                                        accumulator
+                                            + current
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_number()
+                                                .unwrap()
+                                    }),
                             ),
-                        ))
-                        .into(),
-                    ),
-                    type_kind: TypeKind::Number,
-                }
-                .into()),
-                EmbeddedFunction::SumTime => {
-                    let (value, type_kind) = {
-                        let argument_value = self.unroll_intermediate_value(
-                            &self.compute_node(&embedded_function_call.argument, constants)?,
-                        )?;
-                        let argument_tuple = argument_value
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_tuple()
-                            .unwrap();
-                        if let Some(first_element) = &*argument_tuple.inner[0]
-                            && matches!(first_element, Value::Time { time: _ })
-                        {
-                            (
-                                Value::Time {
-                                    time: first_element.as_time().unwrap()
-                                        + argument_tuple.inner[1]
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_duration()
-                                            .unwrap(),
-                                },
-                                TypeKind::Time,
-                            )
-                        } else {
+                            TypeKind::Number,
+                        ),
+
+                        1 => {
+                            let argument_tuple = argument_value
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_tuple()
+                                .unwrap();
                             (
                                 Value::Duration {
                                     duration: argument_tuple.inner.iter().fold(
@@ -1543,6 +1525,32 @@ impl<'a> ComputationContext<'a> {
                                 TypeKind::Duration,
                             )
                         }
+                        2 => {
+                            let argument_tuple = argument_value
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_tuple()
+                                .unwrap();
+                            (
+                                Value::Time {
+                                    time: argument_tuple.inner[0]
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_time()
+                                        .unwrap()
+                                        + argument_tuple.inner[1]
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_duration()
+                                            .unwrap(),
+                                },
+                                TypeKind::Time,
+                            )
+                        }
+                        _ => panic!(),
                     };
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(Some(value).into()),

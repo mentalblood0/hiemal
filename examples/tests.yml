@@ -131,16 +131,18 @@ compute:
           - time: 2026-11-08T15:45:50.307478485Z
           - duration: 1ms
           - duration: 0ms
-      test sum time:
+      test sum:
         assert equal::
           found:
-          - sum time:
+          - sum: [ 1, 2 ]
+          - sum:
             - duration: 1ms
             - duration: 2ms
-          - sum time:
+          - sum:
             - time: 2026-11-08T15:45:50.308478485Z
             - duration: 1ms
           expected:
+          - 3
           - duration: 3ms
           - time: 2026-11-08T15:45:50.309478485Z
       test file metadata:
