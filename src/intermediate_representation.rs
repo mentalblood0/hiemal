@@ -3,19 +3,19 @@ use std::{collections::BTreeMap, sync::Arc};
 use bytes::Bytes;
 use dashu::Rational;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
+use serde_with::{serde_as, DisplayFromStr};
 
 use crate::{
     containers::{self, Vector},
     embedded_functions::EmbeddedFunction,
     program::Path,
     r#type::{Type, TypeKind},
-    value::{serialize_bytes, deserialize_bytes}
+    value::{Runtime, deserialize_bytes, serialize_bytes}
 };
 
+#[serde_as]
 #[repr(u8)]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Hash)]
-#[serde_as]
 pub enum Value {
     Number(#[serde_as(as = "DisplayFromStr")] Rational),
     String(
@@ -43,6 +43,7 @@ pub enum Value {
         duration: std::time::Duration,
     },
     Object(containers::Object<String, Option<Value>>),
+    Runtime(Arc<Runtime>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
