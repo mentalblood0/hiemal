@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    hash::{Hash, Hasher},
+    hash::Hash,
     sync::Arc,
 };
 
@@ -226,46 +226,9 @@ struct NodeAndMetadata {
     external_constants_name_clustered_indices: BTreeSet<usize>,
 }
 
-#[derive(Clone, Debug, Eq, Default)]
-struct MaybeCompiledProgram {
-    program: Arc<Program>,
-    node: Option<Arc<Node>>,
-}
-
-impl Hash for MaybeCompiledProgram {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.program.hash(state);
-    }
-}
-
-impl PartialEq for MaybeCompiledProgram {
-    fn eq(&self, other: &Self) -> bool {
-        self.program == other.program
-    }
-}
-
-impl From<&Arc<Program>> for MaybeCompiledProgram {
-    fn from(program: &Arc<Program>) -> Self {
-        Self {
-            program: program.clone(),
-            node: None,
-        }
-    }
-}
-
-impl From<Arc<Program>> for MaybeCompiledProgram {
-    fn from(program: Arc<Program>) -> Self {
-        Self {
-            program,
-            node: None,
-        }
-    }
-}
-
-#[derive(Default)]
 struct UserFunctionCallDefinition {
     external_constants_name_clustered_indices: Vec<usize>,
-    body: MaybeCompiledProgram,
+    node: Arc<Node>,
 }
 
 struct CachedUserFunctionCall {
@@ -495,7 +458,7 @@ impl Compiler {
                     .map(|user_function_definition| UserFunction {
                         external_constants_name_clustered_indices: user_function_definition
                             .external_constants_name_clustered_indices,
-                        node: user_function_definition.body.node.unwrap().clone(),
+                        node: user_function_definition.node.clone(),
                     })
                     .collect(),
                 unique_constants_names_count: global_compilation_context
@@ -2743,10 +2706,7 @@ impl Compiler {
                                                         .iter()
                                                         .cloned(),
                                                 ),
-                                            body: MaybeCompiledProgram {
-                                                program: function_body.clone(),
-                                                node: Some(compiled_function.node.clone()),
-                                            },
+                                            node: compiled_function.node.clone(),
                                         });
                                         result_external_constants_name_clustered_indices.append(
                                             &mut compiled_function
