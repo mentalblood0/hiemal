@@ -86,6 +86,7 @@ pub enum Runtime {
     BufferizedWriter(Identified<RwLock<BufWriter<std::fs::File>>>),
     BufferizedReader(Identified<RwLock<BufReader<std::fs::File>>>),
     HttpClient(Identified<ureq::Agent>),
+    RandomNumberGenerator(Identified<RwLock<rand::rngs::ChaCha8Rng>>)
 }
 
 impl Serialize for Runtime {
@@ -135,6 +136,13 @@ impl Runtime {
     pub fn as_http_client(&self) -> Option<&ureq::Agent> {
         match self {
             Runtime::HttpClient(Identified { id: _, content }) => Some(content),
+            _ => None,
+        }
+    }
+
+    pub fn as_random_number_generator(&self) -> Option<&RwLock<rand::rngs::ChaCha8Rng>> {
+        match self {
+            Runtime::RandomNumberGenerator(Identified { id: _, content }) => Some(content),
             _ => None,
         }
     }
@@ -434,6 +442,7 @@ impl Value {
                     Runtime::BufferizedWriter(_) => TypeKind::Embedded(Embedded::BufferizedWriter),
                     Runtime::BufferizedReader(_) => TypeKind::Embedded(Embedded::BufferizedReader),
                     Runtime::HttpClient(_) => TypeKind::Embedded(Embedded::HttpClient),
+                    Runtime::RandomNumberGenerator(_) => TypeKind::Embedded(Embedded::RandomNumberGenerator),
                 },
             },
             None => TypeKind::Null,

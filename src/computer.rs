@@ -15,6 +15,7 @@ use dashu::Rational;
 use glob::glob;
 use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
+use rand::prelude::*;
 use regex::{Regex, escape};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
@@ -2390,6 +2391,77 @@ impl<'a> ComputationContext<'a> {
                             Some(Value::Runtime(
                                 Runtime::CompiledRegex(Identified::new(compiled_regex)).into(),
                             ))
+                            .into(),
+                        ),
+                        type_kind: TypeKind::Embedded(Embedded::CompiledRegex),
+                    }
+                    .into())
+                }
+                EmbeddedFunction::RandomNumberGenerator => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let result = if let Some(provided_seed_value) =
+                        computed_argument_unrolled.as_ref().as_ref()
+                    {
+                        let provided_seed = provided_seed_value.as_bytes().unwrap();
+                        let mut seed = [0u8; 32];
+                        let bytes_amount_to_take = provided_seed.len().min(32);
+                        seed[..bytes_amount_to_take]
+                            .copy_from_slice(&provided_seed[..bytes_amount_to_take]);
+                        rand::rngs::ChaCha8Rng::from_seed(seed)
+                    } else {
+                        rand::make_rng::<rand::rngs::ChaCha8Rng>()
+                    };
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Runtime(
+                                Runtime::RandomNumberGenerator(Identified::new(result.into()))
+                                    .into(),
+                            ))
+                            .into(),
+                        ),
+                        type_kind: TypeKind::Embedded(Embedded::CompiledRegex),
+                    }
+                    .into())
+                }
+                EmbeddedFunction::RandomBytes => {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let argument_object = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap();
+                    let generator_value = argument_object.get(&"generator".to_string()).unwrap();
+                    let generator = generator_value
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_runtime()
+                        .unwrap()
+                        .as_random_number_generator()
+                        .unwrap();
+                    let amount = argument_object
+                        .get(&"amount".to_string())
+                        .unwrap()
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_number()
+                        .unwrap()
+                        .trunc()
+                        .to_f64()
+                        .value() as usize;
+                    let mut result = vec![0u8; amount];
+                    generator.write().fill_bytes(&mut result);
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Bytes {
+                                bytes: result.into(),
+                            })
                             .into(),
                         ),
                         type_kind: TypeKind::Embedded(Embedded::CompiledRegex),

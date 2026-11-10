@@ -109,6 +109,14 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test random:
+        assert equal::
+          found:
+            random bytes:
+              generator:
+                random number generator: { bytes from string: only first 32 bytes }
+              amount: 10
+          expected: { bytes: b6 d9 6f 32 9c 9f a5 00 59 07 }
       test substract:
         assert equal::
           found:

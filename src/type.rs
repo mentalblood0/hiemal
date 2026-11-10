@@ -370,6 +370,8 @@ pub enum Embedded {
     BufferizedReader,
     #[serde(rename = "HTTP client")]
     HttpClient,
+    #[serde(rename = "random number generator")]
+    RandomNumberGenerator,
 }
 
 #[repr(u8)]

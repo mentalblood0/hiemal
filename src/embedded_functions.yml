@@ -143,6 +143,22 @@ hash:
       - read file
       - error
 
+random number generator:
+- argument: { union: [ bytes, "null" ] }
+  return:
+    type: { embedded: random number generator }
+
+random bytes:
+- argument:
+    object:
+      generator: { embedded: random number generator }
+      amount: number
+  return:
+    type: bytes
+    properties:
+      is pure: false
+      capabilities: []
+
 sleep:
 - argument: duration
   return:

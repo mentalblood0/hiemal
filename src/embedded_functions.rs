@@ -39,6 +39,10 @@ pub enum EmbeddedFunction {
     Mod,
     #[serde(rename = "parse")]
     Parse,
+    #[serde(rename = "random number generator")]
+    RandomNumberGenerator,
+    #[serde(rename = "random bytes")]
+    RandomBytes,
     #[serde(rename = "read bytes")]
     ReadBytes,
     #[serde(rename = "read bytes from standard input")]
