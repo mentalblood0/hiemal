@@ -209,28 +209,28 @@ compute:
             - bytes: d7 49 81 ef a7 0a 0c 88 0b 8d 8c 19 85 d0 75 db cb f6 79 b9 9a 5f 99 14 e5 aa f9 6b 83 1a 9e 24 a0 20 ed 55 ae d9 a6 ab 2e af 3f d7 0d 2c 98 c9 49 e1 42 d8 f4 2a 10 25 01 90 b6 99 e0 2c f9 eb 68 61 2e 1a 55 6f ee 6c f7 26 bc b0 99 4f 7d 3e 66 9e da 39 47 88 f8 c8 0a 4f 0e a0 56 be 3d 4d ff d8 06 9d
             - bytes: e5 c1 f8 26 bb 9c 23 f2 bf 25 70 75 66 f4 95 93 a5 f0 f6 46 fd 3e 2d 8b 15 58 de 92 36 08 c8 b9
             - bytes: 4f d1 1c e7 b1 be a1 57 e5 6f 8a a6 93 9a 78 a0 15 bf 11 77 65 17 0b 3f 0e 98 d5 9e a3 8c 9d ba
-      test encode to:
+      test serialize to:
         constants:
           source: [1, 2, { lalala: null }, 3]
         compute:
           assert equal::
             found:
-              parse:
-                bincode:
-                  encode to:
-                    bincode: { constant: source }
-            expected: { constant: source }
-      test stringify to:
-        constants:
-          source: [1, 2, { lalala: null }, 3]
-        compute:
-          assert equal::
-            found:
-              parse:
-                JSON:
-                  stringify to:
-                    JSON: { constant: source }
-            expected: { constant: source }
+              - parse:
+                  YAML:
+                    serialize to:
+                      YAML: { constant: source }
+              - parse:
+                  JSON:
+                    serialize to:
+                      JSON: { constant: source }
+              - parse:
+                  bincode:
+                    serialize to:
+                      bincode: { constant: source }
+            expected:
+            - { constant: source }
+            - { constant: source }
+            - { constant: source }
       test sort:
         assert equal::
           found:

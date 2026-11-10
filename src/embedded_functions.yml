@@ -86,18 +86,14 @@ parse:
     properties:
       capabilities: [ error ]
 
-stringify to:
+serialize to:
 - argument:
     union:
     - object: { YAML: any }
     - object: { JSON: any }
   return:
     type: string
-
-encode to:
-- argument:
-    union:
-    - object: { bincode: any }
+- argument: { object: { bincode: any } }
   return:
     type: bytes
 

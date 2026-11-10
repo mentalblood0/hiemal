@@ -19,8 +19,6 @@ pub enum EmbeddedFunction {
     Concat,
     #[serde(rename = "divide")]
     Divide,
-    #[serde(rename = "encode to")]
-    EncodeTo,
     #[serde(rename = "exponentiate")]
     Exponentiate,
     #[serde(rename = "file metadata")]
@@ -53,12 +51,12 @@ pub enum EmbeddedFunction {
     Run,
     #[serde(rename = "send request")]
     SendRequest,
+    #[serde(rename = "serialize to")]
+    SerializeTo,
     #[serde(rename = "sort")]
     Sort,
     #[serde(rename = "string from bytes")]
     StringFromBytes,
-    #[serde(rename = "stringify to")]
-    StringifyTo,
     #[serde(rename = "sleep")]
     Sleep,
     #[serde(rename = "substract")]

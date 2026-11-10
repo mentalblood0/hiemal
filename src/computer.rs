@@ -1968,7 +1968,7 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
-                EmbeddedFunction::StringifyTo => {
+                EmbeddedFunction::SerializeTo => {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,
                     )?;
@@ -1985,55 +1985,32 @@ impl<'a> ComputationContext<'a> {
                         .next()
                         .unwrap();
                     let result_value = match format {
-                        "YAML" => serde_saphyr::to_string(&source).unwrap(),
-                        "JSON" => serde_json::to_string(&source).unwrap(),
+                        "YAML" => Value::String(serde_saphyr::to_string(&source).unwrap().into()),
+                        "JSON" => Value::String(serde_json::to_string(&source).unwrap().into()),
+                        "bincode" => Value::Bytes {
+                            bytes: bincode::serde::encode_to_vec(
+                                unsafe {
+                                    std::mem::transmute::<
+                                        Option<&Value>,
+                                        Option<&intermediate_representation::Value>,
+                                    >(source)
+                                },
+                                bincode::config::standard(),
+                            )
+                            .unwrap()
+                            .into(),
+                        },
                         _ => panic!(),
                     };
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::String(result_value.into())).into(),
-                        ),
-                        type_kind: TypeKind::String,
-                    }
-                    .into())
-                }
-                EmbeddedFunction::EncodeTo => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let argument_object = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap();
-                    let (format, source) = argument_object
-                        .inner
-                        .iter()
-                        .map(|(key, value)| (key.as_str(), value.as_ref().as_ref()))
-                        .next()
-                        .unwrap();
-                    Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bytes {
-                                bytes: match format {
-                                    "bincode" => bincode::serde::encode_to_vec(
-                                        unsafe {
-                                            std::mem::transmute::<
-                                                Option<&Value>,
-                                                Option<&intermediate_representation::Value>,
-                                            >(source)
-                                        },
-                                        bincode::config::standard(),
-                                    )
-                                    .unwrap(),
-                                    _ => panic!(),
-                                }
-                                .into(),
-                            })
-                            .into(),
-                        ),
-                        type_kind: TypeKind::Bytes,
+                        intermediate_value: IntermediateValue::Value(Some(result_value).into()),
+                        type_kind: EMBEDDED_FUNCTIONS
+                            [embedded_function_call.embedded_function as usize]
+                            [embedded_function_call.variant_index as usize]
+                            .r#return
+                            .r#type
+                            .clone()
+                            .unwrap(),
                     }
                     .into())
                 }

@@ -526,6 +526,13 @@ impl Compiler {
             &argument_compilation_context,
             global_compilation_context,
         )?;
+        if embedded_function_call.embedded_function == EmbeddedFunction::SerializeTo
+            && !compiled_argument.node.r#type.properties.is_serializable
+        {
+            return Err(
+                compilation_context.error(&compiled_argument.node.r#type, &"serializable value")
+            );
+        }
         let (signature, variant_index) = EMBEDDED_FUNCTIONS
             [embedded_function_call.embedded_function as usize]
             .iter()
@@ -1050,36 +1057,6 @@ impl Compiler {
                     }
                     Program::EmbeddedFunctionCall(embedded_function_call) => {
                         match embedded_function_call.embedded_function {
-                            EmbeddedFunction::StringifyTo => self.compile_embedded_function_call(
-                                compilation_context,
-                                global_compilation_context,
-                                embedded_function_call,
-                                Some(&|compiled_argument_resolved_type: &mut Type| {
-                                    if !compiled_argument_resolved_type.properties.is_serializable {
-                                        Err(compilation_context.error(
-                                            &compiled_argument_resolved_type,
-                                            &"serializable value",
-                                        ))
-                                    } else {
-                                        Ok(TypeKind::String.into())
-                                    }
-                                }),
-                            )?,
-                            EmbeddedFunction::EncodeTo => self.compile_embedded_function_call(
-                                compilation_context,
-                                global_compilation_context,
-                                embedded_function_call,
-                                Some(&|compiled_argument_resolved_type: &mut Type| {
-                                    if !compiled_argument_resolved_type.properties.is_serializable {
-                                        Err(compilation_context.error(
-                                            &compiled_argument_resolved_type,
-                                            &"serializable value",
-                                        ))
-                                    } else {
-                                        Ok(TypeKind::Bytes.into())
-                                    }
-                                }),
-                            )?,
                             EmbeddedFunction::Sort => self.compile_embedded_function_call(
                                 compilation_context,
                                 global_compilation_context,
