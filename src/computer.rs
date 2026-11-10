@@ -2128,22 +2128,17 @@ impl<'a> ComputationContext<'a> {
                                         )
                                         .to_be_bytes()
                                         .to_vec(),
-                                        "BLAKE3 with key" => {
-                                            let provided_key = parameters
+                                        "BLAKE3" => {
+                                            let parameters_object = parameters
                                                 .as_ref()
                                                 .as_ref()
                                                 .unwrap()
-                                                .as_bytes()
+                                                .as_object()
                                                 .unwrap();
-                                            let mut key = [0u8; 32];
-                                            let bytes_amount_to_take = provided_key.len().min(32);
-                                            key[..bytes_amount_to_take].copy_from_slice(
-                                                &provided_key[..bytes_amount_to_take],
-                                            );
-                                            blake3::keyed_hash(&key, data).as_bytes().to_vec()
-                                        }
-                                        "BLAKE3 with size" => {
-                                            let size = parameters
+                                            let size = parameters_object
+                                                .inner
+                                                .get(&"size".to_string())
+                                                .unwrap()
                                                 .as_ref()
                                                 .as_ref()
                                                 .unwrap()
@@ -2154,10 +2149,28 @@ impl<'a> ComputationContext<'a> {
                                                 .value()
                                                 as usize;
                                             let mut result = vec![0u8; size];
-                                            blake3::Hasher::new()
-                                                .update(data)
-                                                .finalize_xof()
-                                                .fill(&mut result);
+                                            if let Some(provided_key_value) = parameters_object
+                                                .inner
+                                                .get(&"key".to_string())
+                                                .unwrap()
+                                                .as_ref()
+                                                .as_ref()
+                                            {
+                                                let provided_key =
+                                                    provided_key_value.as_bytes().unwrap();
+                                                let mut key = [0u8; 32];
+                                                let bytes_amount_to_take =
+                                                    provided_key.len().min(32);
+                                                key[..bytes_amount_to_take].copy_from_slice(
+                                                    &provided_key[..bytes_amount_to_take],
+                                                );
+                                                blake3::Hasher::new_keyed(&key)
+                                            } else {
+                                                blake3::Hasher::new()
+                                            }
+                                            .update(data)
+                                            .finalize_xof()
+                                            .fill(&mut result);
                                             result.to_vec()
                                         }
                                         "BLAKE3 derive key" => {
@@ -2199,7 +2212,7 @@ impl<'a> ComputationContext<'a> {
                                     let (algorithm, parameters) =
                                         algorithm_object.inner.iter().next().unwrap();
                                     match algorithm.as_str() {
-                                        "GxHash" => {
+                                        "GxHash128" => {
                                             let mut hasher = gxhash::GxHasher::with_seed(
                                                 parameters
                                                     .as_ref()
@@ -2228,37 +2241,17 @@ impl<'a> ComputationContext<'a> {
                                             }
                                             hasher.finish_u128().to_be_bytes().to_vec()
                                         }
-                                        "BLAKE3 with key" => {
-                                            let provided_key = parameters
+                                        "BLAKE3" => {
+                                            let parameters_object = parameters
                                                 .as_ref()
                                                 .as_ref()
                                                 .unwrap()
-                                                .as_bytes()
+                                                .as_object()
                                                 .unwrap();
-                                            let mut key = [0u8; 32];
-                                            let bytes_amount_to_take = provided_key.len().min(32);
-                                            key[..bytes_amount_to_take].copy_from_slice(
-                                                &provided_key[..bytes_amount_to_take],
-                                            );
-                                            let mut hasher = blake3::Hasher::new_keyed(&key);
-                                            loop {
-                                                let chunk =
-                                                    bufferized_reader.fill_buf().with_context(
-                                                        embedded_function_error_context(
-                                                            path_option,
-                                                        ),
-                                                    )?;
-                                                if chunk.is_empty() {
-                                                    break;
-                                                }
-                                                hasher.update(chunk);
-                                                let chunk_len = chunk.len();
-                                                bufferized_reader.consume(chunk_len);
-                                            }
-                                            hasher.finalize().as_bytes().to_vec()
-                                        }
-                                        "BLAKE3 with size" => {
-                                            let size = parameters
+                                            let size = parameters_object
+                                                .inner
+                                                .get(&"size".to_string())
+                                                .unwrap()
                                                 .as_ref()
                                                 .as_ref()
                                                 .unwrap()
@@ -2269,7 +2262,26 @@ impl<'a> ComputationContext<'a> {
                                                 .value()
                                                 as usize;
                                             let mut result = vec![0u8; size];
-                                            let mut hasher = blake3::Hasher::new();
+                                            let mut hasher = if let Some(provided_key_value) =
+                                                parameters_object
+                                                    .inner
+                                                    .get(&"key".to_string())
+                                                    .unwrap()
+                                                    .as_ref()
+                                                    .as_ref()
+                                            {
+                                                let provided_key =
+                                                    provided_key_value.as_bytes().unwrap();
+                                                let mut key = [0u8; 32];
+                                                let bytes_amount_to_take =
+                                                    provided_key.len().min(32);
+                                                key[..bytes_amount_to_take].copy_from_slice(
+                                                    &provided_key[..bytes_amount_to_take],
+                                                );
+                                                blake3::Hasher::new_keyed(&key)
+                                            } else {
+                                                blake3::Hasher::new()
+                                            };
                                             loop {
                                                 let chunk =
                                                     bufferized_reader.fill_buf().with_context(

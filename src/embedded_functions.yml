@@ -115,9 +115,12 @@ hash:
         - object: { XXH64: number }
         - literal string: XXH3_64
         - literal string: XXH3_128
-        - object: { BLAKE3 with size: number }
-        - object: { BLAKE3 with key: bytes }
         - object: { BLAKE3 derive key: string }
+        - object:
+            BLAKE3:
+              object:
+                size: number
+                key: { union: [ bytes, "null" ] }
       data: bytes
   return:
     type: bytes
@@ -125,9 +128,12 @@ hash:
     object:
       algorithm:
         union:
-        - object: { GxHash: number }
-        - object: { BLAKE3 with size: number }
-        - object: { BLAKE3 with key: bytes }
+        - object: { GxHash128: number }
+        - object:
+            BLAKE3:
+              object:
+                size: number
+                key: { union: [ bytes, "null" ] }
       file path: string
   return:
     type: bytes

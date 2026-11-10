@@ -184,17 +184,25 @@ compute:
                   - { GxHash128: 0 }
                   - { XXH32: 0 }
                   - { XXH64: 0 }
-                  - { BLAKE3 with size: 100 }
-                  - { BLAKE3 with key: { bytes from string: first 32 bytes only } }
+                  - BLAKE3:
+                      size: 100
+                      key: null
+                  - BLAKE3:
+                      size: 32
+                      key: { bytes from string: first 32 bytes only }
                   - { BLAKE3 derive key: some context }
                 through:
                   hash:
                     algorithm: _
                     data: { bytes from string: hello world }
               - map:
-                  - { GxHash: 0 }
-                  - BLAKE3 with size: 100
-                  - { BLAKE3 with key: { bytes from string: first 32 bytes only } }
+                  - { GxHash128: 0 }
+                  - BLAKE3:
+                      size: 100
+                      key: null
+                  - BLAKE3:
+                      size: 32
+                      key: { bytes from string: first 32 bytes only }
                 through:
                   hash:
                     algorithm: _
