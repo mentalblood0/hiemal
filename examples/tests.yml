@@ -169,28 +169,36 @@ compute:
       test hash:
         assert equal::
           found:
-            map:
-              - SHA224
-              - SHA256
-              - SHA384
-              - SHA512
-              - SHA512/224
-              - SHA512/256
-              - XXH3_64
-              - XXH3_128
-              - BLAKE3
-              - { GxHash32: 0 }
-              - { GxHash64: 0 }
-              - { GxHash128: 0 }
-              - { XXH32: 0 }
-              - { XXH64: 0 }
-              - { BLAKE3 with size: 100 }
-              - { BLAKE3 with key: { bytes from string: first 32 bytes only } }
-              - { BLAKE3 derive key: some context }
-            through:
-              hash:
-                algorithm: _
-                data: { bytes from string: hello world }
+            flatten:
+              - map:
+                  - SHA224
+                  - SHA256
+                  - SHA384
+                  - SHA512
+                  - SHA512/224
+                  - SHA512/256
+                  - XXH3_64
+                  - XXH3_128
+                  - { GxHash32: 0 }
+                  - { GxHash64: 0 }
+                  - { GxHash128: 0 }
+                  - { XXH32: 0 }
+                  - { XXH64: 0 }
+                  - { BLAKE3 with size: 100 }
+                  - { BLAKE3 with key: { bytes from string: first 32 bytes only } }
+                  - { BLAKE3 derive key: some context }
+                through:
+                  hash:
+                    algorithm: _
+                    data: { bytes from string: hello world }
+              - map:
+                  - { GxHash: 0 }
+                  - BLAKE3 with size: 100
+                  - { BLAKE3 with key: { bytes from string: first 32 bytes only } }
+                through:
+                  hash:
+                    algorithm: _
+                    file path: examples/arguments.yml
           expected:
             - bytes: 2f 05 47 7f c2 4b b4 fa ef d8 65 17 15 6d af de ce c4 5b 8a d3 cf 25 22 a5 63 58 2b
             - bytes: b9 4d 27 b9 93 4d 3e 08 a5 2e 52 d7 da 7d ab fa c4 84 ef e3 7a 53 80 ee 90 88 f7 ac e2 ef cd e9
@@ -200,7 +208,6 @@ compute:
             - bytes: 0a c5 61 fa c8 38 10 4e 3f 2e 4a d1 07 b4 be e3 e9 38 bf 15 f2 b1 5f 00 9c cc cd 61 a9 13 f0 17
             - bytes: d4 47 b1 ea 40 e6 98 8b
             - bytes: df 8d 09 e9 3f 87 49 00 a9 9b 87 75 cc 15 b6 c7
-            - bytes: d7 49 81 ef a7 0a 0c 88 0b 8d 8c 19 85 d0 75 db cb f6 79 b9 9a 5f 99 14 e5 aa f9 6b 83 1a 9e 24
             - bytes: 79 e4 1e f3
             - bytes: 27 00 ce d9 79 e4 1e f3
             - bytes: 25 30 91 e6 54 89 1f 5e 27 00 ce d9 79 e4 1e f3
@@ -209,6 +216,9 @@ compute:
             - bytes: d7 49 81 ef a7 0a 0c 88 0b 8d 8c 19 85 d0 75 db cb f6 79 b9 9a 5f 99 14 e5 aa f9 6b 83 1a 9e 24 a0 20 ed 55 ae d9 a6 ab 2e af 3f d7 0d 2c 98 c9 49 e1 42 d8 f4 2a 10 25 01 90 b6 99 e0 2c f9 eb 68 61 2e 1a 55 6f ee 6c f7 26 bc b0 99 4f 7d 3e 66 9e da 39 47 88 f8 c8 0a 4f 0e a0 56 be 3d 4d ff d8 06 9d
             - bytes: e5 c1 f8 26 bb 9c 23 f2 bf 25 70 75 66 f4 95 93 a5 f0 f6 46 fd 3e 2d 8b 15 58 de 92 36 08 c8 b9
             - bytes: 4f d1 1c e7 b1 be a1 57 e5 6f 8a a6 93 9a 78 a0 15 bf 11 77 65 17 0b 3f 0e 98 d5 9e a3 8c 9d ba
+            - bytes: 3c 00 41 67 64 e7 3c 1d 69 16 63 67 2b 29 b3 06
+            - bytes: 3a 65 55 5d 6d 29 b0 72 bc e5 f8 d5 a7 a1 54 8a 0c da 51 8e 5f 3f 90 b6 ba 29 48 b6 fd df 12 19 8e ed 61 17 e8 c0 02 9b 32 06 b6 c3 96 b1 9e 26 3c f4 e0 00 08 a6 ad fe 70 15 d0 49 31 50 18 36 72 db 92 d0 47 b9 49 e8 68 2d 24 02 23 6c a3 88 af 7e 06 e4 d1 6b a3 de 17 3f a0 8f 43 9f 52 31 bd 1b 35 0e
+            - bytes: 55 27 1c 6a 4b e1 98 2d 15 2a 84 ac 5c 25 f0 d8 95 0d 43 f5 05 65 ef 21 90 b9 0f 78 bb 2b 1e 82
       test serialize to:
         constants:
           source: [1, 2, { lalala: null }, 3]

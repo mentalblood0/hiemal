@@ -115,13 +115,27 @@ hash:
         - object: { XXH64: number }
         - literal string: XXH3_64
         - literal string: XXH3_128
-        - literal string: BLAKE3
         - object: { BLAKE3 with size: number }
         - object: { BLAKE3 with key: bytes }
         - object: { BLAKE3 derive key: string }
       data: bytes
   return:
     type: bytes
+- argument:
+    object:
+      algorithm:
+        union:
+        - object: { GxHash: number }
+        - object: { BLAKE3 with size: number }
+        - object: { BLAKE3 with key: bytes }
+      file path: string
+  return:
+    type: bytes
+    properties:
+      capabilities:
+      - read filesystem
+      - read file
+      - error
 
 sleep:
 - argument: duration

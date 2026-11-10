@@ -3,7 +3,7 @@ use std::{
     cell::LazyCell,
     collections::BTreeMap,
     hash::{Hash, Hasher},
-    io::{BufReader, BufWriter, Read, Write},
+    io::{BufRead, BufReader, BufWriter, Read, Write},
     ops::Range,
     str::FromStr,
     sync::{Arc, LazyLock},
@@ -2026,137 +2026,269 @@ impl<'a> ComputationContext<'a> {
                         .unwrap();
                     let algorithm_value =
                         argument_object.inner.get(&"algorithm".to_string()).unwrap();
-                    let data_value = argument_object.inner.get(&"data".to_string()).unwrap();
-                    let data = data_value.as_ref().as_ref().unwrap().as_bytes().unwrap();
-                    let result_raw = match algorithm_value.as_ref().as_ref().unwrap() {
-                        Value::String(algorithm_string) => {
-                            match algorithm_string.to_string().as_str() {
-                                "SHA224" => sha2::Sha224::digest(data).to_vec(),
-                                "SHA256" => sha2::Sha256::digest(data).to_vec(),
-                                "SHA384" => sha2::Sha384::digest(data).to_vec(),
-                                "SHA512" => sha2::Sha512::digest(data).to_vec(),
-                                "SHA512/224" => sha2::Sha512_224::digest(data).to_vec(),
-                                "SHA512/256" => sha2::Sha512_256::digest(data).to_vec(),
-                                "XXH3_64" => {
-                                    xxhash_rust::xxh3::xxh3_64(data).to_be_bytes().to_vec()
+                    let result_raw = match embedded_function_call.variant_index {
+                        0 => {
+                            let data_value =
+                                argument_object.inner.get(&"data".to_string()).unwrap();
+                            let data = data_value.as_ref().as_ref().unwrap().as_bytes().unwrap();
+                            match algorithm_value.as_ref().as_ref().unwrap() {
+                                Value::String(algorithm_string) => {
+                                    match algorithm_string.to_string().as_str() {
+                                        "SHA224" => sha2::Sha224::digest(data).to_vec(),
+                                        "SHA256" => sha2::Sha256::digest(data).to_vec(),
+                                        "SHA384" => sha2::Sha384::digest(data).to_vec(),
+                                        "SHA512" => sha2::Sha512::digest(data).to_vec(),
+                                        "SHA512/224" => sha2::Sha512_224::digest(data).to_vec(),
+                                        "SHA512/256" => sha2::Sha512_256::digest(data).to_vec(),
+                                        "XXH3_64" => {
+                                            xxhash_rust::xxh3::xxh3_64(data).to_be_bytes().to_vec()
+                                        }
+                                        "XXH3_128" => {
+                                            xxhash_rust::xxh3::xxh3_128(data).to_be_bytes().to_vec()
+                                        }
+                                        _ => panic!(),
+                                    }
                                 }
-                                "XXH3_128" => {
-                                    xxhash_rust::xxh3::xxh3_128(data).to_be_bytes().to_vec()
+                                Value::Object(algorithm_object) => {
+                                    let (algorithm, parameters) =
+                                        algorithm_object.inner.iter().next().unwrap();
+                                    match algorithm.as_str() {
+                                        "GxHash32" => gxhash::gxhash32(
+                                            data,
+                                            parameters
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_number()
+                                                .unwrap()
+                                                .trunc()
+                                                .to_f64()
+                                                .value()
+                                                as i64,
+                                        )
+                                        .to_be_bytes()
+                                        .to_vec(),
+                                        "GxHash64" => gxhash::gxhash64(
+                                            data,
+                                            parameters
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_number()
+                                                .unwrap()
+                                                .trunc()
+                                                .to_f64()
+                                                .value()
+                                                as i64,
+                                        )
+                                        .to_be_bytes()
+                                        .to_vec(),
+                                        "GxHash128" => gxhash::gxhash128(
+                                            data,
+                                            parameters
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_number()
+                                                .unwrap()
+                                                .trunc()
+                                                .to_f64()
+                                                .value()
+                                                as i64,
+                                        )
+                                        .to_be_bytes()
+                                        .to_vec(),
+                                        "XXH32" => xxhash_rust::xxh32::xxh32(
+                                            data,
+                                            parameters
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_number()
+                                                .unwrap()
+                                                .trunc()
+                                                .to_f64()
+                                                .value()
+                                                as u32,
+                                        )
+                                        .to_be_bytes()
+                                        .to_vec(),
+                                        "XXH64" => xxhash_rust::xxh64::xxh64(
+                                            data,
+                                            parameters
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_number()
+                                                .unwrap()
+                                                .trunc()
+                                                .to_f64()
+                                                .value()
+                                                as u64,
+                                        )
+                                        .to_be_bytes()
+                                        .to_vec(),
+                                        "BLAKE3 with key" => {
+                                            let provided_key = parameters
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_bytes()
+                                                .unwrap();
+                                            let mut key = [0u8; 32];
+                                            let bytes_amount_to_take = provided_key.len().min(32);
+                                            key[..bytes_amount_to_take].copy_from_slice(
+                                                &provided_key[..bytes_amount_to_take],
+                                            );
+                                            blake3::keyed_hash(&key, data).as_bytes().to_vec()
+                                        }
+                                        "BLAKE3 with size" => {
+                                            let size = parameters
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_number()
+                                                .unwrap()
+                                                .trunc()
+                                                .to_f64()
+                                                .value()
+                                                as usize;
+                                            let mut result = vec![0u8; size];
+                                            blake3::Hasher::new()
+                                                .update(data)
+                                                .finalize_xof()
+                                                .fill(&mut result);
+                                            result.to_vec()
+                                        }
+                                        "BLAKE3 derive key" => {
+                                            let context = parameters
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_string()
+                                                .unwrap()
+                                                .to_string();
+                                            blake3::derive_key(&context, data).to_vec()
+                                        }
+                                        _ => panic!(),
+                                    }
                                 }
-                                "BLAKE3" => blake3::hash(data).as_bytes().to_vec(),
                                 _ => panic!(),
                             }
                         }
-                        Value::Object(algorithm_object) => {
-                            let (algorithm, parameters) =
-                                algorithm_object.inner.iter().next().unwrap();
-                            match algorithm.as_str() {
-                                "GxHash32" => gxhash::gxhash32(
-                                    data,
-                                    parameters
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_number()
-                                        .unwrap()
-                                        .trunc()
-                                        .to_f64()
-                                        .value() as i64,
-                                )
-                                .to_be_bytes()
-                                .to_vec(),
-                                "GxHash64" => gxhash::gxhash64(
-                                    data,
-                                    parameters
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_number()
-                                        .unwrap()
-                                        .trunc()
-                                        .to_f64()
-                                        .value() as i64,
-                                )
-                                .to_be_bytes()
-                                .to_vec(),
-                                "GxHash128" => gxhash::gxhash128(
-                                    data,
-                                    parameters
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_number()
-                                        .unwrap()
-                                        .trunc()
-                                        .to_f64()
-                                        .value() as i64,
-                                )
-                                .to_be_bytes()
-                                .to_vec(),
-                                "XXH32" => xxhash_rust::xxh32::xxh32(
-                                    data,
-                                    parameters
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_number()
-                                        .unwrap()
-                                        .trunc()
-                                        .to_f64()
-                                        .value() as u32,
-                                )
-                                .to_be_bytes()
-                                .to_vec(),
-                                "XXH64" => xxhash_rust::xxh64::xxh64(
-                                    data,
-                                    parameters
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_number()
-                                        .unwrap()
-                                        .trunc()
-                                        .to_f64()
-                                        .value() as u64,
-                                )
-                                .to_be_bytes()
-                                .to_vec(),
-                                "BLAKE3 with key" => {
-                                    let provided_key =
-                                        parameters.as_ref().as_ref().unwrap().as_bytes().unwrap();
-                                    let mut key = [0u8; 32];
-                                    let bytes_amount_to_take = provided_key.len().min(32);
-                                    key[..bytes_amount_to_take]
-                                        .copy_from_slice(&provided_key[..bytes_amount_to_take]);
-                                    blake3::keyed_hash(&key, data).as_bytes().to_vec()
-                                }
-                                "BLAKE3 with size" => {
-                                    let size = parameters
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_number()
-                                        .unwrap()
-                                        .trunc()
-                                        .to_f64()
-                                        .value()
-                                        as usize;
-                                    let mut result = vec![0u8; size];
-                                    blake3::Hasher::new()
-                                        .update(data)
-                                        .finalize_xof()
-                                        .fill(&mut result);
-                                    result.to_vec()
-                                }
-                                "BLAKE3 derive key" => {
-                                    let context = parameters
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_string()
-                                        .unwrap()
-                                        .to_string();
-                                    blake3::derive_key(&context, data).to_vec()
+                        1 => {
+                            let file_path = argument_object
+                                .inner
+                                .get(&"file path".to_string())
+                                .unwrap()
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_string()
+                                .unwrap()
+                                .to_string();
+                            let mut bufferized_reader = BufReader::with_capacity(
+                                64 * 1024,
+                                std::fs::OpenOptions::new()
+                                    .read(true)
+                                    .open(&file_path)
+                                    .with_context(embedded_function_error_context(path_option))?,
+                            );
+                            match algorithm_value.as_ref().as_ref().unwrap() {
+                                Value::Object(algorithm_object) => {
+                                    let (algorithm, parameters) =
+                                        algorithm_object.inner.iter().next().unwrap();
+                                    match algorithm.as_str() {
+                                        "GxHash" => {
+                                            let mut hasher = gxhash::GxHasher::with_seed(
+                                                parameters
+                                                    .as_ref()
+                                                    .as_ref()
+                                                    .unwrap()
+                                                    .as_number()
+                                                    .unwrap()
+                                                    .trunc()
+                                                    .to_f64()
+                                                    .value()
+                                                    as i64,
+                                            );
+                                            loop {
+                                                let chunk =
+                                                    bufferized_reader.fill_buf().with_context(
+                                                        embedded_function_error_context(
+                                                            path_option,
+                                                        ),
+                                                    )?;
+                                                if chunk.is_empty() {
+                                                    break;
+                                                }
+                                                hasher.write(chunk);
+                                                let chunk_len = chunk.len();
+                                                bufferized_reader.consume(chunk_len);
+                                            }
+                                            hasher.finish_u128().to_be_bytes().to_vec()
+                                        }
+                                        "BLAKE3 with key" => {
+                                            let provided_key = parameters
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_bytes()
+                                                .unwrap();
+                                            let mut key = [0u8; 32];
+                                            let bytes_amount_to_take = provided_key.len().min(32);
+                                            key[..bytes_amount_to_take].copy_from_slice(
+                                                &provided_key[..bytes_amount_to_take],
+                                            );
+                                            let mut hasher = blake3::Hasher::new_keyed(&key);
+                                            loop {
+                                                let chunk =
+                                                    bufferized_reader.fill_buf().with_context(
+                                                        embedded_function_error_context(
+                                                            path_option,
+                                                        ),
+                                                    )?;
+                                                if chunk.is_empty() {
+                                                    break;
+                                                }
+                                                hasher.update(chunk);
+                                                let chunk_len = chunk.len();
+                                                bufferized_reader.consume(chunk_len);
+                                            }
+                                            hasher.finalize().as_bytes().to_vec()
+                                        }
+                                        "BLAKE3 with size" => {
+                                            let size = parameters
+                                                .as_ref()
+                                                .as_ref()
+                                                .unwrap()
+                                                .as_number()
+                                                .unwrap()
+                                                .trunc()
+                                                .to_f64()
+                                                .value()
+                                                as usize;
+                                            let mut result = vec![0u8; size];
+                                            let mut hasher = blake3::Hasher::new();
+                                            loop {
+                                                let chunk =
+                                                    bufferized_reader.fill_buf().with_context(
+                                                        embedded_function_error_context(
+                                                            path_option,
+                                                        ),
+                                                    )?;
+                                                if chunk.is_empty() {
+                                                    break;
+                                                }
+                                                hasher.update(chunk);
+                                                let chunk_len = chunk.len();
+                                                bufferized_reader.consume(chunk_len);
+                                            }
+                                            hasher.finalize_xof().fill(&mut result);
+                                            result.to_vec()
+                                        }
+                                        _ => panic!(),
+                                    }
                                 }
                                 _ => panic!(),
                             }
