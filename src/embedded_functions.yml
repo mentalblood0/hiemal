@@ -240,6 +240,7 @@ bufferized writer:
       capabilities:
       - read filesystem
       - error
+    is pure: false
 - argument:
     object:
       path: string
@@ -250,6 +251,7 @@ bufferized writer:
       capabilities:
       - create file
       - error
+    is pure: false
 - argument:
     object:
       path: string
@@ -261,6 +263,7 @@ bufferized writer:
       - read filesystem
       - write file
       - error
+    is pure: false
 - argument:
     object:
       path: string
@@ -275,6 +278,7 @@ bufferized writer:
       - read filesystem
       - create file
       - error
+    is pure: false
 
 bufferized reader:
 - argument: string
