@@ -234,12 +234,47 @@ bufferized writer:
         union:
         - literal string: append
         - literal string: overwrite
-        - literal string: truncate
+  return:
+    type: { embedded: bufferized writer }
+    properties:
+      capabilities:
+      - read filesystem
+      - error
+- argument:
+    object:
+      path: string
+      mode: { literal string: create or overwrite }
+  return:
+    type: { embedded: bufferized writer }
+    properties:
+      capabilities:
+      - create file
+      - error
+- argument:
+    object:
+      path: string
+      mode: { literal string: truncate }
+  return:
+    type: { embedded: bufferized writer }
+    properties:
+      capabilities:
+      - read filesystem
+      - write file
+      - error
+- argument:
+    object:
+      path: string
+      mode:
+        union:
         - literal string: create or append
-        - literal string: create or overwrite
         - literal string: create
   return:
     type: { embedded: bufferized writer }
+    properties:
+      capabilities:
+      - read filesystem
+      - create file
+      - error
 
 bufferized reader:
 - argument: string

@@ -578,10 +578,7 @@ impl Compiler {
                         &mut compiled_argument.node.r#type.clone(),
                     )?
                 } else {
-                    match signature
-                        .r#return
-                        .r#type
-                    {
+                    match signature.r#return.r#type {
                         Some(ref return_type) => return_type.clone().into(),
                         None => panic!(),
                     }
@@ -1063,14 +1060,6 @@ impl Compiler {
                                             &compiled_argument_resolved_type,
                                             &"serializable value",
                                         ))
-                                    } else if !compiled_argument_resolved_type
-                                        .properties
-                                        .is_computable
-                                    {
-                                        Err(compilation_context.error(
-                                            &compiled_argument_resolved_type,
-                                            &"computable value",
-                                        ))
                                     } else {
                                         Ok(TypeKind::String.into())
                                     }
@@ -1085,14 +1074,6 @@ impl Compiler {
                                         Err(compilation_context.error(
                                             &compiled_argument_resolved_type,
                                             &"serializable value",
-                                        ))
-                                    } else if !compiled_argument_resolved_type
-                                        .properties
-                                        .is_computable
-                                    {
-                                        Err(compilation_context.error(
-                                            &compiled_argument_resolved_type,
-                                            &"computable value",
                                         ))
                                     } else {
                                         Ok(TypeKind::Bytes.into())
@@ -1178,109 +1159,6 @@ impl Compiler {
                                     Ok(TypeKind::Embedded(Embedded::CompiledRegex).into())
                                 }),
                             )?,
-                            EmbeddedFunction::BufferizedWriter => self
-                                .compile_embedded_function_call(
-                                    compilation_context,
-                                    global_compilation_context,
-                                    embedded_function_call,
-                                    Some(&|compiled_argument_resolved_type: &mut Type| {
-                                        let mut capabilities = Capability::Error.into();
-                                        if TypeKind::Object(
-                                            BTreeMap::from_iter([
-                                                (
-                                                    "path".to_string().into(),
-                                                    TypeKind::String.into(),
-                                                ),
-                                                (
-                                                    "mode".to_string().into(),
-                                                    TypeKind::Union(
-                                                        BTreeSet::from_iter([
-                                                            TypeKind::LiteralString(
-                                                                "create".into(),
-                                                            )
-                                                            .into(),
-                                                            TypeKind::LiteralString(
-                                                                "append".into(),
-                                                            )
-                                                            .into(),
-                                                            TypeKind::LiteralString(
-                                                                "overwrite".into(),
-                                                            )
-                                                            .into(),
-                                                            TypeKind::LiteralString(
-                                                                "truncate".into(),
-                                                            )
-                                                            .into(),
-                                                        ])
-                                                        .into(),
-                                                    )
-                                                    .into(),
-                                                ),
-                                            ])
-                                            .into(),
-                                        )
-                                        .contains(&compiled_argument_resolved_type.kind)
-                                        {
-                                            capabilities |= Capability::ReadFilesystem;
-                                        }
-                                        if compiled_argument_resolved_type.kind.contains(
-                                            &TypeKind::Object(
-                                                BTreeMap::from_iter([(
-                                                    "mode".to_string().into(),
-                                                    TypeKind::LiteralString("truncate".into())
-                                                        .into(),
-                                                )])
-                                                .into(),
-                                            ),
-                                        ) {
-                                            capabilities |= Capability::WriteFile;
-                                        }
-                                        if TypeKind::Object(
-                                            BTreeMap::from_iter([
-                                                (
-                                                    "path".to_string().into(),
-                                                    TypeKind::String.into(),
-                                                ),
-                                                (
-                                                    "mode".to_string().into(),
-                                                    TypeKind::Union(
-                                                        BTreeSet::from_iter([
-                                                            TypeKind::LiteralString(
-                                                                "create or append".into(),
-                                                            )
-                                                            .into(),
-                                                            TypeKind::LiteralString(
-                                                                "create or overwrite".into(),
-                                                            )
-                                                            .into(),
-                                                            TypeKind::LiteralString(
-                                                                "create".into(),
-                                                            )
-                                                            .into(),
-                                                        ])
-                                                        .into(),
-                                                    )
-                                                    .into(),
-                                                ),
-                                            ])
-                                            .into(),
-                                        )
-                                        .contains(&compiled_argument_resolved_type.kind)
-                                        {
-                                            capabilities |= Capability::CreateFile;
-                                        }
-                                        Ok(Type {
-                                            kind: TypeKind::Embedded(Embedded::BufferizedWriter),
-                                            properties: TypeProperties {
-                                                capabilities,
-                                                is_computable: true,
-                                                is_serializable: false,
-                                                is_pure: false,
-                                            }
-                                            .unified(&compiled_argument_resolved_type.properties),
-                                        })
-                                    }),
-                                )?,
                             _ => self.compile_embedded_function_call(
                                 compilation_context,
                                 global_compilation_context,
