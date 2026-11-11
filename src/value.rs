@@ -274,14 +274,6 @@ where
         fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<Self::Value, E> {
             Ok(Bytes::from(v))
         }
-
-        fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-            let mut bytes = Vec::with_capacity(seq.size_hint().unwrap_or(0));
-            while let Some(byte) = seq.next_element::<u8>()? {
-                bytes.push(byte);
-            }
-            Ok(Bytes::from(bytes))
-        }
     }
 
     if deserializer.is_human_readable() {

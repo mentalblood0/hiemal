@@ -121,17 +121,23 @@ compute:
       test random:
         assert equal::
           found:
-            map:
-              - ChaCha8: { bytes from string: only first 32 bytes }
-              - ChaCha12: { bytes from string: only first 32 bytes }
-              - ChaCha20: { bytes from string: only first 32 bytes }
-              - Std: { bytes from string: only first 32 bytes }
-              - Small: { bytes from string: only first 32 bytes }
-            through:
-              random bytes:
-                generator:
-                  random number generator: _
-                amount: 10
+            constants:
+              seed: { bytes from string: only first 32 bytes }
+            compute:
+              map:
+                - ChaCha8
+                - ChaCha12
+                - ChaCha20
+                - Std
+                - Small
+              through:
+                random bytes:
+                  generator:
+                    random number generator:
+                      object from:
+                        - - _
+                          - constant: seed
+                  amount: 10
           expected:
             - bytes: b6 d9 6f 32 9c 9f a5 00 59 07
             - bytes: 3b cd ab 20 b3 ca 3d 70 ff c7
@@ -208,24 +214,24 @@ compute:
                   - SHA512/256
                   - XXH3_64
                   - XXH3_128
-                  - { GxHash32: 0 }
-                  - { GxHash64: 0 }
-                  - { GxHash128: 0 }
-                  - { XXH32: 0 }
-                  - { XXH64: 0 }
+                  - GxHash32: 0
+                  - GxHash64: 0
+                  - GxHash128: 0
+                  - XXH32: 0
+                  - XXH64: 0
                   - BLAKE3:
                       size: 100
                       key: null
                   - BLAKE3:
                       size: 32
                       key: { bytes from string: first 32 bytes only }
-                  - { BLAKE3 derive key: some context }
+                  - BLAKE3 derive key: some context
                 through:
                   hash:
                     algorithm: _
                     data: { bytes from string: hello world }
               - map:
-                  - { GxHash128: 0 }
+                  - GxHash128: 0
                   - BLAKE3:
                       size: 100
                       key: null
