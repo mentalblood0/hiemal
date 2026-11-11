@@ -2422,6 +2422,7 @@ impl<'a> ComputationContext<'a> {
                             "ChaCha12" => Box::new(rand::rngs::ChaCha12Rng::from_seed(seed)),
                             "ChaCha20" => Box::new(rand::rngs::ChaCha20Rng::from_seed(seed)),
                             "Std" => Box::new(rand::rngs::StdRng::from_seed(seed)),
+                            "Small" => Box::new(rand::rngs::SmallRng::from_seed(seed)),
                             _ => panic!(),
                         }
                     } else {
@@ -2430,6 +2431,7 @@ impl<'a> ComputationContext<'a> {
                             "ChaCha12" => Box::new(rand::make_rng::<rand::rngs::ChaCha12Rng>()),
                             "ChaCha20" => Box::new(rand::make_rng::<rand::rngs::ChaCha20Rng>()),
                             "Std" => Box::new(rand::make_rng::<rand::rngs::StdRng>()),
+                            "Small" => Box::new(rand::make_rng::<rand::rngs::SmallRng>()),
                             _ => panic!(),
                         }
                     };

@@ -150,6 +150,7 @@ random number generator:
     - object: { ChaCha12: { union: [ bytes, "null" ] } }
     - object: { ChaCha20: { union: [ bytes, "null" ] } }
     - object: { Std: { union: [ bytes, "null" ] } }
+    - object: { Small: { union: [ bytes, "null" ] } }
   return:
     type: { embedded: random number generator }
 
