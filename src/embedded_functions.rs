@@ -37,6 +37,8 @@ pub enum EmbeddedFunction {
     MatchRegex,
     #[serde(rename = "mod")]
     Mod,
+    #[serde(rename = "object from")]
+    ObjectFrom,
     #[serde(rename = "parse")]
     Parse,
     #[serde(rename = "random number generator")]

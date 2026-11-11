@@ -232,6 +232,9 @@ file metadata:
 key-value pairs:
 - argument: { generic object: any }
 
+object from:
+- argument: { array: { tuple: [ string, any ] } }
+
 compile regex:
 - argument:
     union:

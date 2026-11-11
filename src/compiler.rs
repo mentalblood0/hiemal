@@ -1117,6 +1117,76 @@ impl Compiler {
                                         }
                                     }),
                                 )?,
+                            EmbeddedFunction::ObjectFrom => self.compile_embedded_function_call(
+                                compilation_context,
+                                global_compilation_context,
+                                embedded_function_call,
+                                Some(&|compiled_argument_resolved_type: &mut Type| {
+                                    match &compiled_argument_resolved_type.kind {
+                                        TypeKind::Tuple(argument_elements_types) => {
+                                            if argument_elements_types.iter().all(
+                                                |key_and_value_tuple_type| {
+                                                    matches!(
+                                                        key_and_value_tuple_type
+                                                            .kind
+                                                            .as_tuple()
+                                                            .unwrap()[0]
+                                                            .kind,
+                                                        TypeKind::LiteralString(_)
+                                                    )
+                                                },
+                                            ) {
+                                                Ok(TypeKind::Object(
+                                                    BTreeMap::from_iter(
+                                                        argument_elements_types.iter().map(
+                                                            |key_and_value_tuple_type| {
+                                                                (
+                                                                    key_and_value_tuple_type
+                                                                        .kind
+                                                                        .as_tuple()
+                                                                        .unwrap()[0]
+                                                                        .kind
+                                                                        .as_literal_string()
+                                                                        .unwrap()
+                                                                        .to_string()
+                                                                        .into(),
+                                                                    key_and_value_tuple_type
+                                                                        .kind
+                                                                        .as_tuple()
+                                                                        .unwrap()[1]
+                                                                        .clone(),
+                                                                )
+                                                            },
+                                                        ),
+                                                    )
+                                                    .into(),
+                                                )
+                                                .into())
+                                            } else {
+                                                Ok(TypeKind::GenericObject(Box::new(Type::from(
+                                                    BTreeSet::from_iter(
+                                                        argument_elements_types.iter().map(
+                                                            |key_and_value_tuple_type| {
+                                                                key_and_value_tuple_type
+                                                                    .kind
+                                                                    .as_tuple()
+                                                                    .unwrap()[1]
+                                                                    .clone()
+                                                            },
+                                                        ),
+                                                    ),
+                                                )))
+                                                .into())
+                                            }
+                                        }
+                                        TypeKind::Array(argument_element_type) => Ok(
+                                            TypeKind::GenericObject(argument_element_type.clone())
+                                                .into(),
+                                        ),
+                                        _ => panic!(),
+                                    }
+                                }),
+                            )?,
                             EmbeddedFunction::CompileRegex => self.compile_embedded_function_call(
                                 compilation_context,
                                 global_compilation_context,

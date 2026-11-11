@@ -2429,6 +2429,50 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
+                EmbeddedFunction::ObjectFrom => {
+                    let unrolled_argument = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    let result_value = Some(Value::Object({
+                        Object::from_iter(
+                            unrolled_argument
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_tuple()
+                                .unwrap()
+                                .iter()
+                                .map(|key_and_value_value| {
+                                    let key_and_value_tuple = key_and_value_value
+                                        .as_ref()
+                                        .as_ref()
+                                        .unwrap()
+                                        .as_tuple()
+                                        .unwrap();
+                                    (
+                                        key_and_value_tuple
+                                            .get(0)
+                                            .unwrap()
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_string()
+                                            .unwrap()
+                                            .to_string()
+                                            .into(),
+                                        key_and_value_tuple.get(1).unwrap().clone(),
+                                    )
+                                }),
+                        )
+                    }));
+                    let type_kind =
+                        concrete_or_else(&node.r#type.kind, || Value::type_kind(&result_value));
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(result_value.into()),
+                        type_kind,
+                    }
+                    .into())
+                }
                 EmbeddedFunction::CompileRegex => {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,

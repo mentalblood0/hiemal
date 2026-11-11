@@ -109,6 +109,15 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test object from:
+        assert equal::
+          found:
+            object from:
+              - [a, 1]
+              - [b, lalala]
+          expected:
+            a: 1
+            b: lalala
       test random:
         assert equal::
           found:
@@ -254,62 +263,29 @@ compute:
         compute:
           assert equal::
             found:
-              - parse:
-                  YAML:
-                    serialize to:
-                      YAML: { constant: value }
-              - parse:
-                  JSON:
-                    serialize to:
-                      JSON: { constant: value }
-              - parse:
-                  bincode:
-                    serialize to:
-                      bincode: { constant: value }
-              - parse:
-                  hexadecimal lowercase:
-                    serialize to:
-                      hexadecimal lowercase: { constant: binary }
-              - parse:
-                  hexadecimal uppercase:
-                    serialize to:
-                      hexadecimal uppercase: { constant: binary }
-              - parse:
-                  base32:
-                    serialize to:
-                      base32: { constant: binary }
-              - parse:
-                  base32 no padding:
-                    serialize to:
-                      base32 no padding: { constant: binary }
-              - parse:
-                  base32 no padding no case:
-                    serialize to:
-                      base32 no padding no case: { constant: binary }
-              - parse:
-                  base64:
-                    serialize to:
-                      base64: { constant: binary }
-              - parse:
-                  base64 no padding:
-                    serialize to:
-                      base64 no padding: { constant: binary }
-              - parse:
-                  base64 URL:
-                    serialize to:
-                      base64 URL: { constant: binary }
-              - parse:
-                  base64 URL no padding:
-                    serialize to:
-                      base64 URL no padding: { constant: binary }
-              - parse:
-                  base64 MIME:
-                    serialize to:
-                      base64 MIME: { constant: binary }
-              - parse:
-                  base64 MIME permissive:
-                    serialize to:
-                      base64 MIME permissive: { constant: binary }
+              map:
+                - [ YAML, { constant: value } ]
+                - [ JSON, { constant: value } ]
+                - [ bincode, { constant: value } ]
+                - [ hexadecimal lowercase, { constant: binary } ]
+                - [ hexadecimal uppercase, { constant: binary } ]
+                - [ base32, { constant: binary } ]
+                - [ base32 no padding, { constant: binary } ]
+                - [ base32 no padding no case, { constant: binary } ]
+                - [ base64, { constant: binary } ]
+                - [ base64 no padding, { constant: binary } ]
+                - [ base64 URL, { constant: binary } ]
+                - [ base64 URL no padding, { constant: binary } ]
+                - [ base64 MIME, { constant: binary } ]
+                - [ base64 MIME permissive, { constant: binary } ]
+              through:
+                parse:
+                  object from:
+                    - - { from: _, at: [0] }
+                      - serialize to:
+                          object from:
+                            - - { from: _, at: [0] }
+                              - { from: _, at: [1] }
             expected:
             - { constant: value }
             - { constant: value }

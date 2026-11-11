@@ -655,6 +655,13 @@ impl TypeKind {
         }
     }
 
+    pub fn as_literal_string(&self) -> Option<&ropey::Rope> {
+        match self {
+            TypeKind::LiteralString(result) => Some(result),
+            _ => None,
+        }
+    }
+
     pub fn contains(&self, other: &TypeKind) -> bool {
         if self == other {
             true
