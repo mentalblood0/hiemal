@@ -80,13 +80,25 @@ impl<T> Ord for Identified<T> {
     }
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Hash, Eq, Ord)]
+#[derive(PartialEq, PartialOrd, Hash, Eq, Ord)]
 pub enum Runtime {
     CompiledRegex(Identified<regex::Regex>),
     BufferizedWriter(Identified<RwLock<BufWriter<std::fs::File>>>),
     BufferizedReader(Identified<RwLock<BufReader<std::fs::File>>>),
     HttpClient(Identified<ureq::Agent>),
-    RandomNumberGenerator(Identified<RwLock<rand::rngs::ChaCha8Rng>>)
+    RandomNumberGenerator(Identified<RwLock<Box<dyn rand::Rng + Send + Sync>>>),
+}
+
+impl std::fmt::Debug for Runtime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Runtime::CompiledRegex(v) => f.debug_tuple("CompiledRegex").field(v).finish(),
+            Runtime::BufferizedWriter(v) => f.debug_tuple("BufferizedWriter").field(v).finish(),
+            Runtime::BufferizedReader(v) => f.debug_tuple("BufferizedReader").field(v).finish(),
+            Runtime::HttpClient(v) => f.debug_tuple("HttpClient").field(v).finish(),
+            Runtime::RandomNumberGenerator(_) => write!(f, "RandomNumberGenerator(Rng)"),
+        }
+    }
 }
 
 impl Serialize for Runtime {
@@ -140,7 +152,7 @@ impl Runtime {
         }
     }
 
-    pub fn as_random_number_generator(&self) -> Option<&RwLock<rand::rngs::ChaCha8Rng>> {
+    pub fn as_random_number_generator(&self) -> Option<&RwLock<Box<dyn rand::Rng + Send + Sync>>> {
         match self {
             Runtime::RandomNumberGenerator(Identified { id: _, content }) => Some(content),
             _ => None,
@@ -442,7 +454,9 @@ impl Value {
                     Runtime::BufferizedWriter(_) => TypeKind::Embedded(Embedded::BufferizedWriter),
                     Runtime::BufferizedReader(_) => TypeKind::Embedded(Embedded::BufferizedReader),
                     Runtime::HttpClient(_) => TypeKind::Embedded(Embedded::HttpClient),
-                    Runtime::RandomNumberGenerator(_) => TypeKind::Embedded(Embedded::RandomNumberGenerator),
+                    Runtime::RandomNumberGenerator(_) => {
+                        TypeKind::Embedded(Embedded::RandomNumberGenerator)
+                    }
                 },
             },
             None => TypeKind::Null,

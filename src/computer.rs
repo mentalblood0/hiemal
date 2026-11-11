@@ -2401,17 +2401,37 @@ impl<'a> ComputationContext<'a> {
                     let computed_argument_unrolled = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,
                     )?;
-                    let result = if let Some(provided_seed_value) =
-                        computed_argument_unrolled.as_ref().as_ref()
+                    let argument_object = computed_argument_unrolled
+                        .as_ref()
+                        .as_ref()
+                        .unwrap()
+                        .as_object()
+                        .unwrap();
+                    let (type_value, provided_seed_value_option) =
+                        argument_object.iter().next().unwrap();
+                    let result: Box<dyn rand::Rng + Send + Sync> = if let Some(provided_seed_value) =
+                        provided_seed_value_option.as_ref().as_ref()
                     {
                         let provided_seed = provided_seed_value.as_bytes().unwrap();
                         let mut seed = [0u8; 32];
                         let bytes_amount_to_take = provided_seed.len().min(32);
                         seed[..bytes_amount_to_take]
                             .copy_from_slice(&provided_seed[..bytes_amount_to_take]);
-                        rand::rngs::ChaCha8Rng::from_seed(seed)
+                        match type_value.as_ref().as_str() {
+                            "ChaCha8" => Box::new(rand::rngs::ChaCha8Rng::from_seed(seed)),
+                            "ChaCha12" => Box::new(rand::rngs::ChaCha12Rng::from_seed(seed)),
+                            "ChaCha20" => Box::new(rand::rngs::ChaCha20Rng::from_seed(seed)),
+                            "Std" => Box::new(rand::rngs::StdRng::from_seed(seed)),
+                            _ => panic!(),
+                        }
                     } else {
-                        rand::make_rng::<rand::rngs::ChaCha8Rng>()
+                        match type_value.as_ref().as_str() {
+                            "ChaCha8" => Box::new(rand::make_rng::<rand::rngs::ChaCha8Rng>()),
+                            "ChaCha12" => Box::new(rand::make_rng::<rand::rngs::ChaCha12Rng>()),
+                            "ChaCha20" => Box::new(rand::make_rng::<rand::rngs::ChaCha20Rng>()),
+                            "Std" => Box::new(rand::make_rng::<rand::rngs::StdRng>()),
+                            _ => panic!(),
+                        }
                     };
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(

@@ -112,11 +112,21 @@ compute:
       test random:
         assert equal::
           found:
-            random bytes:
-              generator:
-                random number generator: { bytes from string: only first 32 bytes }
-              amount: 10
-          expected: { bytes: b6 d9 6f 32 9c 9f a5 00 59 07 }
+            map:
+              - ChaCha8: { bytes from string: only first 32 bytes }
+              - ChaCha12: { bytes from string: only first 32 bytes }
+              - ChaCha20: { bytes from string: only first 32 bytes }
+              - Std: { bytes from string: only first 32 bytes }
+            through:
+              random bytes:
+                generator:
+                  random number generator: _
+                amount: 10
+          expected:
+            - bytes: b6 d9 6f 32 9c 9f a5 00 59 07
+            - bytes: 3b cd ab 20 b3 ca 3d 70 ff c7
+            - bytes: d6 d1 d1 8d ec d4 b1 96 d0 51
+            - bytes: 3b cd ab 20 b3 ca 3d 70 ff c7
       test substract:
         assert equal::
           found:

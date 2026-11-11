@@ -144,7 +144,12 @@ hash:
       - error
 
 random number generator:
-- argument: { union: [ bytes, "null" ] }
+- argument:
+    union:
+    - object: { ChaCha8: { union: [ bytes, "null" ] } }
+    - object: { ChaCha12: { union: [ bytes, "null" ] } }
+    - object: { ChaCha20: { union: [ bytes, "null" ] } }
+    - object: { Std: { union: [ bytes, "null" ] } }
   return:
     type: { embedded: random number generator }
 
