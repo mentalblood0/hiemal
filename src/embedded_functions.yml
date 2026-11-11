@@ -85,12 +85,40 @@ parse:
     type: any
     properties:
       capabilities: [ error ]
+- argument:
+    union:
+    - object: { hexadecimal lowercase: string }
+    - object: { hexadecimal uppercase: string }
+    - object: { base32: string }
+    - object: { base32 no padding: string }
+    - object: { base32 no padding no case: string }
+    - object: { base64: string }
+    - object: { base64 no padding: string }
+    - object: { base64 URL: string }
+    - object: { base64 URL no padding: string }
+    - object: { base64 MIME: string }
+    - object: { base64 MIME permissive: string }
+  return:
+    type: bytes
+    properties:
+      capabilities: [ error ]
 
 serialize to:
 - argument:
     union:
     - object: { YAML: any }
     - object: { JSON: any }
+    - object: { hexadecimal lowercase: bytes }
+    - object: { hexadecimal uppercase: bytes }
+    - object: { base32: bytes }
+    - object: { base32 no padding: bytes }
+    - object: { base32 no padding no case: bytes }
+    - object: { base64: bytes }
+    - object: { base64 no padding: bytes }
+    - object: { base64 URL: bytes }
+    - object: { base64 URL no padding: bytes }
+    - object: { base64 MIME: bytes }
+    - object: { base64 MIME permissive: bytes }
   return:
     type: string
 - argument: { object: { bincode: any } }

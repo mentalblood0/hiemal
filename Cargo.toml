@@ -41,6 +41,7 @@ xxhash-rust = { version = "0.8.19", features = ["xxh3", "xxh32", "xxh64"] }
 blake3 = "1.8.7"
 humantime-serde = "1.1.1"
 rand = { version = "0.10.3", features = ["chacha"] }
+data-encoding = "2.11.1"
 
 [dev-dependencies]
 nanorand = "0.8"

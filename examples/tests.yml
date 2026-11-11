@@ -247,28 +247,84 @@ compute:
             - bytes: 3c 00 41 67 64 e7 3c 1d 69 16 63 67 2b 29 b3 06
             - bytes: 3a 65 55 5d 6d 29 b0 72 bc e5 f8 d5 a7 a1 54 8a 0c da 51 8e 5f 3f 90 b6 ba 29 48 b6 fd df 12 19 8e ed 61 17 e8 c0 02 9b 32 06 b6 c3 96 b1 9e 26 3c f4 e0 00 08 a6 ad fe 70 15 d0 49 31 50 18 36 72 db 92 d0 47 b9 49 e8 68 2d 24 02 23 6c a3 88 af 7e 06 e4 d1 6b a3 de 17 3f a0 8f 43 9f 52 31 bd 1b 35 0e
             - bytes: 55 27 1c 6a 4b e1 98 2d 15 2a 84 ac 5c 25 f0 d8 95 0d 43 f5 05 65 ef 21 90 b9 0f 78 bb 2b 1e 82
-      test serialize to:
+      test serialize to and parse:
         constants:
-          source: [1, 2, { lalala: null }, 3]
+          value: [1, 2, { lalala: null }, 3]
+          binary: { bytes: 25 30 91 e6 54 89 1f 5e 27 00 ce d9 79 e4 1e f3 }
         compute:
           assert equal::
             found:
               - parse:
                   YAML:
                     serialize to:
-                      YAML: { constant: source }
+                      YAML: { constant: value }
               - parse:
                   JSON:
                     serialize to:
-                      JSON: { constant: source }
+                      JSON: { constant: value }
               - parse:
                   bincode:
                     serialize to:
-                      bincode: { constant: source }
+                      bincode: { constant: value }
+              - parse:
+                  hexadecimal lowercase:
+                    serialize to:
+                      hexadecimal lowercase: { constant: binary }
+              - parse:
+                  hexadecimal uppercase:
+                    serialize to:
+                      hexadecimal uppercase: { constant: binary }
+              - parse:
+                  base32:
+                    serialize to:
+                      base32: { constant: binary }
+              - parse:
+                  base32 no padding:
+                    serialize to:
+                      base32 no padding: { constant: binary }
+              - parse:
+                  base32 no padding no case:
+                    serialize to:
+                      base32 no padding no case: { constant: binary }
+              - parse:
+                  base64:
+                    serialize to:
+                      base64: { constant: binary }
+              - parse:
+                  base64 no padding:
+                    serialize to:
+                      base64 no padding: { constant: binary }
+              - parse:
+                  base64 URL:
+                    serialize to:
+                      base64 URL: { constant: binary }
+              - parse:
+                  base64 URL no padding:
+                    serialize to:
+                      base64 URL no padding: { constant: binary }
+              - parse:
+                  base64 MIME:
+                    serialize to:
+                      base64 MIME: { constant: binary }
+              - parse:
+                  base64 MIME permissive:
+                    serialize to:
+                      base64 MIME permissive: { constant: binary }
             expected:
-            - { constant: source }
-            - { constant: source }
-            - { constant: source }
+            - { constant: value }
+            - { constant: value }
+            - { constant: value }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
       test sort:
         assert equal::
           found:

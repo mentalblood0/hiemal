@@ -1922,10 +1922,15 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .as_object()
                         .unwrap();
-                    let (format, source) = argument_object.inner.iter().next().unwrap();
+                    let (format, source_value) = argument_object
+                        .inner
+                        .iter()
+                        .map(|(format, source_value)| (format, source_value.as_ref().as_ref()))
+                        .next()
+                        .unwrap();
                     let result_value: Option<Value> = match format.as_str() {
                         "YAML" => serde_saphyr::from_str(
-                            &source
+                            &source_value
                                 .as_ref()
                                 .as_ref()
                                 .unwrap()
@@ -1935,7 +1940,7 @@ impl<'a> ComputationContext<'a> {
                         )
                         .with_context(embedded_function_error_context(path_option))?,
                         "JSON" => serde_json::from_str(
-                            &source
+                            &source_value
                                 .as_ref()
                                 .as_ref()
                                 .unwrap()
@@ -1948,7 +1953,7 @@ impl<'a> ComputationContext<'a> {
                             let intermediate_representation_value: Option<
                                 intermediate_representation::Value,
                             > = bincode::serde::decode_from_slice(
-                                source.as_ref().as_ref().unwrap().as_bytes().unwrap(),
+                                source_value.as_ref().as_ref().unwrap().as_bytes().unwrap(),
                                 bincode::config::standard(),
                             )
                             .with_context(embedded_function_error_context(path_option))?
@@ -1960,7 +1965,35 @@ impl<'a> ComputationContext<'a> {
                                 >(intermediate_representation_value)
                             }
                         }
-                        _ => panic!(),
+                        format => {
+                            let encoding = match format {
+                                "hexadecimal lowercase" => data_encoding::HEXLOWER,
+                                "hexadecimal uppercase" => data_encoding::HEXUPPER,
+                                "base32" => data_encoding::BASE32,
+                                "base32 no padding" => data_encoding::BASE32_NOPAD,
+                                "base32 no padding no case" => data_encoding::BASE32_NOPAD_NOCASE,
+                                "base64" => data_encoding::BASE64,
+                                "base64 no padding" => data_encoding::BASE64_NOPAD,
+                                "base64 URL" => data_encoding::BASE64URL,
+                                "base64 URL no padding" => data_encoding::BASE64URL_NOPAD,
+                                "base64 MIME" => data_encoding::BASE64_MIME,
+                                "base64 MIME permissive" => data_encoding::BASE64_MIME_PERMISSIVE,
+                                _ => panic!(),
+                            };
+                            Some(Value::Bytes {
+                                bytes: encoding
+                                    .decode(
+                                        source_value
+                                            .unwrap()
+                                            .as_string()
+                                            .unwrap()
+                                            .to_string()
+                                            .as_bytes(),
+                                    )
+                                    .with_context(embedded_function_error_context(path_option))?
+                                    .into(),
+                            })
+                        }
                     };
                     let r#type = Value::type_kind(&result_value);
                     Ok(IntermediateValueAndMetadata {
@@ -1979,29 +2012,53 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .as_object()
                         .unwrap();
-                    let (format, source) = argument_object
+                    let (format, source_value) = argument_object
                         .inner
                         .iter()
                         .map(|(key, value)| (key.as_str(), value.as_ref().as_ref()))
                         .next()
                         .unwrap();
                     let result_value = match format {
-                        "YAML" => Value::String(serde_saphyr::to_string(&source).unwrap().into()),
-                        "JSON" => Value::String(serde_json::to_string(&source).unwrap().into()),
+                        "YAML" => {
+                            Value::String(serde_saphyr::to_string(&source_value).unwrap().into())
+                        }
+                        "JSON" => {
+                            Value::String(serde_json::to_string(&source_value).unwrap().into())
+                        }
                         "bincode" => Value::Bytes {
                             bytes: bincode::serde::encode_to_vec(
                                 unsafe {
                                     std::mem::transmute::<
                                         Option<&Value>,
                                         Option<&intermediate_representation::Value>,
-                                    >(source)
+                                    >(source_value)
                                 },
                                 bincode::config::standard(),
                             )
                             .unwrap()
                             .into(),
                         },
-                        _ => panic!(),
+                        format => {
+                            let encoding = match format {
+                                "hexadecimal lowercase" => data_encoding::HEXLOWER,
+                                "hexadecimal uppercase" => data_encoding::HEXUPPER,
+                                "base32" => data_encoding::BASE32,
+                                "base32 no padding" => data_encoding::BASE32_NOPAD,
+                                "base32 no padding no case" => data_encoding::BASE32_NOPAD_NOCASE,
+                                "base64" => data_encoding::BASE64,
+                                "base64 no padding" => data_encoding::BASE64_NOPAD,
+                                "base64 URL" => data_encoding::BASE64URL,
+                                "base64 URL no padding" => data_encoding::BASE64URL_NOPAD,
+                                "base64 MIME" => data_encoding::BASE64_MIME,
+                                "base64 MIME permissive" => data_encoding::BASE64_MIME_PERMISSIVE,
+                                _ => panic!(),
+                            };
+                            Value::String(
+                                encoding
+                                    .encode(source_value.unwrap().as_bytes().unwrap())
+                                    .into(),
+                            )
+                        }
                     };
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(Some(result_value).into()),
@@ -2409,32 +2466,33 @@ impl<'a> ComputationContext<'a> {
                         .unwrap();
                     let (type_value, provided_seed_value_option) =
                         argument_object.iter().next().unwrap();
-                    let result: Box<dyn rand::Rng + Send + Sync> = if let Some(provided_seed_value) =
-                        provided_seed_value_option.as_ref().as_ref()
-                    {
-                        let provided_seed = provided_seed_value.as_bytes().unwrap();
-                        let mut seed = [0u8; 32];
-                        let bytes_amount_to_take = provided_seed.len().min(32);
-                        seed[..bytes_amount_to_take]
-                            .copy_from_slice(&provided_seed[..bytes_amount_to_take]);
-                        match type_value.as_ref().as_str() {
-                            "ChaCha8" => Box::new(rand::rngs::ChaCha8Rng::from_seed(seed)),
-                            "ChaCha12" => Box::new(rand::rngs::ChaCha12Rng::from_seed(seed)),
-                            "ChaCha20" => Box::new(rand::rngs::ChaCha20Rng::from_seed(seed)),
-                            "Std" => Box::new(rand::rngs::StdRng::from_seed(seed)),
-                            "Small" => Box::new(rand::rngs::SmallRng::from_seed(seed)),
-                            _ => panic!(),
-                        }
-                    } else {
-                        match type_value.as_ref().as_str() {
-                            "ChaCha8" => Box::new(rand::make_rng::<rand::rngs::ChaCha8Rng>()),
-                            "ChaCha12" => Box::new(rand::make_rng::<rand::rngs::ChaCha12Rng>()),
-                            "ChaCha20" => Box::new(rand::make_rng::<rand::rngs::ChaCha20Rng>()),
-                            "Std" => Box::new(rand::make_rng::<rand::rngs::StdRng>()),
-                            "Small" => Box::new(rand::make_rng::<rand::rngs::SmallRng>()),
-                            _ => panic!(),
-                        }
-                    };
+                    let result: Box<dyn rand::Rng + Send + Sync> =
+                        if let Some(provided_seed_value) =
+                            provided_seed_value_option.as_ref().as_ref()
+                        {
+                            let provided_seed = provided_seed_value.as_bytes().unwrap();
+                            let mut seed = [0u8; 32];
+                            let bytes_amount_to_take = provided_seed.len().min(32);
+                            seed[..bytes_amount_to_take]
+                                .copy_from_slice(&provided_seed[..bytes_amount_to_take]);
+                            match type_value.as_ref().as_str() {
+                                "ChaCha8" => Box::new(rand::rngs::ChaCha8Rng::from_seed(seed)),
+                                "ChaCha12" => Box::new(rand::rngs::ChaCha12Rng::from_seed(seed)),
+                                "ChaCha20" => Box::new(rand::rngs::ChaCha20Rng::from_seed(seed)),
+                                "Std" => Box::new(rand::rngs::StdRng::from_seed(seed)),
+                                "Small" => Box::new(rand::rngs::SmallRng::from_seed(seed)),
+                                _ => panic!(),
+                            }
+                        } else {
+                            match type_value.as_ref().as_str() {
+                                "ChaCha8" => Box::new(rand::make_rng::<rand::rngs::ChaCha8Rng>()),
+                                "ChaCha12" => Box::new(rand::make_rng::<rand::rngs::ChaCha12Rng>()),
+                                "ChaCha20" => Box::new(rand::make_rng::<rand::rngs::ChaCha20Rng>()),
+                                "Std" => Box::new(rand::make_rng::<rand::rngs::StdRng>()),
+                                "Small" => Box::new(rand::make_rng::<rand::rngs::SmallRng>()),
+                                _ => panic!(),
+                            }
+                        };
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Runtime(
