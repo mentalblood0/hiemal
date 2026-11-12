@@ -23,7 +23,9 @@ pub fn run(target_option: &Option<String>, output_writer: &mut impl Write) -> Re
     let computer = Computer::default();
     if let Some(target) = target_option {
         let include_from = serde_saphyr::from_str::<From>(target)?;
-        let program = IncludesCache::default().get(&include_from)?;
+        let program = time_it!("read and parsed", {
+            IncludesCache::default().get(&include_from)?
+        });
         let program_hash = {
             let mut hasher = GxHasher::default();
             program.hash(&mut hasher);
