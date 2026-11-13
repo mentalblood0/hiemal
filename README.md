@@ -27,8 +27,7 @@ cargo install --git https://github.com/mentalblood0/hiemal
 ## Usage
 
 ```bash
-hiemal https://raw.githubusercontent.com/mentalblood0/hiemal/refs/heads/main/examples/tests.yml
-hiemal examples/include.yml
+hiemal examples/tests.yml
 ```
 
 ### Embedded functions

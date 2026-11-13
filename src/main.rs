@@ -1,14 +1,8 @@
-use std::{
-    hash::Hash,
-    io::{BufReader, Write},
-};
+use std::io::{BufReader, Write};
 
 use anyhow::{Context, Result};
-use gxhash::GxHasher;
 
-use hiemal::{
-    compiler::Compiler, computer::Computer, includes_cache::IncludesCache, program::From,
-};
+use hiemal::{compiler::Compiler, computer::Computer};
 
 macro_rules! time_it {
     ($action:expr, $code:block) => {{
@@ -19,18 +13,11 @@ macro_rules! time_it {
     }};
 }
 
-pub fn run(target_option: &Option<String>, output_writer: &mut impl Write) -> Result<()> {
+pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) -> Result<()> {
     let computer = Computer::default();
-    if let Some(target) = target_option {
-        let include_from = serde_saphyr::from_str::<From>(target)?;
-        let program = time_it!("read and parsed", {
-            IncludesCache::default().get(&include_from)?
-        });
-        let program_hash = {
-            let mut hasher = GxHasher::default();
-            program.hash(&mut hasher);
-            hasher.finish_u128()
-        };
+    if let Some(file_path) = file_path_option {
+        let program_bytes = time_it!("read", { std::fs::read(file_path)? });
+        let program_hash = time_it!("hashed", { gxhash::gxhash128(&program_bytes, 0) });
         let cached_intermediate_representation_path = dirs::cache_dir()
             .unwrap()
             .join("hiemal")
@@ -53,6 +40,7 @@ pub fn run(target_option: &Option<String>, output_writer: &mut impl Write) -> Re
                 })?
             })
         } else {
+            let program = time_it!("parsed", { serde_saphyr::from_slice(&program_bytes)? });
             let compiler = Compiler {
                 metaprograms_computer: computer.clone(),
             };
