@@ -86,13 +86,13 @@ pub struct Return {
 #[derive(Deserialize)]
 pub struct EmbeddedFunctionSignature {
     pub argument: TypeKind,
-    #[serde(default = "default_argument_is_computible")]
-    pub argument_is_computible: bool,
+    #[serde(default = "default_argument_is_computable")]
+    pub argument_is_computable: bool,
     #[serde(default)]
     pub r#return: Return,
 }
 
-pub fn default_argument_is_computible() -> bool {
+pub fn default_argument_is_computable() -> bool {
     true
 }
 

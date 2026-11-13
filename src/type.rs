@@ -244,43 +244,7 @@ impl<'a> TypeProperties {
     }
 
     pub fn unified_recursively(&self, r#type: Type) -> Type {
-        Type {
-            kind: match r#type.kind {
-                TypeKind::Array(element_type) => {
-                    TypeKind::Array(Box::new(self.unified_recursively(*element_type)))
-                }
-                TypeKind::Tuple(elements_types) => TypeKind::Tuple(
-                    elements_types
-                        .iter()
-                        .cloned()
-                        .map(|element_type| self.unified_recursively(element_type))
-                        .collect::<Vec<_>>()
-                        .into(),
-                ),
-                TypeKind::Object(inner_types) => TypeKind::Object(
-                    inner_types
-                        .iter()
-                        .map(|(key, value_type)| {
-                            (key.clone(), self.unified_recursively(value_type.clone()))
-                        })
-                        .collect::<BTreeMap<_, _>>()
-                        .into(),
-                ),
-                TypeKind::GenericObject(value_type) => {
-                    TypeKind::GenericObject(Box::new(self.unified_recursively(*value_type)))
-                }
-                TypeKind::Union(union_types) => TypeKind::Union(
-                    union_types
-                        .iter()
-                        .cloned()
-                        .map(|element_type| self.unified_recursively(element_type))
-                        .collect::<BTreeSet<_>>()
-                        .into(),
-                ),
-                kind => kind,
-            },
-            properties: self.unified(&r#type.properties),
-        }
+        r#type.with_recursively_updated_properties(&|properties| properties.unified(self))
     }
 }
 
@@ -1081,6 +1045,58 @@ impl TypeKind {
 }
 
 impl<'a> Type {
+    pub fn with_recursively_updated_properties(
+        self,
+        update_function: &dyn Fn(TypeProperties) -> TypeProperties,
+    ) -> Type {
+        Type {
+            kind: match self.kind {
+                TypeKind::Array(element_type) => TypeKind::Array(Box::new(
+                    element_type.with_recursively_updated_properties(update_function),
+                )),
+                TypeKind::Tuple(elements_types) => TypeKind::Tuple(
+                    elements_types
+                        .iter()
+                        .cloned()
+                        .map(|element_type| {
+                            element_type.with_recursively_updated_properties(update_function)
+                        })
+                        .collect::<Vec<_>>()
+                        .into(),
+                ),
+                TypeKind::Object(inner_types) => TypeKind::Object(
+                    inner_types
+                        .iter()
+                        .map(|(key, value_type)| {
+                            (
+                                key.clone(),
+                                value_type
+                                    .clone()
+                                    .with_recursively_updated_properties(update_function),
+                            )
+                        })
+                        .collect::<BTreeMap<_, _>>()
+                        .into(),
+                ),
+                TypeKind::GenericObject(value_type) => TypeKind::GenericObject(Box::new(
+                    value_type.with_recursively_updated_properties(update_function),
+                )),
+                TypeKind::Union(union_types) => TypeKind::Union(
+                    union_types
+                        .iter()
+                        .cloned()
+                        .map(|element_type| {
+                            element_type.with_recursively_updated_properties(update_function)
+                        })
+                        .collect::<BTreeSet<_>>()
+                        .into(),
+                ),
+                kind => kind,
+            },
+            properties: update_function(self.properties),
+        }
+    }
+
     pub fn with_kind(&self, kind: TypeKind) -> Self {
         Self {
             kind,

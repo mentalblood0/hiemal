@@ -256,7 +256,7 @@ impl Compiler {
             &mut global_compilation_context,
         )?;
         if !compiled_program.node.r#type.properties.is_computable {
-            Err(compilation_context.error(&"non-computible program", &"computible program"))
+            Err(compilation_context.error(&"non-computable program", &"computable program"))
         } else if !compiled_program.node.r#type.properties.is_serializable {
             Err(compilation_context.error(
                 &"program with non-serializable result (it includes embedded, runtime-only types)",
@@ -346,7 +346,7 @@ impl Compiler {
                 compilation_context.error(&compiled_argument.node.r#type, &"serializable value")
             );
         }
-        let (signature, variant_index, argument_is_computible) = EMBEDDED_FUNCTIONS
+        let (signature, variant_index, argument_is_computable) = EMBEDDED_FUNCTIONS
             [embedded_function_call.embedded_function as usize]
             .iter()
             .enumerate()
@@ -361,7 +361,7 @@ impl Compiler {
                     Some((
                         signature,
                         signature_index as u8,
-                        signature.argument_is_computible,
+                        signature.argument_is_computable,
                     ))
                 } else {
                     None
@@ -380,36 +380,36 @@ impl Compiler {
                     ),
                 )
             })?;
-        if argument_is_computible && !compiled_argument.node.r#type.properties.is_computable {
-            return Err(argument_compilation_context.error(
-                &"non-computible embedded function argument",
-                &"computible embedded function argument",
-            ));
-        }
-        let mut result_type = compiled_argument
-            .node
-            .r#type
-            .properties
-            .unified(&match &signature.r#return.properties {
+        // if argument_is_computable && !compiled_argument.node.r#type.properties.is_computable {
+        //     return Err(argument_compilation_context.error(
+        //         &"non-computable embedded function argument",
+        //         &"computable embedded function argument",
+        //     ));
+        // }
+        let static_and_argument_properties = compiled_argument.node.r#type.properties.unified(
+            &match &signature.r#return.properties {
                 Some(static_properties) => static_properties.clone(),
                 None => TypeProperties::default(),
-            })
-            .unified_recursively(
-                if let Some(get_result_type_kind_from_argument_resolved_type) =
-                    get_result_type_from_argument_resolved_type_option
-                {
-                    get_result_type_kind_from_argument_resolved_type(
-                        &compiled_argument.node.r#type,
-                        variant_index,
-                    )?
-                } else {
-                    match signature.r#return.r#type {
-                        Some(ref return_type) => return_type.clone().into(),
-                        None => panic!(),
-                    }
-                },
-            );
-        result_type.properties.is_serializable = true;
+            },
+        );
+        let result_type = if let Some(get_result_type_kind_from_argument_resolved_type) =
+            get_result_type_from_argument_resolved_type_option
+        {
+            get_result_type_kind_from_argument_resolved_type(
+                &compiled_argument.node.r#type,
+                variant_index,
+            )?
+        } else {
+            match signature.r#return.r#type {
+                Some(ref return_type) => return_type.clone().into(),
+                None => panic!(),
+            }
+        }
+        .with_recursively_updated_properties(&|properties| {
+            let mut result = properties.unified(&static_and_argument_properties);
+            result.is_computable = true;
+            result
+        });
         Ok(NodeAndMetadata {
             external_constants_name_clustered_indices: compiled_argument
                 .external_constants_name_clustered_indices
@@ -1203,8 +1203,8 @@ impl Compiler {
                                                     .is_computable
                                                 {
                                                     return Err(case_compilation_context.error(
-                                                        &"non-computible case condition value",
-                                                        &"computible case condition value",
+                                                        &"non-computable case condition value",
+                                                        &"computable case condition value",
                                                     ));
                                                 }
                                                 has_effective_values_conditions = true;
@@ -1731,7 +1731,7 @@ impl Compiler {
                                             compiled_through_index
                                         } else {
                                             if (current_type_index == fold_tuple_elements_types.len() - 1) && !compiled_through.node.r#type.properties.is_computable {
-                                                return Err(through_compilation_context.error(&"non-computible through", &"computible through"));
+                                                return Err(through_compilation_context.error(&"non-computable through", &"computable through"));
                                             }
                                             result_external_constants_name_clustered_indices.extend(
                                                 compiled_through
@@ -2205,7 +2205,7 @@ impl Compiler {
                         )?;
                         if !compiled_try.node.r#type.properties.is_computable {
                             return Err(try_compilation_context
-                                .error(&"non-computible try", &"computible try"));
+                                .error(&"non-computable try", &"computable try"));
                         }
                         let mut or_compilation_context = compilation_context.clone();
                         or_compilation_context.path.0.push(PathSegment::Or);
