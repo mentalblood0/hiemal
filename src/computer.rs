@@ -4154,60 +4154,51 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
-            },
-            Content::UserFunctionCall {
-                arguments,
-                body,
-                arguments_is_pure,
-            } => {
-                let mut result_constants = constants.clone();
-                for (constant_name_clustered_index, computed_constant) in arguments
-                    .iter()
-                    .map(|constant_definition| constant_definition.name_clustered_index)
-                    .zip(
-                        self.compute_nodes(
-                            arguments.iter().map(|constant_definition| {
-                                (Some(&constant_definition.node), Cow::Borrowed(constants))
-                            }),
-                            arguments.len(),
-                        )?
-                        .inner,
-                    )
-                {
-                    result_constants[constant_name_clustered_index] = Some(computed_constant);
-                }
-                let user_function = &self.intermediate_representation.user_functions[*body];
-                if self.computer_config.user_functions_caching && *arguments_is_pure {
-                    let function_call_identifier = {
-                        let mut hasher = gxhash::GxHasher::default();
-                        for constant_name_clustered_index in
-                            &user_function.external_constants_name_clustered_indices
-                        {
-                            result_constants[*constant_name_clustered_index]
-                                .as_ref()
-                                .unwrap()
-                                .hash(&mut hasher);
+                EmbeddedFunction::Get => {
+                    let argument_intermediate_value = self.compute_node(&embedded_function_call.argument, constants)?;
+                    let from_intermediate_value = self.get_by_key_from_intermediate_value(&argument_intermediate_value, &"from".to_string())?.unwrap();
+                    let at_value = self.unroll_intermediate_value(&self.get_by_key_from_intermediate_value(&argument_intermediate_value, &"at".to_string())?.unwrap())?;
+                    match embedded_function_call.variant_index {
+                        0 => {
+                            let at_index = at_value.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as usize;
+                            Ok(self
+                                .get_from_intermediate_value(&from_intermediate_value, at_index)
+                                .with_context(|| {
+                                    format!(
+                                        "can not get element by index {at_index} from\n{}",
+                                        serde_saphyr::to_string(&from_intermediate_value.type_kind).unwrap()
+                                    )
+                                })?.unwrap())
                         }
-                        body.hash(&mut hasher);
-                        hasher.finish_u128()
-                    };
-                    if let Some(cached_function_result) = self
-                        .functions_results_cache
-                        .read()
-                        .get(&function_call_identifier)
-                    {
-                        Ok(cached_function_result.clone())
-                    } else {
-                        let result = self.compute_node(&user_function.node, &result_constants)?;
-                        self.functions_results_cache
-                            .write()
-                            .insert(function_call_identifier, result.clone());
-                        Ok(result)
+                        1 => {
+                            let at_tuple = at_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
+                            let at_from_index = at_tuple.get(0).unwrap().as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as usize;
+                            let at_to_index = at_tuple.get(1).unwrap().as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as usize;
+                            let result_elements = self
+                                .get_range_from_intermediate_value(&from_intermediate_value, at_from_index..at_to_index)
+                                .with_context(|| {
+                                    format!(
+                                        "can not get slice by range {}..{} from\n{}",
+                                        at_from_index, at_to_index,
+                                        serde_saphyr::to_string(&from_intermediate_value.type_kind).unwrap()
+                                    )
+                                })?;
+                            let type_kind = concrete_or_else(&node.r#type.kind, || TypeKind::Tuple(
+                                result_elements
+                                    .iter()
+                                    .map(|element| element.type_kind.clone().into())
+                                    .collect::<Vec<_>>()
+                                    .into(),
+                            ));
+                            Ok(IntermediateValueAndMetadata {
+                                intermediate_value: IntermediateValue::Tuple(result_elements),
+                                type_kind,
+                            }.into())
+                        }
+                        _ => panic!(),
                     }
-                } else {
-                    self.compute_node(&user_function.node, &result_constants)
                 }
-            }
+            },
             // Content::FromAt {
             //     from,
             //     value_path_segments,
@@ -4349,6 +4340,59 @@ impl<'a> ComputationContext<'a> {
             //     }
             //     Ok(result)
             // }
+            Content::UserFunctionCall {
+                arguments,
+                body,
+                arguments_is_pure,
+            } => {
+                let mut result_constants = constants.clone();
+                for (constant_name_clustered_index, computed_constant) in arguments
+                    .iter()
+                    .map(|constant_definition| constant_definition.name_clustered_index)
+                    .zip(
+                        self.compute_nodes(
+                            arguments.iter().map(|constant_definition| {
+                                (Some(&constant_definition.node), Cow::Borrowed(constants))
+                            }),
+                            arguments.len(),
+                        )?
+                        .inner,
+                    )
+                {
+                    result_constants[constant_name_clustered_index] = Some(computed_constant);
+                }
+                let user_function = &self.intermediate_representation.user_functions[*body];
+                if self.computer_config.user_functions_caching && *arguments_is_pure {
+                    let function_call_identifier = {
+                        let mut hasher = gxhash::GxHasher::default();
+                        for constant_name_clustered_index in
+                            &user_function.external_constants_name_clustered_indices
+                        {
+                            result_constants[*constant_name_clustered_index]
+                                .as_ref()
+                                .unwrap()
+                                .hash(&mut hasher);
+                        }
+                        body.hash(&mut hasher);
+                        hasher.finish_u128()
+                    };
+                    if let Some(cached_function_result) = self
+                        .functions_results_cache
+                        .read()
+                        .get(&function_call_identifier)
+                    {
+                        Ok(cached_function_result.clone())
+                    } else {
+                        let result = self.compute_node(&user_function.node, &result_constants)?;
+                        self.functions_results_cache
+                            .write()
+                            .insert(function_call_identifier, result.clone());
+                        Ok(result)
+                    }
+                } else {
+                    self.compute_node(&user_function.node, &result_constants)
+                }
+            }
             Content::Match {
                 r#match,
                 cases,

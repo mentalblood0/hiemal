@@ -911,9 +911,7 @@ impl Compiler {
                                                 if let Some(element_type) =
                                                     elements_types.get(index)
                                                 {
-                                                    Ok(error_type_properties.unified_recursively(
-                                                        Type::from(element_type.kind.clone()),
-                                                    ))
+                                                    Ok(Type::from(element_type.kind.clone()))
                                                 } else {
                                                     Err(compilation_context.error(
                                                         &elements_types,
@@ -947,7 +945,7 @@ impl Compiler {
                                                     TypeKind::Number,
                                                 ) => Ok(error_type_properties.unified_recursively(
                                                     Type::from(TypeKind::Array(
-                                                        element_type.clone().into(),
+                                                        element_type.clone(),
                                                     )),
                                                 )),
                                                 (
@@ -984,9 +982,7 @@ impl Compiler {
                                                                 .value()
                                                                 as usize
                                                         })
-                                                        .or(Some(0))
-                                                        .unwrap()
-                                                        .max(elements_types.len() - 1);
+                                                        .unwrap_or(0);
                                                     let to_index = at_range_to_type_kind
                                                         .as_literal_number()
                                                         .map(|to_index_rational| {
@@ -996,22 +992,15 @@ impl Compiler {
                                                                 .value()
                                                                 as usize
                                                         })
-                                                        .or(Some(0))
-                                                        .unwrap()
-                                                        .min(from_index)
-                                                        .max(elements_types.len());
+                                                        .unwrap_or(0);
                                                     if (from_index <= to_index)
                                                         && (to_index < elements_types.len())
                                                     {
-                                                        Ok(error_type_properties
-                                                            .unified_recursively(Type::from(
-                                                                BTreeSet::from_iter(
-                                                                    elements_types
-                                                                        [from_index..to_index]
-                                                                        .iter()
-                                                                        .cloned(),
-                                                                ),
-                                                            )))
+                                                        Ok(Type::from(BTreeSet::from_iter(
+                                                            elements_types[from_index..to_index]
+                                                                .iter()
+                                                                .cloned(),
+                                                        )))
                                                     } else {
                                                         Err(compilation_context.error(
                                                             &elements_types,
@@ -1022,7 +1011,7 @@ impl Compiler {
                                                         ))
                                                     }
                                                 }
-                                                _ => panic!()
+                                                _ => panic!(),
                                             }
                                         }
                                         _ => panic!(),
