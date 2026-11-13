@@ -15,16 +15,11 @@ use crate::{
     containers::{Object, ObjectRaw, Set, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     embedded_functions::{EMBEDDED_FUNCTIONS, EmbeddedFunction},
-    includes_cache::IncludesCache,
     intermediate_representation::{
         self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction,
-        ValuePathSegment,
     },
-    program::{
-        self, AtSegment, Condition, EmbeddedFunctionCall, Match, Path, PathSegment, Program,
-        RangeBound,
-    },
-    r#type::{Capability, Embedded, Type, TypeAtResult, TypeKind, TypeProperties},
+    program::{Condition, EmbeddedFunctionCall, Match, Path, PathSegment, Program},
+    r#type::{Capability, Embedded, Type, TypeKind, TypeProperties},
     value::Value,
 };
 
@@ -329,7 +324,7 @@ impl Compiler {
         global_compilation_context: &mut GlobalCompilationContext,
         embedded_function_call: &EmbeddedFunctionCall,
         get_result_type_from_argument_resolved_type_option: Option<
-            &dyn Fn(&Type) -> Result<Type>,
+            &dyn Fn(&Type, u8) -> Result<Type>,
         >,
     ) -> Result<Arc<NodeAndMetadata>> {
         let mut argument_compilation_context = compilation_context.clone();
@@ -363,7 +358,11 @@ impl Compiler {
                 )
                 .is_ok()
                 {
-                    Some((signature, signature_index as u8, signature.argument_is_computible))
+                    Some((
+                        signature,
+                        signature_index as u8,
+                        signature.argument_is_computible,
+                    ))
                 } else {
                     None
                 }
@@ -401,6 +400,7 @@ impl Compiler {
                 {
                     get_result_type_kind_from_argument_resolved_type(
                         &compiled_argument.node.r#type,
+                        variant_index,
                     )?
                 } else {
                     match signature.r#return.r#type {
@@ -719,7 +719,7 @@ impl Compiler {
                                 compilation_context,
                                 global_compilation_context,
                                 embedded_function_call,
-                                Some(&|compiled_argument_resolved_type| {
+                                Some(&|compiled_argument_resolved_type, _| {
                                     if let TypeKind::Tuple(argument_elements_types) =
                                         &compiled_argument_resolved_type.kind
                                     {
@@ -748,7 +748,7 @@ impl Compiler {
                                     compilation_context,
                                     global_compilation_context,
                                     embedded_function_call,
-                                    Some(&|compiled_argument_resolved_type| {
+                                    Some(&|compiled_argument_resolved_type, _| {
                                         if let TypeKind::Object(argument_object_values_types) =
                                             &compiled_argument_resolved_type.kind
                                         {
@@ -779,7 +779,7 @@ impl Compiler {
                                 compilation_context,
                                 global_compilation_context,
                                 embedded_function_call,
-                                Some(&|compiled_argument_resolved_type| {
+                                Some(&|compiled_argument_resolved_type, _| {
                                     match &compiled_argument_resolved_type.kind {
                                         TypeKind::Tuple(argument_elements_types) => {
                                             if argument_elements_types.iter().all(
@@ -849,7 +849,7 @@ impl Compiler {
                                 compilation_context,
                                 global_compilation_context,
                                 embedded_function_call,
-                                Some(&|compiled_argument_resolved_type| {
+                                Some(&|compiled_argument_resolved_type, _| {
                                     if let TypeKind::LiteralString(regex_literal_string) =
                                         &compiled_argument_resolved_type.kind
                                     {
@@ -862,6 +862,86 @@ impl Compiler {
                                             })?;
                                     };
                                     Ok(TypeKind::Embedded(Embedded::CompiledRegex).into())
+                                }),
+                            )?,
+                            EmbeddedFunction::Get => self.compile_embedded_function_call(
+                                compilation_context,
+                                global_compilation_context,
+                                embedded_function_call,
+                                Some(&|compiled_argument_resolved_type, variant_index| {
+                                    match variant_index {
+                                        0 => {
+                                            let at_type_kind = &compiled_argument_resolved_type
+                                                .kind
+                                                .as_object()
+                                                .unwrap()
+                                                .get(&"at".to_string())
+                                                .unwrap()
+                                                .kind;
+                                            let from_type_kind = &compiled_argument_resolved_type
+                                                .kind
+                                                .as_object()
+                                                .unwrap()
+                                                .get(&"from".to_string())
+                                                .unwrap()
+                                                .kind;
+                                            match (from_type_kind, at_type_kind) {
+                                                (TypeKind::Array(element_type), _) => {
+                                                    Ok(Type::from(element_type.kind.clone())
+                                                        .with_unified_properties(&TypeProperties {
+                                                            capabilities: Capability::Error.into(),
+                                                            is_computable: true,
+                                                            is_serializable: true,
+                                                            is_pure: true,
+                                                        }))
+                                                }
+                                                (
+                                                    TypeKind::Tuple(elements_types),
+                                                    TypeKind::Number,
+                                                ) => Ok(Type::from(BTreeSet::from_iter(
+                                                    elements_types.iter().cloned(),
+                                                ))
+                                                .with_unified_properties(&TypeProperties {
+                                                    capabilities: Capability::Error.into(),
+                                                    is_computable: true,
+                                                    is_serializable: true,
+                                                    is_pure: true,
+                                                })),
+                                                (
+                                                    TypeKind::Tuple(elements_types),
+                                                    TypeKind::LiteralNumber(index_rational),
+                                                ) => {
+                                                    let index =
+                                                        index_rational.trunc().to_f64().value()
+                                                            as usize;
+                                                    if let Some(element_type) =
+                                                        elements_types.get(index)
+                                                    {
+                                                        Ok(Type::from(element_type.kind.clone())
+                                                            .with_unified_properties(
+                                                                &TypeProperties {
+                                                                    capabilities: Capability::Error
+                                                                        .into(),
+                                                                    is_computable: true,
+                                                                    is_serializable: true,
+                                                                    is_pure: true,
+                                                                },
+                                                            ))
+                                                    } else {
+                                                        Err(compilation_context.error(
+                                                            &elements_types,
+                                                            &format!(
+                                                                "tuple with at least {} elements",
+                                                                index + 1
+                                                            ),
+                                                        ))
+                                                    }
+                                                }
+                                                _ => panic!()
+                                            }
+                                        }
+                                        _ => panic!(),
+                                    }
                                 }),
                             )?,
                             _ => self.compile_embedded_function_call(

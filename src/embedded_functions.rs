@@ -23,6 +23,8 @@ pub enum EmbeddedFunction {
     Exponentiate,
     #[serde(rename = "file metadata")]
     FileMetadata,
+    #[serde(rename = "get")]
+    Get,
     #[serde(rename = "glob")]
     Glob,
     #[serde(rename = "hash")]

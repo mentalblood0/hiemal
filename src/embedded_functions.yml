@@ -75,6 +75,20 @@ read bytes from standard input:
       - error
       is pure: false
 
+get:
+- argument:
+    object:
+      from: { array: any }
+      at: number
+- argument:
+    object:
+      from: { array: any }
+      at: { tuple: [ number, number ] }
+- argument:
+    object:
+      from: { generic object: any }
+      at: string
+
 parse:
 - argument:
     union:
