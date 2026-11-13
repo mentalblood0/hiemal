@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
+use dashu::Rational;
 use enumset::{EnumSet, EnumSetType};
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +14,7 @@ use crate::{
     containers::{Object, Vector},
     intermediate_representation::RangeBound,
     intermediate_representation::ValuePathSegment,
-    value::{Value, deserialize_rope, serialize_rope},
+    value::{Value, deserialize_rational, deserialize_rope, serialize_rope},
 };
 
 static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
@@ -412,6 +413,8 @@ pub enum TypeKind {
         )]
         ropey::Rope,
     ),
+    #[serde(rename = "literal number")]
+    LiteralNumber(#[serde(deserialize_with = "deserialize_rational")] Rational),
     #[serde(rename = "generic literal string")]
     GenericLiteralString,
     #[serde(rename = "bytes")]
@@ -513,6 +516,7 @@ impl TypeKind {
         match self {
             TypeKind::Null | TypeKind::LiteralTrue | TypeKind::LiteralFalse => true,
             TypeKind::LiteralString(_) => true,
+            TypeKind::LiteralNumber(_) => true,
             TypeKind::Tuple(elements_types) => elements_types
                 .iter()
                 .all(|element_type| element_type.kind.is_literal()),
@@ -530,6 +534,7 @@ impl TypeKind {
             TypeKind::LiteralTrue => Some(Value::Bool(true)),
             TypeKind::LiteralFalse => Some(Value::Bool(false)),
             TypeKind::LiteralString(string) => Some(Value::String(string.clone())),
+            TypeKind::LiteralNumber(number) => Some(Value::Number(number.clone())),
             TypeKind::Tuple(elements_types) => {
                 let mut result_raw = Vector::default();
                 for element_type in elements_types.iter() {
@@ -662,6 +667,13 @@ impl TypeKind {
         }
     }
 
+    pub fn as_literal_number(&self) -> Option<&Rational> {
+        match self {
+            TypeKind::LiteralNumber(result) => Some(result),
+            _ => None,
+        }
+    }
+
     pub fn contains(&self, other: &TypeKind) -> bool {
         if self == other {
             true
@@ -670,6 +682,7 @@ impl TypeKind {
                 (TypeKind::Any, _)
                 | (TypeKind::String, TypeKind::LiteralString(_))
                 | (TypeKind::String, TypeKind::GenericLiteralString)
+                | (TypeKind::Number, TypeKind::LiteralNumber(_))
                 | (TypeKind::LiteralString(_), TypeKind::GenericLiteralString) => true,
                 (
                     TypeKind::Constructed(self_constructed),

@@ -419,7 +419,7 @@ impl Value {
     pub fn type_kind(value_option: &Option<Value>) -> TypeKind {
         match value_option {
             Some(value) => match value {
-                Value::Number(_) => TypeKind::Number,
+                Value::Number(number) => TypeKind::LiteralNumber(number.clone()),
                 Value::String(string) => TypeKind::LiteralString(string.clone()),
                 Value::Bytes { bytes: _ } => TypeKind::Bytes,
                 Value::Time { time: _ } => TypeKind::Time,

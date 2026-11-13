@@ -214,6 +214,7 @@ fn assert_type(
             }
             (TypeKind::LiteralString(_), TypeKind::String)
             | (TypeKind::GenericLiteralString, TypeKind::String)
+            | (TypeKind::LiteralNumber(_), TypeKind::Number)
             | (TypeKind::LiteralString(_), TypeKind::GenericLiteralString) => Ok(()),
             _ => Err(compilation_context.error(got_type, expected_type_kind)),
         }
@@ -242,190 +243,7 @@ struct GlobalCompilationContext {
     user_functions_definitions: Vec<UserFunctionCallDefinition>,
     constants_names_to_name_clustered_constants_indices: HashMap<Arc<String>, usize>,
     constants: Vec<Type>,
-    includes_cache: IncludesCache,
     compiled_user_functions_calls_cache: HashMap<u128, CachedUserFunctionCall>,
-}
-
-fn process_from_at_program_path_part(
-    from: &program::From,
-    at: &Vec<AtSegment>,
-    includes_cache: &mut IncludesCache,
-) -> Result<(Arc<Program>, Option<usize>)> {
-    let mut result = includes_cache.get(from)?;
-    let mut current_path_segment_index = 0;
-    while let Some(current_path_segment) = at.get(current_path_segment_index) {
-        match current_path_segment {
-            AtSegment::ProgramPathSegment(program_path_segment) => {
-                match (&*result, program_path_segment) {
-                    (Program::Tuple(tuple), PathSegment::ArrayIndex(tuple_index)) => {
-                        result = tuple.get(*tuple_index).unwrap().clone();
-                    }
-                    (Program::Object(object), PathSegment::ObjectKey(object_key)) => {
-                        result = object.get(object_key).unwrap().clone();
-                    }
-                    (Program::Value(value_arc), PathSegment::ArrayIndex(array_index)) => {
-                        match &**value_arc {
-                            Some(Value::Tuple(array)) => {
-                                result =
-                                    Program::Value(array.get(*array_index).unwrap().clone()).into();
-                            }
-                            _ => {
-                                return Err(anyhow!(
-                                    "Can not get program from {:#?} at {:#?}: stuck at path \
-                                     segment {}: {current_path_segment:#?}",
-                                    from,
-                                    at,
-                                    current_path_segment_index + 1
-                                ));
-                            }
-                        }
-                    }
-                    (Program::Value(value_arc), PathSegment::ObjectKey(object_key)) => {
-                        match &**value_arc {
-                            Some(Value::Object(object)) => {
-                                result =
-                                    Program::Value(object.get(object_key).unwrap().clone()).into();
-                            }
-                            _ => {
-                                return Err(anyhow!(
-                                    "Can not get program from {:#?} at {:#?}: stuck at path \
-                                     segment {}: {current_path_segment:#?}",
-                                    from,
-                                    at,
-                                    current_path_segment_index + 1
-                                ));
-                            }
-                        }
-                    }
-                    (
-                        Program::Scope {
-                            functions,
-                            constants,
-                            compute: _,
-                            allow: _,
-                            forbid: _,
-                        },
-                        PathSegment::Functions | PathSegment::Constants,
-                    ) => {
-                        let programs_map = match current_path_segment {
-                            AtSegment::ProgramPathSegment(PathSegment::Functions) => functions,
-                            AtSegment::ProgramPathSegment(PathSegment::Constants) => constants,
-                            _ => {
-                                return Err(anyhow!(
-                                    "Can not get program from {:#?} at {:#?}: stuck at path \
-                                     segment {}: {current_path_segment:#?}",
-                                    from,
-                                    at,
-                                    current_path_segment_index + 1
-                                ));
-                            }
-                        };
-                        current_path_segment_index += 1;
-                        let current_path_segment_option = at.get(current_path_segment_index);
-                        match current_path_segment_option {
-                            Some(AtSegment::ProgramPathSegment(PathSegment::ObjectKey(
-                                program_name,
-                            ))) => match programs_map.get(program_name) {
-                                Some(program_body) => {
-                                    result = program_body.clone();
-                                }
-                                None => {
-                                    return Err(anyhow!(
-                                        "Can not get program from {:#?} at {:#?}: stuck at path \
-                                         segment {}: {current_path_segment:#?}",
-                                        from,
-                                        at,
-                                        current_path_segment_index + 1
-                                    ));
-                                }
-                            },
-                            _ => {
-                                return Err(anyhow!(
-                                    "Can not get program from {:#?} at {:#?}: stuck at path \
-                                     segment {}: {current_path_segment:#?}",
-                                    from,
-                                    at,
-                                    current_path_segment_index + 1
-                                ));
-                            }
-                        }
-                    }
-                    (
-                        Program::Scope {
-                            functions: _,
-                            constants: _,
-                            compute,
-                            allow: _,
-                            forbid: _,
-                        },
-                        PathSegment::Compute,
-                    ) => {
-                        result = compute.clone();
-                    }
-                    (
-                        Program::FromAt {
-                            from: inner_from,
-                            at: inner_at,
-                            default: _,
-                        },
-                        _,
-                    ) => {
-                        let result_and_inner_path_segment_index =
-                            process_from_at_program_path_part(
-                                inner_from,
-                                inner_at,
-                                includes_cache,
-                            )?;
-                        if result_and_inner_path_segment_index.1 != Some(inner_at.len()) {
-                            return Err(anyhow!(
-                                "expected only program segments path in inner from-at clause, got \
-                                 {inner_at:#?}"
-                            ))
-                            .context(format!(
-                                "Can not get program from {:#?} at {:#?}: stuck at path segment \
-                                 {}: {current_path_segment:#?}",
-                                from,
-                                at,
-                                current_path_segment_index + 1,
-                            ))?;
-                        }
-                        result = result_and_inner_path_segment_index.0;
-                        continue;
-                    }
-                    (
-                        Program::EmbeddedFunctionCall(EmbeddedFunctionCall {
-                            embedded_function,
-                            argument,
-                        }),
-                        PathSegment::EmbeddedFunctionCall(embedded_function_from_path),
-                    ) if embedded_function == embedded_function_from_path => {
-                        result = argument.clone();
-                    }
-                    _ => {
-                        return Err(anyhow!(
-                            "Can not get program from {:#?} at {:#?}: stuck at path segment {}: \
-                             {current_path_segment:#?}",
-                            from,
-                            at,
-                            current_path_segment_index + 1
-                        ));
-                    }
-                }
-            }
-            _ => {
-                break;
-            }
-        };
-        current_path_segment_index += 1;
-    }
-    Ok((
-        result,
-        if current_path_segment_index < at.len() {
-            Some(current_path_segment_index)
-        } else {
-            None
-        },
-    ))
 }
 
 #[derive(Default, Clone)]
@@ -533,7 +351,7 @@ impl Compiler {
                 compilation_context.error(&compiled_argument.node.r#type, &"serializable value")
             );
         }
-        let (signature, variant_index) = EMBEDDED_FUNCTIONS
+        let (signature, variant_index, argument_is_computible) = EMBEDDED_FUNCTIONS
             [embedded_function_call.embedded_function as usize]
             .iter()
             .enumerate()
@@ -545,7 +363,7 @@ impl Compiler {
                 )
                 .is_ok()
                 {
-                    Some((signature, signature_index as u8))
+                    Some((signature, signature_index as u8, signature.argument_is_computible))
                 } else {
                     None
                 }
@@ -563,7 +381,7 @@ impl Compiler {
                     ),
                 )
             })?;
-        if !compiled_argument.node.r#type.properties.is_computable {
+        if argument_is_computible && !compiled_argument.node.r#type.properties.is_computable {
             return Err(argument_compilation_context.error(
                 &"non-computible embedded function argument",
                 &"computible embedded function argument",
@@ -895,166 +713,6 @@ impl Compiler {
                         compilation_context,
                         global_compilation_context,
                     )?,
-                    Program::FromAt { from, at, default } => {
-                        let (extracted_from, first_non_program_path_segment_index_option) =
-                            process_from_at_program_path_part(
-                                from,
-                                at,
-                                &mut global_compilation_context.includes_cache,
-                            )?;
-                        let mut from_program_compilation_context = compilation_context.clone();
-                        from_program_compilation_context
-                            .path
-                            .0
-                            .extend([PathSegment::From]);
-                        let compiled_extracted_from = self.compile_with_context(
-                            &extracted_from,
-                            &from_program_compilation_context,
-                            global_compilation_context,
-                        )?;
-                        let mut external_constants_name_clustered_indices = compiled_extracted_from
-                            .external_constants_name_clustered_indices
-                            .clone();
-                        let value_path = if let Some(first_non_program_path_segment_index) =
-                            first_non_program_path_segment_index_option
-                        {
-                            let mut result = Vec::with_capacity(
-                                at[first_non_program_path_segment_index..].len(),
-                            );
-                            for at_segment in &at[first_non_program_path_segment_index..] {
-                                result.push(match at_segment {
-                                    AtSegment::ValueArrayIndex(array_index) => {
-                                        ValuePathSegment::ArrayIndex(*array_index)
-                                    }
-                                    AtSegment::ValueObjectKey(object_key) => {
-                                        ValuePathSegment::ObjectKey(object_key.clone())
-                                    }
-                                    AtSegment::ValueArrayRange((from, to)) => {
-                                        ValuePathSegment::ArrayRange {
-                                            from: Box::new({
-                                                match &**from {
-                                            RangeBound::Static(from_static) => {
-                                                intermediate_representation::RangeBound::Static(
-                                                    *from_static,
-                                                )
-                                            }
-                                            RangeBound::Dynamic(from_dynamic) => {
-                                                let compiled_from_dynamic = self
-                                                    .compile_with_context(
-                                                        from_dynamic,
-                                                        compilation_context,
-                                                        global_compilation_context,
-                                                    )?;
-                                                assert_type(
-                                                    &compiled_from_dynamic.node.r#type,
-                                                    &TypeKind::Number,
-                                                    compilation_context,
-                                                )?;
-                                                external_constants_name_clustered_indices.append(
-                                                    &mut compiled_from_dynamic
-                                                        .external_constants_name_clustered_indices
-                                                        .clone(),
-                                                );
-                                                intermediate_representation::RangeBound::Dynamic(
-                                                    compiled_from_dynamic.node.clone(),
-                                                )
-                                            }
-                                        }
-                                            }),
-                                            to: Box::new({
-                                                match &**to {
-                                            RangeBound::Static(to_static) => {
-                                                intermediate_representation::RangeBound::Static(
-                                                    *to_static,
-                                                )
-                                            }
-                                            RangeBound::Dynamic(to_dynamic) => {
-                                                let compiled_to_dynamic = self
-                                                    .compile_with_context(
-                                                        to_dynamic,
-                                                        compilation_context,
-                                                        global_compilation_context,
-                                                    )?;
-                                                assert_type(
-                                                    &compiled_to_dynamic.node.r#type,
-                                                    &TypeKind::Number,
-                                                    compilation_context,
-                                                )?;
-                                                external_constants_name_clustered_indices.append(
-                                                    &mut compiled_to_dynamic
-                                                        .external_constants_name_clustered_indices
-                                                        .clone(),
-                                                );
-                                                intermediate_representation::RangeBound::Dynamic(
-                                                    compiled_to_dynamic.node.clone(),
-                                                )
-                                            }
-                                        }
-                                            }),
-                                        }
-                                    }
-                                    _ => {
-                                        return Err(anyhow!(
-                                            "can not treat {at_segment:?} as value path segment"
-                                        ));
-                                    }
-                                });
-                            }
-                            result
-                        } else {
-                            vec![]
-                        };
-                        let mut default_compilation_context = compilation_context.clone();
-                        default_compilation_context
-                            .path
-                            .0
-                            .extend([PathSegment::Default]);
-                        let compiled_default = self.compile_with_context(
-                            default,
-                            &default_compilation_context,
-                            global_compilation_context,
-                        )?;
-                        let (
-                            compiled_extracted_from_type_at_result,
-                            runtime_type_error_is_possible,
-                        ) = compiled_extracted_from
-                            .node
-                            .r#type
-                            .clone()
-                            .at_path(&value_path)
-                            .with_context(|| {
-                                compilation_context.error(
-                                    &compiled_extracted_from.node.r#type.kind,
-                                    &BTreeMap::from_iter([("value with path", &value_path)]),
-                                )
-                            })?;
-                        let compiled_extracted_from_type_at_result_as_type =
-                            match compiled_extracted_from_type_at_result {
-                                TypeAtResult::Single(r#type) => r#type,
-                                TypeAtResult::Multiple(union_types) => union_types.into(),
-                            };
-                        let r#type = if runtime_type_error_is_possible {
-                            Type::from(BTreeSet::from_iter([
-                                compiled_extracted_from_type_at_result_as_type,
-                                compiled_default.node.r#type.clone(),
-                            ]))
-                        } else {
-                            compiled_extracted_from_type_at_result_as_type
-                        };
-                        NodeAndMetadata {
-                            node: Node {
-                                content: Content::FromAt {
-                                    from: compiled_extracted_from.node.clone(),
-                                    value_path_segments: value_path,
-                                    default: compiled_default.node.clone(),
-                                },
-                                r#type,
-                            }
-                            .into(),
-                            external_constants_name_clustered_indices,
-                        }
-                        .into()
-                    }
                     Program::EmbeddedFunctionCall(embedded_function_call) => {
                         match embedded_function_call.embedded_function {
                             EmbeddedFunction::Sort => self.compile_embedded_function_call(
@@ -1374,6 +1032,7 @@ impl Compiler {
                                                 TypeKind::LiteralTrue
                                                     | TypeKind::LiteralFalse
                                                     | TypeKind::LiteralString(_)
+                                                    | TypeKind::LiteralNumber(_)
                                                     | TypeKind::Null
                                             ) {
                                                 current_match_type_kind_option =

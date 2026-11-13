@@ -90,11 +90,6 @@ pub enum Content {
         body: usize,
         arguments_is_pure: bool,
     },
-    FromAt {
-        from: Arc<Node>,
-        value_path_segments: Vec<ValuePathSegment>,
-        default: Arc<Node>,
-    },
     Match {
         r#match: Arc<Node>,
         cases: Vec<Case>,

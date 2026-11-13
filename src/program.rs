@@ -35,12 +35,6 @@ pub enum Program {
         constant: Arc<String>,
     },
     DefaultArgument(DefaultArgument),
-    FromAt {
-        from: From,
-        at: Vec<AtSegment>,
-        #[serde(default = "default_from_at_default")]
-        default: Arc<Program>,
-    },
     EmbeddedFunctionCall(EmbeddedFunctionCall),
     Match {
         r#match: Match,
@@ -133,10 +127,6 @@ pub fn default_starting_with() -> Box<Program> {
 
 pub fn default_match_as() -> Option<Arc<String>> {
     None
-}
-
-pub fn default_from_at_default() -> Arc<Program> {
-    Program::Value(None.into()).into()
 }
 
 pub fn default_map_as() -> Arc<String> {

@@ -36,37 +36,6 @@ See [embedded functions specification](src/embedded_functions.yml)
 
 ### Clauses
 
-#### from at
-
-```yaml
-functions:
-  f::
-    from: examples/arguments.yml
-    at: [functions, { object key: "f:" }]
-compute:
-  f:: 10
-```
-
-```yaml
-from:
-  a: [1, 2, { b: 3 }]
-at: [a, 2, b]
-```
-
-```yaml
-from:
-  a: [1, 2, { b: 3 }, 4]
-at: [a, [1, { sum: [2, 1] }]]
-```
-
-```yaml
-constants:
-  _: abcd
-compute:
-    from: _
-    at: [[1, 3]]
-```
-
 #### constant
 
 ```yaml

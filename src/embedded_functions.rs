@@ -84,20 +84,27 @@ pub struct Return {
 #[derive(Deserialize)]
 pub struct EmbeddedFunctionSignature {
     pub argument: TypeKind,
+    #[serde(default = "default_argument_is_computible")]
+    pub argument_is_computible: bool,
     #[serde(default)]
     pub r#return: Return,
 }
 
-pub static EMBEDDED_FUNCTIONS: LazyLock<Vec<Vec<EmbeddedFunctionSignature>>> = LazyLock::new(|| {
-    let mut name_and_signature_pairs = serde_saphyr::from_str::<
-        BTreeMap<EmbeddedFunction, Vec<EmbeddedFunctionSignature>>,
-    >(include_str!("embedded_functions.yml"))
-    .unwrap()
-    .into_iter()
-    .collect::<Vec<_>>();
-    name_and_signature_pairs.sort_by_key(|a| a.0);
-    name_and_signature_pairs
+pub fn default_argument_is_computible() -> bool {
+    true
+}
+
+pub static EMBEDDED_FUNCTIONS: LazyLock<Vec<Vec<EmbeddedFunctionSignature>>> =
+    LazyLock::new(|| {
+        let mut name_and_signature_pairs = serde_saphyr::from_str::<
+            BTreeMap<EmbeddedFunction, Vec<EmbeddedFunctionSignature>>,
+        >(include_str!("embedded_functions.yml"))
+        .unwrap()
         .into_iter()
-        .map(|(_, signature)| signature)
-        .collect()
-});
+        .collect::<Vec<_>>();
+        name_and_signature_pairs.sort_by_key(|a| a.0);
+        name_and_signature_pairs
+            .into_iter()
+            .map(|(_, signature)| signature)
+            .collect()
+    });
