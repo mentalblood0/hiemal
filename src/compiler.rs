@@ -511,7 +511,7 @@ impl Compiler {
         global_compilation_context: &mut GlobalCompilationContext,
         embedded_function_call: &EmbeddedFunctionCall,
         get_result_type_from_argument_resolved_type_option: Option<
-            &dyn Fn(&mut Type) -> Result<Type>,
+            &dyn Fn(&Type) -> Result<Type>,
         >,
     ) -> Result<Arc<NodeAndMetadata>> {
         let mut argument_compilation_context = compilation_context.clone();
@@ -582,7 +582,7 @@ impl Compiler {
                     get_result_type_from_argument_resolved_type_option
                 {
                     get_result_type_kind_from_argument_resolved_type(
-                        &mut compiled_argument.node.r#type.clone(),
+                        &compiled_argument.node.r#type,
                     )?
                 } else {
                     match signature.r#return.r#type {
@@ -1061,7 +1061,7 @@ impl Compiler {
                                 compilation_context,
                                 global_compilation_context,
                                 embedded_function_call,
-                                Some(&|compiled_argument_resolved_type: &mut Type| {
+                                Some(&|compiled_argument_resolved_type| {
                                     if let TypeKind::Tuple(argument_elements_types) =
                                         &compiled_argument_resolved_type.kind
                                     {
@@ -1090,7 +1090,7 @@ impl Compiler {
                                     compilation_context,
                                     global_compilation_context,
                                     embedded_function_call,
-                                    Some(&|compiled_argument_resolved_type: &mut Type| {
+                                    Some(&|compiled_argument_resolved_type| {
                                         if let TypeKind::Object(argument_object_values_types) =
                                             &compiled_argument_resolved_type.kind
                                         {
@@ -1121,7 +1121,7 @@ impl Compiler {
                                 compilation_context,
                                 global_compilation_context,
                                 embedded_function_call,
-                                Some(&|compiled_argument_resolved_type: &mut Type| {
+                                Some(&|compiled_argument_resolved_type| {
                                     match &compiled_argument_resolved_type.kind {
                                         TypeKind::Tuple(argument_elements_types) => {
                                             if argument_elements_types.iter().all(
@@ -1191,7 +1191,7 @@ impl Compiler {
                                 compilation_context,
                                 global_compilation_context,
                                 embedded_function_call,
-                                Some(&|compiled_argument_resolved_type: &mut Type| {
+                                Some(&|compiled_argument_resolved_type| {
                                     if let TypeKind::LiteralString(regex_literal_string) =
                                         &compiled_argument_resolved_type.kind
                                     {
