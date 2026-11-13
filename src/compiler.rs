@@ -883,29 +883,24 @@ impl Compiler {
                                         .get(&"from".to_string())
                                         .unwrap()
                                         .kind;
+                                    let error_type_properties = TypeProperties {
+                                        capabilities: Capability::Error.into(),
+                                        is_computable: true,
+                                        is_serializable: true,
+                                        is_pure: true,
+                                    };
                                     match variant_index {
                                         0 => match (from_type_kind, at_type_kind) {
                                             (TypeKind::Array(element_type), _) => {
-                                                Ok(TypeProperties {
-                                                    capabilities: Capability::Error.into(),
-                                                    is_computable: true,
-                                                    is_serializable: true,
-                                                    is_pure: true,
-                                                }
-                                                .unified_recursively(*element_type.clone()))
+                                                Ok(error_type_properties
+                                                    .unified_recursively(*element_type.clone()))
                                             }
                                             (TypeKind::Tuple(elements_types), TypeKind::Number) => {
-                                                Ok(TypeProperties {
-                                                    capabilities: Capability::Error.into(),
-                                                    is_computable: true,
-                                                    is_serializable: true,
-                                                    is_pure: true,
-                                                }
-                                                .unified_recursively(Type::from(
-                                                    BTreeSet::from_iter(
+                                                Ok(error_type_properties.unified_recursively(
+                                                    Type::from(BTreeSet::from_iter(
                                                         elements_types.iter().cloned(),
-                                                    ),
-                                                )))
+                                                    )),
+                                                ))
                                             }
                                             (
                                                 TypeKind::Tuple(elements_types),
@@ -916,15 +911,9 @@ impl Compiler {
                                                 if let Some(element_type) =
                                                     elements_types.get(index)
                                                 {
-                                                    Ok(TypeProperties {
-                                                        capabilities: Capability::Error.into(),
-                                                        is_computable: true,
-                                                        is_serializable: true,
-                                                        is_pure: true,
-                                                    }
-                                                    .unified_recursively(Type::from(
-                                                        element_type.kind.clone(),
-                                                    )))
+                                                    Ok(error_type_properties.unified_recursively(
+                                                        Type::from(element_type.kind.clone()),
+                                                    ))
                                                 } else {
                                                     Err(compilation_context.error(
                                                         &elements_types,
@@ -956,15 +945,11 @@ impl Compiler {
                                                     TypeKind::Array(element_type),
                                                     _,
                                                     TypeKind::Number,
-                                                ) => Ok(TypeProperties {
-                                                    capabilities: Capability::Error.into(),
-                                                    is_computable: true,
-                                                    is_serializable: true,
-                                                    is_pure: true,
-                                                }
-                                                .unified_recursively(Type::from(TypeKind::Array(
-                                                    element_type.clone().into(),
-                                                )))),
+                                                ) => Ok(error_type_properties.unified_recursively(
+                                                    Type::from(TypeKind::Array(
+                                                        element_type.clone().into(),
+                                                    )),
+                                                )),
                                                 (
                                                     TypeKind::Array(element_type),
                                                     TypeKind::LiteralNumber(from_index_rational),
@@ -978,47 +963,55 @@ impl Compiler {
                                                     let to_index =
                                                         to_index_rational.trunc().to_f64().value()
                                                             as usize;
-                                                    Ok(TypeProperties {
-                                                        capabilities: Capability::Error.into(),
-                                                        is_computable: true,
-                                                        is_serializable: true,
-                                                        is_pure: true,
-                                                    }
-                                                    .unified_recursively(Type::from(vec![
+                                                    Ok(error_type_properties.unified_recursively(
+                                                        Type::from(vec![
                                                             *element_type.clone();
                                                             to_index - from_index
-                                                        ])))
+                                                        ]),
+                                                    ))
                                                 }
                                                 (
                                                     TypeKind::Tuple(elements_types),
-                                                    TypeKind::LiteralNumber(from_index_rational),
-                                                    TypeKind::LiteralNumber(to_index_rational),
+                                                    TypeKind::Number | TypeKind::LiteralNumber(_),
+                                                    TypeKind::Number | TypeKind::LiteralNumber(_),
                                                 ) => {
-                                                    let from_index = from_index_rational
-                                                        .trunc()
-                                                        .to_f64()
-                                                        .value()
-                                                        as usize;
-                                                    let to_index =
-                                                        to_index_rational.trunc().to_f64().value()
-                                                            as usize;
+                                                    let from_index = at_range_from_type_kind
+                                                        .as_literal_number()
+                                                        .map(|from_index_rational| {
+                                                            from_index_rational
+                                                                .trunc()
+                                                                .to_f64()
+                                                                .value()
+                                                                as usize
+                                                        })
+                                                        .or(Some(0))
+                                                        .unwrap()
+                                                        .max(elements_types.len() - 1);
+                                                    let to_index = at_range_to_type_kind
+                                                        .as_literal_number()
+                                                        .map(|to_index_rational| {
+                                                            to_index_rational
+                                                                .trunc()
+                                                                .to_f64()
+                                                                .value()
+                                                                as usize
+                                                        })
+                                                        .or(Some(0))
+                                                        .unwrap()
+                                                        .min(from_index)
+                                                        .max(elements_types.len());
                                                     if (from_index <= to_index)
                                                         && (to_index < elements_types.len())
                                                     {
-                                                        Ok(TypeProperties {
-                                                            capabilities: Capability::Error.into(),
-                                                            is_computable: true,
-                                                            is_serializable: true,
-                                                            is_pure: true,
-                                                        }
-                                                        .unified_recursively(Type::from(
-                                                            BTreeSet::from_iter(
-                                                                elements_types
-                                                                    [from_index..to_index]
-                                                                    .iter()
-                                                                    .cloned(),
-                                                            ),
-                                                        )))
+                                                        Ok(error_type_properties
+                                                            .unified_recursively(Type::from(
+                                                                BTreeSet::from_iter(
+                                                                    elements_types
+                                                                        [from_index..to_index]
+                                                                        .iter()
+                                                                        .cloned(),
+                                                                ),
+                                                            )))
                                                     } else {
                                                         Err(compilation_context.error(
                                                             &elements_types,
@@ -1029,7 +1022,7 @@ impl Compiler {
                                                         ))
                                                     }
                                                 }
-                                                _ => panic!(),
+                                                _ => panic!()
                                             }
                                         }
                                         _ => panic!(),
