@@ -1097,6 +1097,7 @@ impl Compiler {
                                             current_match_type_kind
                                                 .intersection(&case_match_type.kind)
                                         {
+                                            dbg!(&refined_match_type_kind);
                                             let mut case_compilation_context =
                                                 compilation_context.clone();
                                             case_compilation_context.path.0.extend([

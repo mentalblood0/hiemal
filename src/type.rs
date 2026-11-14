@@ -788,31 +788,64 @@ impl TypeKind {
                 (TypeKind::Bool, TypeKind::LiteralTrue) => Some(TypeKind::LiteralFalse),
                 (TypeKind::Bool, TypeKind::LiteralFalse) => Some(TypeKind::LiteralTrue),
                 (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
-                    let result = self_union_types
-                        .difference(other_union_types)
-                        .cloned()
-                        .collect::<BTreeSet<_>>();
+                    let mut result = self_union_types
+                        .iter()
+                        .map(|self_union_type| Some(self_union_type.kind.clone()))
+                        .collect::<Vec<_>>();
+                    for other_union_type in &**other_union_types {
+                        for result_union_type_option in result.iter_mut() {
+                            if let Some(kind) = result_union_type_option.take() {
+                                *result_union_type_option =
+                                    kind.substraction(&other_union_type.kind);
+                            }
+                        }
+                        result.retain(|r| r.is_some());
+                        result.sort();
+                        result.dedup();
+                    }
                     if result.is_empty() {
                         None
                     } else {
-                        Some(TypeKind::Union(result.into()))
+                        Some(
+                            Type::from(BTreeSet::from_iter(result.into_iter().map(
+                                |result_union_type_kind_option| {
+                                    result_union_type_kind_option.unwrap().into()
+                                },
+                            )))
+                            .kind,
+                        )
                     }
                 }
                 (TypeKind::Union(self_union_types), _) => {
-                    if self_union_types.contains(&(*other).clone().into()) {
-                        let mut result_union_types = (**self_union_types).clone();
-                        result_union_types.remove(&(*other).clone().into());
-                        Some(TypeKind::Union(result_union_types.into()))
+                    let mut result = self_union_types
+                        .iter()
+                        .map(|self_union_type| Some(self_union_type.kind.clone()))
+                        .collect::<Vec<_>>();
+                    for result_union_type_option in result.iter_mut() {
+                        if let Some(kind) = result_union_type_option.take() {
+                            *result_union_type_option = kind.substraction(other);
+                        }
+                    }
+                    result.retain(|r| r.is_some());
+                    if result.is_empty() {
+                        None
                     } else {
-                        Some(self.clone())
+                        Some(
+                            Type::from(BTreeSet::from_iter(result.into_iter().map(
+                                |result_union_type_kind_option| {
+                                    result_union_type_kind_option.unwrap().into()
+                                },
+                            )))
+                            .kind,
+                        )
                     }
                 }
                 (_, TypeKind::Union(other_union_types)) => {
-                    if other_union_types.contains(&(*other).clone().into()) {
-                        None
-                    } else {
-                        Some(self.clone())
+                    let mut result = self.clone();
+                    for other_union_type in &**other_union_types {
+                        result = result.substraction(&other_union_type.kind)?;
                     }
+                    Some(result)
                 }
                 (
                     TypeKind::Constructed(self_constructed),
@@ -899,6 +932,7 @@ impl TypeKind {
         if self == other {
             Some(self.clone())
         } else {
+            println!("intersection {self:?} {other:?}");
             match (self, other) {
                 (TypeKind::Any, other_type) | (other_type, TypeKind::Any) => {
                     Some(other_type.clone())
@@ -937,24 +971,36 @@ impl TypeKind {
                     self.intersection(&other_constructed.inner().kind)
                 }
                 (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
-                    let result = self_union_types
-                        .intersection(other_union_types)
-                        .cloned()
-                        .collect::<BTreeSet<_>>();
+                    let mut result = BTreeSet::new();
+                    for self_union_type in &**self_union_types {
+                        for other_union_type in &**other_union_types {
+                            if let Some(elements_intersection) =
+                                self_union_type.kind.intersection(&other_union_type.kind)
+                            {
+                                result.insert(elements_intersection.into());
+                            }
+                        }
+                    }
                     if result.is_empty() {
                         None
                     } else {
-                        Some(TypeKind::Union(result.into()))
+                        Some(Type::from(result).into())
                     }
                 }
                 (TypeKind::Union(union_types), other_type)
                 | (other_type, TypeKind::Union(union_types)) => {
+                    let mut result = BTreeSet::new();
                     for union_type in union_types.iter() {
-                        if let Some(result) = union_type.kind.intersection(other_type) {
-                            return Some(result);
+                        if let Some(element_intersection) = union_type.kind.intersection(other_type)
+                        {
+                            result.insert(element_intersection.into());
                         }
                     }
-                    None
+                    if result.is_empty() {
+                        None
+                    } else {
+                        Some(Type::from(result).into())
+                    }
                 }
                 (
                     TypeKind::Array(self_array_element_type),
@@ -1081,16 +1127,16 @@ impl<'a> Type {
                 TypeKind::GenericObject(value_type) => TypeKind::GenericObject(Box::new(
                     value_type.with_recursively_updated_properties(update_function),
                 )),
-                TypeKind::Union(union_types) => TypeKind::Union(
+                TypeKind::Union(union_types) => Type::from(
                     union_types
                         .iter()
                         .cloned()
                         .map(|element_type| {
                             element_type.with_recursively_updated_properties(update_function)
                         })
-                        .collect::<BTreeSet<_>>()
-                        .into(),
-                ),
+                        .collect::<BTreeSet<_>>(),
+                )
+                .into(),
                 kind => kind,
             },
             properties: update_function(self.properties),
@@ -1123,7 +1169,7 @@ impl<'a> Type {
                     result_union_types.insert(self_union_type.flatten()?);
                 }
                 let result_union_types_arc = Arc::new(result_union_types);
-                Ok(self.with_kind(TypeKind::Union(result_union_types_arc.clone())))
+                Ok(self.with_kind(Type::from((*result_union_types_arc).clone()).into()))
             }
             TypeKind::Array(element_type) => match &element_type.kind {
                 TypeKind::Array(element_element_type) => {
@@ -1132,9 +1178,8 @@ impl<'a> Type {
                 TypeKind::Tuple(element_elements_types) => {
                     Ok(self.with_kind(TypeKind::Array(Box::new(
                         (
-                            TypeKind::Union(
-                                BTreeSet::from_iter(element_elements_types.iter().cloned()).into(),
-                            ),
+                            Type::from(BTreeSet::from_iter(element_elements_types.iter().cloned()))
+                                .kind,
                             element_elements_types.iter(),
                         )
                             .into(),
