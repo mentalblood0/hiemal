@@ -4,7 +4,7 @@
 
 - no recursive functions
 - no own syntax, parsing is deserialization
-- static type checking without annotations
+- no annotations, yet static type checking
 - tuples, union types, literal strings
 - polymorphic sequence and loop
 - match clause exhaustiveness checking

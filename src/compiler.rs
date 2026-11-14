@@ -908,40 +908,84 @@ impl Compiler {
                                         is_pure: true,
                                     };
                                     match variant_index {
-                                        0 => match (from_type_kind, at_type_kind) {
-                                            (TypeKind::Array(element_type), _) => {
-                                                Ok(error_type_properties
-                                                    .unified_recursively(*element_type.clone()))
-                                            }
-                                            (TypeKind::Tuple(elements_types), TypeKind::Number) => {
-                                                Ok(error_type_properties.unified_recursively(
-                                                    Type::from(BTreeSet::from_iter(
-                                                        elements_types.iter().cloned(),
-                                                    )),
-                                                ))
-                                            }
-                                            (
-                                                TypeKind::Tuple(elements_types),
-                                                TypeKind::LiteralNumber(index_rational),
-                                            ) => {
-                                                let index = index_rational.trunc().to_f64().value()
-                                                    as usize;
-                                                if let Some(element_type) =
-                                                    elements_types.get(index)
-                                                {
-                                                    Ok(Type::from(element_type.kind.clone()))
-                                                } else {
-                                                    Err(compilation_context.error(
-                                                        &elements_types,
-                                                        &format!(
-                                                            "tuple with at least {} elements",
-                                                            index + 1
-                                                        ),
-                                                    ))
+                                        0 => {
+                                            let from_variants: Vec<&TypeKind> =
+                                                match &from_type_kind {
+                                                    TypeKind::Union(variants) => variants
+                                                        .iter()
+                                                        .map(|r#type| &r#type.kind)
+                                                        .collect(),
+                                                    _ => vec![&from_type_kind],
+                                                };
+
+                                            let at_variants: Vec<&TypeKind> = match &at_type_kind {
+                                                TypeKind::Union(variants) => variants
+                                                    .iter()
+                                                    .map(|r#type| &r#type.kind)
+                                                    .collect(),
+                                                _ => vec![&at_type_kind],
+                                            };
+                                            let combinations = from_variants
+                                                .iter()
+                                                .flat_map(|&from| {
+                                                    at_variants.iter().map(move |&at| (from, at))
+                                                })
+                                                .collect::<Vec<_>>();
+                                            let mut result = BTreeSet::new();
+                                            for (from_type_kind, at_type_kind) in combinations {
+                                                match (from_type_kind, at_type_kind) {
+                                                    (TypeKind::Array(element_type), _) => {
+                                                        result.insert(
+                                                            error_type_properties
+                                                                .unified_recursively(
+                                                                    *element_type.clone(),
+                                                                ),
+                                                        );
+                                                    }
+                                                    (
+                                                        TypeKind::Tuple(elements_types),
+                                                        TypeKind::Number,
+                                                    ) => {
+                                                        result.insert(
+                                                            error_type_properties
+                                                                .unified_recursively(Type::from(
+                                                                    BTreeSet::from_iter(
+                                                                        elements_types
+                                                                            .iter()
+                                                                            .cloned(),
+                                                                    ),
+                                                                )),
+                                                        );
+                                                    }
+                                                    (
+                                                        TypeKind::Tuple(elements_types),
+                                                        TypeKind::LiteralNumber(index_rational),
+                                                    ) => {
+                                                        let index =
+                                                            index_rational.trunc().to_f64().value()
+                                                                as usize;
+                                                        if let Some(element_type) =
+                                                            elements_types.get(index)
+                                                        {
+                                                            result.insert(Type::from(
+                                                                element_type.kind.clone(),
+                                                            ));
+                                                        } else {
+                                                            return Err(compilation_context.error(
+                                                                &elements_types,
+                                                                &format!(
+                                                                    "tuple with at least {} \
+                                                                     elements",
+                                                                    index + 1
+                                                                ),
+                                                            ));
+                                                        }
+                                                    }
+                                                    _ => panic!(),
                                                 }
                                             }
-                                            _ => panic!(),
-                                        },
+                                            Ok(Type::from(result))
+                                        }
                                         1 => {
                                             let at_range_from_type_kind =
                                                 &at_type_kind.as_tuple().unwrap()[0].kind;

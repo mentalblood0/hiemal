@@ -110,6 +110,22 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test polymorphic get:
+        assert equal::
+          found:
+            get:
+              from:
+                match: { parse: { YAML: "[1, 2]" } }
+                as: _
+                cases:
+                  - - { tuple: [ number, number ] }
+                    - _
+                  - - { tuple: [ string, number ] }
+                    - _
+                  - - any
+                    - [ null, null ]
+              at: 0
+          expected: 1
       test FizzBuzz:
         assert equal::
           found:
