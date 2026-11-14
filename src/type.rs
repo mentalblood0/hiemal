@@ -654,9 +654,9 @@ impl TypeKind {
         } else {
             match (self, other) {
                 (TypeKind::Any, _)
-                | (TypeKind::String, TypeKind::LiteralString(_))
-                | (TypeKind::String, TypeKind::GenericLiteralString)
+                | (TypeKind::String, TypeKind::LiteralString(_) | TypeKind::GenericLiteralString)
                 | (TypeKind::Number, TypeKind::LiteralNumber(_))
+                | (TypeKind::Bool, TypeKind::LiteralTrue | TypeKind::LiteralFalse)
                 | (TypeKind::LiteralString(_), TypeKind::GenericLiteralString) => true,
                 (
                     TypeKind::Constructed(self_constructed),
@@ -684,7 +684,9 @@ impl TypeKind {
                 (self_type, TypeKind::Union(other_union_types)) => other_union_types
                     .iter()
                     .all(|other_union_type| self_type.contains(&other_union_type.kind)),
-                (TypeKind::Bool, TypeKind::LiteralTrue | TypeKind::LiteralFalse) => true,
+                (TypeKind::Array(self_element_type), TypeKind::Array(other_element_type)) => {
+                    self_element_type.kind.contains(&other_element_type.kind)
+                }
                 (
                     TypeKind::Tuple(self_tuple_elements_types),
                     TypeKind::Tuple(other_tuple_elements_types),

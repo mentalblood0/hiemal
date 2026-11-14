@@ -76,6 +76,10 @@ fn assert_type(
         Ok(())
     } else {
         match (&got_type.kind, expected_type_kind) {
+            (TypeKind::LiteralString(_), TypeKind::String | TypeKind::GenericLiteralString)
+            | (TypeKind::GenericLiteralString, TypeKind::String)
+            | (TypeKind::LiteralNumber(_), TypeKind::Number)
+            | (TypeKind::LiteralTrue | TypeKind::LiteralFalse, TypeKind::Bool) => Ok(()),
             (_, TypeKind::Any) => Ok(()),
             (
                 TypeKind::Constructed(got_constructed),
@@ -203,10 +207,6 @@ fn assert_type(
                 }
                 Ok(())
             }
-            (TypeKind::LiteralString(_), TypeKind::String)
-            | (TypeKind::GenericLiteralString, TypeKind::String)
-            | (TypeKind::LiteralNumber(_), TypeKind::Number)
-            | (TypeKind::LiteralString(_), TypeKind::GenericLiteralString) => Ok(()),
             _ => Err(compilation_context.error(got_type, expected_type_kind)),
         }
     }
@@ -1240,7 +1240,10 @@ impl Compiler {
                         if !covered.kind.contains(&compiled_match.node.r#type.kind) {
                             return Err(compilation_context.error(
                                 &BTreeMap::from_iter([("coverage for", covered)]),
-                                &BTreeMap::from_iter([("coverage for", &compiled_match.node.r#type)]),
+                                &BTreeMap::from_iter([(
+                                    "coverage for",
+                                    &compiled_match.node.r#type,
+                                )]),
                             ));
                         }
                         if result_cases.len() == 1
