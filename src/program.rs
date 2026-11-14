@@ -6,7 +6,6 @@ use serde::{
     Deserialize, Deserializer, Serialize,
     de::{MapAccess, Visitor},
 };
-use url::Url;
 
 use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
@@ -125,10 +124,6 @@ pub fn default_filter_as() -> Arc<String> {
     DEFAULT_ARGUMENT_NAME.to_string().into()
 }
 
-pub fn default_fold_as() -> Arc<String> {
-    "current".to_string().into()
-}
-
 pub fn default_sequence_as() -> Arc<String> {
     DEFAULT_ARGUMENT_NAME.to_string().into()
 }
@@ -166,34 +161,6 @@ pub enum Condition {
 pub enum DefaultArgument {
     #[serde(rename = "_")]
     Underline,
-}
-
-#[repr(u8)]
-#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
-#[serde(untagged)]
-pub enum From {
-    DefaultArgument(DefaultArgument),
-    Url(Url),
-    File(std::path::PathBuf),
-    Program(Arc<Program>),
-}
-
-#[repr(u8)]
-#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
-#[serde(untagged)]
-pub enum RangeBound {
-    Static(Option<usize>),
-    Dynamic(Program),
-}
-
-#[repr(u8)]
-#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
-#[serde(untagged)]
-pub enum AtSegment {
-    ProgramPathSegment(PathSegment),
-    ValueArrayIndex(usize),
-    ValueObjectKey(String),
-    ValueArrayRange((Box<RangeBound>, Box<RangeBound>)),
 }
 
 impl Default for Program {
@@ -265,7 +232,7 @@ pub enum PathSegment {
     Filter,
     #[serde(rename = "metaprogram")]
     Metaprogram,
-    #[serde(rename = "starting from")]
+    #[serde(rename = "starting with")]
     StartingWith,
     #[serde(rename = "next")]
     Next(Type),

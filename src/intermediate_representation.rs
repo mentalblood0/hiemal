@@ -170,30 +170,3 @@ pub struct ConstantDefinition {
     pub name_clustered_index: usize,
     pub node: Arc<Node>,
 }
-
-#[repr(u8)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
-pub enum RangeBound {
-    Static(Option<usize>),
-    Dynamic(Arc<Node>),
-}
-
-impl Default for RangeBound {
-    fn default() -> Self {
-        Self::Static(None)
-    }
-}
-
-#[repr(u8)]
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
-pub enum ValuePathSegment {
-    #[serde(rename = "array index")]
-    ArrayIndex(usize),
-    #[serde(rename = "object key")]
-    ObjectKey(String),
-    #[serde(rename = "array range")]
-    ArrayRange {
-        from: Box<RangeBound>,
-        to: Box<RangeBound>,
-    },
-}

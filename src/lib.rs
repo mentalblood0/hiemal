@@ -6,7 +6,6 @@ pub mod computer;
 pub mod containers;
 pub mod default_argument_name;
 pub mod immutable_object;
-pub mod includes_cache;
 pub mod intermediate_representation;
 pub mod merging_iterator;
 pub mod program;

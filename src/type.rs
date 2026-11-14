@@ -9,11 +9,12 @@ use std::{
 use anyhow::{Result, anyhow};
 use dashu::Rational;
 use enumset::{EnumSet, EnumSetType};
+use serde_with::{serde_as, DisplayFromStr};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     containers::{Object, Vector},
-    value::{Value, deserialize_rational, deserialize_rope, serialize_rope},
+    value::{Value, deserialize_rope, serialize_rope},
 };
 
 static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
@@ -344,6 +345,7 @@ pub enum Embedded {
     RandomNumberGenerator,
 }
 
+#[serde_as]
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TypeKind {
@@ -383,7 +385,7 @@ pub enum TypeKind {
         ropey::Rope,
     ),
     #[serde(rename = "literal number")]
-    LiteralNumber(#[serde(deserialize_with = "deserialize_rational")] Rational),
+    LiteralNumber(#[serde_as(as = "DisplayFromStr")] Rational),
     #[serde(rename = "generic literal string")]
     GenericLiteralString,
     #[serde(rename = "bytes")]
