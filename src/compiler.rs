@@ -1144,6 +1144,12 @@ impl Compiler {
                                             if current_match_type_kind_option.is_none() {
                                                 break;
                                             }
+                                        } else {
+                                            println!(
+                                                "INTERSECTION IS NONE: \
+                                                 {current_match_type_kind:?} AND {:?}",
+                                                case_match_type.kind
+                                            )
                                         }
                                     }
                                     Condition::Value(condition) => {

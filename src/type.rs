@@ -787,6 +787,9 @@ impl TypeKind {
                 (_, TypeKind::Any) => None,
                 (TypeKind::Bool, TypeKind::LiteralTrue) => Some(TypeKind::LiteralFalse),
                 (TypeKind::Bool, TypeKind::LiteralFalse) => Some(TypeKind::LiteralTrue),
+                (TypeKind::LiteralTrue | TypeKind::LiteralFalse, TypeKind::Bool)
+                | (TypeKind::LiteralString(_), TypeKind::String | TypeKind::GenericLiteralString)
+                | (TypeKind::LiteralNumber(_), TypeKind::Number) => None,
                 (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
                     let mut result = self_union_types
                         .iter()
@@ -932,7 +935,7 @@ impl TypeKind {
         if self == other {
             Some(self.clone())
         } else {
-            println!("intersection {self:?} {other:?}");
+            // println!("intersection {self:?} {other:?}");
             match (self, other) {
                 (TypeKind::Any, other_type) | (other_type, TypeKind::Any) => {
                     Some(other_type.clone())
