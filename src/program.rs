@@ -57,18 +57,6 @@ pub enum Program {
     Flatten {
         flatten: Box<Program>,
     },
-    Fold {
-        fold: Box<Program>,
-        #[serde(default = "default_fold_as")]
-        r#as: Arc<String>,
-        #[serde(default = "default_starting_with")]
-        #[serde(rename = "starting with")]
-        starting_with: Box<Program>,
-        #[serde(default = "default_accumulating_in")]
-        #[serde(rename = "accumulating in")]
-        accumulating_in: Arc<String>,
-        through: Box<Program>,
-    },
     Metaprogram {
         metaprogram: Box<Program>,
     },
@@ -261,12 +249,6 @@ impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
 pub enum PathSegment {
     #[serde(rename = "array index")]
     ArrayIndex(usize),
-    #[serde(rename = "from")]
-    From,
-    #[serde(rename = "at")]
-    At,
-    #[serde(rename = "default")]
-    Default,
     #[serde(rename = "match")]
     Match,
     #[serde(rename = "map")]
@@ -281,8 +263,6 @@ pub enum PathSegment {
     Flatten,
     #[serde(rename = "filter")]
     Filter,
-    #[serde(rename = "fold")]
-    Fold,
     #[serde(rename = "metaprogram")]
     Metaprogram,
     #[serde(rename = "starting from")]

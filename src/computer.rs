@@ -1394,7 +1394,6 @@ impl<'a> ComputationContext<'a> {
     ) -> Result<Arc<IntermediateValueAndMetadata>> {
         Ok(match node.content {
             Content::Sequence(_)
-            | Content::Fold { .. }
             | Content::EmbeddedFunctionCall { .. }
             | Content::UserFunctionCall { .. }
             // | Content::FromAt { .. }
@@ -4543,68 +4542,6 @@ impl<'a> ComputationContext<'a> {
                     type_kind: r#type,
                 }
                 .into())
-            }
-            Content::Fold {
-                fold,
-                fold_constant_name_clustered_index,
-                starting_with,
-                accumulating_in_constant_name_clustered_index,
-                fold_concrete_type_and_throughs,
-            } => {
-                let computed_fold =
-                    self.unroll_intermediate_value(&self.compute_node(fold, constants)?)?;
-                let computed_fold_array =
-                    computed_fold.as_ref().as_ref().unwrap().as_tuple().unwrap();
-                let mut result = self.compute_node(starting_with, constants)?;
-                let mut throughs_option = None;
-                for (fold_concrete_type, throughs) in fold_concrete_type_and_throughs.iter() {
-                    if fold_concrete_type
-                        .kind
-                        .contains(&Value::type_kind(&computed_fold))
-                    {
-                        throughs_option = Some(throughs.clone());
-                    }
-                }
-                match throughs_option.unwrap() {
-                    Throughs::Array(through_node) => {
-                        for element in computed_fold_array.inner.iter() {
-                            let mut through_constants = constants.clone();
-                            through_constants[*fold_constant_name_clustered_index] = Some(
-                                IntermediateValueAndMetadata {
-                                    intermediate_value: IntermediateValue::Value(element.clone()),
-                                    type_kind: Value::type_kind(element),
-                                }
-                                .into(),
-                            );
-                            through_constants[*accumulating_in_constant_name_clustered_index] =
-                                Some(result.clone());
-                            result = self.compute_node(&through_node, &through_constants)?;
-                        }
-                    }
-                    Throughs::Tuple {
-                        nodes_indexes,
-                        nodes,
-                    } => {
-                        for (element_index, element) in computed_fold_array.inner.iter().enumerate()
-                        {
-                            let mut through_constants = constants.clone();
-                            through_constants[*fold_constant_name_clustered_index] = Some(
-                                IntermediateValueAndMetadata {
-                                    intermediate_value: IntermediateValue::Value(element.clone()),
-                                    type_kind: node.r#type.kind.clone(),
-                                }
-                                .into(),
-                            );
-                            through_constants[*accumulating_in_constant_name_clustered_index] =
-                                Some(result.clone());
-                            result = self.compute_node(
-                                &nodes[nodes_indexes[element_index]],
-                                &through_constants,
-                            )?;
-                        }
-                    }
-                }
-                Ok(result)
             }
             Content::Sequence(intermediate_representation_content) => {
                 let computed_starting_with = self.compute_node(

@@ -6,7 +6,7 @@
 - no own syntax, parsing is deserialization
 - static type checking without annotations
 - tuples, union types, literal strings
-- polymorphic fold, sequence and loop
+- polymorphic sequence and loop
 - match clause exhaustiveness checking
 - capabilities restrictions checking
 - pass-by-value, strings and containers are cheap to clone
@@ -296,45 +296,6 @@ through:
     - match: _
       cases:
         - [number, _]
-        - [string, 0]
-```
-
-#### fold as starting with accumulating in through
-
-```yaml
-fold: [1, 2, 3]
-starting with: 0
-through:
-  sum: [{ constant: accumulator }, { constant: current }]
-```
-
-```yaml
-sum:
-  - fold: [1, 2, "string", 3, 4]
-    as: current
-    starting with: 0
-    accumulating in: accumulator
-    through:
-      match: current
-      cases:
-        - [number, sum: [{ constant: accumulator }, { constant: current }]]
-        - [string, 0]
-  - 1
-```
-
-```yaml
-fold:
-  match: { parse yaml: "lalala" }
-  cases:
-    - [number, [a, b, c]]
-    - [any, [4, 5, 6]]
-starting with: 0
-through:
-  sum:
-    - constant: accumulator
-    - match: current
-      cases:
-        - [number, { constant: current }]
         - [string, 0]
 ```
 

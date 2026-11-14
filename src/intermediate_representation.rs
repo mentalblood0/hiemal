@@ -98,13 +98,6 @@ pub enum Content {
     Map(Arc<Map>),
     Filter(Arc<Filter>),
     Flatten(Arc<Node>),
-    Fold {
-        fold: Arc<Node>,
-        fold_constant_name_clustered_index: usize,
-        starting_with: Arc<Node>,
-        accumulating_in_constant_name_clustered_index: usize,
-        fold_concrete_type_and_throughs: Vec<(Type, Throughs)>,
-    },
     Sequence(Arc<Sequence>),
     Loop(Loop),
     Pipe {
