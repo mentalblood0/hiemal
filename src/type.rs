@@ -409,23 +409,15 @@ impl From<BTreeSet<Type>> for Type {
         if union_types.contains(&TypeKind::Any.into()) {
             (TypeKind::Any, union_types.iter()).into()
         } else {
-            if union_types
-                .iter()
-                .any(|union_type| matches!(union_type.kind, TypeKind::Union(_)))
-            {
-                union_types = union_types
-                    .into_iter()
-                    .flat_map(|union_type| match &union_type.kind {
-                        TypeKind::Union(inner_union_types) => {
-                            Box::new((**inner_union_types).clone().into_iter())
-                                as Box<dyn Iterator<Item = Type>>
-                        }
-                        _ => {
-                            Box::new(std::iter::once(union_type)) as Box<dyn Iterator<Item = Type>>
-                        }
-                    })
-                    .collect();
-            };
+            let types_from_inner_unions = union_types
+                .extract_if(.., |union_type| {
+                    matches!(union_type.kind, TypeKind::Union(_))
+                })
+                .flat_map(|inner_union| (inner_union.kind.as_union().unwrap()).clone().into_iter())
+                .collect::<Vec<_>>();
+            for type_from_inner_union in types_from_inner_unions {
+                union_types.insert(type_from_inner_union);
+            }
             if let (Some(literal_true_union_type), Some(literal_false_union_type)) = (
                 union_types.get(&TypeKind::LiteralTrue.into()).cloned(),
                 union_types.get(&TypeKind::LiteralFalse.into()).cloned(),
@@ -631,6 +623,13 @@ impl TypeKind {
     pub fn as_tuple(&self) -> Option<&Vec<Type>> {
         match self {
             TypeKind::Tuple(result) => Some(result),
+            _ => None,
+        }
+    }
+
+    pub fn as_union(&self) -> Option<&BTreeSet<Type>> {
+        match self {
+            TypeKind::Union(result) => Some(result),
             _ => None,
         }
     }
