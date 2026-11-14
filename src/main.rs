@@ -68,6 +68,7 @@ pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) ->
                 result
             })
         };
+        let _ = &*EMBEDDED_FUNCTIONS;
         serde_saphyr::to_io_writer(
             output_writer,
             &time_it!("computed", {
