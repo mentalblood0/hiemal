@@ -2,7 +2,7 @@ use std::io::{BufReader, Write};
 
 use anyhow::{Context, Result};
 
-use hiemal::{compiler::Compiler, computer::Computer, time_it};
+use hiemal::{compiler::Compiler, computer::Computer, embedded_functions::EMBEDDED_FUNCTIONS, time_it};
 
 pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) -> Result<()> {
     let computer = Computer::default();
@@ -35,6 +35,7 @@ pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) ->
             let compiler = Compiler {
                 metaprograms_computer: computer.clone(),
             };
+            let _ = &*EMBEDDED_FUNCTIONS;
             let result = time_it!("compiled", { compiler.compile(&program)? });
             time_it!("cached", {
                 if let Some(parent) = cached_intermediate_representation_path.parent() {
