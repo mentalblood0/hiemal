@@ -4164,8 +4164,8 @@ impl<'a> ComputationContext<'a> {
                                 .get_from_intermediate_value(&from_intermediate_value, at_index)
                                 .with_context(|| {
                                     format!(
-                                        "can not get element by index {at_index} from\n{}",
-                                        serde_saphyr::to_string(&from_intermediate_value.type_kind).unwrap()
+                                        "can not get element by index {at_index} from\n{:?}",
+                                        from_intermediate_value.type_kind
                                     )
                                 })?.unwrap())
                         }
@@ -4177,9 +4177,9 @@ impl<'a> ComputationContext<'a> {
                                 .get_range_from_intermediate_value(&from_intermediate_value, at_from_index..at_to_index)
                                 .with_context(|| {
                                     format!(
-                                        "can not get slice by range {}..{} from\n{}",
+                                        "can not get slice by range {}..{} from\n{:?}",
                                         at_from_index, at_to_index,
-                                        serde_saphyr::to_string(&from_intermediate_value.type_kind).unwrap()
+                                        from_intermediate_value.type_kind
                                     )
                                 })?;
                             let type_kind = concrete_or_else(&node.r#type.kind, || TypeKind::Tuple(
@@ -4194,151 +4194,21 @@ impl<'a> ComputationContext<'a> {
                                 type_kind,
                             }.into())
                         }
+                        2 => {
+                            let at_key = at_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                            Ok(self
+                                .get_by_key_from_intermediate_value(&from_intermediate_value, &at_key)
+                                .with_context(|| {
+                                    format!(
+                                        "can not get element by key {at_key:?} from\n{:?}",
+                                        from_intermediate_value.type_kind
+                                    )
+                                })?.unwrap())
+                        }
                         _ => panic!(),
                     }
                 }
             },
-            // Content::FromAt {
-            //     from,
-            //     value_path_segments,
-            //     default,
-            // } => {
-            //     let mut result = self.compute_node(from, constants)?;
-            //     for path_segment in value_path_segments {
-            //         match path_segment {
-            //             ValuePathSegment::ArrayIndex(array_index) => {
-            //                 if let Some(new_result) = &mut self
-            //                     .get_from_intermediate_value(&result, *array_index)
-            //                     .with_context(|| {
-            //                         format!(
-            //                             "can not get element by index {array_index} from\n{}",
-            //                             serde_saphyr::to_string(&result.type_kind).unwrap()
-            //                         )
-            //                     })?
-            //                 {
-            //                     result = std::mem::take(new_result);
-            //                 } else {
-            //                     return self.compute_node(default, constants);
-            //                 }
-            //             }
-            //             ValuePathSegment::ObjectKey(object_key) => {
-            //                 if let Some(new_result) = &mut self
-            //                     .get_by_key_from_intermediate_value(&result, object_key)
-            //                     .with_context(|| {
-            //                         format!(
-            //                             "can not get value by key {object_key:?} from\n{}",
-            //                             serde_saphyr::to_string(&result.type_kind).unwrap()
-            //                         )
-            //                     })?
-            //                 {
-            //                     result = std::mem::take(new_result);
-            //                 } else {
-            //                     return self.compute_node(default, constants);
-            //                 }
-            //             }
-            //             ValuePathSegment::ArrayRange {
-            //                 from: range_from,
-            //                 to: range_to,
-            //             } => {
-            //                 let from_number = match &**range_from {
-            //                     RangeBound::Static(Some(range_from)) => *range_from,
-            //                     RangeBound::Static(None) => 0,
-            //                     RangeBound::Dynamic(from_node) => {
-            //                         self.unroll_intermediate_value(
-            //                             &self.compute_node(from_node, constants)?,
-            //                         )?
-            //                         .as_ref()
-            //                         .as_ref()
-            //                         .unwrap()
-            //                         .as_number()
-            //                         .unwrap()
-            //                         .trunc()
-            //                         .to_f64()
-            //                         .value()
-            //                         .max(0f64) as usize
-            //                     }
-            //                 };
-            //                 let to_number = match &**range_to {
-            //                     RangeBound::Static(Some(range_to)) => *range_to,
-            //                     RangeBound::Static(None) => usize::MAX,
-            //                     RangeBound::Dynamic(to_node) => self
-            //                         .unroll_intermediate_value(
-            //                             &self.compute_node(to_node, constants)?,
-            //                         )?
-            //                         .as_ref()
-            //                         .as_ref()
-            //                         .unwrap()
-            //                         .as_number()
-            //                         .unwrap()
-            //                         .trunc()
-            //                         .to_f64()
-            //                         .value()
-            //                         .min(usize::MAX as f64)
-            //                         as usize,
-            //                 };
-            //                 if result.type_kind.contains(&TypeKind::GenericLiteralString) {
-            //                     let unrolled_result = self.unroll_intermediate_value(&result)?;
-            //                     let string_value: ropey::Rope = if to_number == usize::MAX {
-            //                         unrolled_result
-            //                             .as_ref()
-            //                             .as_ref()
-            //                             .unwrap()
-            //                             .as_string()
-            //                             .unwrap()
-            //                             .get_slice(from_number..)
-            //                     } else {
-            //                         unrolled_result
-            //                             .as_ref()
-            //                             .as_ref()
-            //                             .unwrap()
-            //                             .as_string()
-            //                             .unwrap()
-            //                             .get_slice(from_number..to_number)
-            //                     }
-            //                     .unwrap_or_else(|| "".into())
-            //                     .into();
-            //                     result = IntermediateValueAndMetadata {
-            //                         intermediate_value: IntermediateValue::Value(
-            //                             Some(Value::String(string_value.clone())).into(),
-            //                         ),
-            //                         type_kind: TypeKind::LiteralString(string_value),
-            //                     }
-            //                     .into();
-            //                 } else {
-            //                     let result_elements = self
-            //                         .get_range_from_intermediate_value(
-            //                             &result,
-            //                             from_number..to_number,
-            //                         )
-            //                         .with_context(|| {
-            //                             format!(
-            //                                 "can not get slice by range from\n{}",
-            //                                 serde_saphyr::to_string(&result.type_kind).unwrap()
-            //                             )
-            //                         })?
-            //                         .inner
-            //                         .into_iter()
-            //                         .collect::<Vec<_>>();
-            //                     let r#type = TypeKind::Tuple(
-            //                         result_elements
-            //                             .iter()
-            //                             .map(|element| element.type_kind.clone().into())
-            //                             .collect::<Vec<_>>()
-            //                             .into(),
-            //                     );
-            //                     result = IntermediateValueAndMetadata {
-            //                         intermediate_value: IntermediateValue::Tuple(Vector {
-            //                             inner: result_elements,
-            //                         }),
-            //                         type_kind: r#type,
-            //                     }
-            //                     .into();
-            //                 }
-            //             }
-            //         }
-            //     }
-            //     Ok(result)
-            // }
             Content::UserFunctionCall {
                 arguments,
                 body,

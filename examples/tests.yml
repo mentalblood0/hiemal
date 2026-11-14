@@ -110,6 +110,22 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test polymorphic get by key:
+        assert equal::
+          found:
+            get:
+              from:
+                match: { parse: { YAML: "{ a: 1, b: 2 }" } }
+                as: _
+                cases:
+                  - - { object: { a: number, b: number } }
+                    - _
+                  - - { object: { a: string, b: number } }
+                    - _
+                  - - any
+                    - { a: null, b: null }
+              at: a
+          expected: 1
       test polymorphic get by range:
         assert equal::
           found:

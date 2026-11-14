@@ -1150,6 +1150,86 @@ impl Compiler {
                                             }
                                             Ok(Type::from(result))
                                         }
+                                        2 => {
+                                            let from_type_kind_variants: Vec<&TypeKind> =
+                                                match &from_type_kind {
+                                                    TypeKind::Union(variants) => variants
+                                                        .iter()
+                                                        .map(|r#type| &r#type.kind)
+                                                        .collect(),
+                                                    _ => vec![&from_type_kind],
+                                                };
+
+                                            let at_type_kind_variants: Vec<&TypeKind> =
+                                                match &at_type_kind {
+                                                    TypeKind::Union(variants) => variants
+                                                        .iter()
+                                                        .map(|r#type| &r#type.kind)
+                                                        .collect(),
+                                                    _ => vec![&at_type_kind],
+                                                };
+                                            let combinations = from_type_kind_variants
+                                                .iter()
+                                                .flat_map(|&from| {
+                                                    at_type_kind_variants
+                                                        .iter()
+                                                        .map(move |&at| (from, at))
+                                                })
+                                                .collect::<Vec<_>>();
+                                            let mut result = BTreeSet::new();
+                                            for (from_type_kind, at_type_kind) in combinations {
+                                                match (from_type_kind, at_type_kind) {
+                                                    (TypeKind::GenericObject(element_type), _) => {
+                                                        result.insert(
+                                                            error_type_properties
+                                                                .unified_recursively(
+                                                                    *element_type.clone(),
+                                                                ),
+                                                        );
+                                                    }
+                                                    (
+                                                        TypeKind::Object(inner_types),
+                                                        TypeKind::String
+                                                        | TypeKind::GenericLiteralString,
+                                                    ) => {
+                                                        result.insert(
+                                                            error_type_properties
+                                                                .unified_recursively(Type::from(
+                                                                    BTreeSet::from_iter(
+                                                                        inner_types
+                                                                            .values()
+                                                                            .cloned(),
+                                                                    ),
+                                                                )),
+                                                        );
+                                                    }
+                                                    (
+                                                        TypeKind::Object(inner_types),
+                                                        TypeKind::LiteralString(key_rope),
+                                                    ) => {
+                                                        let key = key_rope.to_string();
+                                                        if let Some(element_type) =
+                                                            inner_types.get(&key)
+                                                        {
+                                                            result.insert(Type::from(
+                                                                element_type.kind.clone(),
+                                                            ));
+                                                        } else {
+                                                            return Err(
+                                                                compilation_context.error(
+                                                                    &inner_types,
+                                                                    &format!(
+                                                                        "object with key {key:?}",
+                                                                    ),
+                                                                ),
+                                                            );
+                                                        }
+                                                    }
+                                                    _ => panic!(),
+                                                }
+                                            }
+                                            Ok(Type::from(result))
+                                        }
                                         _ => panic!(),
                                     }
                                 }),
