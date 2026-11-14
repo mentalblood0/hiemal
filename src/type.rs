@@ -261,12 +261,18 @@ where
     }
 }
 
-#[derive(Deserialize, Serialize, Clone, Default, Eq, Debug)]
+#[derive(Deserialize, Serialize, Clone, Default, Eq)]
 #[serde(from = "TypeKind")]
 #[serde(into = "TypeKind")]
 pub struct Type {
     pub kind: TypeKind,
     pub properties: TypeProperties,
+}
+
+impl std::fmt::Debug for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.kind.fmt(f)
+    }
 }
 
 impl PartialEq for Type {
@@ -338,7 +344,7 @@ pub enum Embedded {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TypeKind {
     #[serde(rename = "number")]
     Number,
@@ -389,6 +395,12 @@ pub enum TypeKind {
     Embedded(Embedded),
     #[serde(rename = "never")]
     Never,
+}
+
+impl std::fmt::Debug for TypeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&serde_saphyr::to_string(self).map_err(|_| std::fmt::Error)?)
+    }
 }
 
 impl From<BTreeSet<Type>> for Type {

@@ -72,147 +72,134 @@ fn assert_type(
     expected_type_kind: &TypeKind,
     compilation_context: &CompilationContext,
 ) -> Result<()> {
-    if expected_type_kind == &TypeKind::Any || expected_type_kind.contains(&got_type.kind) {
-        Ok(())
-    } else {
-        match (&got_type.kind, expected_type_kind) {
-            (
-                TypeKind::Constructed(got_constructed),
-                TypeKind::Constructed(expected_constructed),
-            ) => assert_type(
+    println!("assert type\n{got_type:?}{expected_type_kind:?}");
+    match (&got_type.kind, expected_type_kind) {
+        (_, TypeKind::Any) => Ok(()),
+        (TypeKind::Constructed(got_constructed), TypeKind::Constructed(expected_constructed)) => {
+            assert_type(
                 got_constructed.inner(),
                 &expected_constructed.inner().kind,
                 compilation_context,
-            ),
-            (TypeKind::Constructed(got_constructed), _) => assert_type(
-                got_constructed.inner(),
-                expected_type_kind,
-                compilation_context,
-            ),
-            (_, TypeKind::Constructed(expected_constructed)) => assert_type(
-                got_type,
-                &expected_constructed.inner().kind,
-                compilation_context,
-            ),
-            (TypeKind::Array(got_element_type), TypeKind::Array(expected_element_type)) => {
-                let mut inner_compilation_context = compilation_context.clone();
-                inner_compilation_context
-                    .path
-                    .0
-                    .push(PathSegment::ArrayIndex(0));
+            )
+        }
+        (TypeKind::Constructed(got_constructed), _) => assert_type(
+            got_constructed.inner(),
+            expected_type_kind,
+            compilation_context,
+        ),
+        (_, TypeKind::Constructed(expected_constructed)) => assert_type(
+            got_type,
+            &expected_constructed.inner().kind,
+            compilation_context,
+        ),
+        (TypeKind::Array(got_element_type), TypeKind::Array(expected_element_type)) => assert_type(
+            got_element_type,
+            &expected_element_type.kind,
+            compilation_context,
+        ),
+        (TypeKind::Array(got_element_type), TypeKind::Tuple(expected_elements_types)) => {
+            for expected_element_type in expected_elements_types.iter() {
                 assert_type(
                     got_element_type,
                     &expected_element_type.kind,
-                    &inner_compilation_context,
-                )
+                    compilation_context,
+                )?;
             }
-            (TypeKind::Array(got_element_type), TypeKind::Tuple(expected_elements_types)) => {
-                for expected_element_type in expected_elements_types.iter() {
-                    assert_type(
-                        got_element_type,
-                        &expected_element_type.kind,
-                        compilation_context,
-                    )?;
-                }
-                Ok(())
+            Ok(())
+        }
+        (TypeKind::Tuple(got_elements_types), TypeKind::Array(expected_element_type)) => {
+            for got_element_type in got_elements_types.iter() {
+                assert_type(
+                    got_element_type,
+                    &expected_element_type.kind,
+                    compilation_context,
+                )?;
             }
-            (TypeKind::Tuple(got_elements_types), TypeKind::Array(expected_element_type)) => {
-                for got_element_type in got_elements_types.iter() {
-                    assert_type(
-                        got_element_type,
-                        &expected_element_type.kind,
-                        compilation_context,
-                    )?;
-                }
-                Ok(())
-            }
-            (TypeKind::Object(got_inner_types), TypeKind::Object(expected_inner_types)) => {
-                for (expected_value_key, expected_value_type) in expected_inner_types.iter() {
-                    if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
-                        assert_type(
-                            got_value_type,
-                            &expected_value_type.kind,
-                            compilation_context,
-                        )?;
-                    } else {
-                        return Err(compilation_context.error(got_type, expected_type_kind));
-                    }
-                }
-                Ok(())
-            }
-            (TypeKind::Object(got_inner_types), TypeKind::GenericObject(expected_value_type)) => {
-                for got_value_type in got_inner_types.values() {
+            Ok(())
+        }
+        (TypeKind::Object(got_inner_types), TypeKind::Object(expected_inner_types)) => {
+            for (expected_value_key, expected_value_type) in expected_inner_types.iter() {
+                if let Some(got_value_type) = got_inner_types.get(expected_value_key) {
                     assert_type(
                         got_value_type,
                         &expected_value_type.kind,
                         compilation_context,
                     )?;
+                } else {
+                    return Err(compilation_context.error(got_type, expected_type_kind));
                 }
-                Ok(())
             }
-            (
-                TypeKind::GenericObject(got_value_type),
-                TypeKind::GenericObject(expected_value_type),
-            ) => {
-                let mut inner_compilation_context = compilation_context.clone();
-                inner_compilation_context
-                    .path
-                    .0
-                    .push(PathSegment::ArrayIndex(0));
+            Ok(())
+        }
+        (TypeKind::Object(got_inner_types), TypeKind::GenericObject(expected_value_type)) => {
+            for got_value_type in got_inner_types.values() {
                 assert_type(
                     got_value_type,
                     &expected_value_type.kind,
-                    &inner_compilation_context,
-                )
+                    compilation_context,
+                )?;
             }
-            (TypeKind::Union(got_union_types), TypeKind::Union(expected_union_types)) => {
-                if !got_union_types.is_subset(expected_union_types) {
-                    for one_of_got_types in got_union_types.iter() {
-                        let mut found = false;
-                        for one_of_expected_types in expected_union_types.iter() {
-                            if assert_type(
-                                one_of_got_types,
-                                &one_of_expected_types.kind,
-                                compilation_context,
-                            )
-                            .is_ok()
-                            {
-                                found = true;
-                                break;
-                            }
-                        }
-                        if !found {
-                            return Err(compilation_context.error(got_type, expected_type_kind));
-                        }
-                    }
-                }
-                Ok(())
-            }
-            (TypeKind::Union(got_union_types), _) => {
-                for one_of_got_types in got_union_types.iter() {
-                    assert_type(one_of_got_types, expected_type_kind, compilation_context)?;
-                }
-                Ok(())
-            }
-            (_, TypeKind::Union(expected_union_types)) => {
-                if !expected_union_types.contains(&expected_type_kind.clone().into()) {
-                    for one_of_expected_types in expected_union_types.iter() {
-                        if let Ok(result_type) =
-                            assert_type(got_type, &one_of_expected_types.kind, compilation_context)
-                        {
-                            return Ok(result_type);
-                        }
-                    }
-                    return Err(compilation_context.error(got_type, expected_type_kind));
-                }
-                Ok(())
-            }
-            (TypeKind::LiteralString(_), TypeKind::String)
-            | (TypeKind::GenericLiteralString, TypeKind::String)
-            | (TypeKind::LiteralNumber(_), TypeKind::Number)
-            | (TypeKind::LiteralString(_), TypeKind::GenericLiteralString) => Ok(()),
-            _ => Err(compilation_context.error(got_type, expected_type_kind)),
+            Ok(())
         }
+        (TypeKind::GenericObject(got_value_type), TypeKind::GenericObject(expected_value_type)) => {
+            let mut inner_compilation_context = compilation_context.clone();
+            inner_compilation_context
+                .path
+                .0
+                .push(PathSegment::ArrayIndex(0));
+            assert_type(
+                got_value_type,
+                &expected_value_type.kind,
+                &inner_compilation_context,
+            )
+        }
+        (TypeKind::Union(got_union_types), TypeKind::Union(expected_union_types)) => {
+            if !got_union_types.is_subset(expected_union_types) {
+                for one_of_got_types in got_union_types.iter() {
+                    let mut found = false;
+                    for one_of_expected_types in expected_union_types.iter() {
+                        if assert_type(
+                            one_of_got_types,
+                            &one_of_expected_types.kind,
+                            compilation_context,
+                        )
+                        .is_ok()
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        return Err(compilation_context.error(got_type, expected_type_kind));
+                    }
+                }
+            }
+            Ok(())
+        }
+        (TypeKind::Union(got_union_types), _) => {
+            for one_of_got_types in got_union_types.iter() {
+                assert_type(one_of_got_types, expected_type_kind, compilation_context)?;
+            }
+            Ok(())
+        }
+        (_, TypeKind::Union(expected_union_types)) => {
+            if !expected_union_types.contains(&expected_type_kind.clone().into()) {
+                for one_of_expected_types in expected_union_types.iter() {
+                    if let Ok(result_type) =
+                        assert_type(got_type, &one_of_expected_types.kind, compilation_context)
+                    {
+                        return Ok(result_type);
+                    }
+                }
+                return Err(compilation_context.error(got_type, expected_type_kind));
+            }
+            Ok(())
+        }
+        (TypeKind::LiteralString(_), TypeKind::String)
+        | (TypeKind::GenericLiteralString, TypeKind::String)
+        | (TypeKind::LiteralNumber(_), TypeKind::Number)
+        | (TypeKind::LiteralString(_), TypeKind::GenericLiteralString) => Ok(()),
+        _ => Err(compilation_context.error(got_type, expected_type_kind)),
     }
 }
 
@@ -370,14 +357,11 @@ impl Compiler {
             .ok_or_else(|| {
                 argument_compilation_context.error(
                     &compiled_argument.node.r#type,
-                    &TypeKind::Union(
-                        BTreeSet::from_iter(
-                            EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize]
-                                .iter()
-                                .map(|signature| signature.argument.clone().into()),
-                        )
-                        .into(),
-                    ),
+                    &Type::from(BTreeSet::from_iter(
+                        EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize]
+                            .iter()
+                            .map(|signature| signature.argument.clone().into()),
+                    )),
                 )
             })?;
         // if argument_is_computable && !compiled_argument.node.r#type.properties.is_computable {
@@ -1146,9 +1130,7 @@ impl Compiler {
                                             }
                                         } else {
                                             println!(
-                                                "INTERSECTION IS NONE: \
-                                                 {current_match_type_kind:?} AND {:?}",
-                                                case_match_type.kind
+                                                "INTERSECTION IS NONE\n{current_match_type_kind:?}{case_match_type:?}",
                                             )
                                         }
                                     }
