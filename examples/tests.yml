@@ -96,17 +96,17 @@ functions:
   #       - - any
   #         - from: _
   #           at: [match regex result]
-constants:
-  constructed regex:
-    compile regex:
-      - word boundary
-      - group:
-          - repeat: [word character]
-            exactly: 13
-        name: horror
-      - word boundary
-  raw regex:
-    compile regex: \b\w{13}\b
+# constants:
+#   constructed regex:
+#     compile regex:
+#       - word boundary
+#       - group:
+#           - repeat: [word character]
+#             exactly: 13
+#         name: horror
+#       - word boundary
+#   raw regex:
+#     compile regex: \b\w{13}\b
 compute:
   tests report::
     key-value pairs:

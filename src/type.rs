@@ -672,36 +672,15 @@ impl TypeKind {
                     self.contains(&other_constructed.inner().kind)
                 }
                 (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
-                    if self_union_types.is_superset(other_union_types) {
-                        true
-                    } else {
-                        for other_union_type in other_union_types.as_ref() {
-                            let mut found_container = false;
-                            for self_union_type in self_union_types.as_ref() {
-                                if self_union_type.kind.contains(&other_union_type.kind) {
-                                    found_container = true;
-                                    break;
-                                }
-                            }
-                            if !found_container {
-                                return false;
-                            }
-                        }
-                        true
-                    }
+                    self_union_types.iter().all(|self_union_type| {
+                        other_union_types.iter().all(|other_union_type| {
+                            self_union_type.kind.contains(&other_union_type.kind)
+                        })
+                    })
                 }
-                (TypeKind::Union(self_union_types), other_type_kind) => {
-                    if self_union_types.contains(&other_type_kind.clone().into()) {
-                        true
-                    } else {
-                        for self_union_type in self_union_types.as_ref() {
-                            if self_union_type.kind.contains(other_type_kind) {
-                                return true;
-                            }
-                        }
-                        false
-                    }
-                }
+                (TypeKind::Union(self_union_types), other_type_kind) => self_union_types
+                    .iter()
+                    .all(|self_union_type| self_union_type.kind.contains(other_type_kind)),
                 (self_type, TypeKind::Union(other_union_types)) => other_union_types
                     .iter()
                     .all(|other_union_type| self_type.contains(&other_union_type.kind)),
