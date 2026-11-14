@@ -683,7 +683,7 @@ impl TypeKind {
                     .any(|self_union_type| self_union_type.kind.contains(other_type_kind)),
                 (self_type, TypeKind::Union(other_union_types)) => other_union_types
                     .iter()
-                    .any(|other_union_type| self_type.contains(&other_union_type.kind)),
+                    .all(|other_union_type| self_type.contains(&other_union_type.kind)),
                 (TypeKind::Array(self_element_type), TypeKind::Array(other_element_type)) => {
                     self_element_type.kind.contains(&other_element_type.kind)
                 }
