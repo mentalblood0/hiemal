@@ -2,7 +2,10 @@ use std::{collections::BTreeMap, sync::LazyLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::r#type::{TypeKind, TypeProperties};
+use crate::{
+    time_it,
+    r#type::{TypeKind, TypeProperties},
+};
 
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
@@ -98,9 +101,11 @@ pub fn default_argument_is_computable() -> bool {
 
 pub static EMBEDDED_FUNCTIONS: LazyLock<Vec<Vec<EmbeddedFunctionSignature>>> =
     LazyLock::new(|| {
-        let mut name_and_signature_pairs = serde_saphyr::from_str::<
-            BTreeMap<EmbeddedFunction, Vec<EmbeddedFunctionSignature>>,
-        >(include_str!("embedded_functions.yml"))
+        let mut name_and_signature_pairs = time_it!("loaded embedded functions signatures", {
+            serde_saphyr::from_str::<BTreeMap<EmbeddedFunction, Vec<EmbeddedFunctionSignature>>>(
+                include_str!("embedded_functions.yml"),
+            )
+        })
         .unwrap()
         .into_iter()
         .collect::<Vec<_>>();

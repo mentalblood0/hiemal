@@ -1,5 +1,6 @@
 #![allow(clippy::mutable_key_type)]
 pub mod embedded_functions;
+pub mod time_it;
 pub mod compiler;
 pub mod computer;
 pub mod containers;

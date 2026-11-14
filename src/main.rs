@@ -2,16 +2,7 @@ use std::io::{BufReader, Write};
 
 use anyhow::{Context, Result};
 
-use hiemal::{compiler::Compiler, computer::Computer};
-
-macro_rules! time_it {
-    ($action:expr, $code:block) => {{
-        let start = std::time::Instant::now();
-        let result = $code;
-        eprintln!("{} in {:?}", $action, start.elapsed());
-        result
-    }};
-}
+use hiemal::{compiler::Compiler, computer::Computer, time_it};
 
 pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) -> Result<()> {
     let computer = Computer::default();

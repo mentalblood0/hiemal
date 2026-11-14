@@ -145,242 +145,242 @@ compute:
             - bytes: d6 d1 d1 8d ec d4 b1 96 d0 51
             - bytes: 3b cd ab 20 b3 ca 3d 70 ff c7
             - bytes: 22 a3 25 b1 57 1c a6 82 f6 e6
-      # test substract:
-      #   assert equal::
-      #     found:
-      #     - substract: [3, 2]
-      #     - substract:
-      #       - duration: 2ms
-      #       - duration: 3ms
-      #     - substract:
-      #       - time: 2026-11-08T15:45:50.308478485Z
-      #       - duration: 1ms
-      #     - substract:
-      #       - time: 2026-11-08T15:45:50.308478485Z
-      #       - time: 2026-11-08T15:45:50.307478485Z
-      #     - substract:
-      #       - time: 2026-11-08T15:45:50.307478485Z
-      #       - time: 2026-11-08T15:45:50.308478485Z
-      #     expected:
-      #     - 1
-      #     - duration: 0ms
-      #     - time: 2026-11-08T15:45:50.307478485Z
-      #     - duration: 1ms
-      #     - duration: 0ms
-      # test sum:
-      #   assert equal::
-      #     found:
-      #     - sum: [ 1, 2 ]
-      #     - sum:
-      #       - duration: 1ms
-      #       - duration: 2ms
-      #     - sum:
-      #       - time: 2026-11-08T15:45:50.308478485Z
-      #       - duration: 1ms
-      #     expected:
-      #     - 3
-      #     - duration: 3ms
-      #     - time: 2026-11-08T15:45:50.309478485Z
+      test substract:
+        assert equal::
+          found:
+          - substract: [3, 2]
+          - substract:
+            - duration: 2ms
+            - duration: 3ms
+          - substract:
+            - time: 2026-11-08T15:45:50.308478485Z
+            - duration: 1ms
+          - substract:
+            - time: 2026-11-08T15:45:50.308478485Z
+            - time: 2026-11-08T15:45:50.307478485Z
+          - substract:
+            - time: 2026-11-08T15:45:50.307478485Z
+            - time: 2026-11-08T15:45:50.308478485Z
+          expected:
+          - 1
+          - duration: 0ms
+          - time: 2026-11-08T15:45:50.307478485Z
+          - duration: 1ms
+          - duration: 0ms
+      test sum:
+        assert equal::
+          found:
+          - sum: [ 1, 2 ]
+          - sum:
+            - duration: 1ms
+            - duration: 2ms
+          - sum:
+            - time: 2026-11-08T15:45:50.308478485Z
+            - duration: 1ms
+          expected:
+          - 3
+          - duration: 3ms
+          - time: 2026-11-08T15:45:50.309478485Z
       # # test file metadata:
       # #   assert equal::
       # #     found:
       # #       from: { file metadata: src/embedded_functions.yml }
       # #       at: [ is file ]
       # #     expected: true
-      # test glob:
-      #   assert equal::
-      #     found: { glob: src/*.yml }
-      #     expected: [ src/embedded_functions.yml ]
-      # test sleep:
-      #   assert equal::
-      #     found: { sleep: { duration: 1ms } }
-      #     expected: { duration: 1ms }
-      # test loop:
-      #   assert equal::
-      #     found:
-      #       starting with: 1
-      #       loop: { sum: [_, 2] }
-      #       while: { is sorted: [_, 5] }
-      #     expected: 7
-      # test hash:
-      #   assert equal::
-      #     found:
-      #       flatten:
-      #         - map:
-      #             - SHA224
-      #             - SHA256
-      #             - SHA384
-      #             - SHA512
-      #             - SHA512/224
-      #             - SHA512/256
-      #             - XXH3_64
-      #             - XXH3_128
-      #             - GxHash32: 0
-      #             - GxHash64: 0
-      #             - GxHash128: 0
-      #             - XXH32: 0
-      #             - XXH64: 0
-      #             - BLAKE3:
-      #                 size: 100
-      #                 key: null
-      #             - BLAKE3:
-      #                 size: 32
-      #                 key: { bytes from string: first 32 bytes only }
-      #             - BLAKE3 derive key: some context
-      #           through:
-      #             hash:
-      #               algorithm: _
-      #               data: { bytes from string: hello world }
-      #         - map:
-      #             - GxHash128: 0
-      #             - BLAKE3:
-      #                 size: 100
-      #                 key: null
-      #             - BLAKE3:
-      #                 size: 32
-      #                 key: { bytes from string: first 32 bytes only }
-      #           through:
-      #             hash:
-      #               algorithm: _
-      #               file path: examples/arguments.yml
-      #     expected:
-      #       - bytes: 2f 05 47 7f c2 4b b4 fa ef d8 65 17 15 6d af de ce c4 5b 8a d3 cf 25 22 a5 63 58 2b
-      #       - bytes: b9 4d 27 b9 93 4d 3e 08 a5 2e 52 d7 da 7d ab fa c4 84 ef e3 7a 53 80 ee 90 88 f7 ac e2 ef cd e9
-      #       - bytes: fd bd 8e 75 a6 7f 29 f7 01 a4 e0 40 38 5e 2e 23 98 63 03 ea 10 23 92 11 af 90 7f cb b8 35 78 b3 e4 17 cb 71 ce 64 6e fd 08 19 dd 8c 08 8d e1 bd
-      #       - bytes: 30 9e cc 48 9c 12 d6 eb 4c c4 0f 50 c9 02 f2 b4 d0 ed 77 ee 51 1a 7c 7a 9b cd 3c a8 6d 4c d8 6f 98 9d d3 5b c5 ff 49 96 70 da 34 25 5b 45 b0 cf d8 30 e8 1f 60 5d cf 7d c5 54 2e 93 ae 9c d7 6f
-      #       - bytes: 22 e0 d5 23 36 f6 4a 99 80 85 07 8b 05 a6 e3 7b 26 f8 12 0f 43 bf 4d b4 c4 3a 64 ee
-      #       - bytes: 0a c5 61 fa c8 38 10 4e 3f 2e 4a d1 07 b4 be e3 e9 38 bf 15 f2 b1 5f 00 9c cc cd 61 a9 13 f0 17
-      #       - bytes: d4 47 b1 ea 40 e6 98 8b
-      #       - bytes: df 8d 09 e9 3f 87 49 00 a9 9b 87 75 cc 15 b6 c7
-      #       - bytes: 79 e4 1e f3
-      #       - bytes: 27 00 ce d9 79 e4 1e f3
-      #       - bytes: 25 30 91 e6 54 89 1f 5e 27 00 ce d9 79 e4 1e f3
-      #       - bytes: ce bb 66 22
-      #       - bytes: 45 ab 67 34 b2 1e 69 68
-      #       - bytes: d7 49 81 ef a7 0a 0c 88 0b 8d 8c 19 85 d0 75 db cb f6 79 b9 9a 5f 99 14 e5 aa f9 6b 83 1a 9e 24 a0 20 ed 55 ae d9 a6 ab 2e af 3f d7 0d 2c 98 c9 49 e1 42 d8 f4 2a 10 25 01 90 b6 99 e0 2c f9 eb 68 61 2e 1a 55 6f ee 6c f7 26 bc b0 99 4f 7d 3e 66 9e da 39 47 88 f8 c8 0a 4f 0e a0 56 be 3d 4d ff d8 06 9d
-      #       - bytes: e5 c1 f8 26 bb 9c 23 f2 bf 25 70 75 66 f4 95 93 a5 f0 f6 46 fd 3e 2d 8b 15 58 de 92 36 08 c8 b9
-      #       - bytes: 4f d1 1c e7 b1 be a1 57 e5 6f 8a a6 93 9a 78 a0 15 bf 11 77 65 17 0b 3f 0e 98 d5 9e a3 8c 9d ba
-      #       - bytes: 3c 00 41 67 64 e7 3c 1d 69 16 63 67 2b 29 b3 06
-      #       - bytes: 3a 65 55 5d 6d 29 b0 72 bc e5 f8 d5 a7 a1 54 8a 0c da 51 8e 5f 3f 90 b6 ba 29 48 b6 fd df 12 19 8e ed 61 17 e8 c0 02 9b 32 06 b6 c3 96 b1 9e 26 3c f4 e0 00 08 a6 ad fe 70 15 d0 49 31 50 18 36 72 db 92 d0 47 b9 49 e8 68 2d 24 02 23 6c a3 88 af 7e 06 e4 d1 6b a3 de 17 3f a0 8f 43 9f 52 31 bd 1b 35 0e
-      #       - bytes: 55 27 1c 6a 4b e1 98 2d 15 2a 84 ac 5c 25 f0 d8 95 0d 43 f5 05 65 ef 21 90 b9 0f 78 bb 2b 1e 82
-      # test serialize to and parse:
-      #   constants:
-      #     value: [1, 2, { lalala: null }, 3]
-      #     binary: { bytes: 25 30 91 e6 54 89 1f 5e 27 00 ce d9 79 e4 1e f3 }
-      #   compute:
-      #     assert equal::
-      #       found:
-      #         map:
-      #           - [ YAML, { constant: value } ]
-      #           - [ JSON, { constant: value } ]
-      #           - [ bincode, { constant: value } ]
-      #           - [ hexadecimal lowercase, { constant: binary } ]
-      #           - [ hexadecimal uppercase, { constant: binary } ]
-      #           - [ base32, { constant: binary } ]
-      #           - [ base32 no padding, { constant: binary } ]
-      #           - [ base32 no padding no case, { constant: binary } ]
-      #           - [ base64, { constant: binary } ]
-      #           - [ base64 no padding, { constant: binary } ]
-      #           - [ base64 URL, { constant: binary } ]
-      #           - [ base64 URL no padding, { constant: binary } ]
-      #           - [ base64 MIME, { constant: binary } ]
-      #           - [ base64 MIME permissive, { constant: binary } ]
-      #         through:
-      #           parse:
-      #             object from:
-      #               - - { get: { from: _, at: 0 } }
-      #                 - serialize to:
-      #                     object from:
-      #                       - - { get: { from: _, at: 0 } }
-      #                         - { get: { from: _, at: 1 } }
-      #       expected:
-      #       - { constant: value }
-      #       - { constant: value }
-      #       - { constant: value }
-      #       - { constant: binary }
-      #       - { constant: binary }
-      #       - { constant: binary }
-      #       - { constant: binary }
-      #       - { constant: binary }
-      #       - { constant: binary }
-      #       - { constant: binary }
-      #       - { constant: binary }
-      #       - { constant: binary }
-      #       - { constant: binary }
-      #       - { constant: binary }
-      # test sort:
-      #   assert equal::
-      #     found:
-      #       sort: [2, 3, 1]
-      #     expected: [1, 2, 3]
-      # test optimize pure literal-typed code:
-      #   assert equal::
-      #     found:
-      #       pipe:
-      #         - { sleep: { duration: 8h } }
-      #         - true
-      #     expected: true
-      # # test send request:
-      # #   assert equal::
-      # #     found:
-      # #       constants:
-      # #         client:
-      # #           HTTP client:
-      # #             - error on bad status code: false
-      # #             - proxy: false
-      # #       compute:
-      # #         from:
-      # #           send request:
-      # #             client: { constant: client }
-      # #             request:
-      # #               URL: https://httpbingo.org/get
-      # #               method: GET
-      # #               body: null
-      # #               parameters: []
-      # #         at: [ status ]
-      # #     expected: OK
-      # test run command:
+      test glob:
+        assert equal::
+          found: { glob: src/*.yml }
+          expected: [ src/embedded_functions.yml ]
+      test sleep:
+        assert equal::
+          found: { sleep: { duration: 1ms } }
+          expected: { duration: 1ms }
+      test loop:
+        assert equal::
+          found:
+            starting with: 1
+            loop: { sum: [_, 2] }
+            while: { is sorted: [_, 5] }
+          expected: 7
+      test hash:
+        assert equal::
+          found:
+            flatten:
+              - map:
+                  - SHA224
+                  - SHA256
+                  - SHA384
+                  - SHA512
+                  - SHA512/224
+                  - SHA512/256
+                  - XXH3_64
+                  - XXH3_128
+                  - GxHash32: 0
+                  - GxHash64: 0
+                  - GxHash128: 0
+                  - XXH32: 0
+                  - XXH64: 0
+                  - BLAKE3:
+                      size: 100
+                      key: null
+                  - BLAKE3:
+                      size: 32
+                      key: { bytes from string: first 32 bytes only }
+                  - BLAKE3 derive key: some context
+                through:
+                  hash:
+                    algorithm: _
+                    data: { bytes from string: hello world }
+              - map:
+                  - GxHash128: 0
+                  - BLAKE3:
+                      size: 100
+                      key: null
+                  - BLAKE3:
+                      size: 32
+                      key: { bytes from string: first 32 bytes only }
+                through:
+                  hash:
+                    algorithm: _
+                    file path: examples/arguments.yml
+          expected:
+            - bytes: 2f 05 47 7f c2 4b b4 fa ef d8 65 17 15 6d af de ce c4 5b 8a d3 cf 25 22 a5 63 58 2b
+            - bytes: b9 4d 27 b9 93 4d 3e 08 a5 2e 52 d7 da 7d ab fa c4 84 ef e3 7a 53 80 ee 90 88 f7 ac e2 ef cd e9
+            - bytes: fd bd 8e 75 a6 7f 29 f7 01 a4 e0 40 38 5e 2e 23 98 63 03 ea 10 23 92 11 af 90 7f cb b8 35 78 b3 e4 17 cb 71 ce 64 6e fd 08 19 dd 8c 08 8d e1 bd
+            - bytes: 30 9e cc 48 9c 12 d6 eb 4c c4 0f 50 c9 02 f2 b4 d0 ed 77 ee 51 1a 7c 7a 9b cd 3c a8 6d 4c d8 6f 98 9d d3 5b c5 ff 49 96 70 da 34 25 5b 45 b0 cf d8 30 e8 1f 60 5d cf 7d c5 54 2e 93 ae 9c d7 6f
+            - bytes: 22 e0 d5 23 36 f6 4a 99 80 85 07 8b 05 a6 e3 7b 26 f8 12 0f 43 bf 4d b4 c4 3a 64 ee
+            - bytes: 0a c5 61 fa c8 38 10 4e 3f 2e 4a d1 07 b4 be e3 e9 38 bf 15 f2 b1 5f 00 9c cc cd 61 a9 13 f0 17
+            - bytes: d4 47 b1 ea 40 e6 98 8b
+            - bytes: df 8d 09 e9 3f 87 49 00 a9 9b 87 75 cc 15 b6 c7
+            - bytes: 79 e4 1e f3
+            - bytes: 27 00 ce d9 79 e4 1e f3
+            - bytes: 25 30 91 e6 54 89 1f 5e 27 00 ce d9 79 e4 1e f3
+            - bytes: ce bb 66 22
+            - bytes: 45 ab 67 34 b2 1e 69 68
+            - bytes: d7 49 81 ef a7 0a 0c 88 0b 8d 8c 19 85 d0 75 db cb f6 79 b9 9a 5f 99 14 e5 aa f9 6b 83 1a 9e 24 a0 20 ed 55 ae d9 a6 ab 2e af 3f d7 0d 2c 98 c9 49 e1 42 d8 f4 2a 10 25 01 90 b6 99 e0 2c f9 eb 68 61 2e 1a 55 6f ee 6c f7 26 bc b0 99 4f 7d 3e 66 9e da 39 47 88 f8 c8 0a 4f 0e a0 56 be 3d 4d ff d8 06 9d
+            - bytes: e5 c1 f8 26 bb 9c 23 f2 bf 25 70 75 66 f4 95 93 a5 f0 f6 46 fd 3e 2d 8b 15 58 de 92 36 08 c8 b9
+            - bytes: 4f d1 1c e7 b1 be a1 57 e5 6f 8a a6 93 9a 78 a0 15 bf 11 77 65 17 0b 3f 0e 98 d5 9e a3 8c 9d ba
+            - bytes: 3c 00 41 67 64 e7 3c 1d 69 16 63 67 2b 29 b3 06
+            - bytes: 3a 65 55 5d 6d 29 b0 72 bc e5 f8 d5 a7 a1 54 8a 0c da 51 8e 5f 3f 90 b6 ba 29 48 b6 fd df 12 19 8e ed 61 17 e8 c0 02 9b 32 06 b6 c3 96 b1 9e 26 3c f4 e0 00 08 a6 ad fe 70 15 d0 49 31 50 18 36 72 db 92 d0 47 b9 49 e8 68 2d 24 02 23 6c a3 88 af 7e 06 e4 d1 6b a3 de 17 3f a0 8f 43 9f 52 31 bd 1b 35 0e
+            - bytes: 55 27 1c 6a 4b e1 98 2d 15 2a 84 ac 5c 25 f0 d8 95 0d 43 f5 05 65 ef 21 90 b9 0f 78 bb 2b 1e 82
+      test serialize to and parse:
+        constants:
+          value: [1, 2, { lalala: null }, 3]
+          binary: { bytes: 25 30 91 e6 54 89 1f 5e 27 00 ce d9 79 e4 1e f3 }
+        compute:
+          assert equal::
+            found:
+              map:
+                - [ YAML, { constant: value } ]
+                - [ JSON, { constant: value } ]
+                - [ bincode, { constant: value } ]
+                - [ hexadecimal lowercase, { constant: binary } ]
+                - [ hexadecimal uppercase, { constant: binary } ]
+                - [ base32, { constant: binary } ]
+                - [ base32 no padding, { constant: binary } ]
+                - [ base32 no padding no case, { constant: binary } ]
+                - [ base64, { constant: binary } ]
+                - [ base64 no padding, { constant: binary } ]
+                - [ base64 URL, { constant: binary } ]
+                - [ base64 URL no padding, { constant: binary } ]
+                - [ base64 MIME, { constant: binary } ]
+                - [ base64 MIME permissive, { constant: binary } ]
+              through:
+                parse:
+                  object from:
+                    - - { get: { from: _, at: 0 } }
+                      - serialize to:
+                          object from:
+                            - - { get: { from: _, at: 0 } }
+                              - { get: { from: _, at: 1 } }
+            expected:
+            - { constant: value }
+            - { constant: value }
+            - { constant: value }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+            - { constant: binary }
+      test sort:
+        assert equal::
+          found:
+            sort: [2, 3, 1]
+          expected: [1, 2, 3]
+      test optimize pure literal-typed code:
+        assert equal::
+          found:
+            pipe:
+              - { sleep: { duration: 8h } }
+              - true
+          expected: true
+      # test send request:
       #   assert equal::
       #     found:
-      #       run:
-      #         command: echo
-      #         arguments: [lalala]
-      #     expected:
-      #       exit code: 0
-      #       standard output: { bytes from string: "lalala\n" }
-      #       standard error: { bytes: "" }
-      # test sequence while:
-      #   assert equal::
-      #     found:
-      #       starting with: 1
-      #       next: { sum: [_, 2] }
-      #       while: { is sorted: [_, 5] }
-      #     expected: [1, 3, 5]
-      # test flatten lazy:
-      #   assert equal::
-      #     found:
-      #       get:
+      #       constants:
+      #         client:
+      #           HTTP client:
+      #             - error on bad status code: false
+      #             - proxy: false
+      #       compute:
       #         from:
-      #           flatten:
-      #             - [1, 2]
-      #             - starting with: 1
-      #               next: { sum: [_, 1] }
-      #         at: [0, 5]
-      #     expected: [1, 2, 1, 2, 3]
-      # test try:
-      #   assert equal::
-      #     found:
-      #       try:
-      #         - read bytes:
-      #             source:
-      #               bufferized reader: tests.yml
-      #             amount: 1
-      #         - read bytes:
-      #             source:
-      #               bufferized reader: nonexistent file
-      #             amount: 1
-      #       or: false
-      #     expected: false
+      #           send request:
+      #             client: { constant: client }
+      #             request:
+      #               URL: https://httpbingo.org/get
+      #               method: GET
+      #               body: null
+      #               parameters: []
+      #         at: [ status ]
+      #     expected: OK
+      test run command:
+        assert equal::
+          found:
+            run:
+              command: echo
+              arguments: [lalala]
+          expected:
+            exit code: 0
+            standard output: { bytes from string: "lalala\n" }
+            standard error: { bytes: "" }
+      test sequence while:
+        assert equal::
+          found:
+            starting with: 1
+            next: { sum: [_, 2] }
+            while: { is sorted: [_, 5] }
+          expected: [1, 3, 5]
+      test flatten lazy:
+        assert equal::
+          found:
+            get:
+              from:
+                flatten:
+                  - [1, 2]
+                  - starting with: 1
+                    next: { sum: [_, 1] }
+              at: [0, 5]
+          expected: [1, 2, 1, 2, 3]
+      test try:
+        assert equal::
+          found:
+            try:
+              - read bytes:
+                  source:
+                    bufferized reader: tests.yml
+                  amount: 1
+              - read bytes:
+                  source:
+                    bufferized reader: nonexistent file
+                  amount: 1
+            or: false
+          expected: false
       # test heterogenous sequence:
       #   assert equal::
       #     found:

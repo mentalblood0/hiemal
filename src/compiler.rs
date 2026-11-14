@@ -346,7 +346,7 @@ impl Compiler {
                 compilation_context.error(&compiled_argument.node.r#type, &"serializable value")
             );
         }
-        let (signature, variant_index, argument_is_computable) = EMBEDDED_FUNCTIONS
+        let (signature, variant_index, _) = EMBEDDED_FUNCTIONS
             [embedded_function_call.embedded_function as usize]
             .iter()
             .enumerate()
@@ -386,12 +386,17 @@ impl Compiler {
         //         &"computable embedded function argument",
         //     ));
         // }
-        let static_and_argument_properties = compiled_argument.node.r#type.properties.unified(
-            &match &signature.r#return.properties {
-                Some(static_properties) => static_properties.clone(),
-                None => TypeProperties::default(),
-            },
-        );
+        let static_properties = &match &signature.r#return.properties {
+            Some(static_properties) => static_properties.clone(),
+            None => TypeProperties::default(),
+        };
+        let static_and_argument_properties = TypeProperties {
+            capabilities: static_properties.capabilities
+                | compiled_argument.node.r#type.properties.capabilities,
+            is_computable: true,
+            is_serializable: static_properties.is_serializable,
+            is_pure: static_properties.is_pure && compiled_argument.node.r#type.properties.is_pure,
+        };
         let result_type = if let Some(get_result_type_kind_from_argument_resolved_type) =
             get_result_type_from_argument_resolved_type_option
         {
