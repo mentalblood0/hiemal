@@ -673,17 +673,17 @@ impl TypeKind {
                 }
                 (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
                     self_union_types.iter().all(|self_union_type| {
-                        other_union_types.iter().all(|other_union_type| {
+                        other_union_types.iter().any(|other_union_type| {
                             self_union_type.kind.contains(&other_union_type.kind)
                         })
                     })
                 }
                 (TypeKind::Union(self_union_types), other_type_kind) => self_union_types
                     .iter()
-                    .all(|self_union_type| self_union_type.kind.contains(other_type_kind)),
+                    .any(|self_union_type| self_union_type.kind.contains(other_type_kind)),
                 (self_type, TypeKind::Union(other_union_types)) => other_union_types
                     .iter()
-                    .all(|other_union_type| self_type.contains(&other_union_type.kind)),
+                    .any(|other_union_type| self_type.contains(&other_union_type.kind)),
                 (TypeKind::Array(self_element_type), TypeKind::Array(other_element_type)) => {
                     self_element_type.kind.contains(&other_element_type.kind)
                 }
@@ -928,7 +928,6 @@ impl TypeKind {
         if self == other {
             Some(self.clone())
         } else {
-            // println!("intersection {self:?} {other:?}");
             match (self, other) {
                 (TypeKind::Any, other_type) | (other_type, TypeKind::Any) => {
                     Some(other_type.clone())

@@ -99,6 +99,20 @@ fn assert_type(
                 &expected_constructed.inner().kind,
                 compilation_context,
             ),
+            (TypeKind::Tuple(self_elements_types), TypeKind::Tuple(other_elements_types)) => {
+                self_elements_types
+                    .iter()
+                    .zip(other_elements_types.iter())
+                    .all(|(self_element_type, other_element_type)| {
+                        assert_type(
+                            self_element_type,
+                            &other_element_type.kind,
+                            compilation_context,
+                        )
+                        .is_ok()
+                    })
+                    .ok_or_else(|| compilation_context.error(got_type, expected_type_kind))
+            }
             (TypeKind::Array(got_element_type), TypeKind::Array(expected_element_type)) => {
                 assert_type(
                     got_element_type,
@@ -1090,7 +1104,6 @@ impl Compiler {
                                             current_match_type_kind
                                                 .intersection(&case_match_type.kind)
                                         {
-                                            dbg!(&refined_match_type_kind);
                                             let mut case_compilation_context =
                                                 compilation_context.clone();
                                             case_compilation_context.path.0.extend([
@@ -1137,12 +1150,6 @@ impl Compiler {
                                             if current_match_type_kind_option.is_none() {
                                                 break;
                                             }
-                                        } else {
-                                            println!(
-                                                "INTERSECTION IS \
-                                                 NONE\n{current_match_type_kind:?\
-                                                 }{case_match_type:?}",
-                                            )
                                         }
                                     }
                                     Condition::Value(condition) => {
