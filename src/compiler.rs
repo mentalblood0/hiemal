@@ -909,7 +909,7 @@ impl Compiler {
                                     };
                                     match variant_index {
                                         0 => {
-                                            let from_variants: Vec<&TypeKind> =
+                                            let from_type_kind_variants: Vec<&TypeKind> =
                                                 match &from_type_kind {
                                                     TypeKind::Union(variants) => variants
                                                         .iter()
@@ -918,17 +918,20 @@ impl Compiler {
                                                     _ => vec![&from_type_kind],
                                                 };
 
-                                            let at_variants: Vec<&TypeKind> = match &at_type_kind {
-                                                TypeKind::Union(variants) => variants
-                                                    .iter()
-                                                    .map(|r#type| &r#type.kind)
-                                                    .collect(),
-                                                _ => vec![&at_type_kind],
-                                            };
-                                            let combinations = from_variants
+                                            let at_type_kind_variants: Vec<&TypeKind> =
+                                                match &at_type_kind {
+                                                    TypeKind::Union(variants) => variants
+                                                        .iter()
+                                                        .map(|r#type| &r#type.kind)
+                                                        .collect(),
+                                                    _ => vec![&at_type_kind],
+                                                };
+                                            let combinations = from_type_kind_variants
                                                 .iter()
                                                 .flat_map(|&from| {
-                                                    at_variants.iter().map(move |&at| (from, at))
+                                                    at_type_kind_variants
+                                                        .iter()
+                                                        .map(move |&at| (from, at))
                                                 })
                                                 .collect::<Vec<_>>();
                                             let mut result = BTreeSet::new();
@@ -991,90 +994,161 @@ impl Compiler {
                                                 &at_type_kind.as_tuple().unwrap()[0].kind;
                                             let at_range_to_type_kind =
                                                 &at_type_kind.as_tuple().unwrap()[1].kind;
-                                            match (
+                                            let from_type_kind_variants: Vec<&TypeKind> =
+                                                match &from_type_kind {
+                                                    TypeKind::Union(variants) => variants
+                                                        .iter()
+                                                        .map(|r#type| &r#type.kind)
+                                                        .collect(),
+                                                    _ => vec![&from_type_kind],
+                                                };
+
+                                            let at_range_from_type_kind_variants: Vec<&TypeKind> =
+                                                match &at_range_from_type_kind {
+                                                    TypeKind::Union(variants) => variants
+                                                        .iter()
+                                                        .map(|r#type| &r#type.kind)
+                                                        .collect(),
+                                                    _ => vec![&at_range_from_type_kind],
+                                                };
+                                            let at_range_to_type_kind_variants: Vec<&TypeKind> =
+                                                match &at_range_to_type_kind {
+                                                    TypeKind::Union(variants) => variants
+                                                        .iter()
+                                                        .map(|r#type| &r#type.kind)
+                                                        .collect(),
+                                                    _ => vec![&at_range_to_type_kind],
+                                                };
+                                            let mut combinations = Vec::with_capacity(
+                                                from_type_kind_variants.len()
+                                                    * at_range_from_type_kind_variants.len()
+                                                    * at_range_to_type_kind_variants.len(),
+                                            );
+                                            for from_type_kind_variant in &from_type_kind_variants {
+                                                for at_range_from_type_kind_variant in
+                                                    &at_range_from_type_kind_variants
+                                                {
+                                                    for at_range_to_type_kind_variant in
+                                                        &at_range_to_type_kind_variants
+                                                    {
+                                                        combinations.push((
+                                                            *from_type_kind_variant,
+                                                            *at_range_from_type_kind_variant,
+                                                            *at_range_to_type_kind_variant,
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                            let mut result = BTreeSet::new();
+                                            for (
                                                 from_type_kind,
                                                 at_range_from_type_kind,
                                                 at_range_to_type_kind,
-                                            ) {
-                                                (
-                                                    TypeKind::Array(element_type),
-                                                    TypeKind::Number,
-                                                    _,
-                                                )
-                                                | (
-                                                    TypeKind::Array(element_type),
-                                                    _,
-                                                    TypeKind::Number,
-                                                ) => Ok(error_type_properties.unified_recursively(
-                                                    Type::from(TypeKind::Array(
-                                                        element_type.clone(),
-                                                    )),
-                                                )),
-                                                (
-                                                    TypeKind::Array(element_type),
-                                                    TypeKind::LiteralNumber(from_index_rational),
-                                                    TypeKind::LiteralNumber(to_index_rational),
-                                                ) => {
-                                                    let from_index = from_index_rational
-                                                        .trunc()
-                                                        .to_f64()
-                                                        .value()
-                                                        as usize;
-                                                    let to_index =
-                                                        to_index_rational.trunc().to_f64().value()
-                                                            as usize;
-                                                    Ok(error_type_properties.unified_recursively(
-                                                        Type::from(vec![
-                                                            *element_type.clone();
-                                                            to_index - from_index
-                                                        ]),
-                                                    ))
-                                                }
-                                                (
-                                                    TypeKind::Tuple(elements_types),
-                                                    TypeKind::Number | TypeKind::LiteralNumber(_),
-                                                    TypeKind::Number | TypeKind::LiteralNumber(_),
-                                                ) => {
-                                                    let from_index = at_range_from_type_kind
-                                                        .as_literal_number()
-                                                        .map(|from_index_rational| {
-                                                            from_index_rational
-                                                                .trunc()
-                                                                .to_f64()
-                                                                .value()
-                                                                as usize
-                                                        })
-                                                        .unwrap_or(0);
-                                                    let to_index = at_range_to_type_kind
-                                                        .as_literal_number()
-                                                        .map(|to_index_rational| {
-                                                            to_index_rational
-                                                                .trunc()
-                                                                .to_f64()
-                                                                .value()
-                                                                as usize
-                                                        })
-                                                        .unwrap_or(0);
-                                                    if (from_index <= to_index)
-                                                        && (to_index < elements_types.len())
-                                                    {
-                                                        Ok(Type::from(BTreeSet::from_iter(
-                                                            elements_types[from_index..to_index]
-                                                                .iter()
-                                                                .cloned(),
-                                                        )))
-                                                    } else {
-                                                        Err(compilation_context.error(
-                                                            &elements_types,
-                                                            &format!(
-                                                                "tuple with range \
-                                                                 {from_index}..{to_index}",
-                                                            ),
-                                                        ))
+                                            ) in combinations
+                                            {
+                                                match (
+                                                    from_type_kind,
+                                                    at_range_from_type_kind,
+                                                    at_range_to_type_kind,
+                                                ) {
+                                                    (
+                                                        TypeKind::Array(element_type),
+                                                        TypeKind::Number,
+                                                        _,
+                                                    )
+                                                    | (
+                                                        TypeKind::Array(element_type),
+                                                        _,
+                                                        TypeKind::Number,
+                                                    ) => {
+                                                        result.insert(
+                                                            error_type_properties
+                                                                .unified_recursively(Type::from(
+                                                                    TypeKind::Array(
+                                                                        element_type.clone(),
+                                                                    ),
+                                                                )),
+                                                        );
                                                     }
+                                                    (
+                                                        TypeKind::Array(element_type),
+                                                        TypeKind::LiteralNumber(
+                                                            from_index_rational,
+                                                        ),
+                                                        TypeKind::LiteralNumber(to_index_rational),
+                                                    ) => {
+                                                        let from_index = from_index_rational
+                                                            .trunc()
+                                                            .to_f64()
+                                                            .value()
+                                                            as usize;
+                                                        let to_index = to_index_rational
+                                                            .trunc()
+                                                            .to_f64()
+                                                            .value()
+                                                            as usize;
+                                                        result.insert(
+                                                            error_type_properties
+                                                                .unified_recursively(Type::from(
+                                                                    vec![
+                                                                        *element_type.clone();
+                                                                        to_index - from_index
+                                                                    ],
+                                                                )),
+                                                        );
+                                                    }
+                                                    (
+                                                        TypeKind::Tuple(elements_types),
+                                                        TypeKind::Number
+                                                        | TypeKind::LiteralNumber(_),
+                                                        TypeKind::Number
+                                                        | TypeKind::LiteralNumber(_),
+                                                    ) => {
+                                                        let from_index = at_range_from_type_kind
+                                                            .as_literal_number()
+                                                            .map(|from_index_rational| {
+                                                                from_index_rational
+                                                                    .trunc()
+                                                                    .to_f64()
+                                                                    .value()
+                                                                    as usize
+                                                            })
+                                                            .unwrap_or(0);
+                                                        let to_index = at_range_to_type_kind
+                                                            .as_literal_number()
+                                                            .map(|to_index_rational| {
+                                                                to_index_rational
+                                                                    .trunc()
+                                                                    .to_f64()
+                                                                    .value()
+                                                                    as usize
+                                                            })
+                                                            .unwrap_or(0);
+                                                        if (from_index <= to_index)
+                                                            && (to_index <= elements_types.len())
+                                                        {
+                                                            result.insert(Type::from(
+                                                                BTreeSet::from_iter(
+                                                                    elements_types
+                                                                        [from_index..to_index]
+                                                                        .iter()
+                                                                        .cloned(),
+                                                                ),
+                                                            ));
+                                                        } else {
+                                                            return Err(compilation_context.error(
+                                                                &from_type_kind,
+                                                                &format!(
+                                                                    "tuple with range \
+                                                                     {from_index}..{to_index}",
+                                                                ),
+                                                            ));
+                                                        }
+                                                    }
+                                                    _ => panic!(),
                                                 }
-                                                _ => panic!(),
                                             }
+                                            Ok(Type::from(result))
                                         }
                                         _ => panic!(),
                                     }
