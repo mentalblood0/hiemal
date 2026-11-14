@@ -2,6 +2,7 @@ use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
     hash::{Hash, Hasher},
+    ops::Sub,
     sync::{Arc, LazyLock},
 };
 
@@ -672,15 +673,19 @@ impl TypeKind {
                     self.contains(&other_constructed.inner().kind)
                 }
                 (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
-                    self_union_types.iter().all(|self_union_type| {
-                        other_union_types.iter().any(|other_union_type| {
-                            self_union_type.kind.contains(&other_union_type.kind)
+                    self_union_types.is_superset(other_union_types)
+                        || self_union_types.iter().all(|self_union_type| {
+                            other_union_types.iter().any(|other_union_type| {
+                                self_union_type.kind.contains(&other_union_type.kind)
+                            })
                         })
-                    })
                 }
-                (TypeKind::Union(self_union_types), other_type_kind) => self_union_types
-                    .iter()
-                    .any(|self_union_type| self_union_type.kind.contains(other_type_kind)),
+                (TypeKind::Union(self_union_types), other_type_kind) => {
+                    self_union_types.contains(&other_type_kind.clone().into())
+                        || self_union_types
+                            .iter()
+                            .any(|self_union_type| self_union_type.kind.contains(other_type_kind))
+                }
                 (self_type, TypeKind::Union(other_union_types)) => other_union_types
                     .iter()
                     .all(|other_union_type| self_type.contains(&other_union_type.kind)),
@@ -785,6 +790,7 @@ impl TypeKind {
                 | (TypeKind::LiteralNumber(_), TypeKind::Number) => None,
                 (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
                     let mut result = self_union_types
+                        .sub(other_union_types)
                         .iter()
                         .map(|self_union_type| Some(self_union_type.kind.clone()))
                         .collect::<Vec<_>>();
@@ -796,8 +802,9 @@ impl TypeKind {
                             }
                         }
                         result.retain(|r| r.is_some());
-                        result.sort();
-                        result.dedup();
+                        if result.is_empty() {
+                            return None;
+                        }
                     }
                     if result.is_empty() {
                         None
@@ -813,27 +820,19 @@ impl TypeKind {
                     }
                 }
                 (TypeKind::Union(self_union_types), _) => {
-                    let mut result = self_union_types
+                    let result = self_union_types
                         .iter()
-                        .map(|self_union_type| Some(self_union_type.kind.clone()))
-                        .collect::<Vec<_>>();
-                    for result_union_type_option in result.iter_mut() {
-                        if let Some(kind) = result_union_type_option.take() {
-                            *result_union_type_option = kind.substraction(other);
-                        }
-                    }
-                    result.retain(|r| r.is_some());
+                        .filter_map(|self_union_type| {
+                            self_union_type
+                                .kind
+                                .substraction(other)
+                                .map(|result_type_kind| self_union_type.with_kind(result_type_kind))
+                        })
+                        .collect::<BTreeSet<_>>();
                     if result.is_empty() {
                         None
                     } else {
-                        Some(
-                            Type::from(BTreeSet::from_iter(result.into_iter().map(
-                                |result_union_type_kind_option| {
-                                    result_union_type_kind_option.unwrap().into()
-                                },
-                            )))
-                            .kind,
-                        )
+                        Some(Type::from(result).kind)
                     }
                 }
                 (_, TypeKind::Union(other_union_types)) => {
