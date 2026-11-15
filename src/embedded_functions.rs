@@ -38,6 +38,8 @@ pub enum EmbeddedFunction {
     IsSorted,
     #[serde(rename = "key-value pairs")]
     KeyValuePairs,
+    #[serde(rename = "length")]
+    Length,
     #[serde(rename = "match regex")]
     MatchRegex,
     #[serde(rename = "mod")]

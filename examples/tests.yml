@@ -30,6 +30,27 @@ functions:
     cases:
       - [null, false]
       - [any, true]
+  fold::
+    get:
+      from:
+        starting with:
+          current index: 0
+          accumulator: { constant: starting with }
+        loop:
+          current index:
+            sum: [ { get: { from: _, at: current index } }, 1 ]
+          accumulator:  
+            through::
+              current:
+                get:
+                  from: { constant: source }
+                  at: { get: { from: _, at: current index } }
+              accumulator: { get: { from: _, at: accumulator } }
+        while:
+          is sorted:
+            - get: { from: _, at: current index }
+            - sum: [ { length: { constant: source } }, -1 ]
+      at: accumulator
   # match regex all::
   #   map:
   #     starting with:
@@ -110,6 +131,18 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test length:
+        assert equal::
+          found:
+            - length: [ 1, 2, 3 ]
+            - length: { a: 1, b: 2, c: 3 }
+            - length: lalala
+            - length: { bytes: aa bb cc }
+          expected:
+            - 3
+            - 3
+            - 6
+            - 3
       test polymorphic get by key:
         assert equal::
           found:
@@ -265,12 +298,13 @@ compute:
           - 3
           - duration: 3ms
           - time: 2026-11-08T15:45:50.309478485Z
-      # # test file metadata:
-      # #   assert equal::
-      # #     found:
-      # #       from: { file metadata: src/embedded_functions.yml }
-      # #       at: [ is file ]
-      # #     expected: true
+      test file metadata:
+        assert equal::
+          found:
+            get:
+              from: { file metadata: src/embedded_functions.yml }
+              at: is file
+          expected: true
       test glob:
         assert equal::
           found: { glob: src/*.yml }
@@ -815,23 +849,24 @@ compute:
                         - [any, [b]]
                     - [5, 6]
           expected: [1, a, 3, b, 5, 6]
-      # test fold union:
-      #   assert equal::
-      #     found:
-      #       fold:
-      #         match: { parse: { YAML: "lalala" } }
-      #         cases:
-      #           - [number, [a, b, c]]
-      #           - [any, [4, 5, 6]]
-      #       starting with: 0
-      #       through:
-      #         sum:
-      #           - constant: accumulator
-      #           - match: current
-      #             cases:
-      #               - [number, { constant: current }]
-      #               - [string, 0]
-      #     expected: 15
+      test fold union:
+        assert equal::
+          found:
+            fold::
+              source:
+                match: { parse: { YAML: "lalala" } }
+                cases:
+                  - [number, [a, b, c]]
+                  - [any, [4, 5, 6]]
+              starting with: 0
+              through::
+                sum:
+                  - constant: accumulator
+                  - match: current
+                    cases:
+                      - [number, { constant: current }]
+                      - [string, 0]
+          expected: 15
       test filter union:
         assert equal::
           found:
@@ -849,20 +884,22 @@ compute:
                     - [number, _]
                     - [string, 0]
           expected: [s]
-      # test lazy object:
-      #   assert equal::
-      #     found:
-      #       from:
-      #         first:
-      #           from:
-      #             filter:
-      #               starting with: 1
-      #               next: 1
-      #             through: false
-      #           at: [0]
-      #         second: 1
-      #       at: ["second"]
-      #     expected: 1
+      test lazy object:
+        assert equal::
+          found:
+            get:
+              from:
+                first:
+                  get:
+                    from:
+                      filter:
+                        starting with: 1
+                        next: 1
+                      through: false
+                    at: 0
+                second: 1
+              at: "second"
+          expected: 1
       test lazy tuple:
         assert equal::
           found:
@@ -1012,51 +1049,50 @@ compute:
           found:
             flatten: [[1, 2, 3], [4], [5, 6]]
           expected: [1, 2, 3, 4, 5, 6]
-      # test fold heterogenous array:
-      #   assert equal::
-      #     found:
-      #       fold:
-      #         match: { parse: { YAML: "[1, 2, string, 3, 4]" } }
-      #         as: _
-      #         cases:
-      #           - [{ array: { union: [number, string] } }, _]
-      #           - [any, [1]]
-      #       as: current
-      #       starting with: 0
-      #       accumulating in: accumulator
-      #       through:
-      #         match: current
-      #         as: _
-      #         cases:
-      #           - [number, sum: [{ constant: accumulator }, _]]
-      #           - [string, 0]
-      #     expected: 7
-      # test fold heterogenous tuple:
-      #   assert equal::
-      #     found:
-      #       sum:
-      #         - fold: [1, 2, string, 3, 4]
-      #           as: current
-      #           starting with: 0
-      #           accumulating in: accumulator
-      #           through:
-      #             match: current
-      #             cases:
-      #               - [
-      #                   number,
-      #                   sum: [{ constant: accumulator }, { constant: current }],
-      #                 ]
-      #               - [string, 0]
-      #         - 1
-      #     expected: 8
-      # test fold simple:
-      #   assert equal::
-      #     found:
-      #       fold: [1, 2, 3]
-      #       starting with: 0
-      #       through:
-      #         sum: [{ constant: accumulator }, { constant: current }]
-      #     expected: 6
+      test fold heterogenous array:
+        assert equal::
+          found:
+            fold::
+              source:
+                match: { parse: { YAML: "[1, 2, string, 3, 4]" } }
+                as: _
+                cases:
+                  - [{ array: { union: [number, string] } }, _]
+                  - [any, [1]]
+              starting with: 0
+              through::
+                match: current
+                as: _
+                cases:
+                  - [number, sum: [{ constant: accumulator }, _]]
+                  - [string, 0]
+          expected: 7
+      test fold heterogenous tuple:
+        assert equal::
+          found:
+            sum:
+              - fold::
+                  source: [1, 2, string, 3, 4]
+                  starting with: 0
+                  through::
+                    match: current
+                    cases:
+                      - [
+                          number,
+                          sum: [{ constant: accumulator }, { constant: current }],
+                        ]
+                      - [string, 0]
+              - 1
+          expected: 8
+      test fold simple:
+        assert equal::
+          found:
+            fold::
+              source: [1, 2, 3]
+              starting with: 0
+              through::
+                sum: [{ constant: accumulator }, { constant: current }]
+          expected: 6
       test map object:
         assert equal::
           found:

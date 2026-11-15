@@ -62,6 +62,16 @@ is sorted:
   return:
     type: bool
 
+length:
+- argument:
+    union:
+    - array: any
+    - generic object: any
+    - string
+    - bytes
+  return:
+    type: number
+
 read bytes from standard input:
 - argument:
     union:

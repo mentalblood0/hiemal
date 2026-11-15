@@ -1472,6 +1472,30 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into())
                 }
+                EmbeddedFunction::Length => {
+                    let argument_value = self.unroll_intermediate_value(
+                        &self.compute_node(&embedded_function_call.argument, constants)?,
+                    )?;
+                    Ok(IntermediateValueAndMetadata {
+                        intermediate_value: IntermediateValue::Value(
+                            Some(Value::Number(
+                                {
+                                    match argument_value.as_ref().as_ref().unwrap() {
+                                        Value::Tuple(tuple) => tuple.len(),
+                                        Value::Object(object) => object.len(),
+                                        Value::String(string) => string.len_chars(),
+                                        Value::Bytes { bytes } => bytes.len(),
+                                        _ => panic!(),
+                                    }
+                                }
+                                .into(),
+                            ))
+                            .into(),
+                        ),
+                        type_kind: TypeKind::Number,
+                    }
+                    .into())
+                }
                 EmbeddedFunction::Sum => {
                     let argument_value = self.unroll_intermediate_value(
                         &self.compute_node(&embedded_function_call.argument, constants)?,
@@ -4154,56 +4178,114 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::Get => {
-                    let argument_intermediate_value = self.compute_node(&embedded_function_call.argument, constants)?;
-                    let from_intermediate_value = self.get_by_key_from_intermediate_value(&argument_intermediate_value, &"from".to_string())?.unwrap();
-                    let at_value = self.unroll_intermediate_value(&self.get_by_key_from_intermediate_value(&argument_intermediate_value, &"at".to_string())?.unwrap())?;
+                    let argument_intermediate_value =
+                        self.compute_node(&embedded_function_call.argument, constants)?;
+                    let from_intermediate_value = self
+                        .get_by_key_from_intermediate_value(
+                            &argument_intermediate_value,
+                            &"from".to_string(),
+                        )?
+                        .unwrap();
+                    let at_value = self.unroll_intermediate_value(
+                        &self
+                            .get_by_key_from_intermediate_value(
+                                &argument_intermediate_value,
+                                &"at".to_string(),
+                            )?
+                            .unwrap(),
+                    )?;
                     match embedded_function_call.variant_index {
                         0 => {
-                            let at_index = at_value.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as usize;
+                            let at_index = at_value
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_number()
+                                .unwrap()
+                                .trunc()
+                                .to_f64()
+                                .value() as usize;
                             Ok(self
-                                .get_from_intermediate_value(&from_intermediate_value, at_index)
+                                .get_from_intermediate_value(&from_intermediate_value, at_index)?
                                 .with_context(|| {
                                     format!(
                                         "can not get element by index {at_index} from\n{:?}",
                                         from_intermediate_value.type_kind
                                     )
-                                })?.unwrap())
+                                })?)
                         }
                         1 => {
                             let at_tuple = at_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
-                            let at_from_index = at_tuple.get(0).unwrap().as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as usize;
-                            let at_to_index = at_tuple.get(1).unwrap().as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as usize;
+                            let at_from_index = at_tuple
+                                .get(0)
+                                .unwrap()
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_number()
+                                .unwrap()
+                                .trunc()
+                                .to_f64()
+                                .value() as usize;
+                            let at_to_index = at_tuple
+                                .get(1)
+                                .unwrap()
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_number()
+                                .unwrap()
+                                .trunc()
+                                .to_f64()
+                                .value() as usize;
                             let result_elements = self
-                                .get_range_from_intermediate_value(&from_intermediate_value, at_from_index..at_to_index)
+                                .get_range_from_intermediate_value(
+                                    &from_intermediate_value,
+                                    at_from_index..at_to_index,
+                                )
                                 .with_context(|| {
                                     format!(
                                         "can not get slice by range {}..{} from\n{:?}",
-                                        at_from_index, at_to_index,
+                                        at_from_index,
+                                        at_to_index,
                                         from_intermediate_value.type_kind
                                     )
                                 })?;
-                            let type_kind = concrete_or_else(&node.r#type.kind, || TypeKind::Tuple(
-                                result_elements
-                                    .iter()
-                                    .map(|element| element.type_kind.clone().into())
-                                    .collect::<Vec<_>>()
-                                    .into(),
-                            ));
+                            let type_kind = concrete_or_else(&node.r#type.kind, || {
+                                TypeKind::Tuple(
+                                    result_elements
+                                        .iter()
+                                        .map(|element| element.type_kind.clone().into())
+                                        .collect::<Vec<_>>()
+                                        .into(),
+                                )
+                            });
                             Ok(IntermediateValueAndMetadata {
                                 intermediate_value: IntermediateValue::Tuple(result_elements),
                                 type_kind,
-                            }.into())
+                            }
+                            .into())
                         }
                         2 => {
-                            let at_key = at_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                            let at_key = at_value
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_string()
+                                .unwrap()
+                                .to_string();
                             Ok(self
-                                .get_by_key_from_intermediate_value(&from_intermediate_value, &at_key)
+                                .get_by_key_from_intermediate_value(
+                                    &from_intermediate_value,
+                                    &at_key,
+                                )
                                 .with_context(|| {
                                     format!(
                                         "can not get element by key {at_key:?} from\n{:?}",
                                         from_intermediate_value.type_kind
                                     )
-                                })?.unwrap())
+                                })?
+                                .unwrap())
                         }
                         _ => panic!(),
                     }
