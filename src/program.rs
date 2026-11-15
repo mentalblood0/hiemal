@@ -56,6 +56,18 @@ pub enum Program {
     Flatten {
         flatten: Box<Program>,
     },
+    Fold {
+        fold: Box<Program>,
+        #[serde(default = "default_fold_as")]
+        r#as: Arc<String>,
+        #[serde(default = "default_starting_with")]
+        #[serde(rename = "starting with")]
+        starting_with: Box<Program>,
+        #[serde(default = "default_accumulating_in")]
+        #[serde(rename = "accumulating in")]
+        accumulating_in: Arc<String>,
+        through: Box<Program>,
+    },
     Metaprogram {
         metaprogram: Box<Program>,
     },
@@ -122,6 +134,10 @@ pub fn default_map_as() -> Arc<String> {
 
 pub fn default_filter_as() -> Arc<String> {
     DEFAULT_ARGUMENT_NAME.to_string().into()
+}
+
+pub fn default_fold_as() -> Arc<String> {
+    "current".to_string().into()
 }
 
 pub fn default_sequence_as() -> Arc<String> {
@@ -220,6 +236,8 @@ pub enum PathSegment {
     Match,
     #[serde(rename = "map")]
     Map,
+    #[serde(rename = "fold")]
+    Fold,
     #[serde(rename = "pipe")]
     Pipe,
     #[serde(rename = "try")]
@@ -236,6 +254,8 @@ pub enum PathSegment {
     StartingWith,
     #[serde(rename = "next")]
     Next(Type),
+    #[serde(rename = "loop")]
+    Loop(Type),
     #[serde(rename = "while")]
     While,
     #[serde(rename = "through")]
