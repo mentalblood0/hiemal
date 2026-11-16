@@ -4498,18 +4498,34 @@ impl<'a> ComputationContext<'a> {
                 throughs,
                 throughs_cycle_start_index,
             } => {
-                let computed_fold =
-                    self.unroll_intermediate_value(&self.compute_node(fold, constants)?)?;
-                let computed_fold_tuple =
-                    computed_fold.as_ref().as_ref().unwrap().as_tuple().unwrap();
+                let computed_fold = self.compute_node(fold, constants)?;
+                let unrolled_computed_fold = self.unroll_intermediate_value(&computed_fold)?;
+                let computed_fold_tuple = unrolled_computed_fold
+                    .as_ref()
+                    .as_ref()
+                    .unwrap()
+                    .as_tuple()
+                    .unwrap();
                 let mut result = self.compute_node(starting_with, constants)?;
                 let mut current_index = 0usize;
-                for current in computed_fold_tuple.inner.iter() {
+                for (current_computed_fold_tuple_index, current) in
+                    computed_fold_tuple.inner.iter().enumerate()
+                {
                     let mut through_constants = constants.clone();
+                    let current_type_kind = match &computed_fold.type_kind {
+                        TypeKind::Tuple(elements_types) => concrete_or_else(
+                            &elements_types[current_computed_fold_tuple_index].kind,
+                            || Value::type_kind(current),
+                        ),
+                        TypeKind::Array(element_type) => {
+                            concrete_or_else(&element_type.kind, || Value::type_kind(current))
+                        }
+                        _ => Value::type_kind(current),
+                    };
                     through_constants[*fold_constant_name_clustered_index] = Some(
                         IntermediateValueAndMetadata {
                             intermediate_value: IntermediateValue::Value(current.clone()),
-                            type_kind: node.r#type.kind.clone(),
+                            type_kind: current_type_kind,
                         }
                         .into(),
                     );
