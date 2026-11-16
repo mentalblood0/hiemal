@@ -103,7 +103,8 @@ pub enum Content {
         fold_constant_name_clustered_index: usize,
         starting_with: Arc<Node>,
         accumulating_in_constant_name_clustered_index: usize,
-        fold_concrete_type_and_throughs: Vec<(Type, Throughs)>,
+        throughs: Vec<Arc<Node>>,
+        throughs_cycle_start_index: usize,
     },
     Sequence(Arc<Sequence>),
     Loop {
