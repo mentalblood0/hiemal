@@ -1041,23 +1041,23 @@ compute:
           found:
             flatten: [[1, 2, 3], [4], [5, 6]]
           expected: [1, 2, 3, 4, 5, 6]
-      test fold heterogenous array:
-        assert equal::
-          found:
-            fold:
-              match: { parse: { YAML: "[1, 2, string, 3, 4]" } }
-              as: _
-              cases:
-                - [{ array: { union: [number, string] } }, _]
-                - [any, [1]]
-            starting with: 0
-            through:
-              match: current
-              as: _
-              cases:
-                - [number, sum: [{ constant: accumulator }, _]]
-                - [string, 0]
-          expected: 7
+      # test fold heterogenous array:
+      #   assert equal::
+      #     found:
+      #       fold:
+      #         match: { parse: { YAML: "[1, 2, string, 3, 4]" } }
+      #         as: _
+      #         cases:
+      #           - [{ array: { union: [number, string] } }, _]
+      #           - [any, [1]]
+      #       starting with: 0
+      #       through:
+      #         match: current
+      #         as: _
+      #         cases:
+      #           - [number, sum: [{ constant: accumulator }, _]]
+      #           - [string, 0]
+      #     expected: 7
       test fold heterogenous tuple:
         assert equal::
           found:

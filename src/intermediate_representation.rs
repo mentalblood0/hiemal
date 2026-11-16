@@ -3,14 +3,14 @@ use std::{collections::BTreeMap, sync::Arc};
 use bytes::Bytes;
 use dashu::Rational;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DisplayFromStr};
+use serde_with::{DisplayFromStr, serde_as};
 
 use crate::{
     containers::{self, Vector},
     embedded_functions::EmbeddedFunction,
     program::Path,
     r#type::{Type, TypeKind},
-    value::{Runtime, deserialize_bytes, serialize_bytes}
+    value::{Runtime, deserialize_bytes, serialize_bytes},
 };
 
 #[serde_as]
@@ -106,7 +106,13 @@ pub enum Content {
         fold_concrete_type_and_throughs: Vec<(Type, Throughs)>,
     },
     Sequence(Arc<Sequence>),
-    Loop(Loop),
+    Loop {
+        starting_with: Arc<Node>,
+        current_constant_name_clustered_index: usize,
+        nexts: Vec<Arc<Node>>,
+        nexts_cycle_start_index: usize,
+        r#while: Option<Arc<Node>>,
+    },
     Pipe {
         pipe: Vec<Arc<Node>>,
         as_constant_name_clustered_index_option: Option<usize>,
@@ -136,14 +142,6 @@ pub struct Filter {
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub struct Sequence {
-    pub starting_with: Arc<Node>,
-    pub current_constant_name_clustered_index: usize,
-    pub current_concrete_type_kind_and_next: Arc<Vec<(TypeKind, Arc<Node>)>>,
-    pub r#while: Option<Arc<Node>>,
-}
-
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
-pub struct Loop {
     pub starting_with: Arc<Node>,
     pub current_constant_name_clustered_index: usize,
     pub current_concrete_type_kind_and_next: Arc<Vec<(TypeKind, Arc<Node>)>>,

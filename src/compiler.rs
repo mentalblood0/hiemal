@@ -1358,7 +1358,7 @@ impl Compiler {
                                             PathSegment::Case(case_index),
                                         ]);
                                         let compiled_condition = self.compile_with_context(
-                                            condition,
+                                            &condition,
                                             &case_compilation_context,
                                             global_compilation_context,
                                         )?;
@@ -2215,9 +2215,11 @@ impl Compiler {
                                 .external_constants_name_clustered_indices
                                 .clone();
                         let mut current_concrete_type = compiled_starting_with.node.r#type.clone();
-                        let mut current_concrete_type_to_next = BTreeMap::new();
+                        let mut nexts = Vec::new();
+                        let mut current_concrete_type_to_next_and_index = BTreeMap::new();
                         let mut current_constant_name_clustered_index;
-                        loop {
+                        let mut current_index = 0usize;
+                        let nexts_cycle_start_index = loop {
                             let mut next_compilation_context = compilation_context.clone();
                             next_compilation_context
                                 .path
@@ -2253,14 +2255,15 @@ impl Compiler {
                                 } else {
                                     compiled_next.node.clone()
                                 };
-                            if current_concrete_type_to_next
-                                .insert(
+                            if let Some((_, nexts_cycle_start_index)) =
+                                current_concrete_type_to_next_and_index.insert(
                                     std::mem::take(&mut current_concrete_type),
-                                    compiled_next_node.clone(),
+                                    (compiled_next_node.clone(), current_index),
                                 )
-                                .is_some()
                             {
-                                break;
+                                break nexts_cycle_start_index;
+                            } else {
+                                nexts.push(compiled_next_node.clone());
                             }
                             current_concrete_type = compiled_next_node.r#type.clone();
                             result_external_constants_name_clustered_indices.append(
@@ -2268,11 +2271,12 @@ impl Compiler {
                                     .external_constants_name_clustered_indices
                                     .clone(),
                             );
-                        }
+                            current_index += 1;
+                        };
                         let intermediate_result_type = Type::from(BTreeSet::from_iter(
                             [compiled_starting_with.node.r#type.clone()]
                                 .into_iter()
-                                .chain(current_concrete_type_to_next.keys().cloned()),
+                                .chain(current_concrete_type_to_next_and_index.keys().cloned()),
                         ))
                         .with_unified_properties(
                             &TypeProperties {
@@ -2283,7 +2287,7 @@ impl Compiler {
                             }
                             .unified(&compiled_starting_with.node.r#type.properties)
                             .unified_all(
-                                current_concrete_type_to_next
+                                current_concrete_type_to_next_and_index
                                     .keys()
                                     .map(|r#type| &r#type.properties),
                             ),
@@ -2321,17 +2325,13 @@ impl Compiler {
                         };
                         NodeAndMetadata {
                             node: Node {
-                                content: Content::Loop(intermediate_representation::Loop {
+                                content: Content::Loop {
                                     starting_with: compiled_starting_with.node.clone(),
                                     current_constant_name_clustered_index,
-                                    current_concrete_type_kind_and_next:
-                                        current_concrete_type_to_next
-                                            .into_iter()
-                                            .map(|(r#type, node)| (r#type.kind, node))
-                                            .collect::<Vec<_>>()
-                                            .into(),
+                                    nexts,
+                                    nexts_cycle_start_index,
                                     r#while: compiled_while_node,
-                                }),
+                                },
                                 r#type: result_type,
                             }
                             .into(),

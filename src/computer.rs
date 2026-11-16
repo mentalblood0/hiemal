@@ -4583,14 +4583,16 @@ impl<'a> ComputationContext<'a> {
                 }
                 .into())
             }
-            Content::Loop(intermediate_representation::Loop {
+            Content::Loop {
                 starting_with,
                 current_constant_name_clustered_index,
-                current_concrete_type_kind_and_next,
+                nexts,
+                nexts_cycle_start_index,
                 r#while,
-            }) => {
+            } => {
                 let mut result = self.compute_node(starting_with, constants)?;
                 let mut next_constants = constants.clone();
+                let mut current_index = 0usize;
                 loop {
                     next_constants[*current_constant_name_clustered_index] = Some(result.clone());
                     if let Some(r#while) = r#while
@@ -4606,17 +4608,13 @@ impl<'a> ComputationContext<'a> {
                     {
                         break Ok(result);
                     }
-                    let next_node = current_concrete_type_kind_and_next
-                        .iter()
-                        .find_map(|(current_concrete_type_kind, possible_next_node)| {
-                            if current_concrete_type_kind.contains(&result.type_kind) {
-                                Some(possible_next_node)
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap();
+                    let next_node = &nexts[current_index];
                     result = self.compute_node(next_node, &next_constants)?;
+                    current_index = if current_index == nexts.len() - 1 {
+                        *nexts_cycle_start_index
+                    } else {
+                        current_index + 1
+                    };
                 }
             }
             Content::Pipe {
