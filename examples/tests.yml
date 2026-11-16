@@ -106,8 +106,9 @@ functions:
       cases:
         - [null, null]
         - - any
-          - from: _
-            at: [match regex result]
+          - get:
+              from: _
+              at: match regex result
 constants:
   constructed regex:
     compile regex:
@@ -172,11 +173,7 @@ compute:
             - length: { a: 1, b: 2, c: 3 }
             - length: lalala
             - length: { bytes: aa bb cc }
-          expected:
-            - 3
-            - 3
-            - 6
-            - 3
+          expected: [ 3, 3, 6, 3 ]
       test polymorphic get by key:
         assert equal::
           found:
@@ -566,11 +563,12 @@ compute:
       # test match regex all:
       #   assert equal::
       #     found:
-      #       from:
-      #         match regex all::
-      #           string: I categorically categorically deny having triskaidekaphobia.
-      #           regex: { constant: constructed regex }
-      #       at: [[0, 3]]
+      #       get:
+      #         from:
+      #           match regex all::
+      #             string: I categorically categorically deny having triskaidekaphobia.
+      #             regex: { constant: constructed regex }
+      #         at: [0, 3]
       #     expected:
       #       - groups:
       #           horror: categorically
@@ -596,10 +594,16 @@ compute:
       test get from string:
         assert equal::
           found:
-            get:
-              from: abcd
-              at: [1, 3]
-          expected: bc
+            - get:
+                from: abcd
+                at: [ 1, 3 ]
+            - get:
+                from: abcd
+                at: [ 1, null ]
+            - get:
+                from: abcd
+                at: [ null ,3 ]
+          expected: [ bc, bcd, abc ]
       test files:
         assert equal::
           found:

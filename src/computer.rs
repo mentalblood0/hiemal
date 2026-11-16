@@ -4283,6 +4283,14 @@ impl<'a> ComputationContext<'a> {
                                 .unwrap())
                         }
                         3 => {
+                            let from_string_value =
+                                self.unroll_intermediate_value(&from_intermediate_value)?;
+                            let from_string = from_string_value
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_string()
+                                .unwrap();
                             let at_tuple = at_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
                             let at_from_index = at_tuple
                                 .get(0)
@@ -4291,10 +4299,8 @@ impl<'a> ComputationContext<'a> {
                                 .as_ref()
                                 .unwrap()
                                 .as_number()
-                                .unwrap()
-                                .trunc()
-                                .to_f64()
-                                .value() as usize;
+                                .map(|number| number.trunc().to_f64().value() as usize)
+                                .unwrap_or(0usize);
                             let at_to_index = at_tuple
                                 .get(1)
                                 .unwrap()
@@ -4302,47 +4308,16 @@ impl<'a> ComputationContext<'a> {
                                 .as_ref()
                                 .unwrap()
                                 .as_number()
-                                .unwrap()
-                                .trunc()
-                                .to_f64()
-                                .value() as usize;
-                            let result_elements = self
-                                .get_range_from_intermediate_value(
-                                    &from_intermediate_value,
-                                    at_from_index..at_to_index,
-                                )
-                                .with_context(|| {
-                                    format!(
-                                        "can not get slice by range {}..{} from\n{:?}",
-                                        at_from_index,
-                                        at_to_index,
-                                        from_intermediate_value.type_kind
-                                    )
-                                })?;
-                            let type_kind = concrete_or_else(&node.r#type.kind, || {
-                                TypeKind::Tuple(
-                                    result_elements
-                                        .iter()
-                                        .map(|element| element.type_kind.clone().into())
-                                        .collect::<Vec<_>>()
-                                        .into(),
-                                )
-                            });
+                                .map(|number| number.trunc().to_f64().value() as usize)
+                                .unwrap_or(from_string.len_chars());
                             Ok(IntermediateValueAndMetadata {
                                 intermediate_value: IntermediateValue::Value(
                                     Some(Value::String(
-                                        self.unroll_intermediate_value(&from_intermediate_value)?
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_string()
-                                            .unwrap()
-                                            .slice(at_from_index..at_to_index)
-                                            .into(),
+                                        from_string.slice(at_from_index..at_to_index).into(),
                                     ))
                                     .into(),
                                 ),
-                                type_kind,
+                                type_kind: TypeKind::String,
                             }
                             .into())
                         }

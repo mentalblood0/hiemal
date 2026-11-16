@@ -101,7 +101,10 @@ get:
 - argument:
     object:
       from: string
-      at: { tuple: [ number, number ] }
+      at:
+        tuple:
+        - union: [ number, "null" ]
+        - union: [ number, "null" ]
 
 parse:
 - argument:

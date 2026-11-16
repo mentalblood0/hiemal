@@ -1303,9 +1303,11 @@ impl Compiler {
                                                     (
                                                         TypeKind::LiteralString(literal_string),
                                                         TypeKind::Number
-                                                        | TypeKind::LiteralNumber(_),
+                                                        | TypeKind::LiteralNumber(_)
+                                                        | TypeKind::Null,
                                                         TypeKind::Number
-                                                        | TypeKind::LiteralNumber(_),
+                                                        | TypeKind::LiteralNumber(_)
+                                                        | TypeKind::Null,
                                                     ) => {
                                                         let from_index = at_range_from_type_kind
                                                             .as_literal_number()
@@ -2002,150 +2004,157 @@ impl Compiler {
                             (Type, Type),
                             (Arc<NodeAndMetadata>, usize),
                         > = BTreeMap::new();
-                        let mut result_union_types = BTreeSet::new();
-                        let throughs_cycle_start_index = match &compiled_fold.node.r#type.kind {
-                            TypeKind::Tuple(fold_tuple_elements_types) => {
-                                let mut current_accumulator_type =
-                                    compiled_starting_with.node.r#type.clone();
-                                for (current_index, current_type) in
-                                    fold_tuple_elements_types.iter().enumerate()
-                                {
-                                    if let Some((through, _)) = current_types_to_through_and_index
-                                        .get(&(
-                                            current_type.clone(),
-                                            current_accumulator_type.clone(),
-                                        ))
+                        let (throughs_cycle_start_index, result_type) =
+                            match &compiled_fold.node.r#type.kind {
+                                TypeKind::Tuple(fold_tuple_elements_types) => {
+                                    let mut current_accumulator_type =
+                                        compiled_starting_with.node.r#type.clone();
+                                    for (current_index, current_type) in
+                                        fold_tuple_elements_types.iter().enumerate()
                                     {
-                                        current_accumulator_type = through.node.r#type.clone();
-                                        throughs.push(through.clone());
-                                    } else {
-                                        let mut through_compilation_context =
-                                            compilation_context.clone();
-                                        through_compilation_context
-                                            .path
-                                            .0
-                                            .extend([PathSegment::Through(current_index)]);
-                                        fold_constant_name_clustered_index = Some(
-                                            self.define_constant(
-                                                r#as.clone(),
-                                                current_type.clone(),
-                                                &mut through_compilation_context,
-                                                global_compilation_context,
-                                            )
-                                            .name_clustered_index,
-                                        );
-                                        accumulating_in_constant_name_clustered_index = Some(
-                                            self.define_constant(
-                                                accumulating_in.clone(),
-                                                current_accumulator_type.clone(),
-                                                &mut through_compilation_context,
-                                                global_compilation_context,
-                                            )
-                                            .name_clustered_index,
-                                        );
-                                        let compiled_through = self.compile_with_context(
-                                            through,
-                                            &through_compilation_context,
-                                            global_compilation_context,
-                                        )?;
-                                        result_external_constants_name_clustered_indices.extend(
-                                            compiled_through
-                                                .external_constants_name_clustered_indices
-                                                .clone(),
-                                        );
-                                        current_types_to_through_and_index.insert(
-                                            (
+                                        if let Some((through, _)) =
+                                            current_types_to_through_and_index.get(&(
                                                 current_type.clone(),
                                                 current_accumulator_type.clone(),
-                                            ),
-                                            (compiled_through.clone(), current_index),
-                                        );
-                                        result_union_types
-                                            .insert(compiled_through.node.r#type.clone());
-                                        current_accumulator_type =
-                                            compiled_through.node.r#type.clone();
-                                        throughs.push(compiled_through);
+                                            ))
+                                        {
+                                            current_accumulator_type = through.node.r#type.clone();
+                                            throughs.push(through.clone());
+                                        } else {
+                                            let mut through_compilation_context =
+                                                compilation_context.clone();
+                                            through_compilation_context
+                                                .path
+                                                .0
+                                                .extend([PathSegment::Through(current_index)]);
+                                            fold_constant_name_clustered_index = Some(
+                                                self.define_constant(
+                                                    r#as.clone(),
+                                                    current_type.clone(),
+                                                    &mut through_compilation_context,
+                                                    global_compilation_context,
+                                                )
+                                                .name_clustered_index,
+                                            );
+                                            accumulating_in_constant_name_clustered_index = Some(
+                                                self.define_constant(
+                                                    accumulating_in.clone(),
+                                                    current_accumulator_type.clone(),
+                                                    &mut through_compilation_context,
+                                                    global_compilation_context,
+                                                )
+                                                .name_clustered_index,
+                                            );
+                                            let compiled_through = self.compile_with_context(
+                                                through,
+                                                &through_compilation_context,
+                                                global_compilation_context,
+                                            )?;
+                                            result_external_constants_name_clustered_indices
+                                                .extend(
+                                                    compiled_through
+                                                        .external_constants_name_clustered_indices
+                                                        .clone(),
+                                                );
+                                            current_types_to_through_and_index.insert(
+                                                (
+                                                    current_type.clone(),
+                                                    current_accumulator_type.clone(),
+                                                ),
+                                                (compiled_through.clone(), current_index),
+                                            );
+                                            current_accumulator_type =
+                                                compiled_through.node.r#type.clone();
+                                            throughs.push(compiled_through);
+                                        }
                                     }
+                                    (0usize, current_accumulator_type)
                                 }
-                                0usize
-                            }
-                            TypeKind::Array(fold_array_element_type) => {
-                                let current_type = *fold_array_element_type.clone();
-                                let mut current_accumulator_type =
-                                    compiled_starting_with.node.r#type.clone();
-                                let mut current_index = 0usize;
-                                loop {
-                                    if let Some((through, index)) =
-                                        current_types_to_through_and_index.get(&(
-                                            current_type.clone(),
-                                            current_accumulator_type.clone(),
-                                        ))
-                                    {
-                                        throughs.push(through.clone());
-                                        break *index;
-                                    } else {
-                                        let mut through_compilation_context =
-                                            compilation_context.clone();
-                                        through_compilation_context
-                                            .path
-                                            .0
-                                            .extend([PathSegment::Through(current_index)]);
-                                        let starting_with_type =
-                                            compiled_starting_with.node.r#type.clone();
-                                        fold_constant_name_clustered_index = Some(
-                                            self.define_constant(
-                                                r#as.clone(),
-                                                *fold_array_element_type.clone(),
-                                                &mut through_compilation_context,
-                                                global_compilation_context,
-                                            )
-                                            .name_clustered_index,
-                                        );
-                                        accumulating_in_constant_name_clustered_index = Some(
-                                            self.define_constant(
-                                                accumulating_in.clone(),
-                                                starting_with_type.clone(),
-                                                &mut through_compilation_context,
-                                                global_compilation_context,
-                                            )
-                                            .name_clustered_index,
-                                        );
-                                        let compiled_through = self.compile_with_context(
-                                            through,
-                                            &through_compilation_context,
-                                            global_compilation_context,
-                                        )?;
-                                        assert_type(
-                                            &compiled_through.node.r#type,
-                                            &starting_with_type.kind,
-                                            &through_compilation_context,
-                                        )?;
-                                        result_external_constants_name_clustered_indices.extend(
-                                            compiled_through
-                                                .external_constants_name_clustered_indices
-                                                .clone(),
-                                        );
-                                        current_types_to_through_and_index.insert(
-                                            (
-                                                current_type.clone(),
-                                                current_accumulator_type.clone(),
-                                            ),
-                                            (compiled_through.clone(), current_index),
-                                        );
-                                        result_union_types
-                                            .insert(compiled_through.node.r#type.clone());
-                                        current_accumulator_type =
-                                            compiled_through.node.r#type.clone();
-                                        throughs.push(compiled_through);
-                                    }
-                                    current_index += 1;
+                                TypeKind::Array(fold_array_element_type) => {
+                                    let current_type = *fold_array_element_type.clone();
+                                    let mut current_accumulator_type =
+                                        compiled_starting_with.node.r#type.clone();
+                                    let mut current_index = 0usize;
+                                    let mut result_union_types = BTreeSet::new();
+                                    (
+                                        loop {
+                                            if let Some((through, index)) =
+                                                current_types_to_through_and_index.get(&(
+                                                    current_type.clone(),
+                                                    current_accumulator_type.clone(),
+                                                ))
+                                            {
+                                                throughs.push(through.clone());
+                                                break *index;
+                                            } else {
+                                                let mut through_compilation_context =
+                                                    compilation_context.clone();
+                                                through_compilation_context
+                                                    .path
+                                                    .0
+                                                    .extend([PathSegment::Through(current_index)]);
+                                                let starting_with_type =
+                                                    compiled_starting_with.node.r#type.clone();
+                                                fold_constant_name_clustered_index = Some(
+                                                    self.define_constant(
+                                                        r#as.clone(),
+                                                        *fold_array_element_type.clone(),
+                                                        &mut through_compilation_context,
+                                                        global_compilation_context,
+                                                    )
+                                                    .name_clustered_index,
+                                                );
+                                                accumulating_in_constant_name_clustered_index =
+                                                    Some(
+                                                        self.define_constant(
+                                                            accumulating_in.clone(),
+                                                            starting_with_type.clone(),
+                                                            &mut through_compilation_context,
+                                                            global_compilation_context,
+                                                        )
+                                                        .name_clustered_index,
+                                                    );
+                                                let compiled_through = self.compile_with_context(
+                                                    through,
+                                                    &through_compilation_context,
+                                                    global_compilation_context,
+                                                )?;
+                                                result_union_types
+                                                    .insert(compiled_through.node.r#type.clone());
+                                                assert_type(
+                                                    &compiled_through.node.r#type,
+                                                    &starting_with_type.kind,
+                                                    &through_compilation_context,
+                                                )?;
+                                                result_external_constants_name_clustered_indices
+                                                    .extend(
+                                                    compiled_through
+                                                        .external_constants_name_clustered_indices
+                                                        .clone(),
+                                                );
+                                                current_types_to_through_and_index.insert(
+                                                    (
+                                                        current_type.clone(),
+                                                        current_accumulator_type.clone(),
+                                                    ),
+                                                    (compiled_through.clone(), current_index),
+                                                );
+                                                result_union_types
+                                                    .insert(compiled_through.node.r#type.clone());
+                                                current_accumulator_type =
+                                                    compiled_through.node.r#type.clone();
+                                                throughs.push(compiled_through);
+                                            }
+                                            current_index += 1;
+                                        },
+                                        Type::from(result_union_types),
+                                    )
                                 }
-                            }
-                            _ => {
-                                return Err(fold_compilation_context
-                                    .error(&compiled_fold.node.r#type, &"tuple or array"));
-                            }
-                        };
+                                _ => {
+                                    return Err(fold_compilation_context
+                                        .error(&compiled_fold.node.r#type, &"tuple or array"));
+                                }
+                            };
                         NodeAndMetadata {
                             node: Node {
                                 content: Content::Fold {
@@ -2161,7 +2170,7 @@ impl Compiler {
                                         .collect(),
                                     throughs_cycle_start_index,
                                 },
-                                r#type: Type::from(result_union_types),
+                                r#type: result_type,
                             }
                             .into(),
                             external_constants_name_clustered_indices:
@@ -2218,7 +2227,8 @@ impl Compiler {
                         let mut current_concrete_type_to_next_and_index = BTreeMap::new();
                         let mut current_constant_name_clustered_index;
                         let mut current_index = 0usize;
-                        let mut result_union_types = BTreeSet::new();
+                        let mut result_union_types =
+                            BTreeSet::from_iter([compiled_starting_with.node.r#type.clone()]);
                         let nexts_cycle_start_index = loop {
                             let mut next_compilation_context = compilation_context.clone();
                             next_compilation_context
