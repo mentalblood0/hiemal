@@ -6,7 +6,7 @@
 - no own syntax, parsing is deserialization
 - no annotations, yet static type checking
 - tuples, union types, literal strings
-- polymorphic sequence and loop
+- polymorphic fold, sequence and loop
 - match clause exhaustiveness checking
 - capabilities restrictions checking
 - pass-by-value, strings and containers are cheap to clone
@@ -297,6 +297,66 @@ through:
       cases:
         - [number, _]
         - [string, 0]
+```
+
+#### fold as accumulating in through
+
+```yaml
+fold: [1, 2, 3]
+starting with: 0
+through:
+  sum: [{ constant: accumulator }, { constant: current }]
+```
+
+```yaml
+fold: [1, 2, string, 3, 4]
+starting with: 0
+through:
+  match: current
+  cases:
+    - [
+        number,
+        sum: [{ constant: accumulator }, { constant: current }],
+      ]
+    - [string, 0]
+```
+
+```yaml
+constants:
+  FizzBuzz:
+    map:
+      starting with: 1
+      next: { sum: [_, 1] }
+    through:
+      match:
+        mod: [_, 3]
+      cases:
+        - - 0
+          - match:
+              mod: [_, 5]
+            cases:
+              - [0, FizzBuzz]
+              - [any, Fizz]
+        - - any
+          - match:
+              mod: [_, 5]
+            cases:
+              - [0, Buzz]
+              - [any, _]
+compute:
+found:
+  fold:
+    get:
+      from: { constant: FizzBuzz }
+      at: [0, 20]
+  through:
+    match: { constant: current }
+    as: _
+    cases:
+      - - number
+        - { sum: [ { constant: accumulator }, _ ] }
+      - [ any, { constant: accumulator } ]
+  starting with: 0
 ```
 
 #### pipe as
