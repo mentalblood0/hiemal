@@ -98,6 +98,10 @@ get:
     object:
       from: { generic object: any }
       at: string
+- argument:
+    object:
+      from: string
+      at: { tuple: [ number, number ] }
 
 parse:
 - argument:
