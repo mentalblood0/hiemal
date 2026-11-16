@@ -2087,13 +2087,16 @@ impl Compiler {
                                 .external_constants_name_clustered_indices
                                 .clone();
                         let mut current_concrete_type = compiled_starting_with.node.r#type.clone();
-                        let mut current_concrete_type_to_next = BTreeMap::new();
+                        let mut nexts = Vec::new();
+                        let mut current_concrete_type_to_next_and_index = BTreeMap::new();
                         let mut current_constant_name_clustered_index;
-                        loop {
+                        let mut current_index = 0usize;
+                        let nexts_cycle_start_index = loop {
                             let mut next_compilation_context = compilation_context.clone();
-                            next_compilation_context.path.0.extend([PathSegment::Next(
-                                compiled_starting_with.node.r#type.clone(),
-                            )]);
+                            next_compilation_context
+                                .path
+                                .0
+                                .extend([PathSegment::Loop(current_concrete_type.clone())]);
                             current_constant_name_clustered_index = self
                                 .define_constant(
                                     r#as.clone(),
@@ -2107,33 +2110,69 @@ impl Compiler {
                                 &next_compilation_context,
                                 global_compilation_context,
                             )?;
-                            if current_concrete_type_to_next
-                                .insert(
+                            let compiled_next_node =
+                                if compiled_next.node.r#type.kind.have_large_tuples(128) {
+                                    Node {
+                                        content: compiled_next.node.content.clone(),
+                                        r#type: compiled_next.node.r#type.with_kind(
+                                            compiled_next
+                                                .node
+                                                .r#type
+                                                .kind
+                                                .clone()
+                                                .with_tuples_weakened_to_arrays(128),
+                                        ),
+                                    }
+                                    .into()
+                                } else {
+                                    compiled_next.node.clone()
+                                };
+                            if let Some((_, nexts_cycle_start_index)) =
+                                current_concrete_type_to_next_and_index.insert(
                                     std::mem::take(&mut current_concrete_type),
-                                    compiled_next.node.clone(),
+                                    (compiled_next_node.clone(), current_index),
                                 )
-                                .is_some()
                             {
-                                break;
+                                break nexts_cycle_start_index;
+                            } else {
+                                nexts.push(compiled_next_node.clone());
                             }
-                            current_concrete_type = compiled_next.node.r#type.clone();
+                            current_concrete_type = compiled_next_node.r#type.clone();
                             result_external_constants_name_clustered_indices.append(
                                 &mut compiled_next
                                     .external_constants_name_clustered_indices
                                     .clone(),
                             );
-                        }
-                        let element_type = Type::from(BTreeSet::from_iter(
-                            [compiled_starting_with.node.r#type.clone()]
-                                .into_iter()
-                                .chain(current_concrete_type_to_next.keys().cloned()),
-                        ));
-                        let compiled_while_node = if let Some(r#while) = r#while {
+                            current_index += 1;
+                        };
+                        let intermediate_result_type = Type::from(TypeKind::Array(
+                            Type::from(BTreeSet::from_iter(
+                                [compiled_starting_with.node.r#type.clone()]
+                                    .into_iter()
+                                    .chain(current_concrete_type_to_next_and_index.keys().cloned()),
+                            ))
+                            .into(),
+                        ))
+                        .with_unified_properties(
+                            &TypeProperties {
+                                capabilities: EnumSet::default(),
+                                is_computable: true,
+                                is_serializable: true,
+                                is_pure: true,
+                            }
+                            .unified(&compiled_starting_with.node.r#type.properties)
+                            .unified_all(
+                                current_concrete_type_to_next_and_index
+                                    .keys()
+                                    .map(|r#type| &r#type.properties),
+                            ),
+                        );
+                        let (compiled_while_node, result_type) = if let Some(r#while) = r#while {
                             let mut while_compilation_context = compilation_context.clone();
                             while_compilation_context.path.0.push(PathSegment::While);
                             self.define_constant(
                                 r#as.clone(),
-                                element_type.clone(),
+                                intermediate_result_type.clone(),
                                 &mut while_compilation_context,
                                 global_compilation_context,
                             );
@@ -2152,41 +2191,25 @@ impl Compiler {
                                     .external_constants_name_clustered_indices
                                     .clone(),
                             );
-                            Some(compiled_while.node.clone())
+                            (Some(compiled_while.node.clone()), intermediate_result_type)
                         } else {
-                            None
-                        };
-                        let r#type = Type {
-                            kind: TypeKind::Array(Box::new(element_type)),
-                            properties: TypeProperties {
-                                capabilities: EnumSet::default(),
-                                is_computable: compiled_while_node.is_some(),
-                                is_serializable: true,
-                                is_pure: true,
-                            }
-                            .unified(&compiled_starting_with.node.r#type.properties)
-                            .unified_all(
-                                current_concrete_type_to_next
-                                    .keys()
-                                    .map(|r#type| &r#type.properties),
-                            ),
+                            let mut result_type = intermediate_result_type;
+                            result_type.properties.is_computable = false;
+                            (None, result_type)
                         };
                         NodeAndMetadata {
                             node: Node {
-                                content: Content::Sequence(Arc::new(
+                                content: Content::Sequence(
                                     intermediate_representation::Sequence {
                                         starting_with: compiled_starting_with.node.clone(),
                                         current_constant_name_clustered_index,
-                                        current_concrete_type_kind_and_next:
-                                            current_concrete_type_to_next
-                                                .into_iter()
-                                                .map(|(r#type, node)| (r#type.kind, node))
-                                                .collect::<Vec<_>>()
-                                                .into(),
+                                        nexts,
+                                        nexts_cycle_start_index,
                                         r#while: compiled_while_node,
-                                    },
-                                )),
-                                r#type,
+                                    }
+                                    .into(),
+                                ),
+                                r#type: result_type,
                             }
                             .into(),
                             external_constants_name_clustered_indices:

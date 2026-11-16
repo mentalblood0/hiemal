@@ -49,8 +49,8 @@ static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
 
 #[derive(Clone, Debug)]
 struct SequenceLockableInternals {
-    current_concrete_type_and_next: Arc<Vec<(TypeKind, Arc<Node>)>>,
     next_constants: Constants,
+    current_index: usize,
     already_computed_values: Vec<Arc<IntermediateValueAndMetadata>>,
     already_fully_computed: bool,
 }
@@ -530,28 +530,23 @@ impl<'a> ComputationContext<'a> {
         >,
     ) -> Result<()> {
         if !lockable_internals_write_guard.already_fully_computed {
-            let next_node = lockable_internals_write_guard
-                .current_concrete_type_and_next
-                .iter()
-                .find_map(|(current_concrete_type_kind, possible_next_node)| {
-                    if current_concrete_type_kind.contains(
-                        &lockable_internals_write_guard
-                            .already_computed_values
-                            .last()
-                            .unwrap()
-                            .type_kind,
-                    ) {
-                        Some(possible_next_node)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap();
+            let next_node = &sequence.intermediate_representation_content.nexts
+                [lockable_internals_write_guard.current_index];
             let next =
                 self.compute_node(next_node, &lockable_internals_write_guard.next_constants)?;
             lockable_internals_write_guard.next_constants[sequence
                 .intermediate_representation_content
                 .current_constant_name_clustered_index] = Some(next.clone());
+            lockable_internals_write_guard.current_index = if lockable_internals_write_guard
+                .current_index
+                == sequence.intermediate_representation_content.nexts.len() - 1
+            {
+                sequence
+                    .intermediate_representation_content
+                    .nexts_cycle_start_index
+            } else {
+                lockable_internals_write_guard.current_index + 1
+            };
             if let Some(ref r#while) = sequence.intermediate_representation_content.r#while {
                 if self
                     .unroll_intermediate_value(
@@ -4571,9 +4566,7 @@ impl<'a> ComputationContext<'a> {
                         intermediate_representation_content: intermediate_representation_content
                             .clone(),
                         lockable_internals: Arc::new(RwLock::new(SequenceLockableInternals {
-                            current_concrete_type_and_next: intermediate_representation_content
-                                .current_concrete_type_kind_and_next
-                                .clone(),
+                            current_index: 0usize,
                             next_constants,
                             already_computed_values: [computed_starting_with].into(),
                             already_fully_computed: false,

@@ -9,7 +9,7 @@ use crate::{
     containers::{self, Vector},
     embedded_functions::EmbeddedFunction,
     program::Path,
-    r#type::{Type, TypeKind},
+    r#type::Type,
     value::{Runtime, deserialize_bytes, serialize_bytes},
 };
 
@@ -144,7 +144,8 @@ pub struct Filter {
 pub struct Sequence {
     pub starting_with: Arc<Node>,
     pub current_constant_name_clustered_index: usize,
-    pub current_concrete_type_kind_and_next: Arc<Vec<(TypeKind, Arc<Node>)>>,
+    pub nexts: Vec<Arc<Node>>,
+    pub nexts_cycle_start_index: usize,
     pub r#while: Option<Arc<Node>>,
 }
 
