@@ -91,7 +91,6 @@ mod tests {
     use std::io::{BufWriter, Write};
 
     use anyhow::Result;
-    use pretty_assertions::assert_eq;
 
     use super::run;
 
