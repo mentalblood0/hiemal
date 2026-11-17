@@ -41,12 +41,3 @@ humantime-serde = "1.1.1"
 rand = { version = "0.10.3", features = ["chacha"] }
 data-encoding = "2.11.1"
 indexmap = "2.14.2"
-
-[dev-dependencies]
-nanorand = "0.8"
-pretty_assertions = "1.4"
-criterion = "0.5"
-
-[[bench]]
-name = "compute"
-harness = false

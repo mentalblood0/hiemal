@@ -143,6 +143,25 @@ constants:
 compute:
   tests report::
     key-value pairs:
+      test match regex all:
+        assert equal::
+          found:
+            get:
+              from:
+                match regex all::
+                  string: I categorically categorically deny having triskaidekaphobia.
+                  regex: { constant: constructed regex }
+              at: [0, 3]
+          expected:
+            - groups:
+                horror: categorically
+              start: 2
+              end: 15
+            - groups:
+                horror: categorically
+              start: 16
+              end: 29
+            - null
       test fold heterogenous array:
         assert equal::
           found:
@@ -560,25 +579,6 @@ compute:
           found:
             mod: [20, 6]
           expected: 2
-      # test match regex all:
-      #   assert equal::
-      #     found:
-      #       get:
-      #         from:
-      #           match regex all::
-      #             string: I categorically categorically deny having triskaidekaphobia.
-      #             regex: { constant: constructed regex }
-      #         at: [0, 3]
-      #     expected:
-      #       - groups:
-      #           horror: categorically
-      #         start: 2
-      #         end: 15
-      #       - groups:
-      #           horror: categorically
-      #         start: 16
-      #         end: 29
-      #       - null
       test lazy constant:
         assert equal::
           found:

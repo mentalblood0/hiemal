@@ -4297,18 +4297,14 @@ impl<'a> ComputationContext<'a> {
                                 .unwrap()
                                 .as_ref()
                                 .as_ref()
-                                .unwrap()
-                                .as_number()
-                                .map(|number| number.trunc().to_f64().value() as usize)
-                                .unwrap_or(0usize);
+                                .map(|number_value| number_value.as_number().unwrap().trunc().to_f64().value() as usize)
+                                .unwrap_or(from_string.len_chars());
                             let at_to_index = at_tuple
                                 .get(1)
                                 .unwrap()
                                 .as_ref()
                                 .as_ref()
-                                .unwrap()
-                                .as_number()
-                                .map(|number| number.trunc().to_f64().value() as usize)
+                                .map(|number_value| number_value.as_number().unwrap().trunc().to_f64().value() as usize)
                                 .unwrap_or(from_string.len_chars());
                             Ok(IntermediateValueAndMetadata {
                                 intermediate_value: IntermediateValue::Value(

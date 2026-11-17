@@ -1292,7 +1292,17 @@ impl Compiler {
                                                     at_range_from_type_kind,
                                                     at_range_to_type_kind,
                                                 ) {
-                                                    (TypeKind::String, _, _) => {
+                                                    (TypeKind::String, _, _)
+                                                    | (
+                                                        TypeKind::LiteralString(_),
+                                                        TypeKind::Number,
+                                                        _,
+                                                    )
+                                                    | (
+                                                        TypeKind::LiteralString(_),
+                                                        _,
+                                                        TypeKind::Number,
+                                                    ) => {
                                                         result.insert(
                                                             error_type_properties
                                                                 .unified_recursively(
@@ -1302,12 +1312,8 @@ impl Compiler {
                                                     }
                                                     (
                                                         TypeKind::LiteralString(literal_string),
-                                                        TypeKind::Number
-                                                        | TypeKind::LiteralNumber(_)
-                                                        | TypeKind::Null,
-                                                        TypeKind::Number
-                                                        | TypeKind::LiteralNumber(_)
-                                                        | TypeKind::Null,
+                                                        TypeKind::LiteralNumber(_) | TypeKind::Null,
+                                                        TypeKind::LiteralNumber(_) | TypeKind::Null,
                                                     ) => {
                                                         let from_index = at_range_from_type_kind
                                                             .as_literal_number()
@@ -2222,7 +2228,7 @@ impl Compiler {
                             compiled_starting_with
                                 .external_constants_name_clustered_indices
                                 .clone();
-                        let mut current_concrete_type = compiled_starting_with.node.r#type.clone();
+                        let mut current_type = compiled_starting_with.node.r#type.clone();
                         let mut nexts = Vec::new();
                         let mut current_concrete_type_to_next_and_index = BTreeMap::new();
                         let mut current_constant_name_clustered_index;
@@ -2234,11 +2240,11 @@ impl Compiler {
                             next_compilation_context
                                 .path
                                 .0
-                                .extend([PathSegment::Next(current_concrete_type.clone())]);
+                                .extend([PathSegment::Next(current_type.clone())]);
                             current_constant_name_clustered_index = self
                                 .define_constant(
                                     r#as.clone(),
-                                    current_concrete_type.clone(),
+                                    current_type.clone(),
                                     &mut next_compilation_context,
                                     global_compilation_context,
                                 )
@@ -2267,7 +2273,7 @@ impl Compiler {
                                 };
                             if let Some((_, nexts_cycle_start_index)) =
                                 current_concrete_type_to_next_and_index.insert(
-                                    std::mem::take(&mut current_concrete_type),
+                                    std::mem::take(&mut current_type),
                                     (compiled_next_node.clone(), current_index),
                                 )
                             {
@@ -2276,7 +2282,7 @@ impl Compiler {
                                 nexts.push(compiled_next_node.clone());
                             }
                             result_union_types.insert(compiled_next_node.r#type.clone());
-                            current_concrete_type = compiled_next_node.r#type.clone();
+                            current_type = compiled_next_node.r#type.clone();
                             result_external_constants_name_clustered_indices.append(
                                 &mut compiled_next
                                     .external_constants_name_clustered_indices
