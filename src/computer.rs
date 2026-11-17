@@ -1356,7 +1356,7 @@ impl<'a> ComputationContext<'a> {
                         }
                         _ => Some((element_index, (node, constants))),
                     },
-                    None => None,
+                    Option::None => None,
                 },
             )
             .collect::<Vec<_>>();
@@ -1391,7 +1391,6 @@ impl<'a> ComputationContext<'a> {
             Content::Sequence(_)
             | Content::EmbeddedFunctionCall { .. }
             | Content::UserFunctionCall { .. }
-            // | Content::FromAt { .. }
             | Content::Match { .. } => IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::LazyValue(LazyValue {
                     node: node.clone(),
@@ -4233,19 +4232,22 @@ impl<'a> ComputationContext<'a> {
                                 .trunc()
                                 .to_f64()
                                 .value() as usize;
-                            let result_elements = self
-                                .get_range_from_intermediate_value(
-                                    &from_intermediate_value,
-                                    at_from_index..at_to_index,
-                                )
-                                .with_context(|| {
-                                    format!(
-                                        "can not get slice by range {}..{} from\n{:?}",
-                                        at_from_index,
-                                        at_to_index,
-                                        from_intermediate_value.type_kind
-                                    )
-                                })?;
+                            let result_elements = self.get_range_from_intermediate_value(
+                                &from_intermediate_value,
+                                at_from_index..at_to_index,
+                            )?;
+                            let expected_len = at_to_index - at_from_index;
+                            if result_elements.len() != expected_len {
+                                return Err(anyhow!(
+                                    "can not get slice by range {}..{}: expected result of length \
+                                     {}, found result of len {} from\n{:?}",
+                                    at_from_index,
+                                    at_to_index,
+                                    expected_len,
+                                    result_elements.len(),
+                                    from_intermediate_value.type_kind
+                                ))?;
+                            }
                             let type_kind = concrete_or_else(&node.r#type.kind, || {
                                 TypeKind::Tuple(
                                     result_elements
@@ -4297,14 +4299,20 @@ impl<'a> ComputationContext<'a> {
                                 .unwrap()
                                 .as_ref()
                                 .as_ref()
-                                .map(|number_value| number_value.as_number().unwrap().trunc().to_f64().value() as usize)
+                                .map(|number_value| {
+                                    number_value.as_number().unwrap().trunc().to_f64().value()
+                                        as usize
+                                })
                                 .unwrap_or(from_string.len_chars());
                             let at_to_index = at_tuple
                                 .get(1)
                                 .unwrap()
                                 .as_ref()
                                 .as_ref()
-                                .map(|number_value| number_value.as_number().unwrap().trunc().to_f64().value() as usize)
+                                .map(|number_value| {
+                                    number_value.as_number().unwrap().trunc().to_f64().value()
+                                        as usize
+                                })
                                 .unwrap_or(from_string.len_chars());
                             Ok(IntermediateValueAndMetadata {
                                 intermediate_value: IntermediateValue::Value(

@@ -395,7 +395,7 @@ impl Compiler {
         // }
         let static_properties = &match &signature.r#return.properties {
             Some(static_properties) => static_properties.clone(),
-            None => TypeProperties::default(),
+            Option::None => TypeProperties::default(),
         };
         let static_and_argument_properties = TypeProperties {
             capabilities: static_properties.capabilities
@@ -414,7 +414,7 @@ impl Compiler {
         } else {
             match signature.r#return.r#type {
                 Some(ref return_type) => return_type.clone().into(),
-                None => panic!(),
+                Option::None => panic!(),
             }
         }
         .with_recursively_updated_properties(&|properties| {
@@ -2290,8 +2290,9 @@ impl Compiler {
                             );
                             current_index += 1;
                         };
+                        let element_type = Box::new(Type::from(result_union_types));
                         let intermediate_result_type =
-                            Type::from(TypeKind::Array(Type::from(result_union_types).into()))
+                            Type::from(TypeKind::Array(element_type.clone()))
                                 .with_unified_properties(
                                     &compiled_starting_with.node.r#type.properties.unified_all(
                                         current_concrete_type_to_next_and_index
@@ -2304,7 +2305,7 @@ impl Compiler {
                             while_compilation_context.path.0.push(PathSegment::While);
                             self.define_constant(
                                 r#as.clone(),
-                                intermediate_result_type.clone(),
+                                *element_type.clone(),
                                 &mut while_compilation_context,
                                 global_compilation_context,
                             );

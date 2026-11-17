@@ -101,6 +101,11 @@ functions:
                                 - get:
                                     from: { constant: match regex result }
                                     at: end
+      while:
+        match: _
+        cases:
+          - [null, false]
+          - [any, true]
     through:
       match: _
       cases:
@@ -146,12 +151,9 @@ compute:
       test match regex all:
         assert equal::
           found:
-            get:
-              from:
-                match regex all::
-                  string: I categorically categorically deny having triskaidekaphobia.
-                  regex: { constant: constructed regex }
-              at: [0, 3]
+            match regex all::
+              string: I categorically categorically deny having triskaidekaphobia.
+              regex: { constant: constructed regex }
           expected:
             - groups:
                 horror: categorically
@@ -161,7 +163,6 @@ compute:
                 horror: categorically
               start: 16
               end: 29
-            - null
       test fold heterogenous array:
         assert equal::
           found:
