@@ -469,25 +469,26 @@ compute:
               - { sleep: { duration: 8h } }
               - true
           expected: true
-      # test send request:
-      #   assert equal::
-      #     found:
-      #       constants:
-      #         client:
-      #           HTTP client:
-      #             - error on bad status code: false
-      #             - proxy: false
-      #       compute:
-      #         from:
-      #           send request:
-      #             client: { constant: client }
-      #             request:
-      #               URL: https://httpbingo.org/get
-      #               method: GET
-      #               body: null
-      #               parameters: []
-      #         at: [ status ]
-      #     expected: OK
+      test send request:
+        assert equal::
+          found:
+            constants:
+              client:
+                HTTP client:
+                  - error on bad status code: false
+                  - proxy: false
+            compute:
+              get:
+                from:
+                  send request:
+                    client: { constant: client }
+                    request:
+                      URL: https://httpbingo.org/get
+                      method: GET
+                      body: null
+                      parameters: []
+                at: status
+          expected: OK
       test run command:
         assert equal::
           found:
@@ -805,18 +806,18 @@ compute:
                 timestamp: 2026-08-10 14:27:15.678
               start: 0
               end: 93
-      # test match regex:
-      #   assert equal::
-      #     found:
-      #       match:
-      #         match regex:
-      #           string: I categorically deny having triskaidekaphobia.
-      #           regex: { constant: constructed regex }
-      #       as: match regex result
-      #       cases:
-      #         - [null, null]
-      #         - [any, { from: { constant: match regex result }, at: [groups, horror] }]
-      #     expected: categorically
+      test match regex:
+        assert equal::
+          found:
+            match:
+              match regex:
+                string: I categorically deny having triskaidekaphobia.
+                regex: { constant: constructed regex }
+            as: match regex result
+            cases:
+              - [null, null]
+              - [any, { get by path:: { from: { constant: match regex result }, at: [groups, horror] }}]
+          expected: categorically
       test is match runtime regex building:
         assert equal::
           found:
@@ -831,28 +832,29 @@ compute:
               string: I categorically deny having triskaidekaphobia.
               regex: { constant: raw regex }
           expected: true
-      # test from at value union:
-      #   assert equal::
-      #     found:
-      #       match:
-      #         from:
-      #           match: { parse: { YAML: "s" } }
-      #           cases:
-      #             - [number, { a: [1, 2, { b: s, t: 1 }] }]
-      #             - - any
-      #               - a:
-      #                   - 1
-      #                   - 2
-      #                   - match: { parse: { YAML: "s" } }
-      #                     cases:
-      #                       - [number, { b: null, p: s }]
-      #                       - [any, { b: 3, t: s }]
-      #         at: [a, 2, b]
-      #       cases:
-      #         - [string, false]
-      #         - [null, false]
-      #         - [number, true]
-      #     expected: true
+      test from at value union:
+        assert equal::
+          found:
+            match:
+              get by path::
+                from:
+                  match: { parse: { YAML: "s" } }
+                  cases:
+                    - [number, { a: [1, 2, { b: s, t: 1 }] }]
+                    - - any
+                      - a:
+                          - 1
+                          - 2
+                          - match: { parse: { YAML: "s" } }
+                            cases:
+                              - [number, { b: null, p: s }]
+                              - [any, { b: 3, t: s }]
+                at: [a, 2, b]
+            cases:
+              - [string, false]
+              - [null, false]
+              - [number, true]
+          expected: true
       test flatten union:
         assert equal::
           found:
