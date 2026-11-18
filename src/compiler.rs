@@ -488,6 +488,7 @@ impl Compiler {
                 global_compilation_context,
             ),
             _ => {
+                let hash_computation_start = std::time::Instant::now();
                 let instantiated_program_hash = {
                     let mut hasher = gxhash::GxHasher::default();
                     program_with_hash.hash.hash(&mut hasher);
@@ -500,20 +501,25 @@ impl Compiler {
                     compilation_context.available_functions.hash(&mut hasher);
                     hasher.finish_u128()
                 };
+                let hash_computation_duration = hash_computation_start.elapsed();
                 if let Some(cached_compilation_result) = global_compilation_context
                     .compiled_programs_cache
                     .get(&instantiated_program_hash)
                 {
                     Ok(cached_compilation_result.clone())
                 } else {
+                    let compilation_start = std::time::Instant::now();
                     let result = self.compile_with_context_without_cache(
                         program_with_hash,
                         compilation_context,
                         global_compilation_context,
                     )?;
-                    global_compilation_context
-                        .compiled_programs_cache
-                        .insert(instantiated_program_hash, result.clone());
+                    let compilation_duration = compilation_start.elapsed();
+                    if compilation_duration > hash_computation_duration {
+                        global_compilation_context
+                            .compiled_programs_cache
+                            .insert(instantiated_program_hash, result.clone());
+                    }
                     Ok(result)
                 }
             }
@@ -526,7 +532,7 @@ impl Compiler {
         compilation_context: &CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
     ) -> Result<Arc<NodeAndMetadata>> {
-        let result = match &program_with_hash.program {
+        Ok(match &program_with_hash.program {
             Program::Bytes { bytes } => NodeAndMetadata {
                 external_constants_name_clustered_indices: BTreeSet::new(),
                 node: Node {
@@ -2944,7 +2950,6 @@ impl Compiler {
                     result
                 }
             }
-        };
-        Ok(result)
+        })
     }
 }
