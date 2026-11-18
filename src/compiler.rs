@@ -12,13 +12,15 @@ use serde::Serialize;
 
 use crate::{
     computer::Computer,
-    containers::{Object, ObjectRaw, Set, Vector},
+    containers::{Object, ObjectRaw, SetRaw, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     embedded_functions::{EMBEDDED_FUNCTIONS, EmbeddedFunction},
     intermediate_representation::{
         self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction,
     },
-    program::{Condition, EmbeddedFunctionCall, Match, Path, PathSegment, Program},
+    program::{
+        Condition, EmbeddedFunctionCall, Match, Path, PathSegment, Program, ProgramWithHash,
+    },
     r#type::{Capability, Embedded, Type, TypeKind, TypeProperties},
     value::Value,
 };
@@ -26,9 +28,9 @@ use crate::{
 #[derive(Clone, Default)]
 struct CompilationContext {
     path: Path,
-    available_functions: Object<String, Program>,
+    available_functions: Object<String, ProgramWithHash>,
     available_constants: ObjectRaw<Arc<String>, usize>,
-    entered_user_functions: Set<Program>,
+    entered_user_functions: SetRaw<u128>,
 }
 
 impl CompilationContext {
@@ -268,11 +270,14 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn compile(&self, program: &Program) -> Result<Arc<IntermediateRepresentation>> {
+    pub fn compile(
+        &self,
+        program_with_hash: &ProgramWithHash,
+    ) -> Result<Arc<IntermediateRepresentation>> {
         let mut global_compilation_context = GlobalCompilationContext::default();
         let compilation_context = CompilationContext::default();
         let compiled_program = self.compile_with_context(
-            program,
+            program_with_hash,
             &compilation_context,
             &mut global_compilation_context,
         )?;
@@ -466,11 +471,11 @@ impl Compiler {
 
     fn compile_with_context(
         &self,
-        program: &Program,
+        program_with_hash: &ProgramWithHash,
         compilation_context: &CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
     ) -> Result<Arc<NodeAndMetadata>> {
-        Ok(match program {
+        Ok(match &program_with_hash.program {
             Program::Bytes { bytes } => NodeAndMetadata {
                 external_constants_name_clustered_indices: BTreeSet::new(),
                 node: Node {
@@ -525,7 +530,7 @@ impl Compiler {
             }
             .into(),
             _ => {
-                let result = match program {
+                let result = match &program_with_hash.program {
                     Program::Tuple(tuple) => {
                         if tuple.is_empty() {
                             return Ok(NodeAndMetadata {
@@ -729,7 +734,8 @@ impl Compiler {
                     Program::DefaultArgument(_) => self.compile_with_context(
                         &Program::Constant {
                             constant: DEFAULT_ARGUMENT_NAME.to_string().into(),
-                        },
+                        }
+                        .into(),
                         compilation_context,
                         global_compilation_context,
                     )?,
@@ -1385,10 +1391,11 @@ impl Compiler {
                             Match::Constant(constant_name) => (
                                 &Program::Constant {
                                     constant: constant_name.clone(),
-                                },
+                                }
+                                .into(),
                                 Some(constant_name),
                             ),
-                            Match::Program(program) => (&**program, None),
+                            Match::Program(program_with_hash) => (&**program_with_hash, None),
                         };
                         let match_compilation_context =
                             compilation_context.with_additional_path([PathSegment::Match]);
@@ -2036,10 +2043,10 @@ impl Compiler {
                                             )?;
                                             result_external_constants_name_clustered_indices
                                                 .extend(
-                                                compiled_through
-                                                    .external_constants_name_clustered_indices
-                                                    .clone(),
-                                            );
+                                                    compiled_through
+                                                        .external_constants_name_clustered_indices
+                                                        .clone(),
+                                                );
                                             current_types_to_through_and_index.insert(
                                                 (
                                                     current_type.clone(),
@@ -2611,12 +2618,12 @@ impl Compiler {
                                 let (function_name, function_argument) =
                                     object.iter().next().unwrap();
                                 if function_name.ends_with(":") {
-                                    if let Some(function_body) =
+                                    if let Some(function_body_with_hash) =
                                         compilation_context.available_functions.get(function_name)
                                     {
                                         if compilation_context
                                             .entered_user_functions
-                                            .contains(&function_body)
+                                            .contains(&function_body_with_hash.hash)
                                         {
                                             return Err(compilation_context.error(
                                                 function_name,
@@ -2627,15 +2634,17 @@ impl Compiler {
                                             .with_additional_path([PathSegment::UserFunctionCall(
                                                 function_name.clone(),
                                             )]);
-                                        let arguments_iterator = match &**function_argument {
+                                        let arguments_iterator = match &function_argument.program {
                                             Program::Object(function_arguments) => {
                                                 let arguments_iterator: Box<
                                                     dyn Iterator<
-                                                        Item = (Arc<String>, Arc<Program>),
+                                                        Item = (Arc<String>, Arc<ProgramWithHash>),
                                                     >,
                                                 > = if function_arguments.len() > 1 {
                                                     Box::new(function_arguments.iter().map(
-                                                        |(key, value)| (key.clone(), value.clone()),
+                                                        |(key, value_with_hash)| {
+                                                            (key.clone(), value_with_hash.clone())
+                                                        },
                                                     ))
                                                 } else {
                                                     Box::new(
@@ -2709,7 +2718,7 @@ impl Compiler {
                                         }
                                         let instantiated_function_hash = {
                                             let mut hasher = gxhash::GxHasher::default();
-                                            function_body.hash(&mut hasher);
+                                            function_body_with_hash.hash(&mut hasher);
                                             for (constant_name, constant_index) in
                                                 body_compilation_context.available_constants.iter()
                                             {
@@ -2750,9 +2759,9 @@ impl Compiler {
                                         }
                                         body_compilation_context
                                             .entered_user_functions
-                                            .insert(function_body.clone());
+                                            .insert(function_body_with_hash.hash);
                                         let compiled_function = self.compile_with_context(
-                                            &function_body,
+                                            &function_body_with_hash,
                                             &body_compilation_context,
                                             global_compilation_context,
                                         )?;

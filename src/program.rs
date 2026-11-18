@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, hash::Hash, sync::Arc};
 
 use bytes::Bytes;
 use enumset::EnumSet;
@@ -18,17 +18,17 @@ use crate::{
 #[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Program {
-    Tuple(Vec<Arc<Program>>),
+    Tuple(Vec<Arc<ProgramWithHash>>),
     Scope {
         #[serde(default)]
-        functions: BTreeMap<Arc<String>, Arc<Program>>,
+        functions: BTreeMap<Arc<String>, Arc<ProgramWithHash>>,
         #[serde(default)]
-        constants: BTreeMap<Arc<String>, Arc<Program>>,
+        constants: BTreeMap<Arc<String>, Arc<ProgramWithHash>>,
         #[serde(default, rename = "allow")]
         allow: Option<EnumSet<Capability>>,
         #[serde(default, rename = "forbid")]
         forbid: Option<EnumSet<Capability>>,
-        compute: Arc<Program>,
+        compute: Arc<ProgramWithHash>,
     },
     Constant {
         constant: Arc<String>,
@@ -39,66 +39,66 @@ pub enum Program {
         r#match: Match,
         #[serde(default = "default_match_as")]
         r#as: Option<Arc<String>>,
-        cases: Vec<(Condition, Program)>,
+        cases: Vec<(Condition, ProgramWithHash)>,
     },
     Map {
-        map: Box<Program>,
+        map: Box<ProgramWithHash>,
         #[serde(default = "default_map_as")]
         r#as: Arc<String>,
-        through: Box<Program>,
+        through: Box<ProgramWithHash>,
     },
     Filter {
-        filter: Box<Program>,
+        filter: Box<ProgramWithHash>,
         #[serde(default = "default_filter_as")]
         r#as: Arc<String>,
-        through: Box<Program>,
+        through: Box<ProgramWithHash>,
     },
     Flatten {
-        flatten: Box<Program>,
+        flatten: Box<ProgramWithHash>,
     },
     Fold {
-        fold: Box<Program>,
+        fold: Box<ProgramWithHash>,
         #[serde(default = "default_fold_as")]
         r#as: Arc<String>,
         #[serde(default = "default_starting_with")]
         #[serde(rename = "starting with")]
-        starting_with: Box<Program>,
+        starting_with: Box<ProgramWithHash>,
         #[serde(default = "default_accumulating_in")]
         #[serde(rename = "accumulating in")]
         accumulating_in: Arc<String>,
-        through: Box<Program>,
+        through: Box<ProgramWithHash>,
     },
     Metaprogram {
-        metaprogram: Box<Program>,
+        metaprogram: Box<ProgramWithHash>,
     },
     Sequence {
         #[serde(rename = "starting with")]
-        starting_with: Box<Program>,
+        starting_with: Box<ProgramWithHash>,
         #[serde(default = "default_sequence_as")]
         r#as: Arc<String>,
-        next: Box<Program>,
+        next: Box<ProgramWithHash>,
         #[serde(default = "default_sequence_while")]
-        r#while: Option<Box<Program>>,
+        r#while: Option<Box<ProgramWithHash>>,
     },
     Loop {
         #[serde(rename = "starting with")]
-        starting_with: Box<Program>,
+        starting_with: Box<ProgramWithHash>,
         #[serde(default = "default_sequence_as")]
         r#as: Arc<String>,
-        r#loop: Box<Program>,
+        r#loop: Box<ProgramWithHash>,
         #[serde(default = "default_sequence_while")]
-        r#while: Option<Box<Program>>,
+        r#while: Option<Box<ProgramWithHash>>,
     },
     Pipe {
-        pipe: Vec<Arc<Program>>,
+        pipe: Vec<Arc<ProgramWithHash>>,
         #[serde(default = "default_pipe_as")]
         r#as: Option<Arc<String>>,
     },
     Try {
-        r#try: Arc<Program>,
+        r#try: Arc<ProgramWithHash>,
         #[serde(default = "default_try_as")]
         r#as: Arc<String>,
-        or: Arc<Program>,
+        or: Arc<ProgramWithHash>,
     },
     Bytes {
         #[serde(deserialize_with = "deserialize_bytes")]
@@ -112,16 +112,177 @@ pub enum Program {
         #[serde(with = "humantime_serde")]
         duration: std::time::Duration,
     },
-    Object(BTreeMap<Arc<String>, Arc<Program>>),
+    Object(BTreeMap<Arc<String>, Arc<ProgramWithHash>>),
     Value(Arc<Option<Value>>),
+}
+
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[serde(from = "Program")]
+#[serde(into = "Program")]
+pub struct ProgramWithHash {
+    pub program: Program,
+    pub hash: u128,
+}
+
+impl From<Program> for ProgramWithHash {
+    fn from(program: Program) -> Self {
+        let mut hasher = gxhash::GxHasher::default();
+        match &program {
+            Program::Tuple(elements) => {
+                for element in elements {
+                    element.hash(&mut hasher);
+                }
+            }
+            Program::Scope {
+                functions,
+                constants,
+                allow,
+                forbid,
+                compute,
+            } => {
+                for (name, body) in functions.iter().chain(constants.iter()) {
+                    name.hash(&mut hasher);
+                    body.hash.hash(&mut hasher);
+                }
+                for capability in allow.iter().chain(forbid.iter()) {
+                    capability.hash(&mut hasher);
+                }
+                compute.hash.hash(&mut hasher);
+            }
+            Program::Constant { constant } => {
+                constant.hash(&mut hasher);
+            }
+            Program::DefaultArgument(default_argument) => {
+                default_argument.hash(&mut hasher);
+            }
+            Program::EmbeddedFunctionCall(EmbeddedFunctionCall {
+                embedded_function,
+                argument,
+            }) => {
+                embedded_function.hash(&mut hasher);
+                argument.hash.hash(&mut hasher);
+            }
+            Program::Match {
+                r#match,
+                r#as,
+                cases,
+            } => {
+                match r#match {
+                    Match::Constant(constant) => {
+                        constant.hash(&mut hasher);
+                    }
+                    Match::Program(program_with_hash) => {
+                        program_with_hash.hash(&mut hasher);
+                    }
+                }
+                r#as.hash(&mut hasher);
+                for (condition, ProgramWithHash { program: _, hash }) in cases {
+                    match condition {
+                        Condition::Type(r#type) => {
+                            r#type.hash(&mut hasher);
+                        }
+                        Condition::Value(ProgramWithHash { program: _, hash }) => {
+                            hash.hash(&mut hasher);
+                        }
+                    }
+                    hash.hash(&mut hasher);
+                }
+            }
+            Program::Map {
+                map: source,
+                r#as,
+                through,
+            }
+            | Program::Filter {
+                filter: source,
+                r#as,
+                through,
+            } => {
+                source.hash.hash(&mut hasher);
+                r#as.hash(&mut hasher);
+                through.hash.hash(&mut hasher);
+            }
+            Program::Flatten { flatten } => {
+                flatten.hash.hash(&mut hasher);
+            }
+            Program::Fold {
+                fold: source,
+                r#as,
+                starting_with,
+                accumulating_in,
+                through,
+            } => {
+                source.hash.hash(&mut hasher);
+                r#as.hash(&mut hasher);
+                through.hash.hash(&mut hasher);
+                starting_with.hash(&mut hasher);
+                accumulating_in.hash(&mut hasher);
+            }
+            Program::Metaprogram { metaprogram } => {
+                metaprogram.hash.hash(&mut hasher);
+            }
+            Program::Sequence {
+                starting_with,
+                r#as,
+                next,
+                r#while,
+            }
+            | Program::Loop {
+                starting_with,
+                r#as,
+                r#loop: next,
+                r#while,
+            } => {
+                starting_with.hash(&mut hasher);
+                r#as.hash(&mut hasher);
+                next.hash.hash(&mut hasher);
+                if let Some(r#while) = r#while {
+                    r#while.hash.hash(&mut hasher);
+                }
+            }
+            Program::Pipe { pipe, r#as } => {
+                for pipe_element in pipe {
+                    pipe_element.hash.hash(&mut hasher);
+                }
+                r#as.hash(&mut hasher);
+            }
+            Program::Try { r#try, r#as, or } => {
+                r#try.hash.hash(&mut hasher);
+                r#as.hash(&mut hasher);
+                or.hash.hash(&mut hasher);
+            }
+            Program::Bytes { bytes } => {
+                bytes.hash(&mut hasher);
+            }
+            Program::Time { time } => {
+                time.hash(&mut hasher);
+            }
+            Program::Duration { duration } => {
+                duration.hash(&mut hasher);
+            }
+            Program::Object(object) => {
+                for (key, body) in object {
+                    key.hash(&mut hasher);
+                    body.hash.hash(&mut hasher);
+                }
+            }
+            Program::Value(value) => {
+                value.hash(&mut hasher);
+            }
+        };
+        Self {
+            program,
+            hash: hasher.finish_u128(),
+        }
+    }
 }
 
 pub fn default_accumulating_in() -> Arc<String> {
     "accumulator".to_string().into()
 }
 
-pub fn default_starting_with() -> Box<Program> {
-    Box::new(Program::Value(Arc::new(None)))
+pub fn default_starting_with() -> Box<ProgramWithHash> {
+    Box::new(Program::Value(Arc::new(None)).into())
 }
 
 pub fn default_match_as() -> Option<Arc<String>> {
@@ -144,7 +305,7 @@ pub fn default_sequence_as() -> Arc<String> {
     DEFAULT_ARGUMENT_NAME.to_string().into()
 }
 
-pub fn default_sequence_while() -> Option<Box<Program>> {
+pub fn default_sequence_while() -> Option<Box<ProgramWithHash>> {
     None
 }
 
@@ -161,7 +322,7 @@ pub fn default_try_as() -> Arc<String> {
 #[serde(untagged)]
 pub enum Match {
     Constant(Arc<String>),
-    Program(Box<Program>),
+    Program(Box<ProgramWithHash>),
 }
 
 #[repr(u8)]
@@ -169,7 +330,7 @@ pub enum Match {
 #[serde(untagged)]
 pub enum Condition {
     Type(Type),
-    Value(Program),
+    Value(ProgramWithHash),
 }
 
 #[repr(u8)]
@@ -185,10 +346,16 @@ impl Default for Program {
     }
 }
 
+impl Default for ProgramWithHash {
+    fn default() -> Self {
+        Self::from(Program::default())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct EmbeddedFunctionCall {
     pub embedded_function: EmbeddedFunction,
-    pub argument: Arc<Program>,
+    pub argument: Arc<ProgramWithHash>,
 }
 
 impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
@@ -211,9 +378,12 @@ impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
             {
                 let (name, argument) = match access.next_entry()? {
                     Some((key, value)) => (key, value),
-                    None => return Err(serde::de::Error::invalid_length(0, &self)),
+                    Option::None => return Err(serde::de::Error::invalid_length(0, &self)),
                 };
-                if access.next_entry::<EmbeddedFunction, Program>()?.is_some() {
+                if access
+                    .next_entry::<EmbeddedFunction, ProgramWithHash>()?
+                    .is_some()
+                {
                     return Err(serde::de::Error::invalid_length(2, &self));
                 }
                 Ok(EmbeddedFunctionCall {
