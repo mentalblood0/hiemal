@@ -122,10 +122,12 @@ pub enum Program {
 pub struct ProgramWithHash {
     pub program: Program,
     pub hash: u128,
+    pub compiles_easily: bool
 }
 
 impl From<Program> for ProgramWithHash {
     fn from(program: Program) -> Self {
+        let mut compiles_easily = true;
         let mut hasher = gxhash::GxHasher::default();
         // SAFETY: `Program` is `#[repr(u8)]`, so its first byte is the discriminant.
         // We read that byte without offsetting the pointer.
@@ -144,6 +146,7 @@ impl From<Program> for ProgramWithHash {
                 forbid,
                 compute,
             } => {
+                compiles_easily = false;
                 for (name, body) in functions.iter().chain(constants.iter()) {
                     name.hash(&mut hasher);
                     body.hash.hash(&mut hasher);
@@ -163,6 +166,7 @@ impl From<Program> for ProgramWithHash {
                 embedded_function,
                 argument,
             }) => {
+                compiles_easily = false;
                 embedded_function.hash(&mut hasher);
                 argument.hash.hash(&mut hasher);
             }
@@ -171,6 +175,7 @@ impl From<Program> for ProgramWithHash {
                 r#as,
                 cases,
             } => {
+                compiles_easily = false;
                 match r#match {
                     Match::Constant(constant) => {
                         constant.hash(&mut hasher);
@@ -180,12 +185,12 @@ impl From<Program> for ProgramWithHash {
                     }
                 }
                 r#as.hash(&mut hasher);
-                for (condition, ProgramWithHash { program: _, hash }) in cases {
+                for (condition, ProgramWithHash { program: _, hash, .. }) in cases {
                     match condition {
                         Condition::Type(r#type) => {
                             r#type.hash(&mut hasher);
                         }
-                        Condition::Value(ProgramWithHash { program: _, hash }) => {
+                        Condition::Value(ProgramWithHash { program: _, hash, .. }) => {
                             hash.hash(&mut hasher);
                         }
                     }
@@ -202,11 +207,13 @@ impl From<Program> for ProgramWithHash {
                 r#as,
                 through,
             } => {
+                compiles_easily = false;
                 source.hash.hash(&mut hasher);
                 r#as.hash(&mut hasher);
                 through.hash.hash(&mut hasher);
             }
             Program::Flatten { flatten } => {
+                compiles_easily = false;
                 flatten.hash.hash(&mut hasher);
             }
             Program::Fold {
@@ -216,6 +223,7 @@ impl From<Program> for ProgramWithHash {
                 accumulating_in,
                 through,
             } => {
+                compiles_easily = false;
                 source.hash.hash(&mut hasher);
                 r#as.hash(&mut hasher);
                 through.hash.hash(&mut hasher);
@@ -223,6 +231,7 @@ impl From<Program> for ProgramWithHash {
                 accumulating_in.hash(&mut hasher);
             }
             Program::Metaprogram { metaprogram } => {
+                compiles_easily = false;
                 metaprogram.hash.hash(&mut hasher);
             }
             Program::Sequence {
@@ -237,6 +246,7 @@ impl From<Program> for ProgramWithHash {
                 r#loop: next,
                 r#while,
             } => {
+                compiles_easily = false;
                 starting_with.hash(&mut hasher);
                 r#as.hash(&mut hasher);
                 next.hash.hash(&mut hasher);
@@ -245,12 +255,14 @@ impl From<Program> for ProgramWithHash {
                 }
             }
             Program::Pipe { pipe, r#as } => {
+                compiles_easily = false;
                 for pipe_element in pipe {
                     pipe_element.hash.hash(&mut hasher);
                 }
                 r#as.hash(&mut hasher);
             }
             Program::Try { r#try, r#as, or } => {
+                compiles_easily = false;
                 r#try.hash.hash(&mut hasher);
                 r#as.hash(&mut hasher);
                 or.hash.hash(&mut hasher);
@@ -277,6 +289,7 @@ impl From<Program> for ProgramWithHash {
         Self {
             program,
             hash: hasher.finish_u128(),
+            compiles_easily
         }
     }
 }
