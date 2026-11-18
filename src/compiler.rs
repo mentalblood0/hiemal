@@ -262,6 +262,7 @@ struct GlobalCompilationContext {
     constants_names_to_name_clustered_constants_indices: HashMap<Arc<String>, usize>,
     constants: Vec<Type>,
     compiled_user_functions_calls_cache: HashMap<u128, CachedUserFunctionCall>,
+    compiled_programs_cache: HashMap<u128, Arc<NodeAndMetadata>>,
 }
 
 #[derive(Default, Clone)]
@@ -475,7 +476,57 @@ impl Compiler {
         compilation_context: &CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
     ) -> Result<Arc<NodeAndMetadata>> {
-        Ok(match &program_with_hash.program {
+        match program_with_hash.program {
+            Program::Value(_)
+            | Program::Bytes { .. }
+            | Program::Time { .. }
+            | Program::Duration { .. }
+            | Program::Constant { .. }
+            | Program::DefaultArgument(_) => self.compile_with_context_without_cache(
+                program_with_hash,
+                compilation_context,
+                global_compilation_context,
+            ),
+            _ => {
+                let instantiated_program_hash = {
+                    let mut hasher = gxhash::GxHasher::default();
+                    program_with_hash.hash.hash(&mut hasher);
+                    for (constant_name, constant_index) in
+                        compilation_context.available_constants.iter()
+                    {
+                        constant_name.hash(&mut hasher);
+                        global_compilation_context.constants[*constant_index].hash(&mut hasher);
+                    }
+                    compilation_context.available_functions.hash(&mut hasher);
+                    hasher.finish_u128()
+                };
+                if let Some(cached_compilation_result) = global_compilation_context
+                    .compiled_programs_cache
+                    .get(&instantiated_program_hash)
+                {
+                    Ok(cached_compilation_result.clone())
+                } else {
+                    let result = self.compile_with_context_without_cache(
+                        program_with_hash,
+                        compilation_context,
+                        global_compilation_context,
+                    )?;
+                    global_compilation_context
+                        .compiled_programs_cache
+                        .insert(instantiated_program_hash, result.clone());
+                    Ok(result)
+                }
+            }
+        }
+    }
+
+    fn compile_with_context_without_cache(
+        &self,
+        program_with_hash: &ProgramWithHash,
+        compilation_context: &CompilationContext,
+        global_compilation_context: &mut GlobalCompilationContext,
+    ) -> Result<Arc<NodeAndMetadata>> {
+        let result = match &program_with_hash.program {
             Program::Bytes { bytes } => NodeAndMetadata {
                 external_constants_name_clustered_indices: BTreeSet::new(),
                 node: Node {
@@ -2708,12 +2759,12 @@ impl Compiler {
                                                     global_compilation_context,
                                                 );
                                                 new_constants_definitions.push(
-                                                    intermediate_representation::ConstantDefinition {
-                                                        name_clustered_index: constant_definition
-                                                            .name_clustered_index,
-                                                        node: compiled_constant.node.clone(),
-                                                    },
-                                                );
+                                                        intermediate_representation::ConstantDefinition {
+                                                            name_clustered_index: constant_definition
+                                                                .name_clustered_index,
+                                                            node: compiled_constant.node.clone(),
+                                                        },
+                                                    );
                                             }
                                         }
                                         let instantiated_function_hash = {
@@ -2893,6 +2944,7 @@ impl Compiler {
                     result
                 }
             }
-        })
+        };
+        Ok(result)
     }
 }

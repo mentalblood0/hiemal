@@ -127,6 +127,10 @@ pub struct ProgramWithHash {
 impl From<Program> for ProgramWithHash {
     fn from(program: Program) -> Self {
         let mut hasher = gxhash::GxHasher::default();
+        // SAFETY: `Program` is `#[repr(u8)]`, so its first byte is the discriminant.
+        // We read that byte without offsetting the pointer.
+        let program_value_discriminant = unsafe { *(&program as *const Program as *const u8) };
+        program_value_discriminant.hash(&mut hasher);
         match &program {
             Program::Tuple(elements) => {
                 for element in elements {
