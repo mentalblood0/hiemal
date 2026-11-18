@@ -122,12 +122,14 @@ pub enum Program {
 pub struct ProgramWithHash {
     pub program: Program,
     pub hash: u128,
-    pub compiles_easily: bool
+    pub compiles_easily: bool,
+    pub value_only: bool,
 }
 
 impl From<Program> for ProgramWithHash {
     fn from(program: Program) -> Self {
         let mut compiles_easily = true;
+        let mut value_only = true;
         let mut hasher = gxhash::GxHasher::default();
         // SAFETY: `Program` is `#[repr(u8)]`, so its first byte is the discriminant.
         // We read that byte without offsetting the pointer.
@@ -137,6 +139,7 @@ impl From<Program> for ProgramWithHash {
             Program::Tuple(elements) => {
                 for element in elements {
                     compiles_easily &= element.compiles_easily;
+                    value_only &= element.value_only;
                     element.hash.hash(&mut hasher);
                 }
             }
@@ -148,6 +151,7 @@ impl From<Program> for ProgramWithHash {
                 compute,
             } => {
                 compiles_easily = false;
+                value_only = false;
                 for (name, body) in functions.iter().chain(constants.iter()) {
                     name.hash(&mut hasher);
                     body.hash.hash(&mut hasher);
@@ -158,14 +162,18 @@ impl From<Program> for ProgramWithHash {
                 compute.hash.hash(&mut hasher);
             }
             Program::Constant { constant } => {
+                value_only = false;
                 constant.hash(&mut hasher);
             }
-            Program::DefaultArgument(_) => {}
+            Program::DefaultArgument(_) => {
+                value_only = false;
+            }
             Program::EmbeddedFunctionCall(EmbeddedFunctionCall {
                 embedded_function,
                 argument,
             }) => {
                 compiles_easily = false;
+                value_only = false;
                 embedded_function.hash(&mut hasher);
                 argument.hash.hash(&mut hasher);
             }
@@ -175,6 +183,7 @@ impl From<Program> for ProgramWithHash {
                 cases,
             } => {
                 compiles_easily = false;
+                value_only = false;
                 match r#match {
                     Match::Constant(constant) => {
                         constant.hash(&mut hasher);
@@ -184,12 +193,20 @@ impl From<Program> for ProgramWithHash {
                     }
                 }
                 r#as.hash(&mut hasher);
-                for (condition, ProgramWithHash { program: _, hash, .. }) in cases {
+                for (
+                    condition,
+                    ProgramWithHash {
+                        program: _, hash, ..
+                    },
+                ) in cases
+                {
                     match condition {
                         Condition::Type(r#type) => {
                             r#type.hash(&mut hasher);
                         }
-                        Condition::Value(ProgramWithHash { program: _, hash, .. }) => {
+                        Condition::Value(ProgramWithHash {
+                            program: _, hash, ..
+                        }) => {
                             hash.hash(&mut hasher);
                         }
                     }
@@ -207,12 +224,14 @@ impl From<Program> for ProgramWithHash {
                 through,
             } => {
                 compiles_easily = false;
+                value_only = false;
                 source.hash.hash(&mut hasher);
                 r#as.hash(&mut hasher);
                 through.hash.hash(&mut hasher);
             }
             Program::Flatten { flatten } => {
                 compiles_easily = false;
+                value_only = false;
                 flatten.hash.hash(&mut hasher);
             }
             Program::Fold {
@@ -223,6 +242,7 @@ impl From<Program> for ProgramWithHash {
                 through,
             } => {
                 compiles_easily = false;
+                value_only = false;
                 source.hash.hash(&mut hasher);
                 r#as.hash(&mut hasher);
                 through.hash.hash(&mut hasher);
@@ -231,6 +251,7 @@ impl From<Program> for ProgramWithHash {
             }
             Program::Metaprogram { metaprogram } => {
                 compiles_easily = false;
+                value_only = false;
                 metaprogram.hash.hash(&mut hasher);
             }
             Program::Sequence {
@@ -255,6 +276,7 @@ impl From<Program> for ProgramWithHash {
             }
             Program::Pipe { pipe, r#as } => {
                 compiles_easily = false;
+                value_only = false;
                 for pipe_element in pipe {
                     pipe_element.hash.hash(&mut hasher);
                 }
@@ -262,6 +284,7 @@ impl From<Program> for ProgramWithHash {
             }
             Program::Try { r#try, r#as, or } => {
                 compiles_easily = false;
+                value_only = false;
                 r#try.hash.hash(&mut hasher);
                 r#as.hash(&mut hasher);
                 or.hash.hash(&mut hasher);
@@ -278,6 +301,7 @@ impl From<Program> for ProgramWithHash {
             Program::Object(object) => {
                 for (key, body) in object {
                     compiles_easily &= body.compiles_easily;
+                    value_only &= body.value_only;
                     key.hash(&mut hasher);
                     body.hash.hash(&mut hasher);
                 }
@@ -289,7 +313,8 @@ impl From<Program> for ProgramWithHash {
         Self {
             program,
             hash: hasher.finish_u128(),
-            compiles_easily
+            compiles_easily,
+            value_only,
         }
     }
 }

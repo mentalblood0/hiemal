@@ -476,14 +476,16 @@ impl Compiler {
         compilation_context: &CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
     ) -> Result<Arc<NodeAndMetadata>> {
-        if program_with_hash.compiles_easily {
+        if program_with_hash.compiles_easily && !program_with_hash.value_only {
             self.compile_with_context_without_cache(
                 program_with_hash,
                 compilation_context,
                 global_compilation_context,
             )
         } else {
-            let instantiated_program_hash = {
+            let instantiated_program_hash = if program_with_hash.value_only {
+                program_with_hash.hash
+            } else {
                 let mut hasher = gxhash::GxHasher::default();
                 program_with_hash.hash.hash(&mut hasher);
                 for (constant_name, constant_index) in
