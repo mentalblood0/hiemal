@@ -250,18 +250,11 @@ struct UserFunctionCallDefinition {
     node: Arc<Node>,
 }
 
-struct CachedUserFunctionCall {
-    function_index: usize,
-    arguments_is_pure: bool,
-    r#type: Type,
-}
-
 #[derive(Default)]
 struct GlobalCompilationContext {
     user_functions_definitions: Vec<UserFunctionCallDefinition>,
     constants_names_to_name_clustered_constants_indices: HashMap<Arc<String>, usize>,
     constants: Vec<Type>,
-    compiled_user_functions_calls_cache: HashMap<u128, CachedUserFunctionCall>,
     compiled_programs_cache: HashMap<u128, Arc<NodeAndMetadata>>,
 }
 
@@ -2763,47 +2756,6 @@ impl Compiler {
                                                     );
                                             }
                                         }
-                                        let instantiated_function_hash = {
-                                            let mut hasher = gxhash::GxHasher::default();
-                                            function_body_with_hash.hash(&mut hasher);
-                                            for (constant_name, constant_index) in
-                                                body_compilation_context.available_constants.iter()
-                                            {
-                                                constant_name.hash(&mut hasher);
-                                                global_compilation_context.constants
-                                                    [*constant_index]
-                                                    .hash(&mut hasher);
-                                            }
-                                            body_compilation_context
-                                                .available_functions
-                                                .hash(&mut hasher);
-                                            hasher.finish_u128()
-                                        };
-                                        if let Some(cached_compiled_user_function_call) =
-                                            global_compilation_context
-                                                .compiled_user_functions_calls_cache
-                                                .get(&instantiated_function_hash)
-                                        {
-                                            return Ok(Arc::new(NodeAndMetadata {
-                                                external_constants_name_clustered_indices:
-                                                    result_external_constants_name_clustered_indices
-                                                        .clone(),
-                                                node: Node {
-                                                    content: Content::UserFunctionCall {
-                                                        arguments: new_constants_definitions,
-                                                        body: cached_compiled_user_function_call
-                                                            .function_index,
-                                                        arguments_is_pure:
-                                                            cached_compiled_user_function_call
-                                                                .arguments_is_pure,
-                                                    },
-                                                    r#type: cached_compiled_user_function_call
-                                                        .r#type
-                                                        .clone(),
-                                                }
-                                                .into(),
-                                            }));
-                                        }
                                         body_compilation_context
                                             .entered_user_functions
                                             .insert(function_body_with_hash.hash);
@@ -2838,16 +2790,6 @@ impl Compiler {
                                             .properties
                                             .capabilities
                                             .is_empty();
-                                        global_compilation_context
-                                            .compiled_user_functions_calls_cache
-                                            .insert(
-                                                instantiated_function_hash,
-                                                CachedUserFunctionCall {
-                                                    function_index,
-                                                    arguments_is_pure,
-                                                    r#type: compiled_function.node.r#type.clone(),
-                                                },
-                                            );
                                         return Ok(Arc::new(NodeAndMetadata {
                                             external_constants_name_clustered_indices:
                                                 result_external_constants_name_clustered_indices
