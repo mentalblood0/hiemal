@@ -136,6 +136,7 @@ impl From<Program> for ProgramWithHash {
         match &program {
             Program::Tuple(elements) => {
                 for element in elements {
+                    compiles_easily &= element.compiles_easily;
                     element.hash(&mut hasher);
                 }
             }
@@ -278,6 +279,7 @@ impl From<Program> for ProgramWithHash {
             }
             Program::Object(object) => {
                 for (key, body) in object {
+                    compiles_easily &= body.compiles_easily;
                     key.hash(&mut hasher);
                     body.hash.hash(&mut hasher);
                 }
