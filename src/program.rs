@@ -137,7 +137,7 @@ impl From<Program> for ProgramWithHash {
             Program::Tuple(elements) => {
                 for element in elements {
                     compiles_easily &= element.compiles_easily;
-                    element.hash(&mut hasher);
+                    element.hash.hash(&mut hasher);
                 }
             }
             Program::Scope {
@@ -160,9 +160,7 @@ impl From<Program> for ProgramWithHash {
             Program::Constant { constant } => {
                 constant.hash(&mut hasher);
             }
-            Program::DefaultArgument(default_argument) => {
-                default_argument.hash(&mut hasher);
-            }
+            Program::DefaultArgument(_) => {}
             Program::EmbeddedFunctionCall(EmbeddedFunctionCall {
                 embedded_function,
                 argument,
@@ -182,7 +180,7 @@ impl From<Program> for ProgramWithHash {
                         constant.hash(&mut hasher);
                     }
                     Match::Program(program_with_hash) => {
-                        program_with_hash.hash(&mut hasher);
+                        program_with_hash.hash.hash(&mut hasher);
                     }
                 }
                 r#as.hash(&mut hasher);
@@ -228,7 +226,7 @@ impl From<Program> for ProgramWithHash {
                 source.hash.hash(&mut hasher);
                 r#as.hash(&mut hasher);
                 through.hash.hash(&mut hasher);
-                starting_with.hash(&mut hasher);
+                starting_with.hash.hash(&mut hasher);
                 accumulating_in.hash(&mut hasher);
             }
             Program::Metaprogram { metaprogram } => {
@@ -248,7 +246,7 @@ impl From<Program> for ProgramWithHash {
                 r#while,
             } => {
                 compiles_easily = false;
-                starting_with.hash(&mut hasher);
+                starting_with.hash.hash(&mut hasher);
                 r#as.hash(&mut hasher);
                 next.hash.hash(&mut hasher);
                 if let Some(r#while) = r#while {
