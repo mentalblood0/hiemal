@@ -255,7 +255,11 @@ struct GlobalCompilationContext {
     user_functions_definitions: Vec<UserFunctionCallDefinition>,
     constants_names_to_name_clustered_constants_indices: HashMap<Arc<String>, usize>,
     constants: Vec<Type>,
-    compiled_programs_cache: HashMap<u128, Arc<NodeAndMetadata>>,
+    compiled_programs_cache: HashMap<u128, (Arc<NodeAndMetadata>, std::time::Duration)>,
+    compiled_programs_cache_misses: usize,
+    compiled_programs_cache_hits: usize,
+    time_spent_on_hashing: std::time::Duration,
+    saved_compilation_time: std::time::Duration,
 }
 
 #[derive(Default, Clone)]
@@ -283,6 +287,13 @@ impl Compiler {
                 &"program with serializable result",
             ))
         } else {
+            eprintln!(
+                "compiled subprograms cache:\n  hits: {}\n  misses: {}\n  time spent on hashing: {:?}\n  saved compilation time: {:?}",
+                global_compilation_context.compiled_programs_cache_hits,
+                global_compilation_context.compiled_programs_cache_misses,
+                global_compilation_context.time_spent_on_hashing,
+                global_compilation_context.saved_compilation_time
+            );
             Ok(Arc::new(IntermediateRepresentation {
                 root: compiled_program.node.clone(),
                 user_functions: global_compilation_context
@@ -479,6 +490,7 @@ impl Compiler {
             let instantiated_program_hash = if program_with_hash.value_only {
                 program_with_hash.hash
             } else {
+                let hashing_start = std::time::Instant::now();
                 let mut hasher = gxhash::GxHasher::default();
                 program_with_hash.hash.hash(&mut hasher);
                 for (constant_name, constant_index) in
@@ -488,22 +500,32 @@ impl Compiler {
                     global_compilation_context.constants[*constant_index].hash(&mut hasher);
                 }
                 compilation_context.available_functions.hash(&mut hasher);
-                hasher.finish_u128()
+                let result = hasher.finish_u128();
+                let time_spent_on_hashing = hashing_start.elapsed();
+                global_compilation_context.time_spent_on_hashing += time_spent_on_hashing;
+                result
             };
-            if let Some(cached_compilation_result) = global_compilation_context
-                .compiled_programs_cache
-                .get(&instantiated_program_hash)
+            if let Some((cached_compilation_result, saved_compilation_time)) =
+                global_compilation_context
+                    .compiled_programs_cache
+                    .get(&instantiated_program_hash)
             {
+                global_compilation_context.compiled_programs_cache_hits += 1;
+                global_compilation_context.saved_compilation_time += *saved_compilation_time;
                 Ok(cached_compilation_result.clone())
             } else {
+                global_compilation_context.compiled_programs_cache_misses += 1;
+                let compilation_start = std::time::Instant::now();
                 let result = self.compile_with_context_without_cache(
                     program_with_hash,
                     compilation_context,
                     global_compilation_context,
                 )?;
-                global_compilation_context
-                    .compiled_programs_cache
-                    .insert(instantiated_program_hash, result.clone());
+                let compilation_duration = compilation_start.elapsed();
+                global_compilation_context.compiled_programs_cache.insert(
+                    instantiated_program_hash,
+                    (result.clone(), compilation_duration),
+                );
                 Ok(result)
             }
         }
