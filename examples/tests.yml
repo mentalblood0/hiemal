@@ -1,5 +1,5 @@
 functions:
-  assert equal::
+  assert equal:
     match: found
     cases:
       - [{ constant: expected }, ok]
@@ -7,7 +7,7 @@ functions:
         - error:
             expected: { constant: expected }
             found: { constant: found }
-  tests report::
+  tests report:
     match:
       filter: _
       through:
@@ -22,7 +22,7 @@ functions:
     cases:
       - [[], ok]
       - [any, _]
-  is match::
+  is match:
     match:
       match regex:
         string: { constant: string }
@@ -30,14 +30,14 @@ functions:
     cases:
       - [null, false]
       - [any, true]
-  get by path::
+  get by path:
     fold: { constant : at }
     starting with: { constant: from }
     through:
       get:
         from: { constant: accumulator }
         at: { constant: current }
-  match regex all::
+  match regex all:
     map:
       starting with:
         constants:
@@ -60,13 +60,13 @@ functions:
           - - any
             - constants:
                 previous end:
-                  get by path::
+                  [get by path]:
                     from: { constant: previous }
                     at: [match regex result, end]
               compute:
                 constants:
                   string:
-                    get by path::
+                    [get by path]:
                       from: { constant: previous }
                       at:
                         - string
@@ -146,12 +146,12 @@ constants:
               - [0, Buzz]
               - [any, _]
 compute:
-  tests report::
+  [tests report]:
     key-value pairs:
       test match regex all:
-        assert equal::
+        [assert equal]:
           found:
-            match regex all::
+            [match regex all]:
               string: I categorically categorically deny having triskaidekaphobia.
               regex: { constant: constructed regex }
           expected:
@@ -164,7 +164,7 @@ compute:
               start: 16
               end: 29
       test fold heterogenous array:
-        assert equal::
+        [assert equal]:
           found:
             fold:
               get:
@@ -180,14 +180,14 @@ compute:
             starting with: 0
           expected: 112
       test get by path:
-        assert equal::
+        [assert equal]:
           found:
-            get by path::
+            [get by path]:
               from: [ 1, { a: { b: c }, d: e }, 3 ]
               at: [ 1, a, b ]
           expected: c
       test length:
-        assert equal::
+        [assert equal]:
           found:
             - length: [ 1, 2, 3 ]
             - length: { a: 1, b: 2, c: 3 }
@@ -195,7 +195,7 @@ compute:
             - length: { bytes: aa bb cc }
           expected: [ 3, 3, 6, 3 ]
       test polymorphic get by key:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from:
@@ -211,7 +211,7 @@ compute:
               at: a
           expected: 1
       test polymorphic get by range:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from:
@@ -227,7 +227,7 @@ compute:
               at: [ 0, 2 ]
           expected: [ 1, 2 ]
       test polymorphic get by index:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from:
@@ -243,14 +243,14 @@ compute:
               at: 0
           expected: 1
       test FizzBuzz:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from: { constant: FizzBuzz }
               at: [0, 20]
           expected: [1, 2, Fizz, 4, Buzz, Fizz, 7, 8, Fizz, Buzz, 11, Fizz, 13, 14, FizzBuzz, 16, 17, Fizz, 19, Buzz]
       test match sequence:
-        assert equal::
+        [assert equal]:
           found:
             match:
               starting with: 1
@@ -260,7 +260,7 @@ compute:
               - [any, false]
           expected: true
       test object from:
-        assert equal::
+        [assert equal]:
           found:
             object from:
               - [a, 1]
@@ -269,7 +269,7 @@ compute:
             a: 1
             b: lalala
       test random:
-        assert equal::
+        [assert equal]:
           found:
             constants:
               seed: { bytes from string: only first 32 bytes }
@@ -295,7 +295,7 @@ compute:
             - bytes: 3b cd ab 20 b3 ca 3d 70 ff c7
             - bytes: 22 a3 25 b1 57 1c a6 82 f6 e6
       test substract:
-        assert equal::
+        [assert equal]:
           found:
           - substract: [3, 2]
           - substract:
@@ -317,7 +317,7 @@ compute:
           - duration: 1ms
           - duration: 0ms
       test sum:
-        assert equal::
+        [assert equal]:
           found:
           - sum: [ 1, 2 ]
           - sum:
@@ -331,29 +331,29 @@ compute:
           - duration: 3ms
           - time: 2026-11-08T15:45:50.309478485Z
       test file metadata:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from: { file metadata: src/embedded_functions.yml }
               at: is file
           expected: true
       test glob:
-        assert equal::
+        [assert equal]:
           found: { glob: src/*.yml }
           expected: [ src/embedded_functions.yml ]
       test sleep:
-        assert equal::
+        [assert equal]:
           found: { sleep: { duration: 1ms } }
           expected: { duration: 1ms }
       test loop:
-        assert equal::
+        [assert equal]:
           found:
             starting with: 1
             loop: { sum: [_, 2] }
             while: { is sorted: [_, 5] }
           expected: 7
       test hash:
-        assert equal::
+        [assert equal]:
           found:
             flatten:
               - map:
@@ -418,7 +418,7 @@ compute:
           value: [1, 2, { lalala: null }, 3]
           binary: { bytes: 25 30 91 e6 54 89 1f 5e 27 00 ce d9 79 e4 1e f3 }
         compute:
-          assert equal::
+          [assert equal]:
             found:
               map:
                 - [ YAML, { constant: value } ]
@@ -459,19 +459,19 @@ compute:
             - { constant: binary }
             - { constant: binary }
       test sort:
-        assert equal::
+        [assert equal]:
           found:
             sort: [2, 3, 1]
           expected: [1, 2, 3]
       test optimize pure literal-typed code:
-        assert equal::
+        [assert equal]:
           found:
             pipe:
               - { sleep: { duration: 8h } }
               - true
           expected: true
       test send request:
-        assert equal::
+        [assert equal]:
           found:
             constants:
               client:
@@ -491,7 +491,7 @@ compute:
                 at: status
           expected: OK
       test run command:
-        assert equal::
+        [assert equal]:
           found:
             run:
               command: echo
@@ -501,14 +501,14 @@ compute:
             standard output: { bytes from string: "lalala\n" }
             standard error: { bytes: "" }
       test sequence while:
-        assert equal::
+        [assert equal]:
           found:
             starting with: 1
             next: { sum: [_, 2] }
             while: { is sorted: [_, 5] }
           expected: [1, 3, 5]
       test flatten lazy:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from:
@@ -519,7 +519,7 @@ compute:
               at: [0, 5]
           expected: [1, 2, 1, 2, 3]
       test try:
-        assert equal::
+        [assert equal]:
           found:
             try:
               - read bytes:
@@ -533,7 +533,7 @@ compute:
             or: false
           expected: false
       test heterogenous sequence:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from:
@@ -558,7 +558,7 @@ compute:
             - [2, 1]
             - [3, s]
       test exponentiate:
-        assert equal::
+        [assert equal]:
           found:
             exponentiate:
               base: 4
@@ -567,22 +567,22 @@ compute:
               max result denominator: 1000
           expected: 2
       test round:
-        assert equal::
+        [assert equal]:
           found:
             round: 1.4
           expected: 1
       test divide:
-        assert equal::
+        [assert equal]:
           found:
             divide: [20, 6]
           expected: 10/3
       test mod:
-        assert equal::
+        [assert equal]:
           found:
             mod: [20, 6]
           expected: 2
       test lazy constant:
-        assert equal::
+        [assert equal]:
           found:
             forbid:
               - read file
@@ -594,7 +594,7 @@ compute:
                 null
           expected: null
       test get from string:
-        assert equal::
+        [assert equal]:
           found:
             - get:
                 from: abcd
@@ -607,7 +607,7 @@ compute:
                 at: [ null ,3 ]
           expected: [ bc, bcd, abc ]
       test files:
-        assert equal::
+        [assert equal]:
           found:
             allow:
               - error
@@ -635,7 +635,7 @@ compute:
             - { bytes: "62" }
             - null
       test pipe lazy:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from:
@@ -650,7 +650,7 @@ compute:
               at: 1
           expected: 100
       test pipe:
-        assert equal::
+        [assert equal]:
           found:
             pipe:
               - { sum: [1, 2] }
@@ -659,18 +659,18 @@ compute:
             as: _
           expected: 10
       test user functions caching:
-        assert equal::
+        [assert equal]:
           found:
             functions:
-              f:: { constant: _ }
+              f: { constant: _ }
             compute:
               - constants: { x: 1 }
-                compute: { f:: x }
+                compute: { [f]: x }
               - constants: { x: 2 }
-                compute: { f:: x }
+                compute: { [f]: x }
           expected: [x, x]
       test match regex complex:
-        assert equal::
+        [assert equal]:
           found:
             constants:
               log levels: [INFO, WARN, ERROR, DEBUG]
@@ -808,7 +808,7 @@ compute:
               start: 0
               end: 93
       test match regex:
-        assert equal::
+        [assert equal]:
           found:
             match:
               match regex:
@@ -817,27 +817,27 @@ compute:
             as: match regex result
             cases:
               - [null, null]
-              - [any, { get by path:: { from: { constant: match regex result }, at: [groups, horror] }}]
+              - [any, { [get by path]: { from: { constant: match regex result }, at: [groups, horror] }}]
           expected: categorically
       test is match runtime regex building:
-        assert equal::
+        [assert equal]:
           found:
-            is match::
+            [is match]:
               string: I categorically deny having triskaidekaphobia.
               regex: { constant: constructed regex }
           expected: true
       test is match:
-        assert equal::
+        [assert equal]:
           found:
-            is match::
+            [is match]:
               string: I categorically deny having triskaidekaphobia.
               regex: { constant: raw regex }
           expected: true
       test from at value union:
-        assert equal::
+        [assert equal]:
           found:
             match:
-              get by path::
+              [get by path]:
                 from:
                   match: { parse: { YAML: "s" } }
                   cases:
@@ -857,7 +857,7 @@ compute:
               - [number, true]
           expected: true
       test flatten union:
-        assert equal::
+        [assert equal]:
           found:
             flatten:
               match: { parse: { YAML: "[1]" } }
@@ -872,7 +872,7 @@ compute:
                     - [5, 6]
           expected: [1, a, 3, b, 5, 6]
       # test fold union:
-      #   assert equal::
+      #   [assert equal]:
       #     found:
       #       fold:
       #         match: { parse: { YAML: "lalala" } }
@@ -889,7 +889,7 @@ compute:
       #               - [string, 0]
       #     expected: 15
       test filter union:
-        assert equal::
+        [assert equal]:
           found:
             filter:
               match: { parse: { YAML: "[1]" } }
@@ -906,7 +906,7 @@ compute:
                     - [string, 0]
           expected: [s]
       test lazy object:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from:
@@ -922,7 +922,7 @@ compute:
               at: "second"
           expected: 1
       test lazy tuple:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from:
@@ -937,7 +937,7 @@ compute:
               at: 1
           expected: 1
       test filter simple:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from:
@@ -948,7 +948,7 @@ compute:
               at: [0, 3]
           expected: [5, 6, 7]
       test map union:
-        assert equal::
+        [assert equal]:
           found:
             map:
               match: { parse: { YAML: "[1]" } }
@@ -965,14 +965,14 @@ compute:
                     - [string, 0]
           expected: [1]
       test sum map:
-        assert equal::
+        [assert equal]:
           found:
             sum:
               map: [1, 2, 3]
               through: { sum: [_, 1] }
           expected: 9
       test is sorted map:
-        assert equal::
+        [assert equal]:
           found:
             is sorted:
               map: [1, 2, 3]
@@ -983,7 +983,7 @@ compute:
           slice length: 4
           slices amount: 100
         compute:
-          assert equal::
+          [assert equal]:
             found:
               constants:
                 numbers:
@@ -1016,7 +1016,7 @@ compute:
                       at: [0, { constant: slice length }]
                 at: [1, { constant: slices amount }]
       test map lazy:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from:
@@ -1027,7 +1027,7 @@ compute:
               at: [2, 5]
           expected: [5, 6, 7]
       test sequence simple:
-        assert equal::
+        [assert equal]:
           found:
             get:
               from:
@@ -1036,29 +1036,29 @@ compute:
               at: [0, 3]
           expected: [1, 2, 3]
       test function as argument:
-        assert equal::
+        [assert equal]:
           found:
             functions:
-              apply::
-                function:: { constant: argument }
+              apply:
+                ["function:"]: { constant: argument }
             compute:
-              apply::
+              [apply]:
                 function:: { sum: [_, 1] }
                 argument: 1
           expected: 2
       test override function:
-        assert equal::
+        [assert equal]:
           found:
             functions:
-              f:: _
+              f: _
             compute:
               functions:
-                f:: { sum: [_, 1] }
+                f: { sum: [_, 1] }
               compute:
-                f:: 1
+                [f]: 1
           expected: 2
       test heterogenous branching:
-        assert equal::
+        [assert equal]:
           found:
             match: { is sorted: [1, 2, 3] }
             cases:
@@ -1066,12 +1066,12 @@ compute:
               - [false, string]
           expected: 1
       test flatten tuple simple:
-        assert equal::
+        [assert equal]:
           found:
             flatten: [[1, 2, 3], [4], [5, 6]]
           expected: [1, 2, 3, 4, 5, 6]
       test fold heterogenous tuple:
-        assert equal::
+        [assert equal]:
           found:
             fold: [1, 2, string, 3, 4]
             starting with: 0
@@ -1085,7 +1085,7 @@ compute:
                 - [string, 0]
           expected: 7
       test fold simple:
-        assert equal::
+        [assert equal]:
           found:
             fold: [1, 2, 3]
             starting with: 0
@@ -1093,7 +1093,7 @@ compute:
               sum: [{ constant: accumulator }, { constant: current }]
           expected: 6
       test map object:
-        assert equal::
+        [assert equal]:
           found:
             map:
               key-value pairs: { first: 1, second: string, third: [1, 2, 3] }
@@ -1110,7 +1110,7 @@ compute:
                       sum: [{ constant: element from matched }, 1]
           expected: [it's a number, it's a string, [2, 3, 4]]
       test map tuple and array:
-        assert equal::
+        [assert equal]:
           found:
             map: [1, string, 2, [1, 2, 3]]
             through:
@@ -1125,7 +1125,7 @@ compute:
                       sum: [{ constant: element from matched }, 1]
           expected: [it's a number, it's a string, it's a number, [2, 3, 4]]
       test numbers:
-        assert equal::
+        [assert equal]:
           found:
             sum:
               - 1234
@@ -1137,10 +1137,10 @@ compute:
               - "12345678901234567890123456789012345678901234567890123456789012345678901234567/890"
           expected: 687415888874985338887498533888749853388874985338887498533888749853388874985613459297/55625
       test compound context:
-        assert equal::
+        [assert equal]:
           found:
             functions:
-              f::
+              f:
                 sum:
                   - constant: a
                   - constant: b
@@ -1149,23 +1149,23 @@ compute:
             constants:
               c: 3
             compute:
-              f::
+              [f]:
                 a: 1
                 b: 2
           expected: 10
       test from at default argument:
-        assert equal::
+        [assert equal]:
           found:
             functions:
-              f::
+              f:
                 get:
                   from: _
                   at: 1
             compute:
-              f:: [1, 2]
+              [f]: [1, 2]
           expected: 2
       test match by type refined branch:
-        assert equal::
+        [assert equal]:
           found:
             match: { parse: { YAML: "0x1A" } }
             cases:
@@ -1174,7 +1174,7 @@ compute:
               - [any, it's something else]
           expected: true
       test match by type any branch:
-        assert equal::
+        [assert equal]:
           found:
             match: { parse: { YAML: "[]" } }
             cases:
@@ -1183,7 +1183,7 @@ compute:
               - [any, true]
           expected: true
       test match by type without any branch:
-        assert equal::
+        [assert equal]:
           found:
             match:
               match: { parse: { YAML: "[]" } }
@@ -1198,7 +1198,7 @@ compute:
               - [null, true]
           expected: true
       test match by value:
-        assert equal::
+        [assert equal]:
           found:
             match: { parse: { YAML: "[1, 2, 3]" } }
             cases:

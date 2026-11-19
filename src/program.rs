@@ -35,6 +35,7 @@ pub enum Program {
     },
     DefaultArgument(DefaultArgument),
     EmbeddedFunctionCall(EmbeddedFunctionCall),
+    UserFunctionCall(UserFunctionCall),
     Match {
         r#match: Match,
         #[serde(default = "default_match_as")]
@@ -175,6 +176,15 @@ impl From<Program> for ProgramWithHash {
                 compiles_easily = false;
                 value_only = false;
                 embedded_function.hash(&mut hasher);
+                argument.hash.hash(&mut hasher);
+            }
+            Program::UserFunctionCall(UserFunctionCall {
+                user_function_name,
+                argument,
+            }) => {
+                compiles_easily = false;
+                value_only = false;
+                user_function_name.hash(&mut hasher);
                 argument.hash.hash(&mut hasher);
             }
             Program::Match {
@@ -398,6 +408,55 @@ impl Default for ProgramWithHash {
 pub struct EmbeddedFunctionCall {
     pub embedded_function: EmbeddedFunction,
     pub argument: Arc<ProgramWithHash>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub struct UserFunctionCall {
+    pub user_function_name: Arc<String>,
+    pub argument: Arc<ProgramWithHash>,
+}
+
+impl<'de> Deserialize<'de> for UserFunctionCall {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct UserFunctionCallVisitor;
+
+        impl<'de> Visitor<'de> for UserFunctionCallVisitor {
+            type Value = UserFunctionCall;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str(
+                    "a with a single key-value pair where key is a one-string tuple and value is \
+                     a program",
+                )
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let (name, argument) =
+                    match access.next_entry::<(Arc<String>,), Arc<ProgramWithHash>>()? {
+                        Some(((key,), value)) => (key, value),
+                        Option::None => return Err(serde::de::Error::invalid_length(0, &self)),
+                    };
+                if access
+                    .next_entry::<(Arc<String>,), Arc<ProgramWithHash>>()?
+                    .is_some()
+                {
+                    return Err(serde::de::Error::invalid_length(2, &self));
+                }
+                Ok(UserFunctionCall {
+                    user_function_name: name,
+                    argument,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(UserFunctionCallVisitor)
+    }
 }
 
 impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
