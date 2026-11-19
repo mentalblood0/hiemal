@@ -288,7 +288,8 @@ impl Compiler {
             ))
         } else {
             eprintln!(
-                "compiled subprograms cache:\n  hits: {}\n  misses: {}\n  time spent on hashing: {:?}\n  saved compilation time: {:?}",
+                "compiled subprograms cache:\n  hits: {}\n  misses: {}\n  time spent on hashing: \
+                 {:?}\n  saved compilation time: {:?}",
                 global_compilation_context.compiled_programs_cache_hits,
                 global_compilation_context.compiled_programs_cache_misses,
                 global_compilation_context.time_spent_on_hashing,
@@ -499,7 +500,12 @@ impl Compiler {
                     constant_name.hash(&mut hasher);
                     global_compilation_context.constants[*constant_index].hash(&mut hasher);
                 }
-                compilation_context.available_functions.hash(&mut hasher);
+                for (available_function_name, available_function) in
+                    compilation_context.available_functions.iter()
+                {
+                    available_function_name.hash(&mut hasher);
+                    available_function.hash.hash(&mut hasher);
+                }
                 let result = hasher.finish_u128();
                 let time_spent_on_hashing = hashing_start.elapsed();
                 global_compilation_context.time_spent_on_hashing += time_spent_on_hashing;
