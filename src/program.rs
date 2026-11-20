@@ -1,3 +1,4 @@
+use core::todo;
 use std::{collections::BTreeMap, hash::Hash, sync::Arc};
 
 use bytes::Bytes;
@@ -8,6 +9,7 @@ use serde::{
 };
 
 use crate::{
+    containers::Set,
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     embedded_functions::EmbeddedFunction,
     r#type::{Capability, Type},
@@ -18,17 +20,17 @@ use crate::{
 #[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Program {
-    Tuple(Vec<Arc<ProgramWithHash>>),
+    Tuple(Vec<Arc<ProgramAndMetadata>>),
     Scope {
         #[serde(default)]
-        functions: BTreeMap<Arc<String>, Arc<ProgramWithHash>>,
+        functions: BTreeMap<Arc<String>, Arc<ProgramAndMetadata>>,
         #[serde(default)]
-        constants: BTreeMap<Arc<String>, Arc<ProgramWithHash>>,
+        constants: BTreeMap<Arc<String>, Arc<ProgramAndMetadata>>,
         #[serde(default, rename = "allow")]
         allow: Option<EnumSet<Capability>>,
         #[serde(default, rename = "forbid")]
         forbid: Option<EnumSet<Capability>>,
-        compute: Arc<ProgramWithHash>,
+        compute: Arc<ProgramAndMetadata>,
     },
     Constant {
         constant: Arc<String>,
@@ -40,66 +42,66 @@ pub enum Program {
         r#match: Match,
         #[serde(default = "default_match_as")]
         r#as: Option<Arc<String>>,
-        cases: Vec<(Condition, ProgramWithHash)>,
+        cases: Vec<(Condition, ProgramAndMetadata)>,
     },
     Map {
-        map: Box<ProgramWithHash>,
+        map: Arc<ProgramAndMetadata>,
         #[serde(default = "default_map_as")]
         r#as: Arc<String>,
-        through: Box<ProgramWithHash>,
+        through: Arc<ProgramAndMetadata>,
     },
     Filter {
-        filter: Box<ProgramWithHash>,
+        filter: Arc<ProgramAndMetadata>,
         #[serde(default = "default_filter_as")]
         r#as: Arc<String>,
-        through: Box<ProgramWithHash>,
+        through: Arc<ProgramAndMetadata>,
     },
     Flatten {
-        flatten: Box<ProgramWithHash>,
+        flatten: Arc<ProgramAndMetadata>,
     },
     Fold {
-        fold: Box<ProgramWithHash>,
+        fold: Arc<ProgramAndMetadata>,
         #[serde(default = "default_fold_as")]
         r#as: Arc<String>,
         #[serde(default = "default_starting_with")]
         #[serde(rename = "starting with")]
-        starting_with: Box<ProgramWithHash>,
+        starting_with: Arc<ProgramAndMetadata>,
         #[serde(default = "default_accumulating_in")]
         #[serde(rename = "accumulating in")]
         accumulating_in: Arc<String>,
-        through: Box<ProgramWithHash>,
+        through: Arc<ProgramAndMetadata>,
     },
     Metaprogram {
-        metaprogram: Box<ProgramWithHash>,
+        metaprogram: Arc<ProgramAndMetadata>,
     },
     Sequence {
         #[serde(rename = "starting with")]
-        starting_with: Box<ProgramWithHash>,
+        starting_with: Arc<ProgramAndMetadata>,
         #[serde(default = "default_sequence_as")]
         r#as: Arc<String>,
-        next: Box<ProgramWithHash>,
+        next: Arc<ProgramAndMetadata>,
         #[serde(default = "default_sequence_while")]
-        r#while: Option<Box<ProgramWithHash>>,
+        r#while: Option<Arc<ProgramAndMetadata>>,
     },
     Loop {
         #[serde(rename = "starting with")]
-        starting_with: Box<ProgramWithHash>,
+        starting_with: Arc<ProgramAndMetadata>,
         #[serde(default = "default_sequence_as")]
         r#as: Arc<String>,
-        r#loop: Box<ProgramWithHash>,
+        r#loop: Arc<ProgramAndMetadata>,
         #[serde(default = "default_sequence_while")]
-        r#while: Option<Box<ProgramWithHash>>,
+        r#while: Option<Arc<ProgramAndMetadata>>,
     },
     Pipe {
-        pipe: Vec<Arc<ProgramWithHash>>,
+        pipe: Vec<Arc<ProgramAndMetadata>>,
         #[serde(default = "default_pipe_as")]
         r#as: Option<Arc<String>>,
     },
     Try {
-        r#try: Arc<ProgramWithHash>,
+        r#try: Arc<ProgramAndMetadata>,
         #[serde(default = "default_try_as")]
         r#as: Arc<String>,
-        or: Arc<ProgramWithHash>,
+        or: Arc<ProgramAndMetadata>,
     },
     Bytes {
         #[serde(deserialize_with = "deserialize_bytes")]
@@ -113,21 +115,187 @@ pub enum Program {
         #[serde(with = "humantime_serde")]
         duration: std::time::Duration,
     },
-    Object(BTreeMap<Arc<String>, Arc<ProgramWithHash>>),
+    Object(BTreeMap<Arc<String>, Arc<ProgramAndMetadata>>),
     Value(Arc<Option<Value>>),
 }
 
 #[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(from = "Program")]
 #[serde(into = "Program")]
-pub struct ProgramWithHash {
+pub struct ProgramAndMetadata {
     pub program: Program,
     pub hash: u128,
     pub compiles_easily: bool,
     pub value_only: bool,
+    pub external_constants_names: Set<String>,
+    pub external_functions_names: Set<String>,
 }
 
-impl From<Program> for ProgramWithHash {
+impl ProgramAndMetadata {
+    pub fn write_external_names(
+        &mut self,
+        available_functions: &mut BTreeMap<Arc<String>, Arc<ProgramAndMetadata>>,
+    ) {
+        match &mut self.program {
+            Program::Tuple(elements) => {
+                for element in elements {
+                    unsafe { Arc::get_mut_unchecked(&mut *element) }.write_external_names(available_functions);
+                    self.external_constants_names.extend(element.external_constants_names.iter().cloned());
+                    self.external_functions_names.extend(element.external_functions_names.iter().cloned());
+                }
+            }
+            Program::Scope { functions, constants, compute, .. } => {
+                for constant in constants.values_mut() {
+                    unsafe { Arc::get_mut_unchecked(&mut *constant) }.write_external_names(available_functions);
+                    self.external_constants_names.extend(constant.external_constants_names.iter().cloned());
+                    self.external_functions_names.extend(constant.external_functions_names.iter().cloned());
+                }
+                available_functions.extend(functions.iter().map(|(key, value)| (key.clone(), value.clone())));
+                unsafe { Arc::get_mut_unchecked(&mut *compute) }.write_external_names(available_functions);
+                for function_name in functions.keys() {
+                    available_functions.remove(function_name);
+                }
+                let mut compute_external_constants_names_without_constants = compute.external_constants_names.clone();
+                for constant_name in constants.keys() {
+                    compute_external_constants_names_without_constants.remove(constant_name);
+                }
+                self.external_constants_names.extend(compute_external_constants_names_without_constants.iter().cloned());
+                let mut compute_external_functions_names_without_functions = compute.external_functions_names.clone();
+                for function_name in functions.keys() {
+                    compute_external_functions_names_without_functions.remove(function_name);
+                }
+                self.external_functions_names.extend(compute_external_functions_names_without_functions.iter().cloned());
+            }
+            Program::Constant { constant } => {
+                self.external_constants_names.insert(constant.clone());
+            }
+            Program::DefaultArgument(_) => {
+                self.external_constants_names.insert(DEFAULT_ARGUMENT_NAME.to_string().into());
+            }
+            Program::EmbeddedFunctionCall(EmbeddedFunctionCall { argument, .. }) => {
+                unsafe { Arc::get_mut_unchecked(&mut *argument) }.write_external_names(available_functions);
+                self.external_constants_names.extend(argument.external_constants_names.iter().cloned());
+                self.external_functions_names.extend(argument.external_functions_names.iter().cloned());
+            }
+            Program::UserFunctionCall(UserFunctionCall { user_function_name, argument }) => {
+                if let Some(user_function) = available_functions.get(&*user_function_name).cloned() {
+                    unsafe { Arc::get_mut_unchecked(&mut *argument) }.write_external_names(available_functions);
+                    self.external_constants_names.extend(argument.external_constants_names.iter().cloned());
+                    self.external_functions_names.extend(argument.external_functions_names.iter().cloned());
+                    let mut user_function_clone = (*user_function).clone();
+                    user_function_clone.write_external_names(available_functions);
+                    available_functions.insert(user_function_name.clone(), user_function_clone.into());
+                    let mut user_function_external_constants_names_without_argument = user_function.external_constants_names.clone();
+                    match &argument.program {
+                        Program::Object(arguments) => {
+                            for argument_name in arguments.keys() {
+                                user_function_external_constants_names_without_argument.remove(argument_name);
+                            }
+                        }
+                        _ => {
+                            user_function_external_constants_names_without_argument.remove(&DEFAULT_ARGUMENT_NAME.to_string().into());
+                        }
+                    }
+                    self.external_constants_names.extend(user_function_external_constants_names_without_argument.iter().cloned());
+                    self.external_functions_names.extend(user_function.external_functions_names.iter().cloned());
+                }
+            }
+            Program::Match { r#match, r#as, cases } => {
+                match r#match {
+                    Match::Constant(constant) => {
+                        self.external_constants_names.insert(constant.clone());
+                    }
+                    Match::Program(program_and_metadata) => {
+                        unsafe { Arc::get_mut_unchecked(&mut *program_and_metadata) }.write_external_names(available_functions);
+                        self.external_constants_names.extend(program_and_metadata.external_constants_names.iter().cloned());
+                        self.external_functions_names.extend(program_and_metadata.external_functions_names.iter().cloned());
+                    }
+                }
+                for case in cases.iter_mut() {
+                    if let Condition::Value(condition_program_and_metadata) = &mut case.0 {
+                        condition_program_and_metadata.write_external_names(available_functions);
+                        self.external_constants_names.extend(condition_program_and_metadata.external_constants_names.iter().cloned());
+                        self.external_functions_names.extend(condition_program_and_metadata.external_functions_names.iter().cloned());
+                    }
+                    case.1.write_external_names(available_functions);
+                    self.external_constants_names.extend(case.1.external_constants_names.iter().filter(|case_external_constant_name| Some(case_external_constant_name) != r#as.as_ref().as_ref()).cloned());
+                    self.external_functions_names.extend(case.1.external_functions_names.iter().cloned());
+                }
+            }
+            Program::Map { map: source, r#as, through }
+            | Program::Filter { filter: source, r#as, through } => {
+                unsafe { Arc::get_mut_unchecked(&mut *source) }.write_external_names(available_functions);
+                self.external_constants_names.extend(source.external_constants_names.iter().cloned());
+                self.external_functions_names.extend(source.external_functions_names.iter().cloned());
+                unsafe { Arc::get_mut_unchecked(&mut *through) }.write_external_names(available_functions);
+                self.external_constants_names.extend(through.external_constants_names.iter().filter(|through_external_constant_name| through_external_constant_name != &r#as).cloned());
+                self.external_functions_names.extend(through.external_functions_names.iter().cloned());
+                
+            }
+            Program::Flatten { flatten } => {
+                unsafe { Arc::get_mut_unchecked(&mut *flatten) }.write_external_names(available_functions);
+                self.external_constants_names.extend(flatten.external_constants_names.iter().cloned());
+                self.external_functions_names.extend(flatten.external_functions_names.iter().cloned());
+            }
+            Program::Fold { fold: source, r#as, starting_with, accumulating_in, through } => {
+                unsafe { Arc::get_mut_unchecked(&mut *starting_with) }.write_external_names(available_functions);
+                self.external_constants_names.extend(starting_with.external_constants_names.iter().cloned());
+                self.external_functions_names.extend(starting_with.external_functions_names.iter().cloned());
+                unsafe { Arc::get_mut_unchecked(&mut *source) }.write_external_names(available_functions);
+                self.external_constants_names.extend(source.external_constants_names.iter().cloned());
+                self.external_functions_names.extend(source.external_functions_names.iter().cloned());
+                unsafe { Arc::get_mut_unchecked(&mut *through) }.write_external_names(available_functions);
+                self.external_constants_names.extend(through.external_constants_names.iter().filter(|through_external_constant_name| through_external_constant_name != &r#as && through_external_constant_name != &accumulating_in).cloned());
+                self.external_functions_names.extend(through.external_functions_names.iter().cloned());
+            }
+            Program::Metaprogram { .. } => {
+                todo!();
+            }
+            Program::Sequence { starting_with, r#as, next, r#while }
+            | Program::Loop { starting_with, r#as, r#loop: next, r#while } => {
+                unsafe { Arc::get_mut_unchecked(&mut *starting_with) }.write_external_names(available_functions);
+                self.external_constants_names.extend(starting_with.external_constants_names.iter().cloned());
+                self.external_functions_names.extend(starting_with.external_functions_names.iter().cloned());
+                unsafe { Arc::get_mut_unchecked(&mut *next) }.write_external_names(available_functions);
+                self.external_constants_names.extend(next.external_constants_names.iter().filter(|next_external_constant_name| next_external_constant_name != &r#as).cloned());
+                self.external_functions_names.extend(next.external_functions_names.iter().cloned());
+                if let Some(r#while) = r#while {
+                    unsafe { Arc::get_mut_unchecked(&mut *r#while) }.write_external_names(available_functions);
+                    self.external_constants_names.extend(r#while.external_constants_names.iter().filter(|next_external_constant_name| next_external_constant_name != &r#as).cloned());
+                    self.external_functions_names.extend(r#while.external_functions_names.iter().cloned());
+                }
+                
+            }
+            Program::Pipe { pipe, r#as } => {
+                let mut is_first = true;
+                for element in pipe {
+                    unsafe { Arc::get_mut_unchecked(&mut *element) }.write_external_names(available_functions);
+                    self.external_constants_names.extend(element.external_constants_names.iter().filter(|element_external_constant_name| is_first || Some(element_external_constant_name) != r#as.as_ref().as_ref()).cloned());
+                    self.external_functions_names.extend(element.external_functions_names.iter().cloned());
+                    is_first = false;
+                }
+            }
+            Program::Try { r#try, r#as, or } => {
+                unsafe { Arc::get_mut_unchecked(&mut *r#try) }.write_external_names(available_functions);
+                self.external_constants_names.extend(r#try.external_constants_names.iter().cloned());
+                self.external_functions_names.extend(r#try.external_functions_names.iter().cloned());
+                unsafe { Arc::get_mut_unchecked(&mut *or) }.write_external_names(available_functions);
+                self.external_constants_names.extend(or.external_constants_names.iter().filter(|or_external_constant_name| or_external_constant_name != &r#as).cloned());
+                self.external_functions_names.extend(or.external_functions_names.iter().cloned());
+            }
+            Program::Object(object) => {
+                for program_and_metadata in object.values_mut() {
+                    unsafe { Arc::get_mut_unchecked(&mut *program_and_metadata) }.write_external_names(available_functions);
+                    self.external_constants_names.extend(program_and_metadata.external_constants_names.iter().cloned());
+                    self.external_functions_names.extend(program_and_metadata.external_functions_names.iter().cloned());
+                }
+            }
+            Program::Bytes { .. } | Program::Time { .. } | Program::Duration { .. } | Program::Value(_) => {}
+        }
+    }
+}
+
+impl From<Program> for ProgramAndMetadata {
     fn from(program: Program) -> Self {
         let mut compiles_easily = true;
         let mut value_only = true;
@@ -198,29 +366,25 @@ impl From<Program> for ProgramWithHash {
                     Match::Constant(constant) => {
                         constant.hash(&mut hasher);
                     }
-                    Match::Program(program_with_hash) => {
-                        program_with_hash.hash.hash(&mut hasher);
+                    Match::Program(program_and_metadata) => {
+                        program_and_metadata.hash.hash(&mut hasher);
                     }
                 }
                 r#as.hash(&mut hasher);
                 for (
                     condition,
-                    ProgramWithHash {
-                        program: _, hash, ..
-                    },
+                    program_and_metadata
                 ) in cases
                 {
                     match condition {
                         Condition::Type(r#type) => {
                             r#type.hash(&mut hasher);
                         }
-                        Condition::Value(ProgramWithHash {
-                            program: _, hash, ..
-                        }) => {
-                            hash.hash(&mut hasher);
+                        Condition::Value(program_and_metadata) => {
+                            program_and_metadata.hash.hash(&mut hasher);
                         }
                     }
-                    hash.hash(&mut hasher);
+                    program_and_metadata.hash.hash(&mut hasher);
                 }
             }
             Program::Map {
@@ -325,6 +489,8 @@ impl From<Program> for ProgramWithHash {
             hash: hasher.finish_u128(),
             compiles_easily,
             value_only,
+            external_constants_names: Set::default(),
+            external_functions_names: Set::default(),
         }
     }
 }
@@ -333,8 +499,8 @@ pub fn default_accumulating_in() -> Arc<String> {
     "accumulator".to_string().into()
 }
 
-pub fn default_starting_with() -> Box<ProgramWithHash> {
-    Box::new(Program::Value(Arc::new(None)).into())
+pub fn default_starting_with() -> Arc<ProgramAndMetadata> {
+    Arc::new(Program::Value(Arc::new(None)).into())
 }
 
 pub fn default_match_as() -> Option<Arc<String>> {
@@ -357,7 +523,7 @@ pub fn default_sequence_as() -> Arc<String> {
     DEFAULT_ARGUMENT_NAME.to_string().into()
 }
 
-pub fn default_sequence_while() -> Option<Box<ProgramWithHash>> {
+pub fn default_sequence_while() -> Option<Arc<ProgramAndMetadata>> {
     None
 }
 
@@ -374,7 +540,7 @@ pub fn default_try_as() -> Arc<String> {
 #[serde(untagged)]
 pub enum Match {
     Constant(Arc<String>),
-    Program(Box<ProgramWithHash>),
+    Program(Arc<ProgramAndMetadata>),
 }
 
 #[repr(u8)]
@@ -382,7 +548,7 @@ pub enum Match {
 #[serde(untagged)]
 pub enum Condition {
     Type(Type),
-    Value(ProgramWithHash),
+    Value(ProgramAndMetadata),
 }
 
 #[repr(u8)]
@@ -398,7 +564,7 @@ impl Default for Program {
     }
 }
 
-impl Default for ProgramWithHash {
+impl Default for ProgramAndMetadata {
     fn default() -> Self {
         Self::from(Program::default())
     }
@@ -407,13 +573,13 @@ impl Default for ProgramWithHash {
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct EmbeddedFunctionCall {
     pub embedded_function: EmbeddedFunction,
-    pub argument: Arc<ProgramWithHash>,
+    pub argument: Arc<ProgramAndMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct UserFunctionCall {
     pub user_function_name: Arc<String>,
-    pub argument: Arc<ProgramWithHash>,
+    pub argument: Arc<ProgramAndMetadata>,
 }
 
 impl<'de> Deserialize<'de> for UserFunctionCall {
@@ -438,12 +604,12 @@ impl<'de> Deserialize<'de> for UserFunctionCall {
                 M: MapAccess<'de>,
             {
                 let (name, argument) =
-                    match access.next_entry::<(Arc<String>,), Arc<ProgramWithHash>>()? {
+                    match access.next_entry::<(Arc<String>,), Arc<ProgramAndMetadata>>()? {
                         Some(((key,), value)) => (key, value),
                         Option::None => return Err(serde::de::Error::invalid_length(0, &self)),
                     };
                 if access
-                    .next_entry::<(Arc<String>,), Arc<ProgramWithHash>>()?
+                    .next_entry::<(Arc<String>,), Arc<ProgramAndMetadata>>()?
                     .is_some()
                 {
                     return Err(serde::de::Error::invalid_length(2, &self));
@@ -482,7 +648,7 @@ impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
                     Option::None => return Err(serde::de::Error::invalid_length(0, &self)),
                 };
                 if access
-                    .next_entry::<EmbeddedFunction, ProgramWithHash>()?
+                    .next_entry::<EmbeddedFunction, ProgramAndMetadata>()?
                     .is_some()
                 {
                     return Err(serde::de::Error::invalid_length(2, &self));

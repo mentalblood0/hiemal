@@ -19,7 +19,7 @@ use crate::{
         self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction,
     },
     program::{
-        Condition, EmbeddedFunctionCall, Match, Path, PathSegment, Program, ProgramWithHash,
+        Condition, EmbeddedFunctionCall, Match, Path, PathSegment, Program, ProgramAndMetadata,
         UserFunctionCall,
     },
     r#type::{Capability, Embedded, Type, TypeKind, TypeProperties},
@@ -29,7 +29,7 @@ use crate::{
 #[derive(Clone, Default)]
 struct CompilationContext {
     path: Path,
-    available_functions: Object<String, ProgramWithHash>,
+    available_functions: Object<String, ProgramAndMetadata>,
     available_constants: ObjectRaw<Arc<String>, usize>,
     entered_user_functions: SetRaw<u128>,
 }
@@ -271,12 +271,12 @@ pub struct Compiler {
 impl Compiler {
     pub fn compile(
         &self,
-        program_with_hash: &ProgramWithHash,
+        program_and_metadata: &ProgramAndMetadata,
     ) -> Result<Arc<IntermediateRepresentation>> {
         let mut global_compilation_context = GlobalCompilationContext::default();
         let compilation_context = CompilationContext::default();
         let compiled_program = self.compile_with_context(
-            program_with_hash,
+            program_and_metadata,
             &compilation_context,
             &mut global_compilation_context,
         )?;
@@ -478,7 +478,7 @@ impl Compiler {
 
     fn compile_with_context(
         &self,
-        program_with_hash: &ProgramWithHash,
+        program_with_hash: &ProgramAndMetadata,
         compilation_context: &CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
     ) -> Result<Arc<NodeAndMetadata>> {
@@ -540,7 +540,7 @@ impl Compiler {
 
     fn compile_with_context_without_cache(
         &self,
-        program_with_hash: &ProgramWithHash,
+        program_with_hash: &ProgramAndMetadata,
         compilation_context: &CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
     ) -> Result<Arc<NodeAndMetadata>> {
@@ -2681,7 +2681,7 @@ impl Compiler {
                             let arguments_iterator = match &argument.program {
                                 Program::Object(function_arguments) => {
                                     let arguments_iterator: Box<
-                                        dyn Iterator<Item = (Arc<String>, Arc<ProgramWithHash>)>,
+                                        dyn Iterator<Item = (Arc<String>, Arc<ProgramAndMetadata>)>,
                                     > = if function_arguments.len() > 1 {
                                         Box::new(function_arguments.iter().map(
                                             |(key, value_with_hash)| {

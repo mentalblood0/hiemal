@@ -1,4 +1,5 @@
 #![allow(clippy::mutable_key_type)]
+#![feature(get_mut_unchecked)]
 pub mod embedded_functions;
 pub mod time_it;
 pub mod compiler;

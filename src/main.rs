@@ -1,8 +1,13 @@
-use std::io::{BufReader, Write};
+use std::{
+    collections::BTreeMap,
+    io::{BufReader, Write},
+};
 
 use anyhow::{Context, Result};
 
-use hiemal::{compiler::Compiler, computer::Computer, embedded_functions::EMBEDDED_FUNCTIONS, time_it};
+use hiemal::{
+    compiler::Compiler, computer::Computer, embedded_functions::EMBEDDED_FUNCTIONS, time_it,
+};
 
 pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) -> Result<()> {
     let computer = Computer::default();
@@ -31,7 +36,11 @@ pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) ->
                 })?
             })
         } else {
-            let program = time_it!("parsed", { serde_saphyr::from_slice(&program_bytes)? });
+            let mut program: hiemal::program::ProgramAndMetadata =
+                time_it!("parsed", { serde_saphyr::from_slice(&program_bytes)? });
+            time_it!("computed external names", {
+                program.write_external_names(&mut BTreeMap::default());
+            });
             let compiler = Compiler {
                 metaprograms_computer: computer.clone(),
             };

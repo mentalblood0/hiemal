@@ -81,11 +81,11 @@ where
     inner: ImmutableObject<V, ()>,
 }
 
-impl<V> SetRaw<V>
+impl<K> SetRaw<K>
 where
-    V: Ord + Clone + Hash,
+    K: Ord + Clone + Hash,
 {
-    pub fn contains(&self, value: &V) -> bool {
+    pub fn contains(&self, value: &K) -> bool {
         self.inner.get(value).is_some()
     }
 
@@ -97,13 +97,21 @@ where
         self.len() == 0
     }
 
-    pub fn insert(&mut self, value: V) {
+    pub fn insert(&mut self, value: K) {
         self.inner.insert(value, ());
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &K> {
+        self.inner.iter().map(|(key, _)| key)
+    }
+
+    pub fn remove(&mut self, key: &K) {
+        self.inner.remove(key)
     }
 
     pub fn extend<A>(&mut self, addition: A)
     where
-        A: Iterator<Item = V>,
+        A: Iterator<Item = K>,
     {
         self.inner.extend(addition.map(|key| (key, ())));
     }
