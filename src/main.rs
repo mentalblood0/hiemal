@@ -6,11 +6,18 @@ use std::{
 use anyhow::{Context, Result};
 
 use hiemal::{
-    compiler::Compiler, computer::Computer, embedded_functions::EMBEDDED_FUNCTIONS, time_it,
+    compiler::Compiler,
+    computer::{Computer, ComputerConfig},
+    embedded_functions::EMBEDDED_FUNCTIONS,
+    time_it,
 };
 
 pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) -> Result<()> {
-    let computer = Computer::default();
+    let computer = Computer {
+        config: ComputerConfig {
+            user_functions_caching: false,
+        },
+    };
     if let Some(file_path) = file_path_option {
         let program_bytes = time_it!("read", { std::fs::read(file_path)? });
         let program_hash = time_it!("hashed", { gxhash::gxhash128(&program_bytes, 0) });
