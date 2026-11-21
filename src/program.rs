@@ -178,13 +178,12 @@ impl ProgramAndMetadata {
                 self.external_functions_names.extend(argument.external_functions_names.iter().cloned());
             }
             Program::UserFunctionCall(UserFunctionCall { user_function_name, argument }) => {
-                if let Some(user_function) = available_functions.get(&*user_function_name).cloned() {
+                self.external_functions_names.insert(user_function_name.clone());
+                if let Some(mut user_function) = available_functions.get(&*user_function_name).cloned() {
                     unsafe { Arc::get_mut_unchecked(&mut *argument) }.write_external_names(available_functions);
                     self.external_constants_names.extend(argument.external_constants_names.iter().cloned());
                     self.external_functions_names.extend(argument.external_functions_names.iter().cloned());
-                    let mut user_function_clone = (*user_function).clone();
-                    user_function_clone.write_external_names(available_functions);
-                    available_functions.insert(user_function_name.clone(), user_function_clone.into());
+                    unsafe { Arc::get_mut_unchecked(&mut user_function) }.write_external_names(available_functions);
                     let mut user_function_external_constants_names_without_argument = user_function.external_constants_names.clone();
                     match &argument.program {
                         Program::Object(arguments) => {
@@ -336,6 +335,14 @@ impl From<Program> for ProgramAndMetadata {
             }
             Program::DefaultArgument(_) => {
                 value_only = false;
+                return Self {
+                    program: Program::Constant { constant: DEFAULT_ARGUMENT_NAME.to_string().into() },
+                    hash: hasher.finish_u128(),
+                    compiles_easily,
+                    value_only,
+                    external_constants_names: Set::default(),
+                    external_functions_names: Set::default(),
+                };
             }
             Program::EmbeddedFunctionCall(EmbeddedFunctionCall {
                 embedded_function,

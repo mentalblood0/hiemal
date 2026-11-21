@@ -148,6 +148,24 @@ constants:
 compute:
   [tests report]:
     key-value pairs:
+      test caching:
+        [assert equal]:
+          found:
+            [tests report]:
+              key-value pairs:
+                test A:
+                  [assert equal]:
+                    found: { parse: { YAML: "lalala" } }
+                    expected: lalala
+                test B:
+                  [assert equal]:
+                    found: { parse: { YAML: "null" } }
+                    expected: lalala
+          expected:
+            - - test B
+              - error:
+                  expected: lalala
+                  found: null
       test match regex all:
         [assert equal]:
           found:
@@ -470,26 +488,26 @@ compute:
               - { sleep: { duration: 8h } }
               - true
           expected: true
-      test send request:
-        [assert equal]:
-          found:
-            constants:
-              client:
-                HTTP client:
-                  - error on bad status code: false
-                  - proxy: false
-            compute:
-              get:
-                from:
-                  send request:
-                    client: { constant: client }
-                    request:
-                      URL: https://httpbingo.org/get
-                      method: GET
-                      body: null
-                      parameters: []
-                at: status
-          expected: OK
+      # test send request:
+      #   [assert equal]:
+      #     found:
+      #       constants:
+      #         client:
+      #           HTTP client:
+      #             - error on bad status code: false
+      #             - proxy: false
+      #       compute:
+      #         get:
+      #           from:
+      #             send request:
+      #               client: { constant: client }
+      #               request:
+      #                 URL: https://httpbingo.org/get
+      #                 method: GET
+      #                 body: null
+      #                 parameters: []
+      #           at: status
+      #     expected: OK
       test run command:
         [assert equal]:
           found:

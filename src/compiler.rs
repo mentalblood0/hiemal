@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::{
     computer::Computer,
-    containers::{Object, ObjectRaw, SetRaw, Vector},
+    containers::{Object, SetRaw, Vector},
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     embedded_functions::{EMBEDDED_FUNCTIONS, EmbeddedFunction},
     intermediate_representation::{
@@ -30,7 +30,7 @@ use crate::{
 struct CompilationContext {
     path: Path,
     available_functions: Object<String, ProgramAndMetadata>,
-    available_constants: ObjectRaw<Arc<String>, usize>,
+    available_constants: Object<String, Type>,
     entered_user_functions: SetRaw<u128>,
 }
 
@@ -72,13 +72,6 @@ impl CompilationContext {
             .unwrap()
         )
     }
-}
-
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq)]
-pub struct ConstantDefinition {
-    pub name: Arc<String>,
-    pub name_clustered_index: usize,
-    pub index: usize,
 }
 
 fn assert_type(
@@ -255,7 +248,6 @@ struct UserFunctionCallDefinition {
 struct GlobalCompilationContext {
     user_functions_definitions: Vec<UserFunctionCallDefinition>,
     constants_names_to_name_clustered_constants_indices: HashMap<Arc<String>, usize>,
-    constants: Vec<Type>,
     compiled_programs_cache: HashMap<u128, (Arc<NodeAndMetadata>, std::time::Duration)>,
     compiled_programs_cache_misses: usize,
     compiled_programs_cache_hits: usize,
@@ -266,6 +258,18 @@ struct GlobalCompilationContext {
 #[derive(Default, Clone)]
 pub struct Compiler {
     pub metaprograms_computer: Computer,
+}
+
+#[derive(Hash)]
+enum ContextElementContent<'a> {
+    Constant(&'a Type),
+    Function(u128),
+}
+
+#[derive(Hash)]
+struct ContextElement<'a> {
+    name: &'a str,
+    content: ContextElementContent<'a>,
 }
 
 impl Compiler {
@@ -320,33 +324,22 @@ impl Compiler {
         r#type: Type,
         compilation_context: &mut CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
-    ) -> ConstantDefinition {
-        let result = ConstantDefinition {
-            name: name.clone(),
-            index: {
-                let result = global_compilation_context.constants.len();
-                global_compilation_context.constants.push(r#type);
-                result
-            },
-            name_clustered_index: if let Some(constant_name_clustered_index) =
-                global_compilation_context
-                    .constants_names_to_name_clustered_constants_indices
-                    .get(&*name)
-            {
-                *constant_name_clustered_index
-            } else {
-                let result = global_compilation_context
-                    .constants_names_to_name_clustered_constants_indices
-                    .len();
-                global_compilation_context
-                    .constants_names_to_name_clustered_constants_indices
-                    .insert(name.clone(), result);
-                result
-            },
+    ) -> usize {
+        let result = if let Some(constant_name_clustered_index) = global_compilation_context
+            .constants_names_to_name_clustered_constants_indices
+            .get(&name)
+        {
+            *constant_name_clustered_index
+        } else {
+            let result = global_compilation_context
+                .constants_names_to_name_clustered_constants_indices
+                .len();
+            global_compilation_context
+                .constants_names_to_name_clustered_constants_indices
+                .insert(name.clone(), result);
+            result
         };
-        compilation_context
-            .available_constants
-            .insert(name, result.index);
+        compilation_context.available_constants.insert(name, r#type.into());
         result
     }
 
@@ -495,17 +488,30 @@ impl Compiler {
                 let hashing_start = std::time::Instant::now();
                 let mut hasher = gxhash::GxHasher::default();
                 program_with_hash.hash.hash(&mut hasher);
-                for (constant_name, constant_index) in
-                    compilation_context.available_constants.iter()
-                {
-                    constant_name.hash(&mut hasher);
-                    global_compilation_context.constants[*constant_index].hash(&mut hasher);
+                for constant_name in program_with_hash.external_constants_names.iter() {
+                    ContextElement {
+                        name: constant_name.as_str(),
+                        content: ContextElementContent::Constant(
+                            &compilation_context
+                                .available_constants
+                                .get(constant_name)
+                                .unwrap(),
+                        ),
+                    }
+                    .hash(&mut hasher);
                 }
-                for (available_function_name, available_function) in
-                    compilation_context.available_functions.iter()
-                {
-                    available_function_name.hash(&mut hasher);
-                    available_function.hash.hash(&mut hasher);
+                for function_name in program_with_hash.external_functions_names.iter() {
+                    ContextElement {
+                        name: function_name.as_str(),
+                        content: ContextElementContent::Function(
+                            compilation_context
+                                .available_functions
+                                .get(function_name)
+                                .unwrap()
+                                .hash,
+                        ),
+                    }
+                    .hash(&mut hasher);
                 }
                 let result = hasher.finish_u128();
                 let time_spent_on_hashing = hashing_start.elapsed();
@@ -689,10 +695,9 @@ impl Compiler {
                                 &mut compute_compilation_context,
                                 global_compilation_context,
                             );
-                            constants_name_clustered_indices
-                                .push(constant_definition.name_clustered_index);
+                            constants_name_clustered_indices.push(constant_definition);
                             new_constants.push(intermediate_representation::ConstantDefinition {
-                                name_clustered_index: constant_definition.name_clustered_index,
+                                name_clustered_index: constant_definition,
                                 node: compiled_constant.node.clone(),
                             });
                         }
@@ -756,11 +761,9 @@ impl Compiler {
                     Program::Constant {
                         constant: constant_name,
                     } => {
-                        if let Some(constant_index) =
+                        if let Some(constant_type) =
                             compilation_context.available_constants.get(constant_name)
                         {
-                            let constant_type =
-                                global_compilation_context.constants[constant_index].clone();
                             let name_clustered_constant_index = *global_compilation_context
                                 .constants_names_to_name_clustered_constants_indices
                                 .get(constant_name)
@@ -771,7 +774,7 @@ impl Compiler {
                                 ]),
                                 node: Node {
                                     content: Content::Constant(name_clustered_constant_index),
-                                    r#type: constant_type,
+                                    r#type: (*constant_type).clone(),
                                 }
                                 .into(),
                             }
@@ -2076,24 +2079,20 @@ impl Compiler {
                                                 compilation_context.with_additional_path([
                                                     PathSegment::Through(current_index),
                                                 ]);
-                                            fold_constant_name_clustered_index = Some(
-                                                self.define_constant(
+                                            fold_constant_name_clustered_index =
+                                                Some(self.define_constant(
                                                     r#as.clone(),
                                                     current_type.clone(),
                                                     &mut through_compilation_context,
                                                     global_compilation_context,
-                                                )
-                                                .name_clustered_index,
-                                            );
-                                            accumulating_in_constant_name_clustered_index = Some(
-                                                self.define_constant(
+                                                ));
+                                            accumulating_in_constant_name_clustered_index =
+                                                Some(self.define_constant(
                                                     accumulating_in.clone(),
                                                     current_accumulator_type.clone(),
                                                     &mut through_compilation_context,
                                                     global_compilation_context,
-                                                )
-                                                .name_clustered_index,
-                                            );
+                                                ));
                                             let compiled_through = self.compile_with_context(
                                                 through,
                                                 &through_compilation_context,
@@ -2142,25 +2141,20 @@ impl Compiler {
                                                     ]);
                                                 let starting_with_type =
                                                     compiled_starting_with.node.r#type.clone();
-                                                fold_constant_name_clustered_index = Some(
-                                                    self.define_constant(
+                                                fold_constant_name_clustered_index =
+                                                    Some(self.define_constant(
                                                         r#as.clone(),
                                                         *fold_array_element_type.clone(),
                                                         &mut through_compilation_context,
                                                         global_compilation_context,
-                                                    )
-                                                    .name_clustered_index,
-                                                );
+                                                    ));
                                                 accumulating_in_constant_name_clustered_index =
-                                                    Some(
-                                                        self.define_constant(
-                                                            accumulating_in.clone(),
-                                                            starting_with_type.clone(),
-                                                            &mut through_compilation_context,
-                                                            global_compilation_context,
-                                                        )
-                                                        .name_clustered_index,
-                                                    );
+                                                    Some(self.define_constant(
+                                                        accumulating_in.clone(),
+                                                        starting_with_type.clone(),
+                                                        &mut through_compilation_context,
+                                                        global_compilation_context,
+                                                    ));
                                                 let compiled_through = self.compile_with_context(
                                                     through,
                                                     &through_compilation_context,
@@ -2273,14 +2267,12 @@ impl Compiler {
                         let nexts_cycle_start_index = loop {
                             let mut next_compilation_context = compilation_context
                                 .with_additional_path([PathSegment::Next(current_type.clone())]);
-                            current_constant_name_clustered_index = self
-                                .define_constant(
-                                    r#as.clone(),
-                                    current_type.clone(),
-                                    &mut next_compilation_context,
-                                    global_compilation_context,
-                                )
-                                .name_clustered_index;
+                            current_constant_name_clustered_index = self.define_constant(
+                                r#as.clone(),
+                                current_type.clone(),
+                                &mut next_compilation_context,
+                                global_compilation_context,
+                            );
                             let compiled_next = self.compile_with_context(
                                 next,
                                 &next_compilation_context,
@@ -2413,14 +2405,12 @@ impl Compiler {
                                 .with_additional_path([PathSegment::Loop(
                                     current_concrete_type.clone(),
                                 )]);
-                            current_constant_name_clustered_index = self
-                                .define_constant(
-                                    r#as.clone(),
-                                    current_concrete_type.clone(),
-                                    &mut next_compilation_context,
-                                    global_compilation_context,
-                                )
-                                .name_clustered_index;
+                            current_constant_name_clustered_index = self.define_constant(
+                                r#as.clone(),
+                                current_concrete_type.clone(),
+                                &mut next_compilation_context,
+                                global_compilation_context,
+                            );
                             let compiled_next = self.compile_with_context(
                                 r#loop,
                                 &next_compilation_context,
@@ -2548,15 +2538,13 @@ impl Compiler {
                                 && let Some(compiled_previous_pipe_element) =
                                     compiled_previous_pipe_element_option
                             {
-                                as_constant_name_clustered_index_option = Some(
-                                    self.define_constant(
+                                as_constant_name_clustered_index_option =
+                                    Some(self.define_constant(
                                         r#as.clone(),
                                         compiled_previous_pipe_element.node.r#type.clone(),
                                         &mut pipe_element_compilation_context,
                                         global_compilation_context,
-                                    )
-                                    .name_clustered_index,
-                                );
+                                    ));
                             }
                             let compiled_pipe_element = self.compile_with_context(
                                 pipe_element,
@@ -2618,14 +2606,12 @@ impl Compiler {
                         }
                         let mut or_compilation_context = compilation_context.clone();
                         or_compilation_context.path.0.push(PathSegment::Or);
-                        let as_constant_name_clustered_index = self
-                            .define_constant(
-                                r#as.clone(),
-                                compiled_try.node.r#type.with_kind(TypeKind::String),
-                                &mut or_compilation_context,
-                                global_compilation_context,
-                            )
-                            .name_clustered_index;
+                        let as_constant_name_clustered_index = self.define_constant(
+                            r#as.clone(),
+                            compiled_try.node.r#type.with_kind(TypeKind::String),
+                            &mut or_compilation_context,
+                            global_compilation_context,
+                        );
                         let compiled_or = self.compile_with_context(
                             or,
                             &or_compilation_context,
@@ -2740,8 +2726,7 @@ impl Compiler {
                                     );
                                     new_constants_definitions.push(
                                         intermediate_representation::ConstantDefinition {
-                                            name_clustered_index: constant_definition
-                                                .name_clustered_index,
+                                            name_clustered_index: constant_definition,
                                             node: compiled_constant.node.clone(),
                                         },
                                     );
@@ -2805,66 +2790,62 @@ impl Compiler {
                             ));
                         }
                     }
-                    Program::Object(object) => {
-                        match object.len() {
-                            0 => {
-                                return Ok(NodeAndMetadata {
-                                    external_constants_name_clustered_indices: BTreeSet::new(),
-                                    node: Node {
-                                        content: Content::Object(BTreeMap::new()),
-                                        r#type: TypeKind::Object(BTreeMap::new().into()).into(),
-                                    }
-                                    .into(),
+                    Program::Object(object) => match object.len() {
+                        0 => {
+                            return Ok(NodeAndMetadata {
+                                external_constants_name_clustered_indices: BTreeSet::new(),
+                                node: Node {
+                                    content: Content::Object(BTreeMap::new()),
+                                    r#type: TypeKind::Object(BTreeMap::new().into()).into(),
                                 }
-                                .into());
+                                .into(),
                             }
-                            1.. => {
-                                let mut result_inner_types = BTreeMap::new();
-                                let mut result_content = BTreeMap::new();
-                                let mut result_external_constants_name_clustered_indices =
-                                    BTreeSet::new();
-                                for (object_key, object_value) in object.iter() {
-                                    let object_value_compilation_context = compilation_context
-                                        .with_additional_path([PathSegment::ObjectKey(
-                                            object_key.clone(),
-                                        )]);
-                                    let compiled_object_value = self.compile_with_context(
-                                        object_value,
-                                        &object_value_compilation_context,
-                                        global_compilation_context,
-                                    )?;
-                                    result_external_constants_name_clustered_indices.append(
-                                        &mut compiled_object_value
-                                            .external_constants_name_clustered_indices
-                                            .clone(),
-                                    );
-                                    result_inner_types.insert(
-                                        object_key.clone(),
-                                        compiled_object_value.node.r#type.clone(),
-                                    );
-                                    result_content.insert(
-                                        object_key.clone(),
-                                        compiled_object_value.node.clone(),
-                                    );
-                                }
-                                let result_inner_types_arc = Arc::new(result_inner_types);
-                                NodeAndMetadata {
-                                    external_constants_name_clustered_indices:
-                                        result_external_constants_name_clustered_indices,
-                                    node: Node {
-                                        content: Content::Object(result_content),
-                                        r#type: (
-                                            TypeKind::Object(result_inner_types_arc.clone()),
-                                            result_inner_types_arc.values(),
-                                        )
-                                            .into(),
-                                    }
-                                    .into(),
-                                }
-                                .into()
-                            }
+                            .into());
                         }
-                    }
+                        1.. => {
+                            let mut result_inner_types = BTreeMap::new();
+                            let mut result_content = BTreeMap::new();
+                            let mut result_external_constants_name_clustered_indices =
+                                BTreeSet::new();
+                            for (object_key, object_value) in object.iter() {
+                                let object_value_compilation_context = compilation_context
+                                    .with_additional_path([PathSegment::ObjectKey(
+                                        object_key.clone(),
+                                    )]);
+                                let compiled_object_value = self.compile_with_context(
+                                    object_value,
+                                    &object_value_compilation_context,
+                                    global_compilation_context,
+                                )?;
+                                result_external_constants_name_clustered_indices.append(
+                                    &mut compiled_object_value
+                                        .external_constants_name_clustered_indices
+                                        .clone(),
+                                );
+                                result_inner_types.insert(
+                                    object_key.clone(),
+                                    compiled_object_value.node.r#type.clone(),
+                                );
+                                result_content
+                                    .insert(object_key.clone(), compiled_object_value.node.clone());
+                            }
+                            let result_inner_types_arc = Arc::new(result_inner_types);
+                            NodeAndMetadata {
+                                external_constants_name_clustered_indices:
+                                    result_external_constants_name_clustered_indices,
+                                node: Node {
+                                    content: Content::Object(result_content),
+                                    r#type: (
+                                        TypeKind::Object(result_inner_types_arc.clone()),
+                                        result_inner_types_arc.values(),
+                                    )
+                                        .into(),
+                                }
+                                .into(),
+                            }
+                            .into()
+                        }
+                    },
                     _ => panic!(),
                 };
                 if result.node.r#type.kind.is_literal() && result.node.r#type.properties.is_pure {
