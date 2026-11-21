@@ -7,4 +7,3 @@ macro_rules! time_it {
         result
     }};
 }
-

@@ -106,9 +106,7 @@ impl Serialize for Runtime {
     where
         S: Serializer,
     {
-        Err(serde::ser::Error::custom(
-            "Runtime contains runtime-only state and cannot be serialized",
-        ))
+        Err(serde::ser::Error::custom("Runtime contains runtime-only state and cannot be serialized"))
     }
 }
 
@@ -117,9 +115,7 @@ impl<'de> Deserialize<'de> for Runtime {
     where
         D: Deserializer<'de>,
     {
-        Err(serde::de::Error::custom(
-            "Runtime contains runtime-only state and cannot be deserialized",
-        ))
+        Err(serde::de::Error::custom("Runtime contains runtime-only state and cannot be deserialized"))
     }
 }
 
@@ -165,20 +161,11 @@ impl Runtime {
 #[serde(untagged)]
 pub enum Value {
     Number(#[serde(deserialize_with = "deserialize_rational")] Rational),
-    String(
-        #[serde(
-            deserialize_with = "deserialize_rope",
-            serialize_with = "serialize_rope"
-        )]
-        ropey::Rope,
-    ),
+    String(#[serde(deserialize_with = "deserialize_rope", serialize_with = "serialize_rope")] ropey::Rope),
     Bool(bool),
     Tuple(Vector<Option<Value>>),
     Bytes {
-        #[serde(
-            serialize_with = "serialize_bytes",
-            deserialize_with = "deserialize_bytes"
-        )]
+        #[serde(serialize_with = "serialize_bytes", deserialize_with = "deserialize_bytes")]
         bytes: Bytes,
     },
     Time {
@@ -226,10 +213,7 @@ fn parse_spaced_hex(string: &str) -> Result<Bytes, String> {
     for (token_index, token) in string.split(' ').enumerate() {
         let bytes = token.as_bytes();
         if bytes.len() != 2 {
-            return Err(format!(
-                "bad token {:?} at index {}: invalid token length",
-                token, token_index
-            ));
+            return Err(format!("bad token {:?} at index {}: invalid token length", token, token_index));
         }
         let high = hex_value(bytes[0], 0)?;
         let low = hex_value(bytes[1], 1)?;
@@ -243,10 +227,7 @@ fn hex_value(byte: u8, index: usize) -> Result<u8, String> {
         b'0'..=b'9' => Ok(byte - b'0'),
         b'a'..=b'f' => Ok(byte - b'a' + 10),
         b'A'..=b'F' => Ok(byte - b'A' + 10),
-        _ => Err(format!(
-            "Invalid character {:?} at position {}",
-            byte as char, index
-        )),
+        _ => Err(format!("Invalid character {:?} at position {}", byte as char, index)),
     }
 }
 
@@ -308,13 +289,11 @@ where
         }
 
         fn visit_f64<E: de::Error>(self, v: f64) -> Result<Rational, E> {
-            Rational::simplest_from_f64(v)
-                .ok_or_else(|| de::Error::invalid_value(Unexpected::Float(v), &self))
+            Rational::simplest_from_f64(v).ok_or_else(|| de::Error::invalid_value(Unexpected::Float(v), &self))
         }
 
         fn visit_f32<E: de::Error>(self, v: f32) -> Result<Rational, E> {
-            Rational::simplest_from_f32(v)
-                .ok_or_else(|| de::Error::invalid_value(Unexpected::Float(v as f64), &self))
+            Rational::simplest_from_f32(v).ok_or_else(|| de::Error::invalid_value(Unexpected::Float(v as f64), &self))
         }
 
         fn visit_str<E: de::Error>(self, s: &str) -> Result<Rational, E> {
@@ -426,29 +405,14 @@ impl Value {
                 Value::Duration { duration: _ } => TypeKind::Duration,
                 Value::Bool(true) => TypeKind::LiteralTrue,
                 Value::Bool(false) => TypeKind::LiteralFalse,
-                Value::Tuple(tuple) => TypeKind::Tuple(
-                    tuple
-                        .iter()
-                        .map(|element| Value::type_kind(element).into())
-                        .collect::<Vec<_>>()
-                        .into(),
-                ),
-                Value::Object(object) => TypeKind::Object(
-                    BTreeMap::from_iter(
-                        object
-                            .iter()
-                            .map(|(key, value)| (key.clone(), Value::type_kind(value).into())),
-                    )
-                    .into(),
-                ),
+                Value::Tuple(tuple) => TypeKind::Tuple(tuple.iter().map(|element| Value::type_kind(element).into()).collect::<Vec<_>>().into()),
+                Value::Object(object) => TypeKind::Object(BTreeMap::from_iter(object.iter().map(|(key, value)| (key.clone(), Value::type_kind(value).into()))).into()),
                 Value::Runtime(runtime) => match runtime.as_ref() {
                     Runtime::CompiledRegex(_) => TypeKind::Embedded(Embedded::CompiledRegex),
                     Runtime::BufferizedWriter(_) => TypeKind::Embedded(Embedded::BufferizedWriter),
                     Runtime::BufferizedReader(_) => TypeKind::Embedded(Embedded::BufferizedReader),
                     Runtime::HttpClient(_) => TypeKind::Embedded(Embedded::HttpClient),
-                    Runtime::RandomNumberGenerator(_) => {
-                        TypeKind::Embedded(Embedded::RandomNumberGenerator)
-                    }
+                    Runtime::RandomNumberGenerator(_) => TypeKind::Embedded(Embedded::RandomNumberGenerator),
                 },
             },
             None => TypeKind::Null,

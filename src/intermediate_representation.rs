@@ -18,20 +18,11 @@ use crate::{
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone, PartialOrd, Eq, Ord, Hash)]
 pub enum Value {
     Number(#[serde_as(as = "DisplayFromStr")] Rational),
-    String(
-        #[serde(
-            deserialize_with = "crate::value::deserialize_rope",
-            serialize_with = "crate::value::serialize_rope"
-        )]
-        ropey::Rope,
-    ),
+    String(#[serde(deserialize_with = "crate::value::deserialize_rope", serialize_with = "crate::value::serialize_rope")] ropey::Rope),
     Bool(bool),
     Tuple(Vector<Option<Value>>),
     Bytes {
-        #[serde(
-            serialize_with = "serialize_bytes",
-            deserialize_with = "deserialize_bytes"
-        )]
+        #[serde(serialize_with = "serialize_bytes", deserialize_with = "deserialize_bytes")]
         bytes: Bytes,
     },
     Time {
@@ -153,10 +144,7 @@ pub struct Sequence {
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
 pub enum Throughs {
     Array(Arc<Node>),
-    Tuple {
-        nodes_indexes: Vec<usize>,
-        nodes: Vec<Arc<Node>>,
-    },
+    Tuple { nodes_indexes: Vec<usize>, nodes: Vec<Arc<Node>> },
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]

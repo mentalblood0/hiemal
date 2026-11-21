@@ -93,28 +93,15 @@ where
         if let Some(result) = self.difference.get(key) {
             result.as_ref()
         } else {
-            self.base_immutable_common_difference_option
-                .as_ref()
-                .and_then(|base_immutable_common_difference| {
-                    base_immutable_common_difference.get(key)
-                })
+            self.base_immutable_common_difference_option.as_ref().and_then(|base_immutable_common_difference| base_immutable_common_difference.get(key))
         }
     }
 
     fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = (&'b K, &'b V)> + 'b> {
-        if let Some(base_immutable_common_difference) =
-            self.base_immutable_common_difference_option.as_ref()
-        {
-            Box::new(MergingIterator::new(
-                Box::new(self.difference.iter()),
-                base_immutable_common_difference.iter(),
-            ))
+        if let Some(base_immutable_common_difference) = self.base_immutable_common_difference_option.as_ref() {
+            Box::new(MergingIterator::new(Box::new(self.difference.iter()), base_immutable_common_difference.iter()))
         } else {
-            Box::new(
-                self.difference.iter().filter_map(|(key, value_option)| {
-                    value_option.as_ref().map(|value| (key, value))
-                }),
-            )
+            Box::new(self.difference.iter().filter_map(|(key, value_option)| value_option.as_ref().map(|value| (key, value))))
         }
     }
 
@@ -182,8 +169,7 @@ where
             }
         }
 
-        let difference =
-            deserializer.deserialize_map(DifferenceVisitor::<K, V>(std::marker::PhantomData))?;
+        let difference = deserializer.deserialize_map(DifferenceVisitor::<K, V>(std::marker::PhantomData))?;
 
         Ok(ImmutableObject {
             lockable_internals: RwLock::new(LockableInternals {
@@ -251,17 +237,14 @@ where
         if lockable_internals_read_guard.difference.len() < 16 {
             Self {
                 lockable_internals: RwLock::new(LockableInternals {
-                    base_immutable_common_difference_option: lockable_internals_read_guard
-                        .base_immutable_common_difference_option
-                        .clone(),
+                    base_immutable_common_difference_option: lockable_internals_read_guard.base_immutable_common_difference_option.clone(),
                     difference: lockable_internals_read_guard.difference.clone(),
                 }),
             }
         } else {
             let common_base = Arc::new(lockable_internals_read_guard.clone());
             lockable_internals_read_guard.with_upgraded(|lockable_internals_write_guard| {
-                lockable_internals_write_guard.base_immutable_common_difference_option =
-                    Some(common_base.clone());
+                lockable_internals_write_guard.base_immutable_common_difference_option = Some(common_base.clone());
                 lockable_internals_write_guard.difference.clear();
             });
             Self {
@@ -291,15 +274,10 @@ where
             // and holds the read lock, so the `LockableInternals` it points to (and
             // its `BTreeMap`s) stay alive and unmodified for `'a`. The iterator only
             // borrows that data, so the extended lifetime is valid.
-            let lockable_internals_as_const: &'a LockableInternals<K, V> = unsafe {
-                &*(&*self.lockable_internals_read_guard as *const LockableInternals<K, V>)
-            };
+            let lockable_internals_as_const: &'a LockableInternals<K, V> = unsafe { &*(&*self.lockable_internals_read_guard as *const LockableInternals<K, V>) };
             self.lockable_internals_iterator_option = Some(lockable_internals_as_const.iter());
         }
-        self.lockable_internals_iterator_option
-            .as_mut()
-            .unwrap()
-            .next()
+        self.lockable_internals_iterator_option.as_mut().unwrap().next()
     }
 }
 
@@ -395,8 +373,7 @@ mod tests {
         let mut normal_objects = vec![BTreeMap::<usize, usize>::new()];
         let mut immutable_objects = vec![ImmutableObject::<usize, usize>::default()];
         for _ in 0..1000 {
-            let current_object_index =
-                rng.generate_range(normal_objects.len().saturating_sub(20)..normal_objects.len());
+            let current_object_index = rng.generate_range(normal_objects.len().saturating_sub(20)..normal_objects.len());
             match rng.generate_range(1..=10) {
                 1..=9 => {
                     let new_key = rng.generate_range(0..usize::MAX);
@@ -418,10 +395,7 @@ mod tests {
                     if new_normal_object.is_empty() {
                         continue;
                     }
-                    let key_to_remove = *new_normal_object
-                        .keys()
-                        .nth(rng.generate_range(0..new_normal_object.len()))
-                        .unwrap();
+                    let key_to_remove = *new_normal_object.keys().nth(rng.generate_range(0..new_normal_object.len())).unwrap();
                     // println!(
                     //     "remove {key_to_remove:?} from {current_object_index} and save as {}",
                     //     normal_objects.len()
@@ -436,11 +410,7 @@ mod tests {
             }
             for object_index in 0..normal_objects.len() {
                 assert_eq!(
-                    immutable_objects[object_index]
-                        .lockable_internals
-                        .read()
-                        .iter()
-                        .collect::<Vec<_>>(),
+                    immutable_objects[object_index].lockable_internals.read().iter().collect::<Vec<_>>(),
                     normal_objects[object_index].iter().collect::<Vec<_>>(),
                     "objects at index {}",
                     object_index

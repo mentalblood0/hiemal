@@ -133,9 +133,7 @@ where
     V: Ord + Clone,
 {
     fn from_iter<I: IntoIterator<Item = Arc<V>>>(iter: I) -> Self {
-        Self {
-            inner: Vec::from_iter(iter),
-        }
+        Self { inner: Vec::from_iter(iter) }
     }
 }
 

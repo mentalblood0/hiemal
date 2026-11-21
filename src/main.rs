@@ -14,25 +14,16 @@ use hiemal::{
 
 pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) -> Result<()> {
     let computer = Computer {
-        config: ComputerConfig {
-            user_functions_caching: false,
-        },
+        config: ComputerConfig { user_functions_caching: false },
     };
     if let Some(file_path) = file_path_option {
         let program_bytes = time_it!("read", { std::fs::read(file_path)? });
         let program_hash = time_it!("hashed", { gxhash::gxhash128(&program_bytes, 0) });
-        let cached_intermediate_representation_path = dirs::cache_dir()
-            .unwrap()
-            .join("hiemal")
-            .join(format!("{program_hash:x}.bin"));
-        let intermediate_representation = if let Ok(cached_intermediate_representation_file) =
-            std::fs::File::open(&cached_intermediate_representation_path)
-        {
+        let cached_intermediate_representation_path = dirs::cache_dir().unwrap().join("hiemal").join(format!("{program_hash:x}.bin"));
+        let intermediate_representation = if let Ok(cached_intermediate_representation_file) = std::fs::File::open(&cached_intermediate_representation_path) {
             time_it!("loaded from cache", {
                 bincode::serde::decode_from_std_read(
-                    &mut lz4_flex::frame::FrameDecoder::new(&mut BufReader::new(
-                        cached_intermediate_representation_file,
-                    )),
+                    &mut lz4_flex::frame::FrameDecoder::new(&mut BufReader::new(cached_intermediate_representation_file)),
                     bincode::config::standard(),
                 )
                 .with_context(|| {
@@ -43,8 +34,7 @@ pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) ->
                 })?
             })
         } else {
-            let mut program: hiemal::program::ProgramAndMetadata =
-                time_it!("parsed", { serde_saphyr::from_slice(&program_bytes)? });
+            let mut program: hiemal::program::ProgramAndMetadata = time_it!("parsed", { serde_saphyr::from_slice(&program_bytes)? });
             time_it!("computed external names", {
                 program.write_external_names(&mut BTreeMap::default());
             });
@@ -58,18 +48,9 @@ pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) ->
                     std::fs::create_dir_all(parent)?;
                 }
                 let mut encoder = lz4_flex::frame::FrameEncoder::new(
-                    std::fs::OpenOptions::new()
-                        .create(true)
-                        .truncate(true)
-                        .write(true)
-                        .open(&cached_intermediate_representation_path)?,
+                    std::fs::OpenOptions::new().create(true).truncate(true).write(true).open(&cached_intermediate_representation_path)?,
                 );
-                bincode::serde::encode_into_std_write(
-                    &result,
-                    &mut encoder,
-                    bincode::config::standard(),
-                )
-                .with_context(|| {
+                bincode::serde::encode_into_std_write(&result, &mut encoder, bincode::config::standard()).with_context(|| {
                     format!(
                         "Can not encode intermediate representation to \
                          {cached_intermediate_representation_path:?}"
@@ -87,11 +68,7 @@ pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) ->
         let _ = &*EMBEDDED_FUNCTIONS;
         serde_saphyr::to_io_writer(
             output_writer,
-            &time_it!("computed", {
-                computer
-                    .compute(&intermediate_representation)
-                    .context("Can not compute program")?
-            }),
+            &time_it!("computed", { computer.compute(&intermediate_representation).context("Can not compute program")? }),
         )
         .context("Can not output result of the program computation")?;
     }

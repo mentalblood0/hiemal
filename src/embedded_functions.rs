@@ -101,19 +101,13 @@ pub fn default_argument_is_computable() -> bool {
     true
 }
 
-pub static EMBEDDED_FUNCTIONS: LazyLock<Vec<Vec<EmbeddedFunctionSignature>>> =
-    LazyLock::new(|| {
-        let mut name_and_signature_pairs = time_it!("loaded embedded functions signatures", {
-            serde_saphyr::from_str::<BTreeMap<EmbeddedFunction, Vec<EmbeddedFunctionSignature>>>(
-                include_str!("embedded_functions.yml"),
-            )
-        })
-        .unwrap()
-        .into_iter()
-        .collect::<Vec<_>>();
-        name_and_signature_pairs.sort_by_key(|a| a.0);
-        name_and_signature_pairs
-            .into_iter()
-            .map(|(_, signature)| signature)
-            .collect()
-    });
+pub static EMBEDDED_FUNCTIONS: LazyLock<Vec<Vec<EmbeddedFunctionSignature>>> = LazyLock::new(|| {
+    let mut name_and_signature_pairs = time_it!("loaded embedded functions signatures", {
+        serde_saphyr::from_str::<BTreeMap<EmbeddedFunction, Vec<EmbeddedFunctionSignature>>>(include_str!("embedded_functions.yml"))
+    })
+    .unwrap()
+    .into_iter()
+    .collect::<Vec<_>>();
+    name_and_signature_pairs.sort_by_key(|a| a.0);
+    name_and_signature_pairs.into_iter().map(|(_, signature)| signature).collect()
+});

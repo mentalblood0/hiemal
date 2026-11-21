@@ -27,9 +27,7 @@ use ureq::{
 use crate::{
     containers::{self, Object, Vector},
     embedded_functions::{EMBEDDED_FUNCTIONS, EmbeddedFunction},
-    intermediate_representation::{
-        self, Condition, Content, IntermediateRepresentation, Node, Throughs,
-    },
+    intermediate_representation::{self, Condition, Content, IntermediateRepresentation, Node, Throughs},
     program::Path,
     r#type::{Embedded, TypeKind},
     value::{Identified, Runtime, Value},
@@ -37,15 +35,8 @@ use crate::{
 
 type Constants = rpds::VectorSync<Option<Arc<IntermediateValueAndMetadata>>>;
 
-static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> = LazyLock::new(|| {
-    Mutex::new(
-        (std::thread::available_parallelism()
-            .unwrap_or(std::num::NonZero::try_from(1usize).unwrap())
-            .get()
-            .div_ceil(2)
-            - 1) as u8,
-    )
-});
+static THREADS_LEFT_TO_SPAWN: LazyLock<Mutex<u8>> =
+    LazyLock::new(|| Mutex::new((std::thread::available_parallelism().unwrap_or(std::num::NonZero::try_from(1usize).unwrap()).get().div_ceil(2) - 1) as u8));
 
 #[derive(Clone, Debug)]
 struct SequenceLockableInternals {
@@ -77,8 +68,7 @@ impl PartialOrd for Sequence {
 
 impl Ord for Sequence {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.intermediate_representation_content
-            .cmp(&other.intermediate_representation_content)
+        self.intermediate_representation_content.cmp(&other.intermediate_representation_content)
     }
 }
 
@@ -118,8 +108,7 @@ impl PartialOrd for Map {
 
 impl Ord for Map {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.intermediate_representation_content
-            .cmp(&other.intermediate_representation_content)
+        self.intermediate_representation_content.cmp(&other.intermediate_representation_content)
     }
 }
 
@@ -160,8 +149,7 @@ impl PartialOrd for Filter {
 
 impl Ord for Filter {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.intermediate_representation_content
-            .cmp(&other.intermediate_representation_content)
+        self.intermediate_representation_content.cmp(&other.intermediate_representation_content)
     }
 }
 
@@ -287,22 +275,14 @@ pub struct Computer {
 }
 
 impl Computer {
-    pub fn compute(
-        &self,
-        intermediate_representation: &IntermediateRepresentation,
-    ) -> Result<Arc<Option<Value>>> {
+    pub fn compute(&self, intermediate_representation: &IntermediateRepresentation) -> Result<Arc<Option<Value>>> {
         let computation_context = ComputationContext {
             computer_config: &self.config,
             intermediate_representation,
             functions_results_cache: &Arc::new(RwLock::new(HashMap::default())),
         };
-        let constants = Constants::from_iter(std::iter::repeat_n(
-            None,
-            intermediate_representation.unique_constants_names_count,
-        ));
-        computation_context.unroll_intermediate_value(
-            &computation_context.compute_node(&intermediate_representation.root, &constants)?,
-        )
+        let constants = Constants::from_iter(std::iter::repeat_n(None, intermediate_representation.unique_constants_names_count));
+        computation_context.unroll_intermediate_value(&computation_context.compute_node(&intermediate_representation.root, &constants)?)
     }
 }
 
@@ -310,11 +290,7 @@ fn concrete_or_else<F>(concrete: &TypeKind, or_else: F) -> TypeKind
 where
     F: Fn() -> TypeKind,
 {
-    if concrete.is_concrete() {
-        concrete.clone()
-    } else {
-        or_else()
-    }
+    if concrete.is_concrete() { concrete.clone() } else { or_else() }
 }
 
 fn embedded_function_error_context(path_option: &Option<Path>) -> impl FnOnce() -> String {
@@ -375,57 +351,22 @@ impl<'a> ComputationContext<'a> {
                                 .as_tuple()
                                 .unwrap()
                                 .iter()
-                                .map(|variant| {
-                                    self.build_regex(
-                                        variant.as_ref().as_ref().unwrap().as_tuple().unwrap(),
-                                    )
-                                })
+                                .map(|variant| self.build_regex(variant.as_ref().as_ref().unwrap().as_tuple().unwrap()))
                                 .collect::<Vec<_>>()
                                 .join("|"),
                         );
                         result.push(')');
-                    } else if let Some(string_of_characters_to_except) =
-                        object.get(&"character except from string".to_string())
-                    {
+                    } else if let Some(string_of_characters_to_except) = object.get(&"character except from string".to_string()) {
                         result.push_str("[^");
-                        result.push_str(&escape(
-                            &string_of_characters_to_except
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap()
-                                .to_string(),
-                        ));
+                        result.push_str(&escape(&string_of_characters_to_except.as_ref().as_ref().unwrap().as_string().unwrap().to_string()));
                         result.push(']');
                     } else if let Some(raw_string) = object.get(&"raw string".to_string()) {
-                        result.push_str(&escape(
-                            &raw_string
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap()
-                                .to_string(),
-                        ));
-                    } else if let (Some(group), Some(name)) = (
-                        object.get(&"group".to_string()),
-                        object.get(&"name".to_string()),
-                    ) {
+                        result.push_str(&escape(&raw_string.as_ref().as_ref().unwrap().as_string().unwrap().to_string()));
+                    } else if let (Some(group), Some(name)) = (object.get(&"group".to_string()), object.get(&"name".to_string())) {
                         result.push_str("(?P<");
-                        result.push_str(
-                            &name
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap()
-                                .to_string(),
-                        );
+                        result.push_str(&name.as_ref().as_ref().unwrap().as_string().unwrap().to_string());
                         result.push('>');
-                        result.push_str(
-                            &self.build_regex(group.as_ref().as_ref().unwrap().as_tuple().unwrap()),
-                        );
+                        result.push_str(&self.build_regex(group.as_ref().as_ref().unwrap().as_tuple().unwrap()));
                         result.push(')');
                     } else if let (Some(repeat), min, max, exactly) = (
                         object.get(&"repeat".to_string()),
@@ -434,55 +375,20 @@ impl<'a> ComputationContext<'a> {
                         object.get(&"exactly".to_string()),
                     ) {
                         result.push_str("(?:");
-                        result
-                            .push_str(&self.build_regex(
-                                repeat.as_ref().as_ref().unwrap().as_tuple().unwrap(),
-                            ));
+                        result.push_str(&self.build_regex(repeat.as_ref().as_ref().unwrap().as_tuple().unwrap()));
                         result.push_str("){");
                         if let Some(exactly) = exactly {
-                            result.push_str(
-                                &(exactly
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_number()
-                                    .unwrap()
-                                    .trunc()
-                                    .to_f64()
-                                    .value() as i64)
-                                    .max(0)
-                                    .to_string(),
-                            );
+                            result.push_str(&(exactly.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as i64).max(0).to_string());
                         } else {
                             let min_number = if let Some(min) = min {
-                                (min.as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_number()
-                                    .unwrap()
-                                    .trunc()
-                                    .to_f64()
-                                    .value() as i64)
-                                    .max(0)
+                                (min.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as i64).max(0)
                             } else {
                                 0
                             };
                             result.push_str(&min_number.to_string());
                             result.push(',');
                             if let Some(max) = max {
-                                result.push_str(
-                                    &(max
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_number()
-                                        .unwrap()
-                                        .trunc()
-                                        .to_f64()
-                                        .value() as i64)
-                                        .max(min_number)
-                                        .to_string(),
-                                );
+                                result.push_str(&(max.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as i64).max(min_number).to_string());
                             }
                         }
                         result.push('}');
@@ -496,10 +402,7 @@ impl<'a> ComputationContext<'a> {
         result
     }
 
-    fn compute_lazy_value(
-        &self,
-        lazy_value: &LazyValue,
-    ) -> Result<Arc<IntermediateValueAndMetadata>> {
+    fn compute_lazy_value(&self, lazy_value: &LazyValue) -> Result<Arc<IntermediateValueAndMetadata>> {
         let mut computed_lock = lazy_value.computed.lock();
         if computed_lock.is_none() {
             let result = self.compute_node(&lazy_value.node, &lazy_value.constants)?;
@@ -522,90 +425,49 @@ impl<'a> ComputationContext<'a> {
         function(computed_lock.as_ref().unwrap())
     }
 
-    fn compute_next_in_sequence(
-        &self,
-        sequence: &Sequence,
-        lockable_internals_write_guard: &mut parking_lot::RwLockWriteGuard<
-            SequenceLockableInternals,
-        >,
-    ) -> Result<()> {
+    fn compute_next_in_sequence(&self, sequence: &Sequence, lockable_internals_write_guard: &mut parking_lot::RwLockWriteGuard<SequenceLockableInternals>) -> Result<()> {
         if !lockable_internals_write_guard.already_fully_computed {
-            let next_node = &sequence.intermediate_representation_content.nexts
-                [lockable_internals_write_guard.current_index];
-            let next =
-                self.compute_node(next_node, &lockable_internals_write_guard.next_constants)?;
-            lockable_internals_write_guard.next_constants[sequence
-                .intermediate_representation_content
-                .current_constant_name_clustered_index] = Some(next.clone());
-            lockable_internals_write_guard.current_index = if lockable_internals_write_guard
-                .current_index
-                == sequence.intermediate_representation_content.nexts.len() - 1
+            let next_node = &sequence.intermediate_representation_content.nexts[lockable_internals_write_guard.current_index];
+            let next = self.compute_node(next_node, &lockable_internals_write_guard.next_constants)?;
+            lockable_internals_write_guard.next_constants[sequence.intermediate_representation_content.current_constant_name_clustered_index] = Some(next.clone());
+            lockable_internals_write_guard.current_index = if lockable_internals_write_guard.current_index == sequence.intermediate_representation_content.nexts.len() - 1
             {
-                sequence
-                    .intermediate_representation_content
-                    .nexts_cycle_start_index
+                sequence.intermediate_representation_content.nexts_cycle_start_index
             } else {
                 lockable_internals_write_guard.current_index + 1
             };
             if let Some(ref r#while) = sequence.intermediate_representation_content.r#while {
                 if self
-                    .unroll_intermediate_value(
-                        &self.compute_node(
-                            r#while,
-                            &lockable_internals_write_guard.next_constants,
-                        )?,
-                    )?
+                    .unroll_intermediate_value(&self.compute_node(r#while, &lockable_internals_write_guard.next_constants)?)?
                     .as_ref()
                     .as_ref()
                     .unwrap()
                     .as_bool()
                     .unwrap()
                 {
-                    lockable_internals_write_guard
-                        .already_computed_values
-                        .push(next);
+                    lockable_internals_write_guard.already_computed_values.push(next);
                 } else {
                     lockable_internals_write_guard.already_fully_computed = true;
                 }
             } else {
-                lockable_internals_write_guard
-                    .already_computed_values
-                    .push(next);
+                lockable_internals_write_guard.already_computed_values.push(next);
             }
         }
         Ok(())
     }
 
-    fn compute_next_in_filter(
-        &self,
-        filter: &Filter,
-        lockable_internals_write_guard: &mut parking_lot::RwLockWriteGuard<FilterLockableInternals>,
-    ) -> Result<bool> {
+    fn compute_next_in_filter(&self, filter: &Filter, lockable_internals_write_guard: &mut parking_lot::RwLockWriteGuard<FilterLockableInternals>) -> Result<bool> {
         let next_input_value_index = lockable_internals_write_guard.already_processed_values_count;
-        if let Some(next_input_value) =
-            self.get_from_intermediate_value(&filter.computed_filter, next_input_value_index)?
-        {
+        if let Some(next_input_value) = self.get_from_intermediate_value(&filter.computed_filter, next_input_value_index)? {
             let mut next_constants = filter.constants.clone();
-            next_constants[filter
-                .intermediate_representation_content
-                .filter_constant_name_clustered_index] = Some(next_input_value.clone());
+            next_constants[filter.intermediate_representation_content.filter_constant_name_clustered_index] = Some(next_input_value.clone());
             let next_through = match &filter.throughs {
                 Throughs::Array(node) => &**node,
-                Throughs::Tuple {
-                    nodes_indexes,
-                    nodes,
-                } => &nodes[nodes_indexes[next_input_value_index]],
+                Throughs::Tuple { nodes_indexes, nodes } => &nodes[nodes_indexes[next_input_value_index]],
             };
             let computed_next_through = self.compute_node(next_through, &next_constants)?;
-            if (*self.unroll_intermediate_value(&computed_next_through)?)
-                .clone()
-                .unwrap()
-                .as_bool()
-                .unwrap()
-            {
-                lockable_internals_write_guard
-                    .already_computed_values
-                    .push(next_input_value);
+            if (*self.unroll_intermediate_value(&computed_next_through)?).clone().unwrap().as_bool().unwrap() {
+                lockable_internals_write_guard.already_computed_values.push(next_input_value);
             }
             lockable_internals_write_guard.already_processed_values_count += 1;
             Ok(true)
@@ -614,26 +476,12 @@ impl<'a> ComputationContext<'a> {
         }
     }
 
-    fn compute_next_in_flatten(
-        &self,
-        flatten: &Flatten,
-        lockable_internals_write_guard: &mut parking_lot::RwLockWriteGuard<
-            FlattenLockableInternals,
-        >,
-    ) -> Result<bool> {
+    fn compute_next_in_flatten(&self, flatten: &Flatten, lockable_internals_write_guard: &mut parking_lot::RwLockWriteGuard<FlattenLockableInternals>) -> Result<bool> {
         loop {
-            if let Some(current_element) = self.get_from_intermediate_value(
-                &flatten.computed_flatten,
-                lockable_internals_write_guard.next_element_index,
-            )? {
-                if let Some(current_element_element) = self.get_from_intermediate_value(
-                    &current_element,
-                    lockable_internals_write_guard.next_element_element_index,
-                )? {
+            if let Some(current_element) = self.get_from_intermediate_value(&flatten.computed_flatten, lockable_internals_write_guard.next_element_index)? {
+                if let Some(current_element_element) = self.get_from_intermediate_value(&current_element, lockable_internals_write_guard.next_element_element_index)? {
                     lockable_internals_write_guard.next_element_element_index += 1;
-                    lockable_internals_write_guard
-                        .already_computed_values
-                        .push(current_element_element.clone());
+                    lockable_internals_write_guard.already_computed_values.push(current_element_element.clone());
                     return Ok(true);
                 } else {
                     lockable_internals_write_guard.next_element_index += 1;
@@ -659,21 +507,13 @@ impl<'a> ComputationContext<'a> {
                     }
                     .into()
                 })),
-                unexpected_value => Err(anyhow!(
-                    "expected tuple, sequence, map or filter, found {:#?}",
-                    unexpected_value
-                )),
+                unexpected_value => Err(anyhow!("expected tuple, sequence, map or filter, found {:#?}", unexpected_value)),
             },
             IntermediateValue::Object(object) => Ok(object.get(key)),
             IntermediateValue::LazyValue(lazy_value) => {
-                self.with_computed_lazy_value(lazy_value, |computed_lazy_value| {
-                    self.get_by_key_from_intermediate_value(computed_lazy_value, key)
-                })
+                self.with_computed_lazy_value(lazy_value, |computed_lazy_value| self.get_by_key_from_intermediate_value(computed_lazy_value, key))
             }
-            unexpected_value => Err(anyhow!(
-                "expected tuple, sequence, map or filter, found {:#?}",
-                unexpected_value
-            )),
+            unexpected_value => Err(anyhow!("expected tuple, sequence, map or filter, found {:#?}", unexpected_value)),
         }
     }
 
@@ -686,94 +526,45 @@ impl<'a> ComputationContext<'a> {
             IntermediateValue::Tuple(list) => Ok(list.get(index).cloned()),
             IntermediateValue::Sequence(sequence) => {
                 let lockable_internals_read_guard = sequence.lockable_internals.upgradable_read();
-                if let Some(result) = lockable_internals_read_guard
-                    .already_computed_values
-                    .get(index)
-                {
+                if let Some(result) = lockable_internals_read_guard.already_computed_values.get(index) {
                     Ok(Some(result.clone()))
                 } else {
-                    let mut lockable_internals_write_guard =
-                        parking_lot::RwLockUpgradableReadGuard::upgrade(
-                            lockable_internals_read_guard,
-                        );
-                    while !lockable_internals_write_guard.already_fully_computed
-                        && lockable_internals_write_guard.already_computed_values.len() <= index
-                    {
-                        self.compute_next_in_sequence(
-                            sequence,
-                            &mut lockable_internals_write_guard,
-                        )?;
+                    let mut lockable_internals_write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(lockable_internals_read_guard);
+                    while !lockable_internals_write_guard.already_fully_computed && lockable_internals_write_guard.already_computed_values.len() <= index {
+                        self.compute_next_in_sequence(sequence, &mut lockable_internals_write_guard)?;
                     }
-                    Ok(lockable_internals_write_guard
-                        .already_computed_values
-                        .get(index)
-                        .cloned())
+                    Ok(lockable_internals_write_guard.already_computed_values.get(index).cloned())
                 }
             }
             IntermediateValue::Flatten(flatten) => {
                 let lockable_internals_read_guard = flatten.lockable_internals.upgradable_read();
-                if let Some(result) = lockable_internals_read_guard
-                    .already_computed_values
-                    .get(index)
-                {
+                if let Some(result) = lockable_internals_read_guard.already_computed_values.get(index) {
                     Ok(Some(result.clone()))
                 } else {
-                    let mut lockable_internals_write_guard =
-                        parking_lot::RwLockUpgradableReadGuard::upgrade(
-                            lockable_internals_read_guard,
-                        );
+                    let mut lockable_internals_write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(lockable_internals_read_guard);
                     while lockable_internals_write_guard.already_computed_values.len() <= index {
-                        if !self
-                            .compute_next_in_flatten(flatten, &mut lockable_internals_write_guard)?
-                        {
+                        if !self.compute_next_in_flatten(flatten, &mut lockable_internals_write_guard)? {
                             return Ok(None);
                         }
                     }
-                    Ok(Some(
-                        lockable_internals_write_guard
-                            .already_computed_values
-                            .last()
-                            .unwrap()
-                            .clone(),
-                    ))
+                    Ok(Some(lockable_internals_write_guard.already_computed_values.last().unwrap().clone()))
                 }
             }
             IntermediateValue::Filter(filter) => {
                 let lockable_internals_read_guard = filter.lockable_internals.upgradable_read();
-                if let Some(result) = lockable_internals_read_guard
-                    .already_computed_values
-                    .get(index)
-                {
+                if let Some(result) = lockable_internals_read_guard.already_computed_values.get(index) {
                     Ok(Some(result.clone()))
                 } else {
-                    let mut lockable_internals_write_guard =
-                        parking_lot::RwLockUpgradableReadGuard::upgrade(
-                            lockable_internals_read_guard,
-                        );
+                    let mut lockable_internals_write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(lockable_internals_read_guard);
                     while lockable_internals_write_guard.already_computed_values.len() <= index {
-                        if !self
-                            .compute_next_in_filter(filter, &mut lockable_internals_write_guard)?
-                        {
+                        if !self.compute_next_in_filter(filter, &mut lockable_internals_write_guard)? {
                             return Ok(None);
                         }
                     }
-                    Ok(Some(
-                        lockable_internals_write_guard
-                            .already_computed_values
-                            .last()
-                            .unwrap()
-                            .clone(),
-                    ))
+                    Ok(Some(lockable_internals_write_guard.already_computed_values.last().unwrap().clone()))
                 }
             }
-            IntermediateValue::Map(_) => Ok(self
-                .get_range_from_intermediate_value(
-                    intermediate_value_and_metadata,
-                    index..index + 1,
-                )?
-                .inner
-                .into_iter()
-                .next()),
+            IntermediateValue::Map(_) => Ok(self.get_range_from_intermediate_value(intermediate_value_and_metadata, index..index + 1)?.inner.into_iter().next()),
             IntermediateValue::Value(value_arc) => {
                 let element_type = match &intermediate_value_and_metadata.type_kind {
                     TypeKind::Array(element_type) => *element_type.clone(),
@@ -794,20 +585,13 @@ impl<'a> ComputationContext<'a> {
                         }
                         .into()
                     })),
-                    unexpected_value => Err(anyhow!(
-                        "expected tuple, sequence, map or filter, found {:#?}",
-                        unexpected_value
-                    )),
+                    unexpected_value => Err(anyhow!("expected tuple, sequence, map or filter, found {:#?}", unexpected_value)),
                 }
             }
-            IntermediateValue::LazyValue(lazy_value) => self
-                .with_computed_lazy_value(lazy_value, |computed_lazy_value| {
-                    self.get_from_intermediate_value(computed_lazy_value, index)
-                }),
-            unexpected_value => Err(anyhow!(
-                "expected tuple, sequence, map or filter, found {:#?}",
-                unexpected_value
-            )),
+            IntermediateValue::LazyValue(lazy_value) => {
+                self.with_computed_lazy_value(lazy_value, |computed_lazy_value| self.get_from_intermediate_value(computed_lazy_value, index))
+            }
+            unexpected_value => Err(anyhow!("expected tuple, sequence, map or filter, found {:#?}", unexpected_value)),
         }
     }
 
@@ -818,46 +602,21 @@ impl<'a> ComputationContext<'a> {
     ) -> Result<Vector<IntermediateValueAndMetadata>> {
         match &intermediate_value_and_metadata.intermediate_value {
             IntermediateValue::Tuple(list) => Ok(Vector {
-                inner: list
-                    .iter()
-                    .skip(range.start)
-                    .take(range.end - range.start)
-                    .cloned()
-                    .collect(),
+                inner: list.iter().skip(range.start).take(range.end - range.start).cloned().collect(),
             }),
             IntermediateValue::Sequence(sequence) => {
                 let lockable_internals_read_guard = sequence.lockable_internals.upgradable_read();
                 if lockable_internals_read_guard.already_computed_values.len() >= range.end {
                     Ok(Vector {
-                        inner: lockable_internals_read_guard
-                            .already_computed_values
-                            .iter()
-                            .skip(range.start)
-                            .take(range.end - range.start)
-                            .cloned()
-                            .collect(),
+                        inner: lockable_internals_read_guard.already_computed_values.iter().skip(range.start).take(range.end - range.start).cloned().collect(),
                     })
                 } else {
-                    let mut lockable_internals_write_guard =
-                        parking_lot::RwLockUpgradableReadGuard::upgrade(
-                            lockable_internals_read_guard,
-                        );
-                    while !lockable_internals_write_guard.already_fully_computed
-                        && lockable_internals_write_guard.already_computed_values.len() < range.end
-                    {
-                        self.compute_next_in_sequence(
-                            sequence,
-                            &mut lockable_internals_write_guard,
-                        )?;
+                    let mut lockable_internals_write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(lockable_internals_read_guard);
+                    while !lockable_internals_write_guard.already_fully_computed && lockable_internals_write_guard.already_computed_values.len() < range.end {
+                        self.compute_next_in_sequence(sequence, &mut lockable_internals_write_guard)?;
                     }
                     Ok(Vector {
-                        inner: lockable_internals_write_guard
-                            .already_computed_values
-                            .iter()
-                            .skip(range.start)
-                            .take(range.end - range.start)
-                            .cloned()
-                            .collect(),
+                        inner: lockable_internals_write_guard.already_computed_values.iter().skip(range.start).take(range.end - range.start).cloned().collect(),
                     })
                 }
             }
@@ -865,34 +624,17 @@ impl<'a> ComputationContext<'a> {
                 let lockable_internals_read_guard = flatten.lockable_internals.upgradable_read();
                 if lockable_internals_read_guard.already_computed_values.len() >= range.end {
                     Ok(Vector {
-                        inner: lockable_internals_read_guard
-                            .already_computed_values
-                            .iter()
-                            .skip(range.start)
-                            .take(range.end - range.start)
-                            .cloned()
-                            .collect(),
+                        inner: lockable_internals_read_guard.already_computed_values.iter().skip(range.start).take(range.end - range.start).cloned().collect(),
                     })
                 } else {
-                    let mut lockable_internals_write_guard =
-                        parking_lot::RwLockUpgradableReadGuard::upgrade(
-                            lockable_internals_read_guard,
-                        );
+                    let mut lockable_internals_write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(lockable_internals_read_guard);
                     while lockable_internals_write_guard.already_computed_values.len() < range.end {
-                        if !self
-                            .compute_next_in_flatten(flatten, &mut lockable_internals_write_guard)?
-                        {
+                        if !self.compute_next_in_flatten(flatten, &mut lockable_internals_write_guard)? {
                             break;
                         }
                     }
                     Ok(Vector {
-                        inner: lockable_internals_write_guard
-                            .already_computed_values
-                            .iter()
-                            .skip(range.start)
-                            .take(range.end - range.start)
-                            .cloned()
-                            .collect(),
+                        inner: lockable_internals_write_guard.already_computed_values.iter().skip(range.start).take(range.end - range.start).cloned().collect(),
                     })
                 }
             }
@@ -900,131 +642,76 @@ impl<'a> ComputationContext<'a> {
                 let lockable_internals_read_guard = filter.lockable_internals.upgradable_read();
                 if lockable_internals_read_guard.already_computed_values.len() >= range.end {
                     Ok(Vector {
-                        inner: lockable_internals_read_guard
-                            .already_computed_values
-                            .iter()
-                            .skip(range.start)
-                            .take(range.end - range.start)
-                            .cloned()
-                            .collect(),
+                        inner: lockable_internals_read_guard.already_computed_values.iter().skip(range.start).take(range.end - range.start).cloned().collect(),
                     })
                 } else {
-                    let mut lockable_internals_write_guard =
-                        parking_lot::RwLockUpgradableReadGuard::upgrade(
-                            lockable_internals_read_guard,
-                        );
+                    let mut lockable_internals_write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(lockable_internals_read_guard);
                     while lockable_internals_write_guard.already_computed_values.len() < range.end {
-                        if !self
-                            .compute_next_in_filter(filter, &mut lockable_internals_write_guard)?
-                        {
+                        if !self.compute_next_in_filter(filter, &mut lockable_internals_write_guard)? {
                             break;
                         }
                     }
                     Ok(Vector {
-                        inner: lockable_internals_write_guard
-                            .already_computed_values
-                            .iter()
-                            .skip(range.start)
-                            .take(range.end - range.start)
-                            .cloned()
-                            .collect(),
+                        inner: lockable_internals_write_guard.already_computed_values.iter().skip(range.start).take(range.end - range.start).cloned().collect(),
                     })
                 }
             }
             IntermediateValue::Map(map) => {
-                let computed_map_range =
-                    self.get_range_from_intermediate_value(&map.computed_map, range.clone())?;
+                let computed_map_range = self.get_range_from_intermediate_value(&map.computed_map, range.clone())?;
                 let (already_taken_elements, elements_to_compute) = {
-                    let mut lockable_internals_read_guard =
-                        map.lockable_internals.upgradable_read();
-                    let already_taken = lockable_internals_read_guard
-                        .elements_taken_for_computation
-                        .range(range.clone())
-                        .map(|(key, value)| (*key, value.clone()))
-                        .collect::<Vec<_>>();
+                    let mut lockable_internals_read_guard = map.lockable_internals.upgradable_read();
+                    let already_taken =
+                        lockable_internals_read_guard.elements_taken_for_computation.range(range.clone()).map(|(key, value)| (*key, value.clone())).collect::<Vec<_>>();
                     let mut to_compute = Vec::new();
                     lockable_internals_read_guard.with_upgraded(|lockable_internals_write_guard| {
                         for element_index in range.start..computed_map_range.len() {
-                            lockable_internals_write_guard
-                                .elements_taken_for_computation
-                                .entry(element_index)
-                                .or_insert_with(|| {
-                                    let element_value = Arc::new(RwLock::new(Arc::new(
-                                        IntermediateValueAndMetadata::default(),
-                                    )));
-                                    to_compute.push((element_index, element_value.write_arc()));
-                                    element_value
-                                });
+                            lockable_internals_write_guard.elements_taken_for_computation.entry(element_index).or_insert_with(|| {
+                                let element_value = Arc::new(RwLock::new(Arc::new(IntermediateValueAndMetadata::default())));
+                                to_compute.push((element_index, element_value.write_arc()));
+                                element_value
+                            });
                         }
                     });
                     (already_taken, to_compute)
                 };
                 let mut already_taken_elements_iterator = already_taken_elements.iter();
-                let mut already_taken_elements_iterator_current_option =
-                    already_taken_elements_iterator.next();
+                let mut already_taken_elements_iterator_current_option = already_taken_elements_iterator.next();
                 let mut result = self.compute_nodes(
-                    computed_map_range.iter().enumerate().map(
-                        |(computed_map_element_index, computed_map_element)| {
-                            if let Some((already_computed_through_index, _)) =
-                                std::mem::take(&mut already_taken_elements_iterator_current_option)
-                                && *already_computed_through_index
-                                    == computed_map_element_index + range.start
-                            {
-                                already_taken_elements_iterator_current_option =
-                                    already_taken_elements_iterator.next();
-                                (None, Cow::Borrowed(&map.constants))
-                            } else {
-                                let mut through_constants = map.constants.clone();
-                                through_constants[map
-                                    .intermediate_representation_content
-                                    .map_constant_name_clustered_index] =
-                                    Some(computed_map_element.clone());
-                                (
-                                    Some(match &map.throughs {
-                                        Throughs::Array(node) => node,
-                                        Throughs::Tuple {
-                                            nodes_indexes,
-                                            nodes,
-                                        } => {
-                                            &nodes[nodes_indexes
-                                                [computed_map_element_index + range.start]]
-                                        }
-                                    }),
-                                    Cow::Owned(through_constants),
-                                )
-                            }
-                        },
-                    ),
+                    computed_map_range.iter().enumerate().map(|(computed_map_element_index, computed_map_element)| {
+                        if let Some((already_computed_through_index, _)) = std::mem::take(&mut already_taken_elements_iterator_current_option)
+                            && *already_computed_through_index == computed_map_element_index + range.start
+                        {
+                            already_taken_elements_iterator_current_option = already_taken_elements_iterator.next();
+                            (None, Cow::Borrowed(&map.constants))
+                        } else {
+                            let mut through_constants = map.constants.clone();
+                            through_constants[map.intermediate_representation_content.map_constant_name_clustered_index] = Some(computed_map_element.clone());
+                            (
+                                Some(match &map.throughs {
+                                    Throughs::Array(node) => node,
+                                    Throughs::Tuple { nodes_indexes, nodes } => &nodes[nodes_indexes[computed_map_element_index + range.start]],
+                                }),
+                                Cow::Owned(through_constants),
+                            )
+                        }
+                    }),
                     computed_map_range.len(),
                 )?;
-                for (element_to_compute_index, mut element_to_compute_value) in
-                    elements_to_compute.into_iter()
-                {
-                    *element_to_compute_value =
-                        result.inner[element_to_compute_index - range.start].clone();
+                for (element_to_compute_index, mut element_to_compute_value) in elements_to_compute.into_iter() {
+                    *element_to_compute_value = result.inner[element_to_compute_index - range.start].clone();
                 }
-                for (already_computed_value_index, already_computed_value) in
-                    already_taken_elements.into_iter()
-                {
-                    result.inner[already_computed_value_index - range.start] =
-                        already_computed_value.read().clone();
+                for (already_computed_value_index, already_computed_value) in already_taken_elements.into_iter() {
+                    result.inner[already_computed_value_index - range.start] = already_computed_value.read().clone();
                 }
                 Ok(result)
             }
-            IntermediateValue::LazyValue(lazy_value) => {
-                self.with_computed_lazy_value(lazy_value, |computed_lazy_value| {
-                    self.get_range_from_intermediate_value(computed_lazy_value, range.clone())
-                })
-            }
+            IntermediateValue::LazyValue(lazy_value) => self.with_computed_lazy_value(lazy_value, |computed_lazy_value| {
+                self.get_range_from_intermediate_value(computed_lazy_value, range.clone())
+            }),
             IntermediateValue::Value(value_arc) => {
                 let elements_types = match &intermediate_value_and_metadata.type_kind {
                     TypeKind::Array(element_type) => [*element_type.clone()].to_vec(),
-                    TypeKind::Tuple(elements_types) => elements_types
-                        .iter()
-                        .skip(range.start)
-                        .take(range.end - range.start)
-                        .cloned()
-                        .collect::<Vec<_>>(),
+                    TypeKind::Tuple(elements_types) => elements_types.iter().skip(range.start).take(range.end - range.start).cloned().collect::<Vec<_>>(),
                     _ => panic!(),
                 };
                 match &**value_arc {
@@ -1044,25 +731,14 @@ impl<'a> ComputationContext<'a> {
                             })
                             .collect(),
                     }),
-                    unexpected_value => Err(anyhow!(
-                        "expected tuple, sequence, map or filter, found {:#?}",
-                        unexpected_value
-                    )),
+                    unexpected_value => Err(anyhow!("expected tuple, sequence, map or filter, found {:#?}", unexpected_value)),
                 }
             }
-            unexpected_value => Err(anyhow!(
-                "expected tuple, sequence, map or filter, found {:#?}",
-                unexpected_value
-            )),
+            unexpected_value => Err(anyhow!("expected tuple, sequence, map or filter, found {:#?}", unexpected_value)),
         }
     }
 
-    fn process_in_parallel<I, F, O>(
-        &self,
-        mut input: &[(usize, I)],
-        function: &F,
-        output: &Mutex<Vec<O>>,
-    ) -> Result<()>
+    fn process_in_parallel<I, F, O>(&self, mut input: &[(usize, I)], function: &F, output: &Mutex<Vec<O>>) -> Result<()>
     where
         I: Send + Sync + Clone,
         F: Fn(I) -> Result<O> + Send + Sync,
@@ -1095,12 +771,9 @@ impl<'a> ComputationContext<'a> {
         if !input.is_empty() {
             let left_half = input.split_off(..input.len().div_ceil(2)).unwrap();
             let (left_half_result, right_half_result) = std::thread::scope(|scope| {
-                let left_half_join_handle =
-                    scope.spawn(|| self.process_in_parallel(left_half, function, output));
+                let left_half_join_handle = scope.spawn(|| self.process_in_parallel(left_half, function, output));
                 let right_half_result = self.process_in_parallel(input, function, output);
-                let left_half_result = left_half_join_handle
-                    .join()
-                    .map_err(|error| anyhow!("Thread panicked: {error:#?}"));
+                let left_half_result = left_half_join_handle.join().map_err(|error| anyhow!("Thread panicked: {error:#?}"));
                 *THREADS_LEFT_TO_SPAWN.lock() += 1;
                 (left_half_result, right_half_result)
             });
@@ -1110,37 +783,30 @@ impl<'a> ComputationContext<'a> {
         Ok(())
     }
 
-    fn unroll_intermediate_values<I>(
-        &self,
-        intermediate_values_iterator: I,
-        intermediate_values_count: usize,
-    ) -> Result<Vector<Option<Value>>>
+    fn unroll_intermediate_values<I>(&self, intermediate_values_iterator: I, intermediate_values_count: usize) -> Result<Vector<Option<Value>>>
     where
         I: Iterator<Item = Arc<IntermediateValueAndMetadata>>,
     {
         let mut result = vec![None; intermediate_values_count];
         let complex_elements = intermediate_values_iterator
             .enumerate()
-            .filter_map(
-                |(element_index, intermediate_value)| match &*intermediate_value {
-                    IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(value),
-                        type_kind: _,
-                    } => {
-                        result[element_index] = Some(value.clone());
-                        None
-                    }
-                    _ => Some((element_index, intermediate_value)),
-                },
-            )
+            .filter_map(|(element_index, intermediate_value)| match &*intermediate_value {
+                IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Value(value),
+                    type_kind: _,
+                } => {
+                    result[element_index] = Some(value.clone());
+                    None
+                }
+                _ => Some((element_index, intermediate_value)),
+            })
             .collect::<Vec<_>>();
         Ok(match complex_elements.len() {
             0 => Vector {
                 inner: result.into_iter().map(Option::unwrap).collect(),
             },
             1 => {
-                let (element_index, intermediate_value) =
-                    complex_elements.into_iter().next().unwrap();
+                let (element_index, intermediate_value) = complex_elements.into_iter().next().unwrap();
                 result[element_index] = Some(self.unroll_intermediate_value(&intermediate_value)?);
                 Vector {
                     inner: result.into_iter().map(Option::unwrap).collect(),
@@ -1150,22 +816,15 @@ impl<'a> ComputationContext<'a> {
                 let result_mutex = Mutex::new(result);
                 self.process_in_parallel(
                     &complex_elements,
-                    &|intermediate_value| {
-                        Ok(Some(self.unroll_intermediate_value(&intermediate_value)?))
-                    },
+                    &|intermediate_value| Ok(Some(self.unroll_intermediate_value(&intermediate_value)?)),
                     &result_mutex,
                 )?;
-                return Ok(Vector::from_iter(
-                    result_mutex.into_inner().into_iter().map(Option::unwrap),
-                ));
+                return Ok(Vector::from_iter(result_mutex.into_inner().into_iter().map(Option::unwrap)));
             }
         })
     }
 
-    fn unroll_intermediate_value(
-        &self,
-        intermediate_value: &Arc<IntermediateValueAndMetadata>,
-    ) -> Result<Arc<Option<Value>>> {
+    fn unroll_intermediate_value(&self, intermediate_value: &Arc<IntermediateValueAndMetadata>) -> Result<Arc<Option<Value>>> {
         match &**intermediate_value {
             IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Value(result),
@@ -1174,40 +833,25 @@ impl<'a> ComputationContext<'a> {
             IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Tuple(intermediate_values_list),
                 type_kind: _,
-            } => Ok(Some(Value::Tuple(self.unroll_intermediate_values(
-                intermediate_values_list.inner.iter().cloned(),
-                intermediate_values_list.len(),
-            )?))
+            } => Ok(Some(Value::Tuple(
+                self.unroll_intermediate_values(intermediate_values_list.inner.iter().cloned(), intermediate_values_list.len())?,
+            ))
             .into()),
             IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Sequence(sequence),
                 type_kind: _,
             } => {
-                if sequence
-                    .intermediate_representation_content
-                    .r#while
-                    .is_none()
-                {
-                    Err(anyhow!(
-                        "can not possibly unroll sequence without `while` {intermediate_value:#?}"
-                    ))
+                if sequence.intermediate_representation_content.r#while.is_none() {
+                    Err(anyhow!("can not possibly unroll sequence without `while` {intermediate_value:#?}"))
                 } else {
                     let mut lockable_internals_write_guard = sequence.lockable_internals.write();
                     while !lockable_internals_write_guard.already_fully_computed {
-                        self.compute_next_in_sequence(
-                            sequence,
-                            &mut lockable_internals_write_guard,
-                        )?;
+                        self.compute_next_in_sequence(sequence, &mut lockable_internals_write_guard)?;
                     }
-                    Ok(Some(Value::Tuple(
-                        self.unroll_intermediate_values(
-                            lockable_internals_write_guard
-                                .already_computed_values
-                                .iter()
-                                .cloned(),
-                            lockable_internals_write_guard.already_computed_values.len(),
-                        )?,
-                    ))
+                    Ok(Some(Value::Tuple(self.unroll_intermediate_values(
+                        lockable_internals_write_guard.already_computed_values.iter().cloned(),
+                        lockable_internals_write_guard.already_computed_values.len(),
+                    )?))
                     .into())
                 }
             }
@@ -1218,13 +862,7 @@ impl<'a> ComputationContext<'a> {
                 let object_values = object.values().cloned().collect::<Vec<_>>();
                 let object_values_len = object_values.len();
                 Ok(Some(Value::Object(Object::from_iter(
-                    object.keys().cloned().zip(
-                        self.unroll_intermediate_values(
-                            object_values.into_iter(),
-                            object_values_len,
-                        )?
-                        .inner,
-                    ),
+                    object.keys().cloned().zip(self.unroll_intermediate_values(object_values.into_iter(), object_values_len)?.inner),
                 )))
                 .into())
             }
@@ -1232,34 +870,23 @@ impl<'a> ComputationContext<'a> {
                 intermediate_value: IntermediateValue::Map(map),
                 type_kind: _,
             } => {
-                let computed_map_range =
-                    self.get_range_from_intermediate_value(&map.computed_map, 0..usize::MAX)?;
+                let computed_map_range = self.get_range_from_intermediate_value(&map.computed_map, 0..usize::MAX)?;
                 let computed_map_len = computed_map_range.len();
                 Ok(Some(Value::Tuple({
                     let mut result = Vector::default();
                     for element in self
                         .compute_nodes(
-                            computed_map_range.inner.into_iter().enumerate().map(
-                                |(computed_map_element_index, computed_map_element)| {
-                                    let mut through_constants = map.constants.clone();
-                                    through_constants[map
-                                        .intermediate_representation_content
-                                        .map_constant_name_clustered_index] =
-                                        Some(computed_map_element);
-                                    (
-                                        match &map.throughs {
-                                            Throughs::Array(node) => Some(node),
-                                            Throughs::Tuple {
-                                                nodes_indexes,
-                                                nodes,
-                                            } => Some(
-                                                &nodes[nodes_indexes[computed_map_element_index]],
-                                            ),
-                                        },
-                                        Cow::Owned(through_constants),
-                                    )
-                                },
-                            ),
+                            computed_map_range.inner.into_iter().enumerate().map(|(computed_map_element_index, computed_map_element)| {
+                                let mut through_constants = map.constants.clone();
+                                through_constants[map.intermediate_representation_content.map_constant_name_clustered_index] = Some(computed_map_element);
+                                (
+                                    match &map.throughs {
+                                        Throughs::Array(node) => Some(node),
+                                        Throughs::Tuple { nodes_indexes, nodes } => Some(&nodes[nodes_indexes[computed_map_element_index]]),
+                                    },
+                                    Cow::Owned(through_constants),
+                                )
+                            }),
                             computed_map_len,
                         )?
                         .inner
@@ -1280,21 +907,13 @@ impl<'a> ComputationContext<'a> {
             } => {
                 {
                     let mut lockable_internals_write_guard = flatten.lockable_internals.write();
-                    while self
-                        .compute_next_in_flatten(flatten, &mut lockable_internals_write_guard)?
-                    {
-                    }
+                    while self.compute_next_in_flatten(flatten, &mut lockable_internals_write_guard)? {}
                 }
                 let lockable_internals_read_guard = flatten.lockable_internals.read();
-                Ok(Arc::new(Some(Value::Tuple(
-                    self.unroll_intermediate_values(
-                        lockable_internals_read_guard
-                            .already_computed_values
-                            .iter()
-                            .cloned(),
-                        lockable_internals_read_guard.already_computed_values.len(),
-                    )?,
-                ))))
+                Ok(Arc::new(Some(Value::Tuple(self.unroll_intermediate_values(
+                    lockable_internals_read_guard.already_computed_values.iter().cloned(),
+                    lockable_internals_read_guard.already_computed_values.len(),
+                )?))))
             }
             IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::Filter(filter),
@@ -1302,30 +921,18 @@ impl<'a> ComputationContext<'a> {
             } => {
                 {
                     let mut lockable_internals_write_guard = filter.lockable_internals.write();
-                    while self
-                        .compute_next_in_filter(filter, &mut lockable_internals_write_guard)?
-                    {
-                    }
+                    while self.compute_next_in_filter(filter, &mut lockable_internals_write_guard)? {}
                 }
                 let lockable_internals_read_guard = filter.lockable_internals.read();
-                Ok(Arc::new(Some(Value::Tuple(
-                    self.unroll_intermediate_values(
-                        lockable_internals_read_guard
-                            .already_computed_values
-                            .iter()
-                            .cloned(),
-                        lockable_internals_read_guard.already_computed_values.len(),
-                    )?,
-                ))))
+                Ok(Arc::new(Some(Value::Tuple(self.unroll_intermediate_values(
+                    lockable_internals_read_guard.already_computed_values.iter().cloned(),
+                    lockable_internals_read_guard.already_computed_values.len(),
+                )?))))
             }
         }
     }
 
-    fn compute_nodes<N>(
-        &self,
-        nodes_and_constants: N,
-        nodes_count: usize,
-    ) -> Result<Vector<IntermediateValueAndMetadata>>
+    fn compute_nodes<N>(&self, nodes_and_constants: N, nodes_count: usize) -> Result<Vector<IntermediateValueAndMetadata>>
     where
         N: Iterator<Item = (Option<&'a Arc<Node>>, Cow<'a, Constants>)>,
     {
@@ -1333,65 +940,47 @@ impl<'a> ComputationContext<'a> {
         let mut result = vec![initial_element; nodes_count];
         let complex_elements = nodes_and_constants
             .enumerate()
-            .filter_map(
-                |(element_index, (node_option, constants))| match node_option {
-                    Some(node) => match &node.content {
-                        Content::Value(value) => {
-                            result[element_index] = IntermediateValueAndMetadata {
-                                intermediate_value: IntermediateValue::Value(unsafe {
-                                    std::mem::transmute::<
-                                        Arc<Option<intermediate_representation::Value>>,
-                                        Arc<Option<Value>>,
-                                    >(value.clone())
-                                }),
-                                type_kind: node.r#type.kind.clone(),
-                            }
-                            .into();
-                            None
+            .filter_map(|(element_index, (node_option, constants))| match node_option {
+                Some(node) => match &node.content {
+                    Content::Value(value) => {
+                        result[element_index] = IntermediateValueAndMetadata {
+                            intermediate_value: IntermediateValue::Value(unsafe {
+                                std::mem::transmute::<Arc<Option<intermediate_representation::Value>>, Arc<Option<Value>>>(value.clone())
+                            }),
+                            type_kind: node.r#type.kind.clone(),
                         }
-                        Content::Constant(constant_name_clustered_index) => {
-                            result[element_index] =
-                                constants[*constant_name_clustered_index].clone().unwrap();
-                            None
-                        }
-                        _ => Some((element_index, (node, constants))),
-                    },
-                    Option::None => None,
+                        .into();
+                        None
+                    }
+                    Content::Constant(constant_name_clustered_index) => {
+                        result[element_index] = constants[*constant_name_clustered_index].clone().unwrap();
+                        None
+                    }
+                    _ => Some((element_index, (node, constants))),
                 },
-            )
+                Option::None => None,
+            })
             .collect::<Vec<_>>();
         Ok(Vector {
             inner: match complex_elements.len() {
                 0 => result,
                 1 => {
-                    let (element_index, (node, constants)) =
-                        complex_elements.into_iter().next().unwrap();
+                    let (element_index, (node, constants)) = complex_elements.into_iter().next().unwrap();
                     result[element_index] = self.compute_node(node, &constants)?;
                     result
                 }
                 2.. => {
                     let result_mutex = Mutex::new(result);
-                    self.process_in_parallel(
-                        &complex_elements,
-                        &|(node, constants)| self.compute_node(node, &constants),
-                        &result_mutex,
-                    )?;
+                    self.process_in_parallel(&complex_elements, &|(node, constants)| self.compute_node(node, &constants), &result_mutex)?;
                     result_mutex.into_inner()
                 }
             },
         })
     }
 
-    fn compute_or_lazy(
-        &self,
-        node: &Arc<Node>,
-        constants: &Constants,
-    ) -> Result<Arc<IntermediateValueAndMetadata>> {
+    fn compute_or_lazy(&self, node: &Arc<Node>, constants: &Constants) -> Result<Arc<IntermediateValueAndMetadata>> {
         Ok(match node.content {
-            Content::Sequence(_)
-            | Content::EmbeddedFunctionCall { .. }
-            | Content::UserFunctionCall { .. }
-            | Content::Match { .. } => IntermediateValueAndMetadata {
+            Content::Sequence(_) | Content::EmbeddedFunctionCall { .. } | Content::UserFunctionCall { .. } | Content::Match { .. } => IntermediateValueAndMetadata {
                 intermediate_value: IntermediateValue::LazyValue(LazyValue {
                     node: node.clone(),
                     constants: constants.clone(),
@@ -1404,11 +993,7 @@ impl<'a> ComputationContext<'a> {
         })
     }
 
-    fn compute_node(
-        &self,
-        node: &Node,
-        constants: &Constants,
-    ) -> Result<Arc<IntermediateValueAndMetadata>> {
+    fn compute_node(&self, node: &Node, constants: &Constants) -> Result<Arc<IntermediateValueAndMetadata>> {
         match &node.content {
             Content::Tuple(tuple) => {
                 let mut result = Vector::default();
@@ -1418,13 +1003,7 @@ impl<'a> ComputationContext<'a> {
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Tuple(result),
                     type_kind: concrete_or_else(&node.r#type.kind, || {
-                        TypeKind::Tuple(
-                            tuple
-                                .iter()
-                                .map(|tuple_element| tuple_element.r#type.clone())
-                                .collect::<Vec<_>>()
-                                .into(),
-                        )
+                        TypeKind::Tuple(tuple.iter().map(|tuple_element| tuple_element.r#type.clone()).collect::<Vec<_>>().into())
                     }),
                 }
                 .into())
@@ -1435,23 +1014,18 @@ impl<'a> ComputationContext<'a> {
             } => {
                 let mut result_constants = constants.clone();
                 for constant_definition in scope_constants {
-                    result_constants[constant_definition.name_clustered_index] =
-                        Some(self.compute_or_lazy(&constant_definition.node, constants)?);
+                    result_constants[constant_definition.name_clustered_index] = Some(self.compute_or_lazy(&constant_definition.node, constants)?);
                 }
                 self.compute_node(compute, &result_constants)
             }
-            Content::Constant(constant_name_clustered_index) => {
-                Ok(constants[*constant_name_clustered_index].clone().unwrap())
-            }
+            Content::Constant(constant_name_clustered_index) => Ok(constants[*constant_name_clustered_index].clone().unwrap()),
             Content::EmbeddedFunctionCall {
                 path_option,
                 embedded_function_call,
             } => match embedded_function_call.embedded_function {
                 EmbeddedFunction::Sleep => {
                     let duration = self
-                        .unroll_intermediate_value(
-                            &self.compute_node(&embedded_function_call.argument, constants)?,
-                        )?
+                        .unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?
                         .as_ref()
                         .as_ref()
                         .unwrap()
@@ -1459,17 +1033,13 @@ impl<'a> ComputationContext<'a> {
                         .unwrap();
                     std::thread::sleep(duration);
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Duration { duration }).into(),
-                        ),
+                        intermediate_value: IntermediateValue::Value(Some(Value::Duration { duration }).into()),
                         type_kind: TypeKind::Number,
                     }
                     .into())
                 }
                 EmbeddedFunction::Length => {
-                    let argument_value = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
+                    let argument_value = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Number(
@@ -1491,78 +1061,34 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::Sum => {
-                    let argument_value = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
+                    let argument_value = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
                     let (value, type_kind) = match embedded_function_call.variant_index {
                         0 => (
                             Value::Number(
-                                argument_value
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_tuple()
-                                    .unwrap()
-                                    .iter()
-                                    .fold(Rational::ZERO, |accumulator, current| {
-                                        accumulator
-                                            + current
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_number()
-                                                .unwrap()
-                                    }),
+                                argument_value.as_ref().as_ref().unwrap().as_tuple().unwrap().iter().fold(Rational::ZERO, |accumulator, current| {
+                                    accumulator + current.as_ref().as_ref().unwrap().as_number().unwrap()
+                                }),
                             ),
                             TypeKind::Number,
                         ),
 
                         1 => {
-                            let argument_tuple = argument_value
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_tuple()
-                                .unwrap();
+                            let argument_tuple = argument_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
                             (
                                 Value::Duration {
-                                    duration: argument_tuple.inner.iter().fold(
-                                        std::time::Duration::ZERO,
-                                        |accumulator, current| {
-                                            accumulator
-                                                + current
-                                                    .as_ref()
-                                                    .as_ref()
-                                                    .unwrap()
-                                                    .as_duration()
-                                                    .unwrap()
-                                        },
-                                    ),
+                                    duration: argument_tuple.inner.iter().fold(std::time::Duration::ZERO, |accumulator, current| {
+                                        accumulator + current.as_ref().as_ref().unwrap().as_duration().unwrap()
+                                    }),
                                 },
                                 TypeKind::Duration,
                             )
                         }
                         2 => {
-                            let argument_tuple = argument_value
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_tuple()
-                                .unwrap();
+                            let argument_tuple = argument_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
                             (
                                 Value::Time {
-                                    time: argument_tuple.inner[0]
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_time()
-                                        .unwrap()
-                                        + argument_tuple.inner[1]
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_duration()
-                                            .unwrap(),
+                                    time: argument_tuple.inner[0].as_ref().as_ref().unwrap().as_time().unwrap()
+                                        + argument_tuple.inner[1].as_ref().as_ref().unwrap().as_duration().unwrap(),
                                 },
                                 TypeKind::Time,
                             )
@@ -1577,41 +1103,21 @@ impl<'a> ComputationContext<'a> {
                 }
                 EmbeddedFunction::Substract => {
                     let (value, type_kind) = {
-                        let argument_value = self.unroll_intermediate_value(
-                            &self.compute_node(&embedded_function_call.argument, constants)?,
-                        )?;
-                        let argument_tuple = argument_value
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_tuple()
-                            .unwrap();
+                        let argument_value = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                        let argument_tuple = argument_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
                         let minuend = argument_tuple.inner[0].as_ref().as_ref().unwrap();
                         let substrahend = argument_tuple.inner[1].as_ref().as_ref().unwrap();
                         match embedded_function_call.variant_index {
-                            0 => (
-                                Value::Number(
-                                    minuend.as_number().unwrap() - substrahend.as_number().unwrap(),
-                                ),
-                                TypeKind::Number,
-                            ),
+                            0 => (Value::Number(minuend.as_number().unwrap() - substrahend.as_number().unwrap()), TypeKind::Number),
                             1 => (
                                 Value::Duration {
-                                    duration: minuend
-                                        .as_duration()
-                                        .unwrap()
-                                        .checked_sub(substrahend.as_duration().unwrap())
-                                        .unwrap_or(std::time::Duration::ZERO),
+                                    duration: minuend.as_duration().unwrap().checked_sub(substrahend.as_duration().unwrap()).unwrap_or(std::time::Duration::ZERO),
                                 },
                                 TypeKind::Duration,
                             ),
                             2 => (
                                 Value::Time {
-                                    time: minuend
-                                        .as_time()
-                                        .unwrap()
-                                        .checked_sub(substrahend.as_duration().unwrap())
-                                        .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+                                    time: minuend.as_time().unwrap().checked_sub(substrahend.as_duration().unwrap()).unwrap_or(std::time::SystemTime::UNIX_EPOCH),
                                 },
                                 TypeKind::Time,
                             ),
@@ -1641,39 +1147,12 @@ impl<'a> ComputationContext<'a> {
                 EmbeddedFunction::Mod => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         {
-                            let unrolled_argument = self.unroll_intermediate_value(
-                                &self.compute_node(&embedded_function_call.argument, constants)?,
-                            )?;
-                            let m = unrolled_argument
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_tuple()
-                                .unwrap()
-                                .get(1)
-                                .unwrap()
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_number()
-                                .unwrap();
+                            let unrolled_argument = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                            let m = unrolled_argument.as_ref().as_ref().unwrap().as_tuple().unwrap().get(1).unwrap().as_ref().as_ref().unwrap().as_number().unwrap();
                             if m == Rational::ZERO {
-                                return Err(anyhow!("can not devide by zero"))
-                                    .with_context(embedded_function_error_context(path_option))?;
+                                return Err(anyhow!("can not devide by zero")).with_context(embedded_function_error_context(path_option))?;
                             } else {
-                                let a = unrolled_argument
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_tuple()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_number()
-                                    .unwrap();
+                                let a = unrolled_argument.as_ref().as_ref().unwrap().as_tuple().unwrap().get(0).unwrap().as_ref().as_ref().unwrap().as_number().unwrap();
                                 let quotient = a.clone() / m.clone();
                                 let floor = quotient.floor();
                                 Some(Value::Number(a - floor * m))
@@ -1687,39 +1166,14 @@ impl<'a> ComputationContext<'a> {
                 EmbeddedFunction::Divide => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         {
-                            let unrolled_argument = self.unroll_intermediate_value(
-                                &self.compute_node(&embedded_function_call.argument, constants)?,
-                            )?;
-                            let divider = unrolled_argument
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_tuple()
-                                .unwrap()
-                                .get(1)
-                                .unwrap()
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_number()
-                                .unwrap();
+                            let unrolled_argument = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                            let divider =
+                                unrolled_argument.as_ref().as_ref().unwrap().as_tuple().unwrap().get(1).unwrap().as_ref().as_ref().unwrap().as_number().unwrap();
                             if divider == Rational::ZERO {
-                                return Err(anyhow!("can not devide by zero"))
-                                    .with_context(embedded_function_error_context(path_option))?;
+                                return Err(anyhow!("can not devide by zero")).with_context(embedded_function_error_context(path_option))?;
                             } else {
-                                let divided = unrolled_argument
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_tuple()
-                                    .unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_number()
-                                    .unwrap();
+                                let divided =
+                                    unrolled_argument.as_ref().as_ref().unwrap().as_tuple().unwrap().get(0).unwrap().as_ref().as_ref().unwrap().as_number().unwrap();
                                 Some(Value::Number(divided / divider))
                             }
                         }
@@ -1731,16 +1185,14 @@ impl<'a> ComputationContext<'a> {
                 EmbeddedFunction::Round => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         Some(Value::Number(
-                            self.unroll_intermediate_value(
-                                &self.compute_node(&embedded_function_call.argument, constants)?,
-                            )?
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_number()
-                            .unwrap()
-                            .round()
-                            .into(),
+                            self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_number()
+                                .unwrap()
+                                .round()
+                                .into(),
                         ))
                         .into(),
                     ),
@@ -1750,33 +1202,10 @@ impl<'a> ComputationContext<'a> {
                 EmbeddedFunction::Exponentiate => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         {
-                            let unrolled_argument = self.unroll_intermediate_value(
-                                &self.compute_node(&embedded_function_call.argument, constants)?,
-                            )?;
-                            let argument_object = unrolled_argument
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_object()
-                                .unwrap();
-                            let base = argument_object
-                                .inner
-                                .get(&"base".to_string())
-                                .unwrap()
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_number()
-                                .unwrap();
-                            let exponent = argument_object
-                                .inner
-                                .get(&"exponent".to_string())
-                                .unwrap()
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_number()
-                                .unwrap();
+                            let unrolled_argument = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                            let argument_object = unrolled_argument.as_ref().as_ref().unwrap().as_object().unwrap();
+                            let base = argument_object.inner.get(&"base".to_string()).unwrap().as_ref().as_ref().unwrap().as_number().unwrap();
+                            let exponent = argument_object.inner.get(&"exponent".to_string()).unwrap().as_ref().as_ref().unwrap().as_number().unwrap();
                             let precision = argument_object
                                 .inner
                                 .get(&"precision".to_string())
@@ -1803,15 +1232,9 @@ impl<'a> ComputationContext<'a> {
                                 .as_ubig()
                                 .cloned()
                                 .unwrap_or(dashu::ubig!(1));
-                            let rational_result: Rational = (base
-                                .to_float::<dashu::float::round::mode::Zero, 2>(precision)
-                                .value()
-                                .powf(&exponent.to_float(64).value()))
-                            .try_into()
-                            .unwrap();
-                            Some(Value::Number(
-                                rational_result.nearest(&max_result_denominator).value(),
-                            ))
+                            let rational_result: Rational =
+                                (base.to_float::<dashu::float::round::mode::Zero, 2>(precision).value().powf(&exponent.to_float(64).value())).try_into().unwrap();
+                            Some(Value::Number(rational_result.nearest(&max_result_denominator).value()))
                         }
                         .into(),
                     ),
@@ -1821,9 +1244,7 @@ impl<'a> ComputationContext<'a> {
                 EmbeddedFunction::Concat => {
                     let mut result_rope = ropey::Rope::default();
                     for appendix in self
-                        .unroll_intermediate_value(
-                            &self.compute_node(&embedded_function_call.argument, constants)?,
-                        )?
+                        .unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?
                         .as_ref()
                         .as_ref()
                         .unwrap()
@@ -1831,20 +1252,10 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .iter()
                     {
-                        result_rope.append(
-                            appendix
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap()
-                                .clone(),
-                        );
+                        result_rope.append(appendix.as_ref().as_ref().unwrap().as_string().unwrap().clone());
                     }
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::String(result_rope)).into(),
-                        ),
+                        intermediate_value: IntermediateValue::Value(Some(Value::String(result_rope)).into()),
                         type_kind: TypeKind::String,
                     }
                     .into())
@@ -1852,16 +1263,14 @@ impl<'a> ComputationContext<'a> {
                 EmbeddedFunction::IsSorted => Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Value(
                         Some(Value::Bool(
-                            self.unroll_intermediate_value(
-                                &self.compute_node(&embedded_function_call.argument, constants)?,
-                            )?
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_tuple()
-                            .unwrap()
-                            .iter()
-                            .is_sorted(),
+                            self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?
+                                .as_ref()
+                                .as_ref()
+                                .unwrap()
+                                .as_tuple()
+                                .unwrap()
+                                .iter()
+                                .is_sorted(),
                         ))
                         .into(),
                     ),
@@ -1870,9 +1279,7 @@ impl<'a> ComputationContext<'a> {
                 .into()),
                 EmbeddedFunction::Sort => {
                     let mut argument_tuple = self
-                        .unroll_intermediate_value(
-                            &self.compute_node(&embedded_function_call.argument, constants)?,
-                        )?
+                        .unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?
                         .as_ref()
                         .as_ref()
                         .unwrap()
@@ -1889,97 +1296,40 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::ReadBytesFromStandardInput => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let result = if matches!(
-                        computed_argument_unrolled.as_ref().as_ref().unwrap(),
-                        Value::String(_)
-                    ) {
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                    let result = if matches!(computed_argument_unrolled.as_ref().as_ref().unwrap(), Value::String(_)) {
                         // argument is "all"
                         let mut result = Vec::new();
                         std::io::stdin().read_to_end(&mut result)?;
                         result
                     } else {
-                        let read_bytes_amount = (computed_argument_unrolled
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_number()
-                            .unwrap()
-                            .trunc()
-                            .to_f64()
-                            .value() as i64)
-                            .max(0) as usize;
+                        let read_bytes_amount =
+                            (computed_argument_unrolled.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as i64).max(0) as usize;
                         let mut result = vec![0; read_bytes_amount];
-                        std::io::stdin()
-                            .read_exact(&mut result)
-                            .with_context(embedded_function_error_context(path_option))?;
+                        std::io::stdin().read_exact(&mut result).with_context(embedded_function_error_context(path_option))?;
                         result
                     };
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bytes {
-                                bytes: result.into(),
-                            })
-                            .into(),
-                        ),
+                        intermediate_value: IntermediateValue::Value(Some(Value::Bytes { bytes: result.into() }).into()),
                         type_kind: TypeKind::Bytes,
                     }
                     .into())
                 }
                 EmbeddedFunction::Parse => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let argument_object = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap();
-                    let (format, source_value) = argument_object
-                        .inner
-                        .iter()
-                        .map(|(format, source_value)| (format, source_value.as_ref().as_ref()))
-                        .next()
-                        .unwrap();
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                    let argument_object = computed_argument_unrolled.as_ref().as_ref().unwrap().as_object().unwrap();
+                    let (format, source_value) = argument_object.inner.iter().map(|(format, source_value)| (format, source_value.as_ref().as_ref())).next().unwrap();
                     let result_value: Option<Value> = match format.as_str() {
-                        "YAML" => serde_saphyr::from_str(
-                            &source_value
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap()
-                                .to_string(),
-                        )
-                        .with_context(embedded_function_error_context(path_option))?,
-                        "JSON" => serde_json::from_str(
-                            &source_value
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap()
-                                .to_string(),
-                        )
-                        .with_context(embedded_function_error_context(path_option))?,
+                        "YAML" => serde_saphyr::from_str(&source_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string())
+                            .with_context(embedded_function_error_context(path_option))?,
+                        "JSON" => serde_json::from_str(&source_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string())
+                            .with_context(embedded_function_error_context(path_option))?,
                         "bincode" => {
-                            let intermediate_representation_value: Option<
-                                intermediate_representation::Value,
-                            > = bincode::serde::decode_from_slice(
-                                source_value.as_ref().as_ref().unwrap().as_bytes().unwrap(),
-                                bincode::config::standard(),
-                            )
-                            .with_context(embedded_function_error_context(path_option))?
-                            .0;
-                            unsafe {
-                                std::mem::transmute::<
-                                    Option<intermediate_representation::Value>,
-                                    Option<Value>,
-                                >(intermediate_representation_value)
-                            }
+                            let intermediate_representation_value: Option<intermediate_representation::Value> =
+                                bincode::serde::decode_from_slice(source_value.as_ref().as_ref().unwrap().as_bytes().unwrap(), bincode::config::standard())
+                                    .with_context(embedded_function_error_context(path_option))?
+                                    .0;
+                            unsafe { std::mem::transmute::<Option<intermediate_representation::Value>, Option<Value>>(intermediate_representation_value) }
                         }
                         format => {
                             let encoding = match format {
@@ -1998,14 +1348,7 @@ impl<'a> ComputationContext<'a> {
                             };
                             Some(Value::Bytes {
                                 bytes: encoding
-                                    .decode(
-                                        source_value
-                                            .unwrap()
-                                            .as_string()
-                                            .unwrap()
-                                            .to_string()
-                                            .as_bytes(),
-                                    )
+                                    .decode(source_value.unwrap().as_string().unwrap().to_string().as_bytes())
                                     .with_context(embedded_function_error_context(path_option))?
                                     .into(),
                             })
@@ -2019,36 +1362,15 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::SerializeTo => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let argument_object = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap();
-                    let (format, source_value) = argument_object
-                        .inner
-                        .iter()
-                        .map(|(key, value)| (key.as_str(), value.as_ref().as_ref()))
-                        .next()
-                        .unwrap();
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                    let argument_object = computed_argument_unrolled.as_ref().as_ref().unwrap().as_object().unwrap();
+                    let (format, source_value) = argument_object.inner.iter().map(|(key, value)| (key.as_str(), value.as_ref().as_ref())).next().unwrap();
                     let result_value = match format {
-                        "YAML" => {
-                            Value::String(serde_saphyr::to_string(&source_value).unwrap().into())
-                        }
-                        "JSON" => {
-                            Value::String(serde_json::to_string(&source_value).unwrap().into())
-                        }
+                        "YAML" => Value::String(serde_saphyr::to_string(&source_value).unwrap().into()),
+                        "JSON" => Value::String(serde_json::to_string(&source_value).unwrap().into()),
                         "bincode" => Value::Bytes {
                             bytes: bincode::serde::encode_to_vec(
-                                unsafe {
-                                    std::mem::transmute::<
-                                        Option<&Value>,
-                                        Option<&intermediate_representation::Value>,
-                                    >(source_value)
-                                },
+                                unsafe { std::mem::transmute::<Option<&Value>, Option<&intermediate_representation::Value>>(source_value) },
                                 bincode::config::standard(),
                             )
                             .unwrap()
@@ -2069,18 +1391,12 @@ impl<'a> ComputationContext<'a> {
                                 "base64 MIME permissive" => data_encoding::BASE64_MIME_PERMISSIVE,
                                 _ => panic!(),
                             };
-                            Value::String(
-                                encoding
-                                    .encode(source_value.unwrap().as_bytes().unwrap())
-                                    .into(),
-                            )
+                            Value::String(encoding.encode(source_value.unwrap().as_bytes().unwrap()).into())
                         }
                     };
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(Some(result_value).into()),
-                        type_kind: EMBEDDED_FUNCTIONS
-                            [embedded_function_call.embedded_function as usize]
-                            [embedded_function_call.variant_index as usize]
+                        type_kind: EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize][embedded_function_call.variant_index as usize]
                             .r#return
                             .r#type
                             .clone()
@@ -2089,126 +1405,51 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::Hash => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let argument_object = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap();
-                    let algorithm_value =
-                        argument_object.inner.get(&"algorithm".to_string()).unwrap();
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                    let argument_object = computed_argument_unrolled.as_ref().as_ref().unwrap().as_object().unwrap();
+                    let algorithm_value = argument_object.inner.get(&"algorithm".to_string()).unwrap();
                     let result_raw = match embedded_function_call.variant_index {
                         0 => {
-                            let data_value =
-                                argument_object.inner.get(&"data".to_string()).unwrap();
+                            let data_value = argument_object.inner.get(&"data".to_string()).unwrap();
                             let data = data_value.as_ref().as_ref().unwrap().as_bytes().unwrap();
                             match algorithm_value.as_ref().as_ref().unwrap() {
-                                Value::String(algorithm_string) => {
-                                    match algorithm_string.to_string().as_str() {
-                                        "SHA224" => sha2::Sha224::digest(data).to_vec(),
-                                        "SHA256" => sha2::Sha256::digest(data).to_vec(),
-                                        "SHA384" => sha2::Sha384::digest(data).to_vec(),
-                                        "SHA512" => sha2::Sha512::digest(data).to_vec(),
-                                        "SHA512/224" => sha2::Sha512_224::digest(data).to_vec(),
-                                        "SHA512/256" => sha2::Sha512_256::digest(data).to_vec(),
-                                        "XXH3_64" => {
-                                            xxhash_rust::xxh3::xxh3_64(data).to_be_bytes().to_vec()
-                                        }
-                                        "XXH3_128" => {
-                                            xxhash_rust::xxh3::xxh3_128(data).to_be_bytes().to_vec()
-                                        }
-                                        _ => panic!(),
-                                    }
-                                }
+                                Value::String(algorithm_string) => match algorithm_string.to_string().as_str() {
+                                    "SHA224" => sha2::Sha224::digest(data).to_vec(),
+                                    "SHA256" => sha2::Sha256::digest(data).to_vec(),
+                                    "SHA384" => sha2::Sha384::digest(data).to_vec(),
+                                    "SHA512" => sha2::Sha512::digest(data).to_vec(),
+                                    "SHA512/224" => sha2::Sha512_224::digest(data).to_vec(),
+                                    "SHA512/256" => sha2::Sha512_256::digest(data).to_vec(),
+                                    "XXH3_64" => xxhash_rust::xxh3::xxh3_64(data).to_be_bytes().to_vec(),
+                                    "XXH3_128" => xxhash_rust::xxh3::xxh3_128(data).to_be_bytes().to_vec(),
+                                    _ => panic!(),
+                                },
                                 Value::Object(algorithm_object) => {
-                                    let (algorithm, parameters) =
-                                        algorithm_object.inner.iter().next().unwrap();
+                                    let (algorithm, parameters) = algorithm_object.inner.iter().next().unwrap();
                                     match algorithm.as_str() {
-                                        "GxHash32" => gxhash::gxhash32(
-                                            data,
-                                            parameters
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_number()
-                                                .unwrap()
-                                                .trunc()
-                                                .to_f64()
-                                                .value()
-                                                as i64,
-                                        )
-                                        .to_be_bytes()
-                                        .to_vec(),
-                                        "GxHash64" => gxhash::gxhash64(
-                                            data,
-                                            parameters
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_number()
-                                                .unwrap()
-                                                .trunc()
-                                                .to_f64()
-                                                .value()
-                                                as i64,
-                                        )
-                                        .to_be_bytes()
-                                        .to_vec(),
-                                        "GxHash128" => gxhash::gxhash128(
-                                            data,
-                                            parameters
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_number()
-                                                .unwrap()
-                                                .trunc()
-                                                .to_f64()
-                                                .value()
-                                                as i64,
-                                        )
-                                        .to_be_bytes()
-                                        .to_vec(),
-                                        "XXH32" => xxhash_rust::xxh32::xxh32(
-                                            data,
-                                            parameters
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_number()
-                                                .unwrap()
-                                                .trunc()
-                                                .to_f64()
-                                                .value()
-                                                as u32,
-                                        )
-                                        .to_be_bytes()
-                                        .to_vec(),
-                                        "XXH64" => xxhash_rust::xxh64::xxh64(
-                                            data,
-                                            parameters
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_number()
-                                                .unwrap()
-                                                .trunc()
-                                                .to_f64()
-                                                .value()
-                                                as u64,
-                                        )
-                                        .to_be_bytes()
-                                        .to_vec(),
+                                        "GxHash32" => gxhash::gxhash32(data, parameters.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as i64)
+                                            .to_be_bytes()
+                                            .to_vec(),
+                                        "GxHash64" => gxhash::gxhash64(data, parameters.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as i64)
+                                            .to_be_bytes()
+                                            .to_vec(),
+                                        "GxHash128" => {
+                                            gxhash::gxhash128(data, parameters.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as i64)
+                                                .to_be_bytes()
+                                                .to_vec()
+                                        }
+                                        "XXH32" => {
+                                            xxhash_rust::xxh32::xxh32(data, parameters.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as u32)
+                                                .to_be_bytes()
+                                                .to_vec()
+                                        }
+                                        "XXH64" => {
+                                            xxhash_rust::xxh64::xxh64(data, parameters.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as u64)
+                                                .to_be_bytes()
+                                                .to_vec()
+                                        }
                                         "BLAKE3" => {
-                                            let parameters_object = parameters
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_object()
-                                                .unwrap();
+                                            let parameters_object = parameters.as_ref().as_ref().unwrap().as_object().unwrap();
                                             let size = parameters_object
                                                 .inner
                                                 .get(&"size".to_string())
@@ -2220,24 +1461,13 @@ impl<'a> ComputationContext<'a> {
                                                 .unwrap()
                                                 .trunc()
                                                 .to_f64()
-                                                .value()
-                                                as usize;
+                                                .value() as usize;
                                             let mut result = vec![0u8; size];
-                                            if let Some(provided_key_value) = parameters_object
-                                                .inner
-                                                .get(&"key".to_string())
-                                                .unwrap()
-                                                .as_ref()
-                                                .as_ref()
-                                            {
-                                                let provided_key =
-                                                    provided_key_value.as_bytes().unwrap();
+                                            if let Some(provided_key_value) = parameters_object.inner.get(&"key".to_string()).unwrap().as_ref().as_ref() {
+                                                let provided_key = provided_key_value.as_bytes().unwrap();
                                                 let mut key = [0u8; 32];
-                                                let bytes_amount_to_take =
-                                                    provided_key.len().min(32);
-                                                key[..bytes_amount_to_take].copy_from_slice(
-                                                    &provided_key[..bytes_amount_to_take],
-                                                );
+                                                let bytes_amount_to_take = provided_key.len().min(32);
+                                                key[..bytes_amount_to_take].copy_from_slice(&provided_key[..bytes_amount_to_take]);
                                                 blake3::Hasher::new_keyed(&key)
                                             } else {
                                                 blake3::Hasher::new()
@@ -2248,13 +1478,7 @@ impl<'a> ComputationContext<'a> {
                                             result.to_vec()
                                         }
                                         "BLAKE3 derive key" => {
-                                            let context = parameters
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_string()
-                                                .unwrap()
-                                                .to_string();
+                                            let context = parameters.as_ref().as_ref().unwrap().as_string().unwrap().to_string();
                                             blake3::derive_key(&context, data).to_vec()
                                         }
                                         _ => panic!(),
@@ -2264,48 +1488,20 @@ impl<'a> ComputationContext<'a> {
                             }
                         }
                         1 => {
-                            let file_path = argument_object
-                                .inner
-                                .get(&"file path".to_string())
-                                .unwrap()
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap()
-                                .to_string();
+                            let file_path = argument_object.inner.get(&"file path".to_string()).unwrap().as_ref().as_ref().unwrap().as_string().unwrap().to_string();
                             let mut bufferized_reader = BufReader::with_capacity(
                                 64 * 1024,
-                                std::fs::OpenOptions::new()
-                                    .read(true)
-                                    .open(&file_path)
-                                    .with_context(embedded_function_error_context(path_option))?,
+                                std::fs::OpenOptions::new().read(true).open(&file_path).with_context(embedded_function_error_context(path_option))?,
                             );
                             match algorithm_value.as_ref().as_ref().unwrap() {
                                 Value::Object(algorithm_object) => {
-                                    let (algorithm, parameters) =
-                                        algorithm_object.inner.iter().next().unwrap();
+                                    let (algorithm, parameters) = algorithm_object.inner.iter().next().unwrap();
                                     match algorithm.as_str() {
                                         "GxHash128" => {
-                                            let mut hasher = gxhash::GxHasher::with_seed(
-                                                parameters
-                                                    .as_ref()
-                                                    .as_ref()
-                                                    .unwrap()
-                                                    .as_number()
-                                                    .unwrap()
-                                                    .trunc()
-                                                    .to_f64()
-                                                    .value()
-                                                    as i64,
-                                            );
+                                            let mut hasher =
+                                                gxhash::GxHasher::with_seed(parameters.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as i64);
                                             loop {
-                                                let chunk =
-                                                    bufferized_reader.fill_buf().with_context(
-                                                        embedded_function_error_context(
-                                                            path_option,
-                                                        ),
-                                                    )?;
+                                                let chunk = bufferized_reader.fill_buf().with_context(embedded_function_error_context(path_option))?;
                                                 if chunk.is_empty() {
                                                     break;
                                                 }
@@ -2316,12 +1512,7 @@ impl<'a> ComputationContext<'a> {
                                             hasher.finish_u128().to_be_bytes().to_vec()
                                         }
                                         "BLAKE3" => {
-                                            let parameters_object = parameters
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_object()
-                                                .unwrap();
+                                            let parameters_object = parameters.as_ref().as_ref().unwrap().as_object().unwrap();
                                             let size = parameters_object
                                                 .inner
                                                 .get(&"size".to_string())
@@ -2333,36 +1524,20 @@ impl<'a> ComputationContext<'a> {
                                                 .unwrap()
                                                 .trunc()
                                                 .to_f64()
-                                                .value()
-                                                as usize;
+                                                .value() as usize;
                                             let mut result = vec![0u8; size];
-                                            let mut hasher = if let Some(provided_key_value) =
-                                                parameters_object
-                                                    .inner
-                                                    .get(&"key".to_string())
-                                                    .unwrap()
-                                                    .as_ref()
-                                                    .as_ref()
+                                            let mut hasher = if let Some(provided_key_value) = parameters_object.inner.get(&"key".to_string()).unwrap().as_ref().as_ref()
                                             {
-                                                let provided_key =
-                                                    provided_key_value.as_bytes().unwrap();
+                                                let provided_key = provided_key_value.as_bytes().unwrap();
                                                 let mut key = [0u8; 32];
-                                                let bytes_amount_to_take =
-                                                    provided_key.len().min(32);
-                                                key[..bytes_amount_to_take].copy_from_slice(
-                                                    &provided_key[..bytes_amount_to_take],
-                                                );
+                                                let bytes_amount_to_take = provided_key.len().min(32);
+                                                key[..bytes_amount_to_take].copy_from_slice(&provided_key[..bytes_amount_to_take]);
                                                 blake3::Hasher::new_keyed(&key)
                                             } else {
                                                 blake3::Hasher::new()
                                             };
                                             loop {
-                                                let chunk =
-                                                    bufferized_reader.fill_buf().with_context(
-                                                        embedded_function_error_context(
-                                                            path_option,
-                                                        ),
-                                                    )?;
+                                                let chunk = bufferized_reader.fill_buf().with_context(embedded_function_error_context(path_option))?;
                                                 if chunk.is_empty() {
                                                     break;
                                                 }
@@ -2382,32 +1557,18 @@ impl<'a> ComputationContext<'a> {
                         _ => panic!(),
                     };
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bytes {
-                                bytes: result_raw.into(),
-                            })
-                            .into(),
-                        ),
+                        intermediate_value: IntermediateValue::Value(Some(Value::Bytes { bytes: result_raw.into() }).into()),
                         type_kind: TypeKind::Bytes,
                     }
                     .into())
                 }
                 EmbeddedFunction::KeyValuePairs => {
-                    let unrolled_argument = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
+                    let unrolled_argument = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Tuple({
                                 let mut result = Vector::default();
-                                for (key, value) in unrolled_argument
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_object()
-                                    .unwrap()
-                                    .iter()
-                                {
+                                for (key, value) in unrolled_argument.as_ref().as_ref().unwrap().as_object().unwrap().iter() {
                                     result.push(
                                         Some(Value::Tuple(Vector::from_iter([
                                             Some(Value::String(ropey::Rope::from_str(key))).into(),
@@ -2430,13 +1591,7 @@ impl<'a> ComputationContext<'a> {
                                     .unwrap()
                                     .values()
                                     .map(|value| {
-                                        node.r#type.with_kind(TypeKind::Tuple(
-                                            vec![
-                                                node.r#type.with_kind(TypeKind::String),
-                                                Value::type_kind(value).into(),
-                                            ]
-                                            .into(),
-                                        ))
+                                        node.r#type.with_kind(TypeKind::Tuple(vec![node.r#type.with_kind(TypeKind::String), Value::type_kind(value).into()].into()))
                                     })
                                     .collect::<Vec<_>>()
                                     .into(),
@@ -2446,43 +1601,17 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::ObjectFrom => {
-                    let unrolled_argument = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
+                    let unrolled_argument = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
                     let result_value = Some(Value::Object({
-                        Object::from_iter(
-                            unrolled_argument
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_tuple()
-                                .unwrap()
-                                .iter()
-                                .map(|key_and_value_value| {
-                                    let key_and_value_tuple = key_and_value_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_tuple()
-                                        .unwrap();
-                                    (
-                                        key_and_value_tuple
-                                            .get(0)
-                                            .unwrap()
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_string()
-                                            .unwrap()
-                                            .to_string()
-                                            .into(),
-                                        key_and_value_tuple.get(1).unwrap().clone(),
-                                    )
-                                }),
-                        )
+                        Object::from_iter(unrolled_argument.as_ref().as_ref().unwrap().as_tuple().unwrap().iter().map(|key_and_value_value| {
+                            let key_and_value_tuple = key_and_value_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
+                            (
+                                key_and_value_tuple.get(0).unwrap().as_ref().as_ref().unwrap().as_string().unwrap().to_string().into(),
+                                key_and_value_tuple.get(1).unwrap().clone(),
+                            )
+                        }))
                     }));
-                    let type_kind =
-                        concrete_or_else(&node.r#type.kind, || Value::type_kind(&result_value));
+                    let type_kind = concrete_or_else(&node.r#type.kind, || Value::type_kind(&result_value));
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(result_value.into()),
                         type_kind,
@@ -2490,11 +1619,8 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::CompileRegex => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let computed_regex_value =
-                        computed_argument_unrolled.as_ref().as_ref().unwrap();
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                    let computed_regex_value = computed_argument_unrolled.as_ref().as_ref().unwrap();
                     let computed_regex_string = {
                         if let Value::String(computed_regex_string) = computed_regex_value {
                             computed_regex_string.to_string()
@@ -2504,354 +1630,147 @@ impl<'a> ComputationContext<'a> {
                     };
                     let compiled_regex = Regex::new(&computed_regex_string)?;
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Runtime(
-                                Runtime::CompiledRegex(Identified::new(compiled_regex)).into(),
-                            ))
-                            .into(),
-                        ),
+                        intermediate_value: IntermediateValue::Value(Some(Value::Runtime(Runtime::CompiledRegex(Identified::new(compiled_regex)).into())).into()),
                         type_kind: TypeKind::Embedded(Embedded::CompiledRegex),
                     }
                     .into())
                 }
                 EmbeddedFunction::RandomNumberGenerator => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let argument_object = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap();
-                    let (type_value, provided_seed_value_option) =
-                        argument_object.iter().next().unwrap();
-                    let result: Box<dyn rand::Rng + Send + Sync> =
-                        if let Some(provided_seed_value) =
-                            provided_seed_value_option.as_ref().as_ref()
-                        {
-                            let provided_seed = provided_seed_value.as_bytes().unwrap();
-                            let mut seed = [0u8; 32];
-                            let bytes_amount_to_take = provided_seed.len().min(32);
-                            seed[..bytes_amount_to_take]
-                                .copy_from_slice(&provided_seed[..bytes_amount_to_take]);
-                            match type_value.as_ref().as_str() {
-                                "ChaCha8" => Box::new(rand::rngs::ChaCha8Rng::from_seed(seed)),
-                                "ChaCha12" => Box::new(rand::rngs::ChaCha12Rng::from_seed(seed)),
-                                "ChaCha20" => Box::new(rand::rngs::ChaCha20Rng::from_seed(seed)),
-                                "Std" => Box::new(rand::rngs::StdRng::from_seed(seed)),
-                                "Small" => Box::new(rand::rngs::SmallRng::from_seed(seed)),
-                                _ => panic!(),
-                            }
-                        } else {
-                            match type_value.as_ref().as_str() {
-                                "ChaCha8" => Box::new(rand::make_rng::<rand::rngs::ChaCha8Rng>()),
-                                "ChaCha12" => Box::new(rand::make_rng::<rand::rngs::ChaCha12Rng>()),
-                                "ChaCha20" => Box::new(rand::make_rng::<rand::rngs::ChaCha20Rng>()),
-                                "Std" => Box::new(rand::make_rng::<rand::rngs::StdRng>()),
-                                "Small" => Box::new(rand::make_rng::<rand::rngs::SmallRng>()),
-                                _ => panic!(),
-                            }
-                        };
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                    let argument_object = computed_argument_unrolled.as_ref().as_ref().unwrap().as_object().unwrap();
+                    let (type_value, provided_seed_value_option) = argument_object.iter().next().unwrap();
+                    let result: Box<dyn rand::Rng + Send + Sync> = if let Some(provided_seed_value) = provided_seed_value_option.as_ref().as_ref() {
+                        let provided_seed = provided_seed_value.as_bytes().unwrap();
+                        let mut seed = [0u8; 32];
+                        let bytes_amount_to_take = provided_seed.len().min(32);
+                        seed[..bytes_amount_to_take].copy_from_slice(&provided_seed[..bytes_amount_to_take]);
+                        match type_value.as_ref().as_str() {
+                            "ChaCha8" => Box::new(rand::rngs::ChaCha8Rng::from_seed(seed)),
+                            "ChaCha12" => Box::new(rand::rngs::ChaCha12Rng::from_seed(seed)),
+                            "ChaCha20" => Box::new(rand::rngs::ChaCha20Rng::from_seed(seed)),
+                            "Std" => Box::new(rand::rngs::StdRng::from_seed(seed)),
+                            "Small" => Box::new(rand::rngs::SmallRng::from_seed(seed)),
+                            _ => panic!(),
+                        }
+                    } else {
+                        match type_value.as_ref().as_str() {
+                            "ChaCha8" => Box::new(rand::make_rng::<rand::rngs::ChaCha8Rng>()),
+                            "ChaCha12" => Box::new(rand::make_rng::<rand::rngs::ChaCha12Rng>()),
+                            "ChaCha20" => Box::new(rand::make_rng::<rand::rngs::ChaCha20Rng>()),
+                            "Std" => Box::new(rand::make_rng::<rand::rngs::StdRng>()),
+                            "Small" => Box::new(rand::make_rng::<rand::rngs::SmallRng>()),
+                            _ => panic!(),
+                        }
+                    };
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Runtime(
-                                Runtime::RandomNumberGenerator(Identified::new(result.into()))
-                                    .into(),
-                            ))
-                            .into(),
-                        ),
+                        intermediate_value: IntermediateValue::Value(Some(Value::Runtime(Runtime::RandomNumberGenerator(Identified::new(result.into())).into())).into()),
                         type_kind: TypeKind::Embedded(Embedded::CompiledRegex),
                     }
                     .into())
                 }
                 EmbeddedFunction::RandomBytes => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let argument_object = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap();
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                    let argument_object = computed_argument_unrolled.as_ref().as_ref().unwrap().as_object().unwrap();
                     let generator_value = argument_object.get(&"generator".to_string()).unwrap();
-                    let generator = generator_value
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_runtime()
-                        .unwrap()
-                        .as_random_number_generator()
-                        .unwrap();
-                    let amount = argument_object
-                        .get(&"amount".to_string())
-                        .unwrap()
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_number()
-                        .unwrap()
-                        .trunc()
-                        .to_f64()
-                        .value() as usize;
+                    let generator = generator_value.as_ref().as_ref().unwrap().as_runtime().unwrap().as_random_number_generator().unwrap();
+                    let amount = argument_object.get(&"amount".to_string()).unwrap().as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as usize;
                     let mut result = vec![0u8; amount];
                     generator.write().fill_bytes(&mut result);
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bytes {
-                                bytes: result.into(),
-                            })
-                            .into(),
-                        ),
+                        intermediate_value: IntermediateValue::Value(Some(Value::Bytes { bytes: result.into() }).into()),
                         type_kind: TypeKind::Embedded(Embedded::CompiledRegex),
                     }
                     .into())
                 }
                 EmbeddedFunction::HttpClient => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
                     let mut agent_config_builder = ureq::config::Config::builder();
                     for (agent_config_builder_key, agent_config_builder_value) in
-                        computed_argument_unrolled
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_tuple()
-                            .unwrap()
-                            .inner
-                            .iter()
-                            .map(|object_value| {
-                                let object =
-                                    object_value.as_ref().as_ref().unwrap().as_object().unwrap();
-                                let (key, value) = object.inner.iter().next().unwrap();
-                                (key.as_str(), value.clone())
-                            })
+                        computed_argument_unrolled.as_ref().as_ref().unwrap().as_tuple().unwrap().inner.iter().map(|object_value| {
+                            let object = object_value.as_ref().as_ref().unwrap().as_object().unwrap();
+                            let (key, value) = object.inner.iter().next().unwrap();
+                            (key.as_str(), value.clone())
+                        })
                     {
                         match agent_config_builder_key {
                             "error on bad status code" => {
-                                agent_config_builder = agent_config_builder.http_status_as_error(
-                                    agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_bool()
-                                        .unwrap(),
-                                );
+                                agent_config_builder =
+                                    agent_config_builder.http_status_as_error(agent_config_builder_value.as_ref().as_ref().unwrap().as_bool().unwrap());
                             }
                             "HTTPS only" => {
-                                agent_config_builder = agent_config_builder.https_only(
-                                    agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_bool()
-                                        .unwrap(),
-                                );
+                                agent_config_builder = agent_config_builder.https_only(agent_config_builder_value.as_ref().as_ref().unwrap().as_bool().unwrap());
                             }
                             "no delay" => {
-                                agent_config_builder = agent_config_builder.no_delay(
-                                    agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_bool()
-                                        .unwrap(),
-                                );
+                                agent_config_builder = agent_config_builder.no_delay(agent_config_builder_value.as_ref().as_ref().unwrap().as_bool().unwrap());
                             }
                             "max redirects" => {
                                 agent_config_builder = agent_config_builder.max_redirects(
-                                    agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_number()
-                                        .unwrap()
-                                        .trunc()
-                                        .to_f64()
-                                        .value()
-                                        .max(0f64)
-                                        .min(u32::MAX as f64)
+                                    agent_config_builder_value.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value().max(0f64).min(u32::MAX as f64)
                                         as u32,
                                 );
                             }
                             "max response header size" => {
-                                agent_config_builder = agent_config_builder
-                                    .max_response_header_size(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_number()
-                                            .unwrap()
-                                            .trunc()
-                                            .to_f64()
-                                            .value()
-                                            .max(0f64)
-                                            as usize,
-                                    );
+                                agent_config_builder = agent_config_builder.max_response_header_size(
+                                    agent_config_builder_value.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value().max(0f64) as usize,
+                                );
                             }
                             "input buffer size" => {
                                 agent_config_builder = agent_config_builder.input_buffer_size(
-                                    agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_number()
-                                        .unwrap()
-                                        .trunc()
-                                        .to_f64()
-                                        .value()
-                                        .max(0f64) as usize,
+                                    agent_config_builder_value.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value().max(0f64) as usize,
                                 );
                             }
                             "max idle connections" => {
                                 agent_config_builder = agent_config_builder.max_idle_connections(
-                                    agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_number()
-                                        .unwrap()
-                                        .trunc()
-                                        .to_f64()
-                                        .value()
-                                        .max(0f64) as usize,
+                                    agent_config_builder_value.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value().max(0f64) as usize,
                                 );
                             }
                             "max idle connections per host" => {
-                                agent_config_builder = agent_config_builder
-                                    .max_idle_connections_per_host(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_number()
-                                            .unwrap()
-                                            .trunc()
-                                            .to_f64()
-                                            .value()
-                                            .max(0f64)
-                                            as usize,
-                                    );
-                            }
-                            "max idle age" => {
-                                agent_config_builder = agent_config_builder.max_idle_age(
-                                    agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_duration()
-                                        .unwrap(),
+                                agent_config_builder = agent_config_builder.max_idle_connections_per_host(
+                                    agent_config_builder_value.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value().max(0f64) as usize,
                                 );
                             }
+                            "max idle age" => {
+                                agent_config_builder = agent_config_builder.max_idle_age(agent_config_builder_value.as_ref().as_ref().unwrap().as_duration().unwrap());
+                            }
                             "allow non-standard methods" => {
-                                agent_config_builder = agent_config_builder
-                                    .allow_non_standard_methods(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_bool()
-                                            .unwrap(),
-                                    )
+                                agent_config_builder =
+                                    agent_config_builder.allow_non_standard_methods(agent_config_builder_value.as_ref().as_ref().unwrap().as_bool().unwrap())
                             }
                             "timeout global" => {
-                                agent_config_builder = agent_config_builder.timeout_global(Some(
-                                    agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_duration()
-                                        .unwrap(),
-                                ));
+                                agent_config_builder =
+                                    agent_config_builder.timeout_global(Some(agent_config_builder_value.as_ref().as_ref().unwrap().as_duration().unwrap()));
                             }
                             "timeout per call" => {
-                                agent_config_builder = agent_config_builder.timeout_per_call(Some(
-                                    agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_duration()
-                                        .unwrap(),
-                                ));
+                                agent_config_builder =
+                                    agent_config_builder.timeout_per_call(Some(agent_config_builder_value.as_ref().as_ref().unwrap().as_duration().unwrap()));
                             }
                             "timeout for resolve" => {
-                                agent_config_builder = agent_config_builder.timeout_resolve(Some(
-                                    agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_duration()
-                                        .unwrap(),
-                                ));
+                                agent_config_builder =
+                                    agent_config_builder.timeout_resolve(Some(agent_config_builder_value.as_ref().as_ref().unwrap().as_duration().unwrap()));
                             }
                             "timeout for connect" => {
-                                agent_config_builder = agent_config_builder.timeout_connect(Some(
-                                    agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_duration()
-                                        .unwrap(),
-                                ));
+                                agent_config_builder =
+                                    agent_config_builder.timeout_connect(Some(agent_config_builder_value.as_ref().as_ref().unwrap().as_duration().unwrap()));
                             }
                             "timeout for send request" => {
                                 agent_config_builder =
-                                    agent_config_builder.timeout_send_request(Some(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_duration()
-                                            .unwrap(),
-                                    ));
+                                    agent_config_builder.timeout_send_request(Some(agent_config_builder_value.as_ref().as_ref().unwrap().as_duration().unwrap()));
                             }
                             "timeout for await 100" => {
                                 agent_config_builder =
-                                    agent_config_builder.timeout_await_100(Some(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_duration()
-                                            .unwrap(),
-                                    ));
+                                    agent_config_builder.timeout_await_100(Some(agent_config_builder_value.as_ref().as_ref().unwrap().as_duration().unwrap()));
                             }
                             "timeout for send body" => {
                                 agent_config_builder =
-                                    agent_config_builder.timeout_send_body(Some(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_duration()
-                                            .unwrap(),
-                                    ));
+                                    agent_config_builder.timeout_send_body(Some(agent_config_builder_value.as_ref().as_ref().unwrap().as_duration().unwrap()));
                             }
                             "timeout for receive body" => {
                                 agent_config_builder =
-                                    agent_config_builder.timeout_recv_body(Some(
-                                        agent_config_builder_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_duration()
-                                            .unwrap(),
-                                    ));
+                                    agent_config_builder.timeout_recv_body(Some(agent_config_builder_value.as_ref().as_ref().unwrap().as_duration().unwrap()));
                             }
                             "IP family" => {
                                 agent_config_builder = agent_config_builder.ip_family(
-                                    match agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_string()
-                                        .unwrap()
-                                        .to_string()
-                                        .as_str()
-                                    {
+                                    match agent_config_builder_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string().as_str() {
                                         "any" => IpFamily::Any,
                                         "IPv4" => IpFamily::Ipv4Only,
                                         "IPv6" => IpFamily::Ipv6Only,
@@ -2861,198 +1780,76 @@ impl<'a> ComputationContext<'a> {
                             }
                             "redirect authorization headers" => {
                                 agent_config_builder = agent_config_builder.redirect_auth_headers(
-                                    match agent_config_builder_value
-                                        .as_ref()
-                                        .as_ref()
-                                        .unwrap()
-                                        .as_string()
-                                        .unwrap()
-                                        .to_string()
-                                        .as_str()
-                                    {
+                                    match agent_config_builder_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string().as_str() {
                                         "never" => RedirectAuthHeaders::Never,
                                         "same host" => RedirectAuthHeaders::SameHost,
                                         _ => panic!(),
                                     },
                                 );
                             }
-                            "user agent" => {
-                                match agent_config_builder_value.as_ref().as_ref().unwrap() {
-                                    Value::Bool(_) => {
-                                        agent_config_builder =
-                                            agent_config_builder.user_agent(AutoHeaderValue::None);
-                                    }
-                                    Value::String(header_value) => {
-                                        agent_config_builder = agent_config_builder.user_agent(
-                                            AutoHeaderValue::Provided(
-                                                header_value.to_string().into(),
-                                            ),
-                                        );
-                                    }
-                                    _ => panic!(),
+                            "user agent" => match agent_config_builder_value.as_ref().as_ref().unwrap() {
+                                Value::Bool(_) => {
+                                    agent_config_builder = agent_config_builder.user_agent(AutoHeaderValue::None);
                                 }
-                            }
-                            "accept" => {
-                                match agent_config_builder_value.as_ref().as_ref().unwrap() {
-                                    Value::Bool(_) => {
-                                        agent_config_builder =
-                                            agent_config_builder.accept(AutoHeaderValue::None);
-                                    }
-                                    Value::String(header_value) => {
-                                        agent_config_builder =
-                                            agent_config_builder.accept(AutoHeaderValue::Provided(
-                                                header_value.to_string().into(),
-                                            ));
-                                    }
-                                    _ => panic!(),
+                                Value::String(header_value) => {
+                                    agent_config_builder = agent_config_builder.user_agent(AutoHeaderValue::Provided(header_value.to_string().into()));
                                 }
-                            }
-                            "accept encoding" => {
-                                match agent_config_builder_value.as_ref().as_ref().unwrap() {
-                                    Value::Bool(_) => {
-                                        agent_config_builder = agent_config_builder
-                                            .accept_encoding(AutoHeaderValue::None);
-                                    }
-                                    Value::String(header_value) => {
-                                        agent_config_builder = agent_config_builder
-                                            .accept_encoding(AutoHeaderValue::Provided(
-                                                header_value.to_string().into(),
-                                            ));
-                                    }
-                                    _ => panic!(),
+                                _ => panic!(),
+                            },
+                            "accept" => match agent_config_builder_value.as_ref().as_ref().unwrap() {
+                                Value::Bool(_) => {
+                                    agent_config_builder = agent_config_builder.accept(AutoHeaderValue::None);
                                 }
-                            }
-                            "proxy" => {
-                                match agent_config_builder_value.as_ref().as_ref().unwrap() {
-                                    Value::Bool(_) => {
-                                        agent_config_builder = agent_config_builder.proxy(None);
-                                    }
-                                    Value::String(proxy_string_value) => {
-                                        agent_config_builder = agent_config_builder.proxy(Some(
-                                            ureq::Proxy::new(&proxy_string_value.to_string())
-                                                .with_context(embedded_function_error_context(
-                                                    path_option,
-                                                ))?,
-                                        ));
-                                    }
-                                    Value::Object(proxy_builder_builder_key_value_pairs_object) => {
-                                        let mut proxy_builder = ureq::Proxy::builder(
-                                            match proxy_builder_builder_key_value_pairs_object
-                                                .inner
-                                                .get(&"protocol".to_string())
-                                                .unwrap()
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_string()
-                                                .unwrap()
-                                                .to_string()
-                                                .as_str()
-                                            {
-                                                "HTTP" => ProxyProtocol::Http,
-                                                "HTTPS" => ProxyProtocol::Https,
-                                                "SOCKS4" => ProxyProtocol::Socks4,
-                                                "SOCKS4A" => ProxyProtocol::Socks4A,
-                                                "SOCKS5" => ProxyProtocol::Socks5,
-                                                "SOCKS5h" => ProxyProtocol::Socks5h,
-                                                _ => panic!(),
-                                            },
-                                        );
-                                        for (proxy_builder_key, proxy_builder_value) in
-                                            proxy_builder_builder_key_value_pairs_object
-                                                .inner
-                                                .get(&"configuration".to_string())
-                                                .unwrap()
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_tuple()
-                                                .unwrap()
-                                                .inner
-                                                .iter()
-                                                .map(|object_value| {
-                                                    let object = object_value
-                                                        .as_ref()
-                                                        .as_ref()
-                                                        .unwrap()
-                                                        .as_object()
-                                                        .unwrap();
-                                                    let (key, value) =
-                                                        object.inner.iter().next().unwrap();
-                                                    (key.as_str(), value.clone())
-                                                })
+                                Value::String(header_value) => {
+                                    agent_config_builder = agent_config_builder.accept(AutoHeaderValue::Provided(header_value.to_string().into()));
+                                }
+                                _ => panic!(),
+                            },
+                            "accept encoding" => match agent_config_builder_value.as_ref().as_ref().unwrap() {
+                                Value::Bool(_) => {
+                                    agent_config_builder = agent_config_builder.accept_encoding(AutoHeaderValue::None);
+                                }
+                                Value::String(header_value) => {
+                                    agent_config_builder = agent_config_builder.accept_encoding(AutoHeaderValue::Provided(header_value.to_string().into()));
+                                }
+                                _ => panic!(),
+                            },
+                            "proxy" => match agent_config_builder_value.as_ref().as_ref().unwrap() {
+                                Value::Bool(_) => {
+                                    agent_config_builder = agent_config_builder.proxy(None);
+                                }
+                                Value::String(proxy_string_value) => {
+                                    agent_config_builder = agent_config_builder.proxy(Some(
+                                        ureq::Proxy::new(&proxy_string_value.to_string()).with_context(embedded_function_error_context(path_option))?,
+                                    ));
+                                }
+                                Value::Object(proxy_builder_builder_key_value_pairs_object) => {
+                                    let mut proxy_builder = ureq::Proxy::builder(
+                                        match proxy_builder_builder_key_value_pairs_object
+                                            .inner
+                                            .get(&"protocol".to_string())
+                                            .unwrap()
+                                            .as_ref()
+                                            .as_ref()
+                                            .unwrap()
+                                            .as_string()
+                                            .unwrap()
+                                            .to_string()
+                                            .as_str()
                                         {
-                                            match proxy_builder_key {
-                                                "host" => {
-                                                    proxy_builder = proxy_builder.host(
-                                                        &proxy_builder_value
-                                                            .as_ref()
-                                                            .as_ref()
-                                                            .unwrap()
-                                                            .as_string()
-                                                            .unwrap()
-                                                            .to_string(),
-                                                    );
-                                                }
-                                                "port" => {
-                                                    proxy_builder = proxy_builder.port(
-                                                        proxy_builder_value
-                                                            .as_ref()
-                                                            .as_ref()
-                                                            .unwrap()
-                                                            .as_number()
-                                                            .unwrap()
-                                                            .trunc()
-                                                            .to_f64()
-                                                            .value()
-                                                            .max(0f64)
-                                                            .min(u16::MAX as f64)
-                                                            as u16,
-                                                    );
-                                                }
-                                                "user name" => {
-                                                    proxy_builder = proxy_builder.username(
-                                                        &proxy_builder_value
-                                                            .as_ref()
-                                                            .as_ref()
-                                                            .unwrap()
-                                                            .as_string()
-                                                            .unwrap()
-                                                            .to_string(),
-                                                    );
-                                                }
-                                                "password" => {
-                                                    proxy_builder = proxy_builder.password(
-                                                        &proxy_builder_value
-                                                            .as_ref()
-                                                            .as_ref()
-                                                            .unwrap()
-                                                            .as_string()
-                                                            .unwrap()
-                                                            .to_string(),
-                                                    );
-                                                }
-                                                "resolve locally" => {
-                                                    proxy_builder = proxy_builder.resolve_target(
-                                                        proxy_builder_value
-                                                            .as_ref()
-                                                            .as_ref()
-                                                            .unwrap()
-                                                            .as_bool()
-                                                            .unwrap(),
-                                                    );
-                                                }
-                                                _ => panic!(),
-                                            }
-                                        }
-                                    }
-                                    _ => panic!(),
-                                }
-                            }
-                            "TLS" => {
-                                let mut tls_config_builder = ureq::tls::TlsConfig::builder();
-                                for (tls_config_builder_key, tls_config_builder_value) in
-                                    agent_config_builder_value
+                                            "HTTP" => ProxyProtocol::Http,
+                                            "HTTPS" => ProxyProtocol::Https,
+                                            "SOCKS4" => ProxyProtocol::Socks4,
+                                            "SOCKS4A" => ProxyProtocol::Socks4A,
+                                            "SOCKS5" => ProxyProtocol::Socks5,
+                                            "SOCKS5h" => ProxyProtocol::Socks5h,
+                                            _ => panic!(),
+                                        },
+                                    );
+                                    for (proxy_builder_key, proxy_builder_value) in proxy_builder_builder_key_value_pairs_object
+                                        .inner
+                                        .get(&"configuration".to_string())
+                                        .unwrap()
                                         .as_ref()
                                         .as_ref()
                                         .unwrap()
@@ -3061,85 +1858,76 @@ impl<'a> ComputationContext<'a> {
                                         .inner
                                         .iter()
                                         .map(|object_value| {
-                                            let object = object_value
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_object()
-                                                .unwrap();
+                                            let object = object_value.as_ref().as_ref().unwrap().as_object().unwrap();
                                             let (key, value) = object.inner.iter().next().unwrap();
                                             (key.as_str(), value.clone())
                                         })
-                                {
-                                    match tls_config_builder_key {
-                                        "use SNI" => {
-                                            tls_config_builder = tls_config_builder.use_sni(
-                                                tls_config_builder_value
-                                                    .as_ref()
-                                                    .as_ref()
-                                                    .unwrap()
-                                                    .as_bool()
-                                                    .unwrap(),
-                                            );
-                                        }
-                                        "client certificate" => {
-                                            let client_certificate_config =
-                                                tls_config_builder_value
-                                                    .as_ref()
-                                                    .as_ref()
-                                                    .unwrap()
-                                                    .as_object()
-                                                    .unwrap();
-                                            let mut chain = Vec::new();
-                                            let chain_config = client_certificate_config
-                                                .get(&"chain".to_string())
-                                                .unwrap();
-                                            for (
-                                                certificate_config_key,
-                                                certificate_config_value,
-                                            ) in chain_config
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_tuple()
-                                                .unwrap()
-                                                .inner
-                                                .iter()
-                                                .map(|object_value| {
-                                                    let object = object_value
+                                    {
+                                        match proxy_builder_key {
+                                            "host" => {
+                                                proxy_builder = proxy_builder.host(&proxy_builder_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string());
+                                            }
+                                            "port" => {
+                                                proxy_builder = proxy_builder.port(
+                                                    proxy_builder_value
                                                         .as_ref()
                                                         .as_ref()
                                                         .unwrap()
-                                                        .as_object()
-                                                        .unwrap();
-                                                    let (key, value) =
-                                                        object.inner.iter().next().unwrap();
+                                                        .as_number()
+                                                        .unwrap()
+                                                        .trunc()
+                                                        .to_f64()
+                                                        .value()
+                                                        .max(0f64)
+                                                        .min(u16::MAX as f64) as u16,
+                                                );
+                                            }
+                                            "user name" => {
+                                                proxy_builder = proxy_builder.username(&proxy_builder_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string());
+                                            }
+                                            "password" => {
+                                                proxy_builder = proxy_builder.password(&proxy_builder_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string());
+                                            }
+                                            "resolve locally" => {
+                                                proxy_builder = proxy_builder.resolve_target(proxy_builder_value.as_ref().as_ref().unwrap().as_bool().unwrap());
+                                            }
+                                            _ => panic!(),
+                                        }
+                                    }
+                                }
+                                _ => panic!(),
+                            },
+                            "TLS" => {
+                                let mut tls_config_builder = ureq::tls::TlsConfig::builder();
+                                for (tls_config_builder_key, tls_config_builder_value) in
+                                    agent_config_builder_value.as_ref().as_ref().unwrap().as_tuple().unwrap().inner.iter().map(|object_value| {
+                                        let object = object_value.as_ref().as_ref().unwrap().as_object().unwrap();
+                                        let (key, value) = object.inner.iter().next().unwrap();
+                                        (key.as_str(), value.clone())
+                                    })
+                                {
+                                    match tls_config_builder_key {
+                                        "use SNI" => {
+                                            tls_config_builder = tls_config_builder.use_sni(tls_config_builder_value.as_ref().as_ref().unwrap().as_bool().unwrap());
+                                        }
+                                        "client certificate" => {
+                                            let client_certificate_config = tls_config_builder_value.as_ref().as_ref().unwrap().as_object().unwrap();
+                                            let mut chain = Vec::new();
+                                            let chain_config = client_certificate_config.get(&"chain".to_string()).unwrap();
+                                            for (certificate_config_key, certificate_config_value) in
+                                                chain_config.as_ref().as_ref().unwrap().as_tuple().unwrap().inner.iter().map(|object_value| {
+                                                    let object = object_value.as_ref().as_ref().unwrap().as_object().unwrap();
+                                                    let (key, value) = object.inner.iter().next().unwrap();
                                                     (key.as_str(), value.clone())
                                                 })
                                             {
                                                 chain.push(match certificate_config_key {
-                                                    "DER" => ureq::tls::Certificate::from_der(
-                                                        certificate_config_value
-                                                            .as_ref()
-                                                            .as_ref()
-                                                            .unwrap()
-                                                            .as_bytes()
-                                                            .unwrap(),
-                                                    )
-                                                    .to_owned(),
+                                                    "DER" => ureq::tls::Certificate::from_der(certificate_config_value.as_ref().as_ref().unwrap().as_bytes().unwrap())
+                                                        .to_owned(),
                                                     "PEM" => ureq::tls::Certificate::from_pem(
-                                                        certificate_config_value
-                                                            .as_ref()
-                                                            .as_ref()
-                                                            .unwrap()
-                                                            .as_string()
-                                                            .unwrap()
-                                                            .to_string()
-                                                            .as_bytes(),
+                                                        certificate_config_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string().as_bytes(),
                                                     )
-                                                    .with_context(embedded_function_error_context(
-                                                        path_option,
-                                                    ))?
+                                                    .with_context(embedded_function_error_context(path_option))?
                                                     .to_owned(),
                                                     _ => panic!(),
                                                 });
@@ -3156,107 +1944,49 @@ impl<'a> ComputationContext<'a> {
                                                     .to_string()
                                                     .as_bytes(),
                                             )
-                                            .with_context(embedded_function_error_context(
-                                                path_option,
-                                            ))?;
-                                            tls_config_builder = tls_config_builder.client_cert(
-                                                Some(ureq::tls::ClientCert::new_with_certs(
-                                                    &chain,
-                                                    private_key,
-                                                )),
-                                            );
+                                            .with_context(embedded_function_error_context(path_option))?;
+                                            tls_config_builder = tls_config_builder.client_cert(Some(ureq::tls::ClientCert::new_with_certs(&chain, private_key)));
                                         }
-                                        "root certificates" => {
-                                            match tls_config_builder_value
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                            {
-                                                Value::String(root_certificates_config_string) => {
-                                                    match root_certificates_config_string
-                                                        .to_string()
-                                                        .as_str()
-                                                    {
-                                                        "platform verifier" => {
-                                                            tls_config_builder = tls_config_builder.root_certs(ureq::tls::RootCerts::PlatformVerifier);
-                                                        }
-                                                        "WebPKI" => {
-                                                            tls_config_builder = tls_config_builder
-                                                                .root_certs(
-                                                                    ureq::tls::RootCerts::WebPki,
-                                                                );
-                                                        }
-                                                        _ => panic!(),
-                                                    }
+                                        "root certificates" => match tls_config_builder_value.as_ref().as_ref().unwrap() {
+                                            Value::String(root_certificates_config_string) => match root_certificates_config_string.to_string().as_str() {
+                                                "platform verifier" => {
+                                                    tls_config_builder = tls_config_builder.root_certs(ureq::tls::RootCerts::PlatformVerifier);
                                                 }
-                                                Value::Tuple(root_certificates_config_tuple) => {
-                                                    let mut chain = Vec::new();
-                                                    for (
-                                                        certificate_config_key,
-                                                        certificate_config_value,
-                                                    ) in root_certificates_config_tuple
-                                                        .inner
-                                                        .iter()
-                                                        .map(|object_value| {
-                                                            let object = object_value
-                                                                .as_ref()
-                                                                .as_ref()
-                                                                .unwrap()
-                                                                .as_object()
-                                                                .unwrap();
-                                                            let (key, value) =
-                                                                object.inner.iter().next().unwrap();
-                                                            (key.as_str(), value.clone())
-                                                        })
-                                                    {
-                                                        chain.push(match certificate_config_key {
-                                                            "DER" => {
-                                                                ureq::tls::Certificate::from_der(
-                                                                    certificate_config_value
-                                                                        .as_ref()
-                                                                        .as_ref()
-                                                                        .unwrap()
-                                                                        .as_bytes()
-                                                                        .unwrap(),
-                                                                )
-                                                                .to_owned()
-                                                            }
-                                                            "PEM" => {
-                                                                ureq::tls::Certificate::from_pem(
-                                                                    certificate_config_value
-                                                                        .as_ref()
-                                                                        .as_ref()
-                                                                        .unwrap()
-                                                                        .as_string()
-                                                                        .unwrap()
-                                                                        .to_string()
-                                                                        .as_bytes(),
-                                                                )
-                                                                .with_context(
-                                                                    embedded_function_error_context(
-                                                                        path_option,
-                                                                    ),
-                                                                )?
-                                                                .to_owned()
-                                                            }
-                                                            _ => panic!(),
-                                                        });
-                                                    }
-                                                    tls_config_builder = tls_config_builder
-                                                        .root_certs(
-                                                            ureq::tls::RootCerts::Specific(
-                                                                chain.into(),
-                                                            ),
-                                                        );
+                                                "WebPKI" => {
+                                                    tls_config_builder = tls_config_builder.root_certs(ureq::tls::RootCerts::WebPki);
                                                 }
                                                 _ => panic!(),
+                                            },
+                                            Value::Tuple(root_certificates_config_tuple) => {
+                                                let mut chain = Vec::new();
+                                                for (certificate_config_key, certificate_config_value) in
+                                                    root_certificates_config_tuple.inner.iter().map(|object_value| {
+                                                        let object = object_value.as_ref().as_ref().unwrap().as_object().unwrap();
+                                                        let (key, value) = object.inner.iter().next().unwrap();
+                                                        (key.as_str(), value.clone())
+                                                    })
+                                                {
+                                                    chain.push(match certificate_config_key {
+                                                        "DER" => {
+                                                            ureq::tls::Certificate::from_der(certificate_config_value.as_ref().as_ref().unwrap().as_bytes().unwrap())
+                                                                .to_owned()
+                                                        }
+                                                        "PEM" => ureq::tls::Certificate::from_pem(
+                                                            certificate_config_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string().as_bytes(),
+                                                        )
+                                                        .with_context(embedded_function_error_context(path_option))?
+                                                        .to_owned(),
+                                                        _ => panic!(),
+                                                    });
+                                                }
+                                                tls_config_builder = tls_config_builder.root_certs(ureq::tls::RootCerts::Specific(chain.into()));
                                             }
-                                        }
+                                            _ => panic!(),
+                                        },
                                         _ => panic!(),
                                     }
                                 }
-                                agent_config_builder =
-                                    agent_config_builder.tls_config(tls_config_builder.build());
+                                agent_config_builder = agent_config_builder.tls_config(tls_config_builder.build());
                             }
                             _ => panic!(),
                         }
@@ -3264,10 +1994,7 @@ impl<'a> ComputationContext<'a> {
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Runtime(
-                                Runtime::HttpClient(Identified::new(ureq::Agent::new_with_config(
-                                    agent_config_builder.build(),
-                                )))
-                                .into(),
+                                Runtime::HttpClient(Identified::new(ureq::Agent::new_with_config(agent_config_builder.build()))).into(),
                             ))
                             .into(),
                         ),
@@ -3276,49 +2003,14 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::SendRequest => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let argument_object = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap();
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                    let argument_object = computed_argument_unrolled.as_ref().as_ref().unwrap().as_object().unwrap();
                     let agent_value = argument_object.get(&"client".to_string()).unwrap();
-                    let agent = agent_value
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_runtime()
-                        .unwrap()
-                        .as_http_client()
-                        .unwrap();
+                    let agent = agent_value.as_ref().as_ref().unwrap().as_runtime().unwrap().as_http_client().unwrap();
                     let request_arguments = argument_object.get(&"request".to_string()).unwrap();
-                    let request_arguments_object = request_arguments
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap();
-                    let url = request_arguments_object
-                        .get(&"URL".to_string())
-                        .unwrap()
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_string()
-                        .unwrap()
-                        .to_string();
-                    let method = request_arguments_object
-                        .get(&"method".to_string())
-                        .unwrap()
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_string()
-                        .unwrap()
-                        .to_string();
+                    let request_arguments_object = request_arguments.as_ref().as_ref().unwrap().as_object().unwrap();
+                    let url = request_arguments_object.get(&"URL".to_string()).unwrap().as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                    let method = request_arguments_object.get(&"method".to_string()).unwrap().as_ref().as_ref().unwrap().as_string().unwrap().to_string();
                     let mut request_builder = match method.as_str() {
                         "GET" => agent.get(url).force_send_body(),
                         "POST" => agent.post(url),
@@ -3331,76 +2023,26 @@ impl<'a> ComputationContext<'a> {
                         "TRACE" => agent.trace(url).force_send_body(),
                         _ => panic!(),
                     };
-                    let parameters_value = request_arguments_object
-                        .get(&"parameters".to_string())
-                        .unwrap();
-                    for (parameter_key, parameter_value) in parameters_value
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_tuple()
-                        .unwrap()
-                        .inner
-                        .iter()
-                        .map(|object_value| {
-                            let object =
-                                object_value.as_ref().as_ref().unwrap().as_object().unwrap();
-                            let (key, value) = object.inner.iter().next().unwrap();
-                            (key.as_str(), value)
-                        })
-                    {
+                    let parameters_value = request_arguments_object.get(&"parameters".to_string()).unwrap();
+                    for (parameter_key, parameter_value) in parameters_value.as_ref().as_ref().unwrap().as_tuple().unwrap().inner.iter().map(|object_value| {
+                        let object = object_value.as_ref().as_ref().unwrap().as_object().unwrap();
+                        let (key, value) = object.inner.iter().next().unwrap();
+                        (key.as_str(), value)
+                    }) {
                         match parameter_key {
                             "content type" => {
-                                let content_value_object = parameter_value
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_object()
-                                    .unwrap();
-                                let r#type = content_value_object
-                                    .get(&"type".to_string())
-                                    .unwrap()
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_string()
-                                    .unwrap()
-                                    .to_string();
-                                let subtype = content_value_object
-                                    .get(&"subtype".to_string())
-                                    .unwrap()
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_string()
-                                    .unwrap()
-                                    .to_string();
-                                let parameters_arguments =
-                                    content_value_object.get(&"parameters".to_string()).unwrap();
-                                let parameters_arguments_object = parameters_arguments
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_object()
-                                    .unwrap();
+                                let content_value_object = parameter_value.as_ref().as_ref().unwrap().as_object().unwrap();
+                                let r#type = content_value_object.get(&"type".to_string()).unwrap().as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                                let subtype = content_value_object.get(&"subtype".to_string()).unwrap().as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                                let parameters_arguments = content_value_object.get(&"parameters".to_string()).unwrap();
+                                let parameters_arguments_object = parameters_arguments.as_ref().as_ref().unwrap().as_object().unwrap();
                                 let mut content_type_string = format!("{type}/{subtype}");
                                 if !parameters_arguments_object.is_empty() {
                                     content_type_string.push(';');
-                                    for (parameter_key, parameter_value) in
-                                        parameters_arguments_object.inner.iter().map(
-                                            |(key, value)| {
-                                                (
-                                                    &**key,
-                                                    value
-                                                        .as_ref()
-                                                        .as_ref()
-                                                        .unwrap()
-                                                        .as_string()
-                                                        .unwrap()
-                                                        .to_string(),
-                                                )
-                                            },
-                                        )
+                                    for (parameter_key, parameter_value) in parameters_arguments_object
+                                        .inner
+                                        .iter()
+                                        .map(|(key, value)| (&**key, value.as_ref().as_ref().unwrap().as_string().unwrap().to_string()))
                                     {
                                         content_type_string.push(' ');
                                         content_type_string.push_str(parameter_key);
@@ -3410,74 +2052,24 @@ impl<'a> ComputationContext<'a> {
                                 request_builder = request_builder.content_type(content_type_string);
                             }
                             "headers" => {
-                                let content_value_tuple = parameter_value
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_tuple()
-                                    .unwrap();
-                                for (header_key, header_value) in
-                                    content_value_tuple.inner.iter().map(|key_value_value| {
-                                        let key_value_tuple = key_value_value
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_tuple()
-                                            .unwrap();
-                                        let key = key_value_tuple.inner[0]
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_string()
-                                            .unwrap()
-                                            .to_string();
-                                        let value = key_value_tuple.inner[1]
-                                            .as_ref()
-                                            .as_ref()
-                                            .unwrap()
-                                            .as_string()
-                                            .unwrap()
-                                            .to_string();
-                                        (key, value)
-                                    })
-                                {
-                                    request_builder =
-                                        request_builder.header(header_key, header_value);
+                                let content_value_tuple = parameter_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
+                                for (header_key, header_value) in content_value_tuple.inner.iter().map(|key_value_value| {
+                                    let key_value_tuple = key_value_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
+                                    let key = key_value_tuple.inner[0].as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                                    let value = key_value_tuple.inner[1].as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                                    (key, value)
+                                }) {
+                                    request_builder = request_builder.header(header_key, header_value);
                                 }
                             }
                             "query" => {
-                                let content_value_object = parameter_value
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_object()
-                                    .unwrap();
+                                let content_value_object = parameter_value.as_ref().as_ref().unwrap().as_object().unwrap();
                                 let query_key_value_pairs_iterator =
-                                    content_value_object.inner.iter().map(|(key, value)| {
-                                        (
-                                            &**key,
-                                            value
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_string()
-                                                .unwrap()
-                                                .to_string(),
-                                        )
-                                    });
-                                request_builder =
-                                    request_builder.query_pairs(query_key_value_pairs_iterator);
+                                    content_value_object.inner.iter().map(|(key, value)| (&**key, value.as_ref().as_ref().unwrap().as_string().unwrap().to_string()));
+                                request_builder = request_builder.query_pairs(query_key_value_pairs_iterator);
                             }
                             "version" => {
-                                let version = match parameter_value
-                                    .as_ref()
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_string()
-                                    .unwrap()
-                                    .to_string()
-                                    .as_str()
-                                {
+                                let version = match parameter_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string().as_str() {
                                     "HTTP/0.9" => ureq::http::version::Version::HTTP_09,
                                     "HTTP/1.0" => ureq::http::version::Version::HTTP_10,
                                     "HTTP/1.1" => ureq::http::version::Version::HTTP_11,
@@ -3490,14 +2082,12 @@ impl<'a> ComputationContext<'a> {
                             _ => panic!(),
                         }
                     }
-                    let body_value_option =
-                        request_arguments_object.get(&"body".to_string()).unwrap();
+                    let body_value_option = request_arguments_object.get(&"body".to_string()).unwrap();
                     let response = if let Some(body_value) = body_value_option.as_ref().as_ref() {
                         let body_object = body_value.as_object().unwrap();
                         let (body_key, body_value) = body_object.inner.iter().next().unwrap();
                         match body_key.as_str() {
-                            "data" => request_builder
-                                .send(&**body_value.as_ref().as_ref().unwrap().as_bytes().unwrap()),
+                            "data" => request_builder.send(&**body_value.as_ref().as_ref().unwrap().as_bytes().unwrap()),
                             "form" => request_builder.send_form(
                                 body_value
                                     .as_ref()
@@ -3507,18 +2097,7 @@ impl<'a> ComputationContext<'a> {
                                     .unwrap()
                                     .inner
                                     .iter()
-                                    .map(|(key, value)| {
-                                        (
-                                            key.as_str(),
-                                            value
-                                                .as_ref()
-                                                .as_ref()
-                                                .unwrap()
-                                                .as_string()
-                                                .unwrap()
-                                                .to_string(),
-                                        )
-                                    }),
+                                    .map(|(key, value)| (key.as_str(), value.as_ref().as_ref().unwrap().as_string().unwrap().to_string())),
                             ),
                             _ => panic!(),
                         }
@@ -3531,34 +2110,13 @@ impl<'a> ComputationContext<'a> {
                             Some(Value::Object(Object::from_iter([
                                 (
                                     "status".to_string().into(),
-                                    response
-                                        .status()
-                                        .canonical_reason()
-                                        .map(|status_code_string| {
-                                            Value::String(status_code_string.into())
-                                        })
-                                        .into(),
+                                    response.status().canonical_reason().map(|status_code_string| Value::String(status_code_string.into())).into(),
                                 ),
-                                (
-                                    "is informational".to_string().into(),
-                                    Some(Value::Bool(response.status().is_informational())).into(),
-                                ),
-                                (
-                                    "is success".to_string().into(),
-                                    Some(Value::Bool(response.status().is_success())).into(),
-                                ),
-                                (
-                                    "is redirection".to_string().into(),
-                                    Some(Value::Bool(response.status().is_redirection())).into(),
-                                ),
-                                (
-                                    "is client error".to_string().into(),
-                                    Some(Value::Bool(response.status().is_client_error())).into(),
-                                ),
-                                (
-                                    "is server error".to_string().into(),
-                                    Some(Value::Bool(response.status().is_server_error())).into(),
-                                ),
+                                ("is informational".to_string().into(), Some(Value::Bool(response.status().is_informational())).into()),
+                                ("is success".to_string().into(), Some(Value::Bool(response.status().is_success())).into()),
+                                ("is redirection".to_string().into(), Some(Value::Bool(response.status().is_redirection())).into()),
+                                ("is client error".to_string().into(), Some(Value::Bool(response.status().is_client_error())).into()),
+                                ("is server error".to_string().into(), Some(Value::Bool(response.status().is_server_error())).into()),
                                 (
                                     "version".to_string().into(),
                                     Some(Value::String(
@@ -3576,19 +2134,9 @@ impl<'a> ComputationContext<'a> {
                                 ),
                                 (
                                     "headers".to_string().into(),
-                                    Some(Value::Object(Object::from_iter(
-                                        response.headers().iter().map(
-                                            |(header_key, header_value)| {
-                                                (
-                                                    header_key.to_string().into(),
-                                                    Some(Value::String(
-                                                        header_value.to_str().unwrap().into(),
-                                                    ))
-                                                    .into(),
-                                                )
-                                            },
-                                        ),
-                                    )))
+                                    Some(Value::Object(Object::from_iter(response.headers().iter().map(|(header_key, header_value)| {
+                                        (header_key.to_string().into(), Some(Value::String(header_value.to_str().unwrap().into())).into())
+                                    }))))
                                     .into(),
                                 ),
                                 (
@@ -3600,9 +2148,7 @@ impl<'a> ComputationContext<'a> {
                                                 .into_body()
                                                 .into_reader()
                                                 .read_to_end(&mut body_buffer)
-                                                .with_context(embedded_function_error_context(
-                                                    path_option,
-                                                ))?;
+                                                .with_context(embedded_function_error_context(path_option))?;
                                             body_buffer.into()
                                         },
                                     })
@@ -3616,9 +2162,7 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::MatchRegex => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
                     let computed_string = computed_argument_unrolled
                         .as_ref()
                         .as_ref()
@@ -3633,56 +2177,32 @@ impl<'a> ComputationContext<'a> {
                         .as_string()
                         .unwrap()
                         .to_string();
-                    let regex_value = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap()
-                        .get(&"regex".to_string())
-                        .unwrap();
-                    let compiled_regex = regex_value
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_runtime()
-                        .unwrap()
-                        .as_compiled_regex()
-                        .unwrap();
+                    let regex_value = computed_argument_unrolled.as_ref().as_ref().unwrap().as_object().unwrap().get(&"regex".to_string()).unwrap();
+                    let compiled_regex = regex_value.as_ref().as_ref().unwrap().as_runtime().unwrap().as_compiled_regex().unwrap();
                     if let Some(captures) = compiled_regex.captures(&computed_string) {
                         let result_value = Some(Value::Object(Object::from_iter([
                             (
                                 "groups".to_string().into(),
-                                Some(Value::Object(Object::from_iter(
-                                    compiled_regex.capture_names().flatten().filter_map(|name| {
-                                        captures.name(name).map(|match_obj| {
-                                            (
-                                                name.to_string().into(),
-                                                Some({
-                                                    let matched = match_obj.as_str();
-                                                    if let Ok(matched_as_number) =
-                                                        dashu::Rational::from_str(matched)
-                                                    {
-                                                        Value::Number(matched_as_number)
-                                                    } else {
-                                                        Value::String(matched.into())
-                                                    }
-                                                })
-                                                .into(),
-                                            )
-                                        })
-                                    }),
-                                )))
+                                Some(Value::Object(Object::from_iter(compiled_regex.capture_names().flatten().filter_map(|name| {
+                                    captures.name(name).map(|match_obj| {
+                                        (
+                                            name.to_string().into(),
+                                            Some({
+                                                let matched = match_obj.as_str();
+                                                if let Ok(matched_as_number) = dashu::Rational::from_str(matched) {
+                                                    Value::Number(matched_as_number)
+                                                } else {
+                                                    Value::String(matched.into())
+                                                }
+                                            })
+                                            .into(),
+                                        )
+                                    })
+                                }))))
                                 .into(),
                             ),
-                            (
-                                "start".to_string().into(),
-                                Some(Value::Number(captures.get(0).unwrap().start().into())).into(),
-                            ),
-                            (
-                                "end".to_string().into(),
-                                Some(Value::Number(captures.get(0).unwrap().end().into())).into(),
-                            ),
+                            ("start".to_string().into(), Some(Value::Number(captures.get(0).unwrap().start().into())).into()),
+                            ("end".to_string().into(), Some(Value::Number(captures.get(0).unwrap().end().into())).into()),
                         ])));
                         let r#type = Value::type_kind(&result_value);
                         Ok(IntermediateValueAndMetadata {
@@ -3699,9 +2219,7 @@ impl<'a> ComputationContext<'a> {
                     }
                 }
                 EmbeddedFunction::BufferizedWriter => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
                     let computed_path = computed_argument_unrolled
                         .as_ref()
                         .as_ref()
@@ -3753,45 +2271,23 @@ impl<'a> ComputationContext<'a> {
                         }
                         _ => {}
                     };
-                    let file = open_options
-                        .open(&computed_path)
-                        .with_context(embedded_function_error_context(path_option))?;
+                    let file = open_options.open(&computed_path).with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
-                            Some(Value::Runtime(
-                                Runtime::BufferizedWriter(Identified::new(
-                                    BufWriter::new(file).into(),
-                                ))
-                                .into(),
-                            ))
-                            .into(),
+                            Some(Value::Runtime(Runtime::BufferizedWriter(Identified::new(BufWriter::new(file).into())).into())).into(),
                         ),
                         type_kind: TypeKind::Embedded(Embedded::BufferizedWriter),
                     }
                     .into())
                 }
                 EmbeddedFunction::BufferizedReader => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let computed_path = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_string()
-                        .unwrap()
-                        .to_string();
-                    let file = std::fs::OpenOptions::new()
-                        .read(true)
-                        .open(&computed_path)
-                        .with_context(embedded_function_error_context(path_option))?;
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                    let computed_path = computed_argument_unrolled.as_ref().as_ref().unwrap().as_string().unwrap().to_string();
+                    let file = std::fs::OpenOptions::new().read(true).open(&computed_path).with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Runtime(
-                                Runtime::BufferizedReader(crate::value::Identified::new(
-                                    BufReader::new(file).into(),
-                                ))
-                                .into(),
+                                Runtime::BufferizedReader(crate::value::Identified::new(BufReader::new(file).into())).into(),
                             ))
                             .into(),
                         ),
@@ -3800,71 +2296,22 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::WriteBytes => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let computed_target = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap()
-                        .get(&"target".to_string())
-                        .unwrap();
-                    let computed_bufferized_writer = computed_target
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_runtime()
-                        .unwrap()
-                        .as_bufferized_writer()
-                        .unwrap();
-                    let computed_content_value = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap()
-                        .get(&"content".to_string())
-                        .unwrap();
-                    let computed_content = computed_content_value
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_bytes()
-                        .unwrap();
-                    let bytes_written = computed_bufferized_writer
-                        .write()
-                        .write(computed_content)
-                        .with_context(embedded_function_error_context(path_option))?;
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                    let computed_target = computed_argument_unrolled.as_ref().as_ref().unwrap().as_object().unwrap().get(&"target".to_string()).unwrap();
+                    let computed_bufferized_writer = computed_target.as_ref().as_ref().unwrap().as_runtime().unwrap().as_bufferized_writer().unwrap();
+                    let computed_content_value = computed_argument_unrolled.as_ref().as_ref().unwrap().as_object().unwrap().get(&"content".to_string()).unwrap();
+                    let computed_content = computed_content_value.as_ref().as_ref().unwrap().as_bytes().unwrap();
+                    let bytes_written = computed_bufferized_writer.write().write(computed_content).with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Number(bytes_written.into())).into(),
-                        ),
+                        intermediate_value: IntermediateValue::Value(Some(Value::Number(bytes_written.into())).into()),
                         type_kind: TypeKind::Number,
                     }
                     .into())
                 }
                 EmbeddedFunction::ReadBytes => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
-                    let computed_source = computed_argument_unrolled
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_object()
-                        .unwrap()
-                        .get(&"source".to_string())
-                        .unwrap();
-                    let computed_bufferized_reader = computed_source
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_runtime()
-                        .unwrap()
-                        .as_bufferized_reader()
-                        .unwrap();
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
+                    let computed_source = computed_argument_unrolled.as_ref().as_ref().unwrap().as_object().unwrap().get(&"source".to_string()).unwrap();
+                    let computed_bufferized_reader = computed_source.as_ref().as_ref().unwrap().as_runtime().unwrap().as_bufferized_reader().unwrap();
                     let computed_amount = computed_argument_unrolled
                         .as_ref()
                         .as_ref()
@@ -3885,67 +2332,45 @@ impl<'a> ComputationContext<'a> {
                         .max(0f64) as usize;
                     if computed_amount == 0 {
                         Ok(IntermediateValueAndMetadata {
-                            intermediate_value: IntermediateValue::Value(
-                                Some(Value::Bytes {
-                                    bytes: Bytes::new(),
-                                })
-                                .into(),
-                            ),
+                            intermediate_value: IntermediateValue::Value(Some(Value::Bytes { bytes: Bytes::new() }).into()),
                             type_kind: TypeKind::Bytes,
                         }
                         .into())
                     } else {
                         let mut result_raw = vec![0u8; computed_amount];
-                        computed_bufferized_reader
-                            .write()
-                            .read(&mut result_raw)
-                            .with_context(embedded_function_error_context(path_option))?;
+                        computed_bufferized_reader.write().read(&mut result_raw).with_context(embedded_function_error_context(path_option))?;
                         Ok(IntermediateValueAndMetadata {
-                            intermediate_value: IntermediateValue::Value(
-                                Some(Value::Bytes {
-                                    bytes: result_raw.into(),
-                                })
-                                .into(),
-                            ),
+                            intermediate_value: IntermediateValue::Value(Some(Value::Bytes { bytes: result_raw.into() }).into()),
                             type_kind: TypeKind::Bytes,
                         }
                         .into())
                     }
                 }
-                EmbeddedFunction::StringFromBytes => {
-                    Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::String(
-                                String::from_utf8(
-                                    self.unroll_intermediate_value(&self.compute_node(
-                                        &embedded_function_call.argument,
-                                        constants,
-                                    )?)?
+                EmbeddedFunction::StringFromBytes => Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Value(
+                        Some(Value::String(
+                            String::from_utf8(
+                                self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?
                                     .as_ref()
                                     .as_ref()
                                     .unwrap()
                                     .as_bytes()
                                     .unwrap()
                                     .to_vec(),
-                                )
-                                .with_context(embedded_function_error_context(path_option))?
-                                .into(),
-                            ))
+                            )
+                            .with_context(embedded_function_error_context(path_option))?
                             .into(),
-                        ),
-                        type_kind: TypeKind::String,
-                    }
-                    .into())
+                        ))
+                        .into(),
+                    ),
+                    type_kind: TypeKind::String,
                 }
-                EmbeddedFunction::BytesFromString => {
-                    Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Bytes {
-                                bytes: Bytes::from(
-                                    self.unroll_intermediate_value(&self.compute_node(
-                                        &embedded_function_call.argument,
-                                        constants,
-                                    )?)?
+                .into()),
+                EmbeddedFunction::BytesFromString => Ok(IntermediateValueAndMetadata {
+                    intermediate_value: IntermediateValue::Value(
+                        Some(Value::Bytes {
+                            bytes: Bytes::from(
+                                self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?
                                     .as_ref()
                                     .as_ref()
                                     .unwrap()
@@ -3953,25 +2378,22 @@ impl<'a> ComputationContext<'a> {
                                     .unwrap()
                                     .bytes()
                                     .collect::<Vec<_>>(),
-                                ),
-                            })
-                            .into(),
-                        ),
-                        type_kind: TypeKind::String,
-                    }
-                    .into())
+                            ),
+                        })
+                        .into(),
+                    ),
+                    type_kind: TypeKind::String,
                 }
+                .into()),
                 EmbeddedFunction::RemoveFile => {
                     std::fs::remove_file(std::path::PathBuf::from(
-                        self.unroll_intermediate_value(
-                            &self.compute_node(&embedded_function_call.argument, constants)?,
-                        )?
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_string()
-                        .unwrap()
-                        .to_string(),
+                        self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_string()
+                            .unwrap()
+                            .to_string(),
                     ))
                     .with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
@@ -3983,16 +2405,14 @@ impl<'a> ComputationContext<'a> {
                 EmbeddedFunction::Glob => {
                     let mut result = Vector::default();
                     for entry in glob(
-                        self.unroll_intermediate_value(
-                            &self.compute_node(&embedded_function_call.argument, constants)?,
-                        )?
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_string()
-                        .unwrap()
-                        .to_string()
-                        .as_str(),
+                        self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_string()
+                            .unwrap()
+                            .to_string()
+                            .as_str(),
                     )
                     .with_context(embedded_function_error_context(path_option))?
                     {
@@ -4009,12 +2429,8 @@ impl<'a> ComputationContext<'a> {
                         );
                     }
                     Ok(IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::Tuple(result)).into(),
-                        ),
-                        type_kind: EMBEDDED_FUNCTIONS
-                            [embedded_function_call.embedded_function as usize]
-                            [embedded_function_call.variant_index as usize]
+                        intermediate_value: IntermediateValue::Value(Some(Value::Tuple(result)).into()),
+                        type_kind: EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize][embedded_function_call.variant_index as usize]
                             .r#return
                             .r#type
                             .clone()
@@ -4024,73 +2440,48 @@ impl<'a> ComputationContext<'a> {
                 }
                 EmbeddedFunction::FileMetadata => {
                     let metadata = std::fs::metadata(
-                        self.unroll_intermediate_value(
-                            &self.compute_node(&embedded_function_call.argument, constants)?,
-                        )?
-                        .as_ref()
-                        .as_ref()
-                        .unwrap()
-                        .as_string()
-                        .unwrap()
-                        .to_string(),
+                        self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?
+                            .as_ref()
+                            .as_ref()
+                            .unwrap()
+                            .as_string()
+                            .unwrap()
+                            .to_string(),
                     )
                     .with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Object(Object::from_iter([
-                                (
-                                    "is directory".to_string().into(),
-                                    Some(Value::Bool(metadata.is_dir())).into(),
-                                ),
-                                (
-                                    "is file".to_string().into(),
-                                    Some(Value::Bool(metadata.is_file())).into(),
-                                ),
-                                (
-                                    "is symlink".to_string().into(),
-                                    Some(Value::Bool(metadata.is_symlink())).into(),
-                                ),
-                                (
-                                    "size".to_string().into(),
-                                    Some(Value::Number(metadata.len().into())).into(),
-                                ),
-                                (
-                                    "is read-only".to_string().into(),
-                                    Some(Value::Bool(metadata.permissions().readonly())).into(),
-                                ),
+                                ("is directory".to_string().into(), Some(Value::Bool(metadata.is_dir())).into()),
+                                ("is file".to_string().into(), Some(Value::Bool(metadata.is_file())).into()),
+                                ("is symlink".to_string().into(), Some(Value::Bool(metadata.is_symlink())).into()),
+                                ("size".to_string().into(), Some(Value::Number(metadata.len().into())).into()),
+                                ("is read-only".to_string().into(), Some(Value::Bool(metadata.permissions().readonly())).into()),
                                 (
                                     "when modified".to_string().into(),
                                     Some(Value::Time {
-                                        time: metadata.modified().with_context(
-                                            embedded_function_error_context(path_option),
-                                        )?,
+                                        time: metadata.modified().with_context(embedded_function_error_context(path_option))?,
                                     })
                                     .into(),
                                 ),
                                 (
                                     "when accessed".to_string().into(),
                                     Some(Value::Time {
-                                        time: metadata.accessed().with_context(
-                                            embedded_function_error_context(path_option),
-                                        )?,
+                                        time: metadata.accessed().with_context(embedded_function_error_context(path_option))?,
                                     })
                                     .into(),
                                 ),
                                 (
                                     "when created".to_string().into(),
                                     Some(Value::Time {
-                                        time: metadata.created().with_context(
-                                            embedded_function_error_context(path_option),
-                                        )?,
+                                        time: metadata.created().with_context(embedded_function_error_context(path_option))?,
                                     })
                                     .into(),
                                 ),
                             ])))
                             .into(),
                         ),
-                        type_kind: EMBEDDED_FUNCTIONS
-                            [embedded_function_call.embedded_function as usize]
-                            [embedded_function_call.variant_index as usize]
+                        type_kind: EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize][embedded_function_call.variant_index as usize]
                             .r#return
                             .r#type
                             .clone()
@@ -4099,9 +2490,7 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::Run => {
-                    let computed_argument_unrolled = self.unroll_intermediate_value(
-                        &self.compute_node(&embedded_function_call.argument, constants)?,
-                    )?;
+                    let computed_argument_unrolled = self.unroll_intermediate_value(&self.compute_node(&embedded_function_call.argument, constants)?)?;
                     let command_name = computed_argument_unrolled
                         .as_ref()
                         .as_ref()
@@ -4131,39 +2520,15 @@ impl<'a> ComputationContext<'a> {
                         .unwrap()
                         .clone();
                     let result = std::process::Command::new(command_name)
-                        .args(arguments.iter().map(|argument_value| {
-                            argument_value
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap()
-                                .to_string()
-                        }))
+                        .args(arguments.iter().map(|argument_value| argument_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string()))
                         .output()
                         .with_context(embedded_function_error_context(path_option))?;
                     Ok(IntermediateValueAndMetadata {
                         intermediate_value: IntermediateValue::Value(
                             Some(Value::Object(Object::from_iter([
-                                (
-                                    "exit code".to_string().into(),
-                                    Some(Value::Number(result.status.code().unwrap().into()))
-                                        .into(),
-                                ),
-                                (
-                                    "standard output".to_string().into(),
-                                    Some(Value::Bytes {
-                                        bytes: result.stdout.into(),
-                                    })
-                                    .into(),
-                                ),
-                                (
-                                    "standard error".to_string().into(),
-                                    Some(Value::Bytes {
-                                        bytes: result.stderr.into(),
-                                    })
-                                    .into(),
-                                ),
+                                ("exit code".to_string().into(), Some(Value::Number(result.status.code().unwrap().into())).into()),
+                                ("standard output".to_string().into(), Some(Value::Bytes { bytes: result.stdout.into() }).into()),
+                                ("standard error".to_string().into(), Some(Value::Bytes { bytes: result.stderr.into() }).into()),
                             ])))
                             .into(),
                         ),
@@ -4172,70 +2537,21 @@ impl<'a> ComputationContext<'a> {
                     .into())
                 }
                 EmbeddedFunction::Get => {
-                    let argument_intermediate_value =
-                        self.compute_node(&embedded_function_call.argument, constants)?;
-                    let from_intermediate_value = self
-                        .get_by_key_from_intermediate_value(
-                            &argument_intermediate_value,
-                            &"from".to_string(),
-                        )?
-                        .unwrap();
-                    let at_value = self.unroll_intermediate_value(
-                        &self
-                            .get_by_key_from_intermediate_value(
-                                &argument_intermediate_value,
-                                &"at".to_string(),
-                            )?
-                            .unwrap(),
-                    )?;
+                    let argument_intermediate_value = self.compute_node(&embedded_function_call.argument, constants)?;
+                    let from_intermediate_value = self.get_by_key_from_intermediate_value(&argument_intermediate_value, &"from".to_string())?.unwrap();
+                    let at_value = self.unroll_intermediate_value(&self.get_by_key_from_intermediate_value(&argument_intermediate_value, &"at".to_string())?.unwrap())?;
                     match embedded_function_call.variant_index {
                         0 => {
-                            let at_index = at_value
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_number()
-                                .unwrap()
-                                .trunc()
-                                .to_f64()
-                                .value() as usize;
+                            let at_index = at_value.as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as usize;
                             Ok(self
                                 .get_from_intermediate_value(&from_intermediate_value, at_index)?
-                                .with_context(|| {
-                                    format!(
-                                        "can not get element by index {at_index} from\n{:?}",
-                                        from_intermediate_value.type_kind
-                                    )
-                                })?)
+                                .with_context(|| format!("can not get element by index {at_index} from\n{:?}", from_intermediate_value.type_kind))?)
                         }
                         1 => {
                             let at_tuple = at_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
-                            let at_from_index = at_tuple
-                                .get(0)
-                                .unwrap()
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_number()
-                                .unwrap()
-                                .trunc()
-                                .to_f64()
-                                .value() as usize;
-                            let at_to_index = at_tuple
-                                .get(1)
-                                .unwrap()
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_number()
-                                .unwrap()
-                                .trunc()
-                                .to_f64()
-                                .value() as usize;
-                            let result_elements = self.get_range_from_intermediate_value(
-                                &from_intermediate_value,
-                                at_from_index..at_to_index,
-                            )?;
+                            let at_from_index = at_tuple.get(0).unwrap().as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as usize;
+                            let at_to_index = at_tuple.get(1).unwrap().as_ref().as_ref().unwrap().as_number().unwrap().trunc().to_f64().value() as usize;
+                            let result_elements = self.get_range_from_intermediate_value(&from_intermediate_value, at_from_index..at_to_index)?;
                             let expected_len = at_to_index - at_from_index;
                             if result_elements.len() != expected_len {
                                 return Err(anyhow!(
@@ -4249,13 +2565,7 @@ impl<'a> ComputationContext<'a> {
                                 ))?;
                             }
                             let type_kind = concrete_or_else(&node.r#type.kind, || {
-                                TypeKind::Tuple(
-                                    result_elements
-                                        .iter()
-                                        .map(|element| element.type_kind.clone().into())
-                                        .collect::<Vec<_>>()
-                                        .into(),
-                                )
+                                TypeKind::Tuple(result_elements.iter().map(|element| element.type_kind.clone().into()).collect::<Vec<_>>().into())
                             });
                             Ok(IntermediateValueAndMetadata {
                                 intermediate_value: IntermediateValue::Tuple(result_elements),
@@ -4264,63 +2574,32 @@ impl<'a> ComputationContext<'a> {
                             .into())
                         }
                         2 => {
-                            let at_key = at_value
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap()
-                                .to_string();
+                            let at_key = at_value.as_ref().as_ref().unwrap().as_string().unwrap().to_string();
                             Ok(self
-                                .get_by_key_from_intermediate_value(
-                                    &from_intermediate_value,
-                                    &at_key,
-                                )
-                                .with_context(|| {
-                                    format!(
-                                        "can not get element by key {at_key:?} from\n{:?}",
-                                        from_intermediate_value.type_kind
-                                    )
-                                })?
+                                .get_by_key_from_intermediate_value(&from_intermediate_value, &at_key)
+                                .with_context(|| format!("can not get element by key {at_key:?} from\n{:?}", from_intermediate_value.type_kind))?
                                 .unwrap())
                         }
                         3 => {
-                            let from_string_value =
-                                self.unroll_intermediate_value(&from_intermediate_value)?;
-                            let from_string = from_string_value
-                                .as_ref()
-                                .as_ref()
-                                .unwrap()
-                                .as_string()
-                                .unwrap();
+                            let from_string_value = self.unroll_intermediate_value(&from_intermediate_value)?;
+                            let from_string = from_string_value.as_ref().as_ref().unwrap().as_string().unwrap();
                             let at_tuple = at_value.as_ref().as_ref().unwrap().as_tuple().unwrap();
                             let at_from_index = at_tuple
                                 .get(0)
                                 .unwrap()
                                 .as_ref()
                                 .as_ref()
-                                .map(|number_value| {
-                                    number_value.as_number().unwrap().trunc().to_f64().value()
-                                        as usize
-                                })
+                                .map(|number_value| number_value.as_number().unwrap().trunc().to_f64().value() as usize)
                                 .unwrap_or(from_string.len_chars());
                             let at_to_index = at_tuple
                                 .get(1)
                                 .unwrap()
                                 .as_ref()
                                 .as_ref()
-                                .map(|number_value| {
-                                    number_value.as_number().unwrap().trunc().to_f64().value()
-                                        as usize
-                                })
+                                .map(|number_value| number_value.as_number().unwrap().trunc().to_f64().value() as usize)
                                 .unwrap_or(from_string.len_chars());
                             Ok(IntermediateValueAndMetadata {
-                                intermediate_value: IntermediateValue::Value(
-                                    Some(Value::String(
-                                        from_string.slice(at_from_index..at_to_index).into(),
-                                    ))
-                                    .into(),
-                                ),
+                                intermediate_value: IntermediateValue::Value(Some(Value::String(from_string.slice(at_from_index..at_to_index).into())).into()),
                                 type_kind: TypeKind::String,
                             }
                             .into())
@@ -4335,47 +2614,30 @@ impl<'a> ComputationContext<'a> {
                 arguments_is_pure,
             } => {
                 let mut result_constants = constants.clone();
-                for (constant_name_clustered_index, computed_constant) in arguments
-                    .iter()
-                    .map(|constant_definition| constant_definition.name_clustered_index)
-                    .zip(
-                        self.compute_nodes(
-                            arguments.iter().map(|constant_definition| {
-                                (Some(&constant_definition.node), Cow::Borrowed(constants))
-                            }),
-                            arguments.len(),
-                        )?
-                        .inner,
-                    )
-                {
+                for (constant_name_clustered_index, computed_constant) in arguments.iter().map(|constant_definition| constant_definition.name_clustered_index).zip(
+                    self.compute_nodes(
+                        arguments.iter().map(|constant_definition| (Some(&constant_definition.node), Cow::Borrowed(constants))),
+                        arguments.len(),
+                    )?
+                    .inner,
+                ) {
                     result_constants[constant_name_clustered_index] = Some(computed_constant);
                 }
                 let user_function = &self.intermediate_representation.user_functions[*body];
                 if self.computer_config.user_functions_caching && *arguments_is_pure {
                     let function_call_identifier = {
                         let mut hasher = gxhash::GxHasher::default();
-                        for constant_name_clustered_index in
-                            &user_function.external_constants_name_clustered_indices
-                        {
-                            result_constants[*constant_name_clustered_index]
-                                .as_ref()
-                                .unwrap()
-                                .hash(&mut hasher);
+                        for constant_name_clustered_index in &user_function.external_constants_name_clustered_indices {
+                            result_constants[*constant_name_clustered_index].as_ref().unwrap().hash(&mut hasher);
                         }
                         body.hash(&mut hasher);
                         hasher.finish_u128()
                     };
-                    if let Some(cached_function_result) = self
-                        .functions_results_cache
-                        .read()
-                        .get(&function_call_identifier)
-                    {
+                    if let Some(cached_function_result) = self.functions_results_cache.read().get(&function_call_identifier) {
                         Ok(cached_function_result.clone())
                     } else {
                         let result = self.compute_node(&user_function.node, &result_constants)?;
-                        self.functions_results_cache
-                            .write()
-                            .insert(function_call_identifier, result.clone());
+                        self.functions_results_cache.write().insert(function_call_identifier, result.clone());
                         Ok(result)
                     }
                 } else {
@@ -4388,9 +2650,7 @@ impl<'a> ComputationContext<'a> {
                 match_constant_name_clustered_index_option,
             } => {
                 let computed_match = self.compute_node(r#match, constants)?;
-                let case_constants = if let Some(match_constant_name_clustered_index) =
-                    match_constant_name_clustered_index_option
-                {
+                let case_constants = if let Some(match_constant_name_clustered_index) = match_constant_name_clustered_index_option {
                     let mut result = constants.clone();
                     result[*match_constant_name_clustered_index] = Some(computed_match.clone());
                     Cow::Owned(result)
@@ -4400,8 +2660,7 @@ impl<'a> ComputationContext<'a> {
                 if cases.len() == 1 {
                     self.compute_node(&cases.first().unwrap().node, &case_constants)
                 } else {
-                    let computed_match_unrolled_lazy_cell =
-                        LazyCell::new(|| self.unroll_intermediate_value(&computed_match));
+                    let computed_match_unrolled_lazy_cell = LazyCell::new(|| self.unroll_intermediate_value(&computed_match));
                     for case in cases {
                         match &case.condition {
                             Condition::Type(expected_type) => {
@@ -4410,9 +2669,7 @@ impl<'a> ComputationContext<'a> {
                                 }
                             }
                             Condition::Value(expected_value_node) => {
-                                let computed_expected_value = self.unroll_intermediate_value(
-                                    &self.compute_node(expected_value_node, constants)?,
-                                )?;
+                                let computed_expected_value = self.unroll_intermediate_value(&self.compute_node(expected_value_node, constants)?)?;
                                 if &computed_expected_value == {
                                     match &*computed_match_unrolled_lazy_cell {
                                         Ok(result) => result,
@@ -4432,38 +2689,20 @@ impl<'a> ComputationContext<'a> {
                 }
             }
             Content::Map(intermediate_representation_content) => {
-                let computed_map =
-                    self.compute_node(&intermediate_representation_content.map, constants)?;
+                let computed_map = self.compute_node(&intermediate_representation_content.map, constants)?;
                 let mut throughs_option = None;
-                for (map_concrete_type, throughs) in intermediate_representation_content
-                    .map_concrete_type_and_throughs
-                    .iter()
-                {
+                for (map_concrete_type, throughs) in intermediate_representation_content.map_concrete_type_and_throughs.iter() {
                     if map_concrete_type.kind.contains(&computed_map.type_kind) {
                         throughs_option = Some(throughs.clone());
                     }
                 }
-                let r#type = concrete_or_else(&node.r#type.kind, || {
-                    match throughs_option.as_ref().unwrap() {
-                        Throughs::Array(through_node) => {
-                            TypeKind::Array(Box::new(through_node.r#type.clone()))
-                        }
-                        Throughs::Tuple {
-                            nodes_indexes: _,
-                            nodes,
-                        } => TypeKind::Tuple(
-                            nodes
-                                .iter()
-                                .map(|node| node.r#type.clone())
-                                .collect::<Vec<_>>()
-                                .into(),
-                        ),
-                    }
+                let r#type = concrete_or_else(&node.r#type.kind, || match throughs_option.as_ref().unwrap() {
+                    Throughs::Array(through_node) => TypeKind::Array(Box::new(through_node.r#type.clone())),
+                    Throughs::Tuple { nodes_indexes: _, nodes } => TypeKind::Tuple(nodes.iter().map(|node| node.r#type.clone()).collect::<Vec<_>>().into()),
                 });
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Map(Map {
-                        intermediate_representation_content: intermediate_representation_content
-                            .clone(),
+                        intermediate_representation_content: intermediate_representation_content.clone(),
                         computed_map,
                         throughs: throughs_option.unwrap(),
                         constants: constants.clone(),
@@ -4484,44 +2723,21 @@ impl<'a> ComputationContext<'a> {
             }
             .into()),
             Content::Filter(intermediate_representation_content) => {
-                let computed_filter = Box::new(
-                    self.compute_node(&intermediate_representation_content.filter, constants)?,
-                );
+                let computed_filter = Box::new(self.compute_node(&intermediate_representation_content.filter, constants)?);
                 let mut throughs_option = None;
-                for (filter_concrete_type, throughs) in intermediate_representation_content
-                    .filter_concrete_type_and_throughs
-                    .iter()
-                {
-                    if filter_concrete_type
-                        .kind
-                        .contains(&computed_filter.type_kind)
-                    {
+                for (filter_concrete_type, throughs) in intermediate_representation_content.filter_concrete_type_and_throughs.iter() {
+                    if filter_concrete_type.kind.contains(&computed_filter.type_kind) {
                         throughs_option = Some(throughs.clone());
                     }
                 }
-                let r#type = concrete_or_else(&node.r#type.kind, || {
-                    match throughs_option.as_ref().unwrap() {
-                        Throughs::Array(through_node) => {
-                            TypeKind::Array(Box::new(through_node.r#type.clone()))
-                        }
-                        Throughs::Tuple {
-                            nodes_indexes: _,
-                            nodes,
-                        } => TypeKind::Tuple(
-                            nodes
-                                .iter()
-                                .map(|node| node.r#type.clone())
-                                .collect::<Vec<_>>()
-                                .into(),
-                        ),
-                    }
+                let r#type = concrete_or_else(&node.r#type.kind, || match throughs_option.as_ref().unwrap() {
+                    Throughs::Array(through_node) => TypeKind::Array(Box::new(through_node.r#type.clone())),
+                    Throughs::Tuple { nodes_indexes: _, nodes } => TypeKind::Tuple(nodes.iter().map(|node| node.r#type.clone()).collect::<Vec<_>>().into()),
                 });
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Filter(Filter {
-                        intermediate_representation_content: intermediate_representation_content
-                            .clone(),
-                        computed_filter: self
-                            .compute_node(&intermediate_representation_content.filter, constants)?,
+                        intermediate_representation_content: intermediate_representation_content.clone(),
+                        computed_filter: self.compute_node(&intermediate_representation_content.filter, constants)?,
                         throughs: throughs_option.unwrap(),
                         constants: constants.clone(),
                         lockable_internals: Arc::new(RwLock::new(FilterLockableInternals {
@@ -4543,26 +2759,14 @@ impl<'a> ComputationContext<'a> {
             } => {
                 let computed_fold = self.compute_node(fold, constants)?;
                 let unrolled_computed_fold = self.unroll_intermediate_value(&computed_fold)?;
-                let computed_fold_tuple = unrolled_computed_fold
-                    .as_ref()
-                    .as_ref()
-                    .unwrap()
-                    .as_tuple()
-                    .unwrap();
+                let computed_fold_tuple = unrolled_computed_fold.as_ref().as_ref().unwrap().as_tuple().unwrap();
                 let mut result = self.compute_node(starting_with, constants)?;
                 let mut current_index = 0usize;
-                for (current_computed_fold_tuple_index, current) in
-                    computed_fold_tuple.inner.iter().enumerate()
-                {
+                for (current_computed_fold_tuple_index, current) in computed_fold_tuple.inner.iter().enumerate() {
                     let mut through_constants = constants.clone();
                     let current_type_kind = match &computed_fold.type_kind {
-                        TypeKind::Tuple(elements_types) => concrete_or_else(
-                            &elements_types[current_computed_fold_tuple_index].kind,
-                            || Value::type_kind(current),
-                        ),
-                        TypeKind::Array(element_type) => {
-                            concrete_or_else(&element_type.kind, || Value::type_kind(current))
-                        }
+                        TypeKind::Tuple(elements_types) => concrete_or_else(&elements_types[current_computed_fold_tuple_index].kind, || Value::type_kind(current)),
+                        TypeKind::Array(element_type) => concrete_or_else(&element_type.kind, || Value::type_kind(current)),
                         _ => Value::type_kind(current),
                     };
                     through_constants[*fold_constant_name_clustered_index] = Some(
@@ -4572,8 +2776,7 @@ impl<'a> ComputationContext<'a> {
                         }
                         .into(),
                     );
-                    through_constants[*accumulating_in_constant_name_clustered_index] =
-                        Some(result.clone());
+                    through_constants[*accumulating_in_constant_name_clustered_index] = Some(result.clone());
                     let through_node = &throughs[current_index];
                     result = self.compute_node(through_node, &through_constants)?;
                     current_index = if current_index == throughs.len() - 1 {
@@ -4585,18 +2788,12 @@ impl<'a> ComputationContext<'a> {
                 Ok(result)
             }
             Content::Sequence(intermediate_representation_content) => {
-                let computed_starting_with = self.compute_node(
-                    &intermediate_representation_content.starting_with,
-                    constants,
-                )?;
+                let computed_starting_with = self.compute_node(&intermediate_representation_content.starting_with, constants)?;
                 let mut next_constants = constants.clone();
-                next_constants
-                    [intermediate_representation_content.current_constant_name_clustered_index] =
-                    Some(computed_starting_with.clone());
+                next_constants[intermediate_representation_content.current_constant_name_clustered_index] = Some(computed_starting_with.clone());
                 Ok(IntermediateValueAndMetadata {
                     intermediate_value: IntermediateValue::Sequence(Sequence {
-                        intermediate_representation_content: intermediate_representation_content
-                            .clone(),
+                        intermediate_representation_content: intermediate_representation_content.clone(),
                         lockable_internals: Arc::new(RwLock::new(SequenceLockableInternals {
                             current_index: 0usize,
                             next_constants,
@@ -4621,15 +2818,7 @@ impl<'a> ComputationContext<'a> {
                 loop {
                     next_constants[*current_constant_name_clustered_index] = Some(result.clone());
                     if let Some(r#while) = r#while
-                        && !self
-                            .unroll_intermediate_value(
-                                &self.compute_node(r#while, &next_constants)?,
-                            )?
-                            .as_ref()
-                            .as_ref()
-                            .unwrap()
-                            .as_bool()
-                            .unwrap()
+                        && !self.unroll_intermediate_value(&self.compute_node(r#while, &next_constants)?)?.as_ref().as_ref().unwrap().as_bool().unwrap()
                     {
                         break Ok(result);
                     }
@@ -4648,19 +2837,14 @@ impl<'a> ComputationContext<'a> {
             } => {
                 let mut previous_pipe_element_computed_option = None;
                 for pipe_element in pipe {
-                    if let Some(as_constant_name_clustered_index) =
-                        as_constant_name_clustered_index_option
-                        && let Some(previous_pipe_element_computed) =
-                            previous_pipe_element_computed_option
+                    if let Some(as_constant_name_clustered_index) = as_constant_name_clustered_index_option
+                        && let Some(previous_pipe_element_computed) = previous_pipe_element_computed_option
                     {
                         let mut pipe_element_constants = constants.clone();
-                        pipe_element_constants[*as_constant_name_clustered_index] =
-                            Some(previous_pipe_element_computed);
-                        previous_pipe_element_computed_option =
-                            Some(self.compute_node(pipe_element, &pipe_element_constants)?);
+                        pipe_element_constants[*as_constant_name_clustered_index] = Some(previous_pipe_element_computed);
+                        previous_pipe_element_computed_option = Some(self.compute_node(pipe_element, &pipe_element_constants)?);
                     } else {
-                        previous_pipe_element_computed_option =
-                            Some(self.compute_node(pipe_element, constants)?);
+                        previous_pipe_element_computed_option = Some(self.compute_node(pipe_element, constants)?);
                     };
                 }
                 Ok(previous_pipe_element_computed_option.unwrap())
@@ -4687,9 +2871,7 @@ impl<'a> ComputationContext<'a> {
                 let mut or_constants = constants.clone();
                 or_constants[*as_constant_name_clustered_index] = Some(
                     IntermediateValueAndMetadata {
-                        intermediate_value: IntermediateValue::Value(
-                            Some(Value::String(error_string.clone())).into(),
-                        ),
+                        intermediate_value: IntermediateValue::Value(Some(Value::String(error_string.clone())).into()),
                         type_kind: TypeKind::LiteralString(error_string),
                     }
                     .into(),
@@ -4709,10 +2891,9 @@ impl<'a> ComputationContext<'a> {
             }
             Content::Value(value) => Ok(IntermediateValueAndMetadata {
                 intermediate_value: unsafe {
-                    IntermediateValue::Value(std::mem::transmute::<
-                        Arc<Option<intermediate_representation::Value>>,
-                        Arc<Option<Value>>,
-                    >(value.clone()))
+                    IntermediateValue::Value(std::mem::transmute::<Arc<Option<intermediate_representation::Value>>, Arc<Option<Value>>>(
+                        value.clone(),
+                    ))
                 },
                 type_kind: node.r#type.kind.clone(),
             }

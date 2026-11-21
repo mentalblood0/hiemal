@@ -9,8 +9,8 @@ use std::{
 use anyhow::{Result, anyhow};
 use dashu::Rational;
 use enumset::{EnumSet, EnumSetType};
-use serde_with::{serde_as, DisplayFromStr};
 use serde::{Deserialize, Serialize};
+use serde_with::{DisplayFromStr, serde_as};
 
 use crate::{
     containers::{Object, Vector},
@@ -22,14 +22,7 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
         TypeKind::Array(Box::new(
             TypeKind::Union(
                 BTreeSet::from_iter([
-                    TypeKind::Object(
-                        BTreeMap::from_iter([(
-                            "raw string".to_string().into(),
-                            TypeKind::String.into(),
-                        )])
-                        .into(),
-                    )
-                    .into(),
+                    TypeKind::Object(BTreeMap::from_iter([("raw string".to_string().into(), TypeKind::String.into())]).into()).into(),
                     TypeKind::Constructed(Constructed::OneOf).into(),
                     TypeKind::Constructed(Constructed::CharacterExceptFromString).into(),
                     TypeKind::Constructed(Constructed::Repeat).into(),
@@ -59,22 +52,12 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
             .into(),
         )
         .into(),
-        TypeKind::Object(
-            BTreeMap::from_iter([(
-                "character except from string".to_string().into(),
-                TypeKind::String.into(),
-            )])
-            .into(),
-        )
-        .into(),
+        TypeKind::Object(BTreeMap::from_iter([("character except from string".to_string().into(), TypeKind::String.into())]).into()).into(),
         TypeKind::Union(
             BTreeSet::from_iter([
                 TypeKind::Object(
                     BTreeMap::from_iter([
-                        (
-                            "repeat".to_string().into(),
-                            TypeKind::Constructed(Constructed::Regex).into(),
-                        ),
+                        ("repeat".to_string().into(), TypeKind::Constructed(Constructed::Regex).into()),
                         ("min".to_string().into(), TypeKind::Number.into()),
                         ("max".to_string().into(), TypeKind::Number.into()),
                     ])
@@ -83,10 +66,7 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
                 .into(),
                 TypeKind::Object(
                     BTreeMap::from_iter([
-                        (
-                            "repeat".to_string().into(),
-                            TypeKind::Constructed(Constructed::Regex).into(),
-                        ),
+                        ("repeat".to_string().into(), TypeKind::Constructed(Constructed::Regex).into()),
                         ("min".to_string().into(), TypeKind::Number.into()),
                     ])
                     .into(),
@@ -94,10 +74,7 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
                 .into(),
                 TypeKind::Object(
                     BTreeMap::from_iter([
-                        (
-                            "repeat".to_string().into(),
-                            TypeKind::Constructed(Constructed::Regex).into(),
-                        ),
+                        ("repeat".to_string().into(), TypeKind::Constructed(Constructed::Regex).into()),
                         ("max".to_string().into(), TypeKind::Number.into()),
                     ])
                     .into(),
@@ -105,10 +82,7 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
                 .into(),
                 TypeKind::Object(
                     BTreeMap::from_iter([
-                        (
-                            "repeat".to_string().into(),
-                            TypeKind::Constructed(Constructed::Regex).into(),
-                        ),
+                        ("repeat".to_string().into(), TypeKind::Constructed(Constructed::Regex).into()),
                         ("exactly".to_string().into(), TypeKind::Number.into()),
                     ])
                     .into(),
@@ -120,10 +94,7 @@ static CONSTRUCTED_TYPES: LazyLock<[Type; 5]> = LazyLock::new(|| {
         .into(),
         TypeKind::Object(
             BTreeMap::from_iter([
-                (
-                    "group".to_string().into(),
-                    TypeKind::Constructed(Constructed::Regex).into(),
-                ),
+                ("group".to_string().into(), TypeKind::Constructed(Constructed::Regex).into()),
                 ("name".to_string().into(), TypeKind::String.into()),
             ])
             .into(),
@@ -323,10 +294,7 @@ where
     fn from(type_kind_and_inner_types: (TypeKind, I)) -> Self {
         Self {
             kind: type_kind_and_inner_types.0,
-            properties: type_kind_and_inner_types
-                .1
-                .map(|r#type| &r#type.properties)
-                .into(),
+            properties: type_kind_and_inner_types.1.map(|r#type| &r#type.properties).into(),
         }
     }
 }
@@ -377,13 +345,7 @@ pub enum TypeKind {
     #[serde(rename = "literal false")]
     LiteralFalse,
     #[serde(rename = "literal string")]
-    LiteralString(
-        #[serde(
-            deserialize_with = "deserialize_rope",
-            serialize_with = "serialize_rope"
-        )]
-        ropey::Rope,
-    ),
+    LiteralString(#[serde(deserialize_with = "deserialize_rope", serialize_with = "serialize_rope")] ropey::Rope),
     #[serde(rename = "literal number")]
     LiteralNumber(#[serde_as(as = "DisplayFromStr")] Rational),
     #[serde(rename = "generic literal string")]
@@ -412,9 +374,7 @@ impl From<BTreeSet<Type>> for Type {
             (TypeKind::Any, union_types.iter()).into()
         } else {
             let types_from_inner_unions = union_types
-                .extract_if(.., |union_type| {
-                    matches!(union_type.kind, TypeKind::Union(_))
-                })
+                .extract_if(.., |union_type| matches!(union_type.kind, TypeKind::Union(_)))
                 .flat_map(|inner_union| (inner_union.kind.as_union().unwrap()).clone().into_iter())
                 .collect::<Vec<_>>();
             for type_from_inner_union in types_from_inner_unions {
@@ -426,13 +386,7 @@ impl From<BTreeSet<Type>> for Type {
             ) {
                 union_types.remove(&TypeKind::LiteralTrue.into());
                 union_types.remove(&TypeKind::LiteralFalse.into());
-                union_types.insert(
-                    (
-                        TypeKind::Bool,
-                        [literal_true_union_type, literal_false_union_type].iter(),
-                    )
-                        .into(),
-                );
+                union_types.insert((TypeKind::Bool, [literal_true_union_type, literal_false_union_type].iter()).into());
             }
             match union_types.len() {
                 1 => union_types.into_iter().next().unwrap(),
@@ -468,12 +422,8 @@ impl TypeKind {
     pub fn is_concrete(&self) -> bool {
         match self {
             TypeKind::Array(element_type) => element_type.kind.is_concrete(),
-            TypeKind::Tuple(elements_types) => elements_types
-                .iter()
-                .all(|element_type| element_type.kind.is_concrete()),
-            TypeKind::Object(inner_types) => inner_types
-                .values()
-                .all(|value_type| value_type.kind.is_concrete()),
+            TypeKind::Tuple(elements_types) => elements_types.iter().all(|element_type| element_type.kind.is_concrete()),
+            TypeKind::Object(inner_types) => inner_types.values().all(|value_type| value_type.kind.is_concrete()),
             TypeKind::GenericObject(value_type) => value_type.kind.is_concrete(),
             TypeKind::Union(_) | TypeKind::Any => false,
             TypeKind::Constructed(constructed) => constructed.inner().kind.is_concrete(),
@@ -486,12 +436,8 @@ impl TypeKind {
             TypeKind::Null | TypeKind::LiteralTrue | TypeKind::LiteralFalse => true,
             TypeKind::LiteralString(_) => true,
             TypeKind::LiteralNumber(_) => true,
-            TypeKind::Tuple(elements_types) => elements_types
-                .iter()
-                .all(|element_type| element_type.kind.is_literal()),
-            TypeKind::Object(inner_types) => inner_types
-                .values()
-                .all(|value_type| value_type.kind.is_literal()),
+            TypeKind::Tuple(elements_types) => elements_types.iter().all(|element_type| element_type.kind.is_literal()),
+            TypeKind::Object(inner_types) => inner_types.values().all(|value_type| value_type.kind.is_literal()),
             TypeKind::Constructed(constructed) => constructed.inner().kind.is_literal(),
             _ => false,
         }
@@ -526,20 +472,11 @@ impl TypeKind {
     pub fn have_large_tuples(&self, threshold: usize) -> bool {
         match &self {
             TypeKind::Tuple(elements_types) => {
-                elements_types.len() > threshold
-                    || elements_types
-                        .iter()
-                        .any(|element_type| element_type.kind.have_large_tuples(threshold))
+                elements_types.len() > threshold || elements_types.iter().any(|element_type| element_type.kind.have_large_tuples(threshold))
             }
-            TypeKind::Array(element_type) | TypeKind::GenericObject(element_type) => {
-                element_type.kind.have_large_tuples(threshold)
-            }
-            TypeKind::Object(inner_types) => inner_types
-                .iter()
-                .any(|(_, element_type)| element_type.kind.have_large_tuples(threshold)),
-            TypeKind::Union(union_types) => union_types
-                .iter()
-                .any(|element_type| element_type.kind.have_large_tuples(threshold)),
+            TypeKind::Array(element_type) | TypeKind::GenericObject(element_type) => element_type.kind.have_large_tuples(threshold),
+            TypeKind::Object(inner_types) => inner_types.iter().any(|(_, element_type)| element_type.kind.have_large_tuples(threshold)),
+            TypeKind::Union(union_types) => union_types.iter().any(|element_type| element_type.kind.have_large_tuples(threshold)),
             _ => false,
         }
     }
@@ -547,67 +484,34 @@ impl TypeKind {
     pub fn with_tuples_weakened_to_arrays(self, threshold: usize) -> TypeKind {
         match &self {
             TypeKind::Tuple(elements_types) => {
-                let recursion_related_iterator = elements_types.iter().map(|element_type| {
-                    element_type.with_kind(
-                        element_type
-                            .kind
-                            .clone()
-                            .with_tuples_weakened_to_arrays(threshold),
-                    )
-                });
+                let recursion_related_iterator =
+                    elements_types.iter().map(|element_type| element_type.with_kind(element_type.kind.clone().with_tuples_weakened_to_arrays(threshold)));
                 if elements_types.len() > threshold {
-                    TypeKind::Array(Box::new(
-                        TypeKind::Union(BTreeSet::from_iter(recursion_related_iterator).into())
-                            .into(),
-                    ))
+                    TypeKind::Array(Box::new(TypeKind::Union(BTreeSet::from_iter(recursion_related_iterator).into()).into()))
                 } else {
                     TypeKind::Tuple(recursion_related_iterator.collect::<Vec<_>>().into())
                 }
             }
-            TypeKind::Array(element_type) => TypeKind::Array(Box::new(
-                element_type.with_kind(
-                    element_type
-                        .kind
-                        .clone()
-                        .with_tuples_weakened_to_arrays(threshold),
-                ),
-            )),
+            TypeKind::Array(element_type) => TypeKind::Array(Box::new(element_type.with_kind(element_type.kind.clone().with_tuples_weakened_to_arrays(threshold)))),
             TypeKind::Object(inner_types) => TypeKind::Object(
                 inner_types
                     .iter()
                     .map(|(key, element_type)| {
                         (
                             key.clone(),
-                            element_type.with_kind(
-                                element_type
-                                    .kind
-                                    .clone()
-                                    .with_tuples_weakened_to_arrays(threshold),
-                            ),
+                            element_type.with_kind(element_type.kind.clone().with_tuples_weakened_to_arrays(threshold)),
                         )
                     })
                     .collect::<BTreeMap<_, _>>()
                     .into(),
             ),
-            TypeKind::GenericObject(element_type) => TypeKind::GenericObject(Box::new(
-                element_type.with_kind(
-                    element_type
-                        .kind
-                        .clone()
-                        .with_tuples_weakened_to_arrays(threshold),
-                ),
-            )),
+            TypeKind::GenericObject(element_type) => {
+                TypeKind::GenericObject(Box::new(element_type.with_kind(element_type.kind.clone().with_tuples_weakened_to_arrays(threshold))))
+            }
             TypeKind::Union(union_types) => TypeKind::Union(
                 union_types
                     .iter()
-                    .map(|element_type| {
-                        element_type.with_kind(
-                            element_type
-                                .kind
-                                .clone()
-                                .with_tuples_weakened_to_arrays(threshold),
-                        )
-                    })
+                    .map(|element_type| element_type.with_kind(element_type.kind.clone().with_tuples_weakened_to_arrays(threshold)))
                     .collect::<BTreeSet<_>>()
                     .into(),
             ),
@@ -660,65 +564,37 @@ impl TypeKind {
                 | (TypeKind::Number, TypeKind::LiteralNumber(_))
                 | (TypeKind::Bool, TypeKind::LiteralTrue | TypeKind::LiteralFalse)
                 | (TypeKind::LiteralString(_), TypeKind::GenericLiteralString) => true,
-                (
-                    TypeKind::Constructed(self_constructed),
-                    TypeKind::Constructed(other_constructed),
-                ) => self_constructed
-                    .inner()
-                    .kind
-                    .contains(&other_constructed.inner().kind),
-                (TypeKind::Constructed(self_constructed), _) => {
-                    self_constructed.inner().kind.contains(other)
+                (TypeKind::Constructed(self_constructed), TypeKind::Constructed(other_constructed)) => {
+                    self_constructed.inner().kind.contains(&other_constructed.inner().kind)
                 }
-                (_, TypeKind::Constructed(other_constructed)) => {
-                    self.contains(&other_constructed.inner().kind)
-                }
+                (TypeKind::Constructed(self_constructed), _) => self_constructed.inner().kind.contains(other),
+                (_, TypeKind::Constructed(other_constructed)) => self.contains(&other_constructed.inner().kind),
                 (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
                     self_union_types.is_superset(other_union_types)
-                        || self_union_types.iter().all(|self_union_type| {
-                            other_union_types.iter().any(|other_union_type| {
-                                self_union_type.kind.contains(&other_union_type.kind)
-                            })
-                        })
+                        || self_union_types
+                            .iter()
+                            .all(|self_union_type| other_union_types.iter().any(|other_union_type| self_union_type.kind.contains(&other_union_type.kind)))
                 }
                 (TypeKind::Union(self_union_types), other_type_kind) => {
                     self_union_types.contains(&other_type_kind.clone().into())
-                        || self_union_types
-                            .iter()
-                            .any(|self_union_type| self_union_type.kind.contains(other_type_kind))
+                        || self_union_types.iter().any(|self_union_type| self_union_type.kind.contains(other_type_kind))
                 }
-                (self_type, TypeKind::Union(other_union_types)) => other_union_types
-                    .iter()
-                    .all(|other_union_type| self_type.contains(&other_union_type.kind)),
-                (TypeKind::Array(self_element_type), TypeKind::Array(other_element_type)) => {
-                    self_element_type.kind.contains(&other_element_type.kind)
-                }
-                (
-                    TypeKind::Tuple(self_tuple_elements_types),
-                    TypeKind::Tuple(other_tuple_elements_types),
-                ) => {
+                (self_type, TypeKind::Union(other_union_types)) => other_union_types.iter().all(|other_union_type| self_type.contains(&other_union_type.kind)),
+                (TypeKind::Array(self_element_type), TypeKind::Array(other_element_type)) => self_element_type.kind.contains(&other_element_type.kind),
+                (TypeKind::Tuple(self_tuple_elements_types), TypeKind::Tuple(other_tuple_elements_types)) => {
                     if self_tuple_elements_types.len() != other_tuple_elements_types.len() {
                         return false;
                     }
                     for element_index in 0..self_tuple_elements_types.len() {
-                        if !self_tuple_elements_types[element_index]
-                            .kind
-                            .contains(&other_tuple_elements_types[element_index].kind)
-                        {
+                        if !self_tuple_elements_types[element_index].kind.contains(&other_tuple_elements_types[element_index].kind) {
                             return false;
                         }
                     }
                     true
                 }
-                (
-                    TypeKind::Array(self_array_element_type),
-                    TypeKind::Tuple(other_tuple_elements_types),
-                ) => {
+                (TypeKind::Array(self_array_element_type), TypeKind::Tuple(other_tuple_elements_types)) => {
                     for other_tuple_element_type in other_tuple_elements_types.as_ref() {
-                        if !self_array_element_type
-                            .kind
-                            .contains(&other_tuple_element_type.kind)
-                        {
+                        if !self_array_element_type.kind.contains(&other_tuple_element_type.kind) {
                             return false;
                         }
                     }
@@ -731,10 +607,7 @@ impl TypeKind {
                     let mut current_other_inner_type = other_inner_types_iterator.next();
                     loop {
                         match (current_self_inner_type, current_other_inner_type) {
-                            (
-                                Some((self_key, self_value_type)),
-                                Some((other_key, other_value_type)),
-                            ) => match self_key.cmp(other_key) {
+                            (Some((self_key, self_value_type)), Some((other_key, other_value_type))) => match self_key.cmp(other_key) {
                                 Ordering::Less => {
                                     current_self_inner_type = self_inner_types_iterator.next();
                                 }
@@ -760,19 +633,12 @@ impl TypeKind {
                     true
                 }
                 (TypeKind::Object(self_inner_types), TypeKind::GenericObject(other_value_type)) => {
-                    self_inner_types.values().all(|self_value_type| {
-                        self_value_type.kind.contains(&other_value_type.kind)
-                    })
+                    self_inner_types.values().all(|self_value_type| self_value_type.kind.contains(&other_value_type.kind))
                 }
                 (TypeKind::GenericObject(self_value_type), TypeKind::Object(other_inner_types)) => {
-                    other_inner_types.values().all(|other_value_type| {
-                        self_value_type.kind.contains(&other_value_type.kind)
-                    })
+                    other_inner_types.values().all(|other_value_type| self_value_type.kind.contains(&other_value_type.kind))
                 }
-                (
-                    TypeKind::GenericObject(self_value_type),
-                    TypeKind::GenericObject(other_value_type),
-                ) => self_value_type.kind.contains(&other_value_type.kind),
+                (TypeKind::GenericObject(self_value_type), TypeKind::GenericObject(other_value_type)) => self_value_type.kind.contains(&other_value_type.kind),
                 _ => false,
             }
         }
@@ -790,16 +656,11 @@ impl TypeKind {
                 | (TypeKind::LiteralString(_), TypeKind::String | TypeKind::GenericLiteralString)
                 | (TypeKind::LiteralNumber(_), TypeKind::Number) => None,
                 (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
-                    let mut result = self_union_types
-                        .sub(other_union_types)
-                        .iter()
-                        .map(|self_union_type| Some(self_union_type.kind.clone()))
-                        .collect::<Vec<_>>();
+                    let mut result = self_union_types.sub(other_union_types).iter().map(|self_union_type| Some(self_union_type.kind.clone())).collect::<Vec<_>>();
                     for other_union_type in &**other_union_types {
                         for result_union_type_option in result.iter_mut() {
                             if let Some(kind) = result_union_type_option.take() {
-                                *result_union_type_option =
-                                    kind.substraction(&other_union_type.kind);
+                                *result_union_type_option = kind.substraction(&other_union_type.kind);
                             }
                         }
                         result.retain(|r| r.is_some());
@@ -811,11 +672,9 @@ impl TypeKind {
                         None
                     } else {
                         Some(
-                            Type::from(BTreeSet::from_iter(result.into_iter().map(
-                                |result_union_type_kind_option| {
-                                    result_union_type_kind_option.unwrap().into()
-                                },
-                            )))
+                            Type::from(BTreeSet::from_iter(
+                                result.into_iter().map(|result_union_type_kind_option| result_union_type_kind_option.unwrap().into()),
+                            ))
                             .kind,
                         )
                     }
@@ -823,18 +682,9 @@ impl TypeKind {
                 (TypeKind::Union(self_union_types), _) => {
                     let result = self_union_types
                         .iter()
-                        .filter_map(|self_union_type| {
-                            self_union_type
-                                .kind
-                                .substraction(other)
-                                .map(|result_type_kind| self_union_type.with_kind(result_type_kind))
-                        })
+                        .filter_map(|self_union_type| self_union_type.kind.substraction(other).map(|result_type_kind| self_union_type.with_kind(result_type_kind)))
                         .collect::<BTreeSet<_>>();
-                    if result.is_empty() {
-                        None
-                    } else {
-                        Some(Type::from(result).kind)
-                    }
+                    if result.is_empty() { None } else { Some(Type::from(result).kind) }
                 }
                 (_, TypeKind::Union(other_union_types)) => {
                     let mut result = self.clone();
@@ -843,59 +693,35 @@ impl TypeKind {
                     }
                     Some(result)
                 }
-                (
-                    TypeKind::Constructed(self_constructed),
-                    TypeKind::Constructed(other_constructed),
-                ) => self_constructed
-                    .inner()
-                    .kind
-                    .substraction(&other_constructed.inner().kind),
-                (
-                    TypeKind::GenericObject(self_value_type),
-                    TypeKind::GenericObject(other_value_type),
-                ) => self_value_type
-                    .kind
-                    .substraction(&other_value_type.kind)
-                    .map(|result_element_type| {
+                (TypeKind::Constructed(self_constructed), TypeKind::Constructed(other_constructed)) => {
+                    self_constructed.inner().kind.substraction(&other_constructed.inner().kind)
+                }
+                (TypeKind::GenericObject(self_value_type), TypeKind::GenericObject(other_value_type)) => {
+                    self_value_type.kind.substraction(&other_value_type.kind).map(|result_element_type| {
                         TypeKind::GenericObject(Box::new(Type {
                             kind: result_element_type,
-                            properties: self_value_type
-                                .properties
-                                .unified(&other_value_type.properties),
+                            properties: self_value_type.properties.unified(&other_value_type.properties),
                         }))
-                    }),
+                    })
+                }
                 (TypeKind::Array(self_element_type), TypeKind::Array(other_element_type)) => {
-                    self_element_type
-                        .kind
-                        .substraction(&other_element_type.kind)
-                        .map(|result_element_type| {
-                            TypeKind::Array(Box::new(Type {
-                                kind: result_element_type,
-                                properties: self_element_type
-                                    .properties
-                                    .unified(&other_element_type.properties),
-                            }))
-                        })
+                    self_element_type.kind.substraction(&other_element_type.kind).map(|result_element_type| {
+                        TypeKind::Array(Box::new(Type {
+                            kind: result_element_type,
+                            properties: self_element_type.properties.unified(&other_element_type.properties),
+                        }))
+                    })
                 }
                 (TypeKind::Object(self_inner_types), TypeKind::Object(other_inner_types)) => {
-                    if self_inner_types
-                        .keys()
-                        .zip(other_inner_types.keys())
-                        .all(|(self_key, other_key)| self_key == other_key)
-                    {
+                    if self_inner_types.keys().zip(other_inner_types.keys()).all(|(self_key, other_key)| self_key == other_key) {
                         let mut result_inner_types = BTreeMap::new();
-                        for ((key, self_value_type), (_, other_value_type)) in
-                            self_inner_types.iter().zip(other_inner_types.iter())
-                        {
-                            let result_value_type_kind =
-                                self_value_type.kind.substraction(&other_value_type.kind)?;
+                        for ((key, self_value_type), (_, other_value_type)) in self_inner_types.iter().zip(other_inner_types.iter()) {
+                            let result_value_type_kind = self_value_type.kind.substraction(&other_value_type.kind)?;
                             result_inner_types.insert(
                                 key.clone(),
                                 Type {
                                     kind: result_value_type_kind,
-                                    properties: self_value_type
-                                        .properties
-                                        .unified(&other_value_type.properties),
+                                    properties: self_value_type.properties.unified(&other_value_type.properties),
                                 },
                             );
                         }
@@ -929,97 +755,56 @@ impl TypeKind {
             Some(self.clone())
         } else {
             match (self, other) {
-                (TypeKind::Any, other_type) | (other_type, TypeKind::Any) => {
-                    Some(other_type.clone())
-                }
-                (TypeKind::Bool, TypeKind::LiteralTrue)
-                | (TypeKind::LiteralTrue, TypeKind::Bool) => Some(TypeKind::LiteralTrue),
-                (TypeKind::Bool, TypeKind::LiteralFalse)
-                | (TypeKind::LiteralFalse, TypeKind::Bool) => Some(TypeKind::LiteralFalse),
-                (TypeKind::String, TypeKind::LiteralString(literal_string))
-                | (TypeKind::LiteralString(literal_string), TypeKind::String) => {
+                (TypeKind::Any, other_type) | (other_type, TypeKind::Any) => Some(other_type.clone()),
+                (TypeKind::Bool, TypeKind::LiteralTrue) | (TypeKind::LiteralTrue, TypeKind::Bool) => Some(TypeKind::LiteralTrue),
+                (TypeKind::Bool, TypeKind::LiteralFalse) | (TypeKind::LiteralFalse, TypeKind::Bool) => Some(TypeKind::LiteralFalse),
+                (TypeKind::String, TypeKind::LiteralString(literal_string)) | (TypeKind::LiteralString(literal_string), TypeKind::String) => {
                     Some(TypeKind::LiteralString(literal_string.clone()))
                 }
-                (TypeKind::Number, TypeKind::LiteralNumber(literal_number))
-                | (TypeKind::LiteralNumber(literal_number), TypeKind::Number) => {
+                (TypeKind::Number, TypeKind::LiteralNumber(literal_number)) | (TypeKind::LiteralNumber(literal_number), TypeKind::Number) => {
                     Some(TypeKind::LiteralNumber(literal_number.clone()))
                 }
-                (TypeKind::String, TypeKind::GenericLiteralString)
-                | (TypeKind::GenericLiteralString, TypeKind::String) => {
-                    Some(TypeKind::GenericLiteralString)
-                }
-                (TypeKind::GenericLiteralString, TypeKind::LiteralString(literal_string))
-                | (TypeKind::LiteralString(literal_string), TypeKind::GenericLiteralString) => {
+                (TypeKind::String, TypeKind::GenericLiteralString) | (TypeKind::GenericLiteralString, TypeKind::String) => Some(TypeKind::GenericLiteralString),
+                (TypeKind::GenericLiteralString, TypeKind::LiteralString(literal_string)) | (TypeKind::LiteralString(literal_string), TypeKind::GenericLiteralString) => {
                     Some(TypeKind::LiteralString(literal_string.clone()))
                 }
-                (
-                    TypeKind::Constructed(self_constructed),
-                    TypeKind::Constructed(other_constructed),
-                ) => self_constructed
-                    .inner()
-                    .kind
-                    .intersection(&other_constructed.inner().kind),
-                (TypeKind::Constructed(self_constructed), _) => {
-                    self_constructed.inner().kind.intersection(other)
+                (TypeKind::Constructed(self_constructed), TypeKind::Constructed(other_constructed)) => {
+                    self_constructed.inner().kind.intersection(&other_constructed.inner().kind)
                 }
-                (_, TypeKind::Constructed(other_constructed)) => {
-                    self.intersection(&other_constructed.inner().kind)
-                }
+                (TypeKind::Constructed(self_constructed), _) => self_constructed.inner().kind.intersection(other),
+                (_, TypeKind::Constructed(other_constructed)) => self.intersection(&other_constructed.inner().kind),
                 (TypeKind::Union(self_union_types), TypeKind::Union(other_union_types)) => {
                     let mut result = BTreeSet::new();
                     for self_union_type in &**self_union_types {
                         for other_union_type in &**other_union_types {
-                            if let Some(elements_intersection) =
-                                self_union_type.kind.intersection(&other_union_type.kind)
-                            {
+                            if let Some(elements_intersection) = self_union_type.kind.intersection(&other_union_type.kind) {
                                 result.insert(elements_intersection.into());
                             }
                         }
                     }
-                    if result.is_empty() {
-                        None
-                    } else {
-                        Some(Type::from(result).into())
-                    }
+                    if result.is_empty() { None } else { Some(Type::from(result).into()) }
                 }
-                (TypeKind::Union(union_types), other_type)
-                | (other_type, TypeKind::Union(union_types)) => {
+                (TypeKind::Union(union_types), other_type) | (other_type, TypeKind::Union(union_types)) => {
                     let mut result = BTreeSet::new();
                     for union_type in union_types.iter() {
-                        if let Some(element_intersection) = union_type.kind.intersection(other_type)
-                        {
+                        if let Some(element_intersection) = union_type.kind.intersection(other_type) {
                             result.insert(element_intersection.into());
                         }
                     }
-                    if result.is_empty() {
-                        None
-                    } else {
-                        Some(Type::from(result).into())
-                    }
+                    if result.is_empty() { None } else { Some(Type::from(result).into()) }
                 }
-                (
-                    TypeKind::Array(self_array_element_type),
-                    TypeKind::Array(other_array_element_type),
-                ) => self_array_element_type
+                (TypeKind::Array(self_array_element_type), TypeKind::Array(other_array_element_type)) => self_array_element_type
                     .kind
                     .intersection(&other_array_element_type.kind)
-                    .map(|element_types_intersection| {
-                        TypeKind::Array(Box::new(element_types_intersection.into()))
-                    }),
-                (
-                    TypeKind::Tuple(self_tuple_elements_types),
-                    TypeKind::Tuple(other_tuple_elements_types),
-                ) => {
+                    .map(|element_types_intersection| TypeKind::Array(Box::new(element_types_intersection.into()))),
+                (TypeKind::Tuple(self_tuple_elements_types), TypeKind::Tuple(other_tuple_elements_types)) => {
                     if self_tuple_elements_types.len() != other_tuple_elements_types.len() {
                         None
                     } else {
-                        let mut result_tuple_types =
-                            Vec::with_capacity(self_tuple_elements_types.len());
+                        let mut result_tuple_types = Vec::with_capacity(self_tuple_elements_types.len());
                         for element_index in 0..self_tuple_elements_types.len() {
-                            let elements_types_intersection = self_tuple_elements_types
-                                [element_index]
-                                .kind
-                                .intersection(&other_tuple_elements_types[element_index].kind)?;
+                            let elements_types_intersection =
+                                self_tuple_elements_types[element_index].kind.intersection(&other_tuple_elements_types[element_index].kind)?;
                             result_tuple_types.push(elements_types_intersection.into());
                         }
                         Some(TypeKind::Tuple(result_tuple_types.into()))
@@ -1027,28 +812,21 @@ impl TypeKind {
                 }
                 (TypeKind::Array(array_element_type), TypeKind::Tuple(tuple_elements_types))
                 | (TypeKind::Tuple(tuple_elements_types), TypeKind::Array(array_element_type)) => {
-                    let mut result_tuple_elements_types =
-                        Vec::with_capacity(tuple_elements_types.len());
+                    let mut result_tuple_elements_types = Vec::with_capacity(tuple_elements_types.len());
                     for tuple_element_type in tuple_elements_types.iter() {
-                        let result_tuple_element_type = tuple_element_type
-                            .kind
-                            .intersection(&array_element_type.kind)?;
+                        let result_tuple_element_type = tuple_element_type.kind.intersection(&array_element_type.kind)?;
                         result_tuple_elements_types.push(result_tuple_element_type)
                     }
                     Some(TypeKind::Tuple(tuple_elements_types.clone()))
                 }
                 (TypeKind::Object(self_inner_types), TypeKind::Object(other_inner_types)) => {
                     let mut result_inner_types = BTreeMap::new();
-                    for ((self_key, self_value_type), (other_key, other_value_type)) in
-                        self_inner_types.iter().zip(other_inner_types.iter())
-                    {
+                    for ((self_key, self_value_type), (other_key, other_value_type)) in self_inner_types.iter().zip(other_inner_types.iter()) {
                         if self_key != other_key {
                             return None;
                         }
-                        let values_types_intersection =
-                            self_value_type.kind.intersection(&other_value_type.kind)?;
-                        result_inner_types
-                            .insert(self_key.clone(), values_types_intersection.into());
+                        let values_types_intersection = self_value_type.kind.intersection(&other_value_type.kind)?;
+                        result_inner_types.insert(self_key.clone(), values_types_intersection.into());
                     }
                     if result_inner_types.is_empty() {
                         None
@@ -1057,28 +835,19 @@ impl TypeKind {
                     }
                 }
                 (TypeKind::Object(self_inner_types), TypeKind::GenericObject(other_value_type))
-                | (TypeKind::GenericObject(other_value_type), TypeKind::Object(self_inner_types)) =>
-                {
+                | (TypeKind::GenericObject(other_value_type), TypeKind::Object(self_inner_types)) => {
                     let mut result_inner_types = BTreeMap::new();
                     for (self_key, self_value_type) in self_inner_types.iter() {
-                        if let Some(values_types_intersection) =
-                            self_value_type.kind.intersection(&other_value_type.kind)
-                        {
-                            result_inner_types
-                                .insert(self_key.clone(), values_types_intersection.into());
+                        if let Some(values_types_intersection) = self_value_type.kind.intersection(&other_value_type.kind) {
+                            result_inner_types.insert(self_key.clone(), values_types_intersection.into());
                         }
                     }
                     Some(TypeKind::Object(result_inner_types.into()))
                 }
-                (
-                    TypeKind::GenericObject(self_value_type),
-                    TypeKind::GenericObject(other_value_type),
-                ) => self_value_type
+                (TypeKind::GenericObject(self_value_type), TypeKind::GenericObject(other_value_type)) => self_value_type
                     .kind
                     .intersection(&other_value_type.kind)
-                    .map(|values_types_intersection| {
-                        TypeKind::GenericObject(Box::new(values_types_intersection.into()))
-                    }),
+                    .map(|values_types_intersection| TypeKind::GenericObject(Box::new(values_types_intersection.into()))),
                 _ => None,
             }
         }
@@ -1086,52 +855,25 @@ impl TypeKind {
 }
 
 impl<'a> Type {
-    pub fn with_recursively_updated_properties(
-        self,
-        update_function: &dyn Fn(TypeProperties) -> TypeProperties,
-    ) -> Type {
+    pub fn with_recursively_updated_properties(self, update_function: &dyn Fn(TypeProperties) -> TypeProperties) -> Type {
         Type {
             kind: match self.kind {
-                TypeKind::Array(element_type) => TypeKind::Array(Box::new(
-                    element_type.with_recursively_updated_properties(update_function),
-                )),
+                TypeKind::Array(element_type) => TypeKind::Array(Box::new(element_type.with_recursively_updated_properties(update_function))),
                 TypeKind::Tuple(elements_types) => TypeKind::Tuple(
-                    elements_types
-                        .iter()
-                        .cloned()
-                        .map(|element_type| {
-                            element_type.with_recursively_updated_properties(update_function)
-                        })
-                        .collect::<Vec<_>>()
-                        .into(),
+                    elements_types.iter().cloned().map(|element_type| element_type.with_recursively_updated_properties(update_function)).collect::<Vec<_>>().into(),
                 ),
                 TypeKind::Object(inner_types) => TypeKind::Object(
                     inner_types
                         .iter()
-                        .map(|(key, value_type)| {
-                            (
-                                key.clone(),
-                                value_type
-                                    .clone()
-                                    .with_recursively_updated_properties(update_function),
-                            )
-                        })
+                        .map(|(key, value_type)| (key.clone(), value_type.clone().with_recursively_updated_properties(update_function)))
                         .collect::<BTreeMap<_, _>>()
                         .into(),
                 ),
-                TypeKind::GenericObject(value_type) => TypeKind::GenericObject(Box::new(
-                    value_type.with_recursively_updated_properties(update_function),
-                )),
-                TypeKind::Union(union_types) => Type::from(
-                    union_types
-                        .iter()
-                        .cloned()
-                        .map(|element_type| {
-                            element_type.with_recursively_updated_properties(update_function)
-                        })
-                        .collect::<BTreeSet<_>>(),
-                )
-                .into(),
+                TypeKind::GenericObject(value_type) => TypeKind::GenericObject(Box::new(value_type.with_recursively_updated_properties(update_function))),
+                TypeKind::Union(union_types) => {
+                    Type::from(union_types.iter().cloned().map(|element_type| element_type.with_recursively_updated_properties(update_function)).collect::<BTreeSet<_>>())
+                        .into()
+                }
                 kind => kind,
             },
             properties: update_function(self.properties),
@@ -1167,33 +909,24 @@ impl<'a> Type {
                 Ok(self.with_kind(Type::from((*result_union_types_arc).clone()).into()))
             }
             TypeKind::Array(element_type) => match &element_type.kind {
-                TypeKind::Array(element_element_type) => {
-                    Ok(self.with_kind(TypeKind::Array(element_element_type.clone())))
-                }
-                TypeKind::Tuple(element_elements_types) => {
-                    Ok(self.with_kind(TypeKind::Array(Box::new(
-                        (
-                            Type::from(BTreeSet::from_iter(element_elements_types.iter().cloned()))
-                                .kind,
-                            element_elements_types.iter(),
-                        )
-                            .into(),
-                    ))))
-                }
+                TypeKind::Array(element_element_type) => Ok(self.with_kind(TypeKind::Array(element_element_type.clone()))),
+                TypeKind::Tuple(element_elements_types) => Ok(self.with_kind(TypeKind::Array(Box::new(
+                    (
+                        Type::from(BTreeSet::from_iter(element_elements_types.iter().cloned())).kind,
+                        element_elements_types.iter(),
+                    )
+                        .into(),
+                )))),
                 TypeKind::Union(element_union_types) => {
                     let mut result_element_union_types = BTreeSet::new();
                     for element_union_type in element_union_types.as_ref() {
                         match &element_union_type.kind {
                             TypeKind::Array(element_union_element_type) => {
-                                result_element_union_types
-                                    .insert(*element_union_element_type.clone());
+                                result_element_union_types.insert(*element_union_element_type.clone());
                             }
                             TypeKind::Tuple(element_union_elements_types) => {
-                                for element_union_element_type in
-                                    element_union_elements_types.as_ref()
-                                {
-                                    result_element_union_types
-                                        .insert(element_union_element_type.clone());
+                                for element_union_element_type in element_union_elements_types.as_ref() {
+                                    result_element_union_types.insert(element_union_element_type.clone());
                                 }
                             }
                             non_sequence_type => {
@@ -1204,9 +937,7 @@ impl<'a> Type {
                             }
                         }
                     }
-                    Ok(self.with_kind(TypeKind::Array(Box::new(Type::from(
-                        result_element_union_types,
-                    )))))
+                    Ok(self.with_kind(TypeKind::Array(Box::new(Type::from(result_element_union_types)))))
                 }
                 non_sequence_type => Err(anyhow!(
                     "can not flatten {self:#?} because it contains element of type \
@@ -1214,10 +945,7 @@ impl<'a> Type {
                 )),
             },
             TypeKind::Tuple(elements_types) => {
-                if elements_types
-                    .iter()
-                    .all(|element_type| matches!(element_type.kind, TypeKind::Tuple(_)))
-                {
+                if elements_types.iter().all(|element_type| matches!(element_type.kind, TypeKind::Tuple(_))) {
                     let mut result_elements_types = Vec::new();
                     for element_type in elements_types.as_ref() {
                         match &element_type.kind {
@@ -1247,15 +975,11 @@ impl<'a> Type {
                                 for element_union_type in element_union_types.as_ref() {
                                     match &element_union_type.kind {
                                         TypeKind::Array(element_union_element_type) => {
-                                            result_elements_types
-                                                .insert(*element_union_element_type.clone());
+                                            result_elements_types.insert(*element_union_element_type.clone());
                                         }
                                         TypeKind::Tuple(element_union_elements_types) => {
-                                            for element_union_element_type in
-                                                element_union_elements_types.as_ref()
-                                            {
-                                                result_elements_types
-                                                    .insert(element_union_element_type.clone());
+                                            for element_union_element_type in element_union_elements_types.as_ref() {
+                                                result_elements_types.insert(element_union_element_type.clone());
                                             }
                                         }
                                         non_sequence_type => {
@@ -1275,11 +999,7 @@ impl<'a> Type {
                             }
                         }
                     }
-                    Ok(
-                        self.with_kind(TypeKind::Array(Box::new(Type::from(
-                            result_elements_types,
-                        )))),
-                    )
+                    Ok(self.with_kind(TypeKind::Array(Box::new(Type::from(result_elements_types)))))
                 }
             }
             _ => Err(anyhow!("can not flatten {self:#?}")),

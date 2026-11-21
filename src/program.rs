@@ -132,10 +132,7 @@ pub struct ProgramAndMetadata {
 }
 
 impl ProgramAndMetadata {
-    pub fn write_external_names(
-        &mut self,
-        available_functions: &mut BTreeMap<Arc<String>, Arc<ProgramAndMetadata>>,
-    ) {
+    pub fn write_external_names(&mut self, available_functions: &mut BTreeMap<Arc<String>, Arc<ProgramAndMetadata>>) {
         match &mut self.program {
             Program::Tuple(elements) => {
                 for element in elements {
@@ -144,7 +141,9 @@ impl ProgramAndMetadata {
                     self.external_functions_names.extend(element.external_functions_names.iter().cloned());
                 }
             }
-            Program::Scope { functions, constants, compute, .. } => {
+            Program::Scope {
+                functions, constants, compute, ..
+            } => {
                 for constant in constants.values_mut() {
                     unsafe { Arc::get_mut_unchecked(&mut *constant) }.write_external_names(available_functions);
                     self.external_constants_names.extend(constant.external_constants_names.iter().cloned());
@@ -217,26 +216,33 @@ impl ProgramAndMetadata {
                         self.external_functions_names.extend(condition_program_and_metadata.external_functions_names.iter().cloned());
                     }
                     case.1.write_external_names(available_functions);
-                    self.external_constants_names.extend(case.1.external_constants_names.iter().filter(|case_external_constant_name| Some(case_external_constant_name) != r#as.as_ref().as_ref()).cloned());
+                    self.external_constants_names.extend(
+                        case.1.external_constants_names.iter().filter(|case_external_constant_name| Some(case_external_constant_name) != r#as.as_ref().as_ref()).cloned(),
+                    );
                     self.external_functions_names.extend(case.1.external_functions_names.iter().cloned());
                 }
             }
-            Program::Map { map: source, r#as, through }
-            | Program::Filter { filter: source, r#as, through } => {
+            Program::Map { map: source, r#as, through } | Program::Filter { filter: source, r#as, through } => {
                 unsafe { Arc::get_mut_unchecked(&mut *source) }.write_external_names(available_functions);
                 self.external_constants_names.extend(source.external_constants_names.iter().cloned());
                 self.external_functions_names.extend(source.external_functions_names.iter().cloned());
                 unsafe { Arc::get_mut_unchecked(&mut *through) }.write_external_names(available_functions);
-                self.external_constants_names.extend(through.external_constants_names.iter().filter(|through_external_constant_name| through_external_constant_name != &r#as).cloned());
+                self.external_constants_names
+                    .extend(through.external_constants_names.iter().filter(|through_external_constant_name| through_external_constant_name != &r#as).cloned());
                 self.external_functions_names.extend(through.external_functions_names.iter().cloned());
-                
             }
             Program::Flatten { flatten } => {
                 unsafe { Arc::get_mut_unchecked(&mut *flatten) }.write_external_names(available_functions);
                 self.external_constants_names.extend(flatten.external_constants_names.iter().cloned());
                 self.external_functions_names.extend(flatten.external_functions_names.iter().cloned());
             }
-            Program::Fold { fold: source, r#as, starting_with, accumulating_in, through } => {
+            Program::Fold {
+                fold: source,
+                r#as,
+                starting_with,
+                accumulating_in,
+                through,
+            } => {
                 unsafe { Arc::get_mut_unchecked(&mut *starting_with) }.write_external_names(available_functions);
                 self.external_constants_names.extend(starting_with.external_constants_names.iter().cloned());
                 self.external_functions_names.extend(starting_with.external_functions_names.iter().cloned());
@@ -244,32 +250,55 @@ impl ProgramAndMetadata {
                 self.external_constants_names.extend(source.external_constants_names.iter().cloned());
                 self.external_functions_names.extend(source.external_functions_names.iter().cloned());
                 unsafe { Arc::get_mut_unchecked(&mut *through) }.write_external_names(available_functions);
-                self.external_constants_names.extend(through.external_constants_names.iter().filter(|through_external_constant_name| through_external_constant_name != &r#as && through_external_constant_name != &accumulating_in).cloned());
+                self.external_constants_names.extend(
+                    through
+                        .external_constants_names
+                        .iter()
+                        .filter(|through_external_constant_name| through_external_constant_name != &r#as && through_external_constant_name != &accumulating_in)
+                        .cloned(),
+                );
                 self.external_functions_names.extend(through.external_functions_names.iter().cloned());
             }
             Program::Metaprogram { .. } => {
                 todo!();
             }
-            Program::Sequence { starting_with, r#as, next, r#while }
-            | Program::Loop { starting_with, r#as, r#loop: next, r#while } => {
+            Program::Sequence {
+                starting_with,
+                r#as,
+                next,
+                r#while,
+            }
+            | Program::Loop {
+                starting_with,
+                r#as,
+                r#loop: next,
+                r#while,
+            } => {
                 unsafe { Arc::get_mut_unchecked(&mut *starting_with) }.write_external_names(available_functions);
                 self.external_constants_names.extend(starting_with.external_constants_names.iter().cloned());
                 self.external_functions_names.extend(starting_with.external_functions_names.iter().cloned());
                 unsafe { Arc::get_mut_unchecked(&mut *next) }.write_external_names(available_functions);
-                self.external_constants_names.extend(next.external_constants_names.iter().filter(|next_external_constant_name| next_external_constant_name != &r#as).cloned());
+                self.external_constants_names
+                    .extend(next.external_constants_names.iter().filter(|next_external_constant_name| next_external_constant_name != &r#as).cloned());
                 self.external_functions_names.extend(next.external_functions_names.iter().cloned());
                 if let Some(r#while) = r#while {
                     unsafe { Arc::get_mut_unchecked(&mut *r#while) }.write_external_names(available_functions);
-                    self.external_constants_names.extend(r#while.external_constants_names.iter().filter(|next_external_constant_name| next_external_constant_name != &r#as).cloned());
+                    self.external_constants_names
+                        .extend(r#while.external_constants_names.iter().filter(|next_external_constant_name| next_external_constant_name != &r#as).cloned());
                     self.external_functions_names.extend(r#while.external_functions_names.iter().cloned());
                 }
-                
             }
             Program::Pipe { pipe, r#as } => {
                 let mut is_first = true;
                 for element in pipe {
                     unsafe { Arc::get_mut_unchecked(&mut *element) }.write_external_names(available_functions);
-                    self.external_constants_names.extend(element.external_constants_names.iter().filter(|element_external_constant_name| is_first || Some(element_external_constant_name) != r#as.as_ref().as_ref()).cloned());
+                    self.external_constants_names.extend(
+                        element
+                            .external_constants_names
+                            .iter()
+                            .filter(|element_external_constant_name| is_first || Some(element_external_constant_name) != r#as.as_ref().as_ref())
+                            .cloned(),
+                    );
                     self.external_functions_names.extend(element.external_functions_names.iter().cloned());
                     is_first = false;
                 }
@@ -336,7 +365,9 @@ impl From<Program> for ProgramAndMetadata {
             Program::DefaultArgument(_) => {
                 value_only = false;
                 return Self {
-                    program: Program::Constant { constant: DEFAULT_ARGUMENT_NAME.to_string().into() },
+                    program: Program::Constant {
+                        constant: DEFAULT_ARGUMENT_NAME.to_string().into(),
+                    },
                     hash: hasher.finish_u128(),
                     compiles_easily,
                     value_only,
@@ -344,29 +375,19 @@ impl From<Program> for ProgramAndMetadata {
                     external_functions_names: Set::default(),
                 };
             }
-            Program::EmbeddedFunctionCall(EmbeddedFunctionCall {
-                embedded_function,
-                argument,
-            }) => {
+            Program::EmbeddedFunctionCall(EmbeddedFunctionCall { embedded_function, argument }) => {
                 compiles_easily = false;
                 value_only = false;
                 embedded_function.hash(&mut hasher);
                 argument.hash.hash(&mut hasher);
             }
-            Program::UserFunctionCall(UserFunctionCall {
-                user_function_name,
-                argument,
-            }) => {
+            Program::UserFunctionCall(UserFunctionCall { user_function_name, argument }) => {
                 compiles_easily = false;
                 value_only = false;
                 user_function_name.hash(&mut hasher);
                 argument.hash.hash(&mut hasher);
             }
-            Program::Match {
-                r#match,
-                r#as,
-                cases,
-            } => {
+            Program::Match { r#match, r#as, cases } => {
                 compiles_easily = false;
                 value_only = false;
                 match r#match {
@@ -378,11 +399,7 @@ impl From<Program> for ProgramAndMetadata {
                     }
                 }
                 r#as.hash(&mut hasher);
-                for (
-                    condition,
-                    program_and_metadata
-                ) in cases
-                {
+                for (condition, program_and_metadata) in cases {
                     match condition {
                         Condition::Type(r#type) => {
                             r#type.hash(&mut hasher);
@@ -394,16 +411,7 @@ impl From<Program> for ProgramAndMetadata {
                     program_and_metadata.hash.hash(&mut hasher);
                 }
             }
-            Program::Map {
-                map: source,
-                r#as,
-                through,
-            }
-            | Program::Filter {
-                filter: source,
-                r#as,
-                through,
-            } => {
+            Program::Map { map: source, r#as, through } | Program::Filter { filter: source, r#as, through } => {
                 compiles_easily = false;
                 value_only = false;
                 source.hash.hash(&mut hasher);
@@ -600,25 +608,18 @@ impl<'de> Deserialize<'de> for UserFunctionCall {
             type Value = UserFunctionCall;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str(
-                    "a with a single key-value pair where key is a one-string tuple and value is \
-                     a program",
-                )
+                formatter.write_str("a with a single key-value pair where key is a one-string tuple and value is a program")
             }
 
             fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
             where
                 M: MapAccess<'de>,
             {
-                let (name, argument) =
-                    match access.next_entry::<(Arc<String>,), Arc<ProgramAndMetadata>>()? {
-                        Some(((key,), value)) => (key, value),
-                        Option::None => return Err(serde::de::Error::invalid_length(0, &self)),
-                    };
-                if access
-                    .next_entry::<(Arc<String>,), Arc<ProgramAndMetadata>>()?
-                    .is_some()
-                {
+                let (name, argument) = match access.next_entry::<(Arc<String>,), Arc<ProgramAndMetadata>>()? {
+                    Some(((key,), value)) => (key, value),
+                    Option::None => return Err(serde::de::Error::invalid_length(0, &self)),
+                };
+                if access.next_entry::<(Arc<String>,), Arc<ProgramAndMetadata>>()?.is_some() {
                     return Err(serde::de::Error::invalid_length(2, &self));
                 }
                 Ok(UserFunctionCall {
@@ -654,10 +655,7 @@ impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
                     Some((key, value)) => (key, value),
                     Option::None => return Err(serde::de::Error::invalid_length(0, &self)),
                 };
-                if access
-                    .next_entry::<EmbeddedFunction, ProgramAndMetadata>()?
-                    .is_some()
-                {
+                if access.next_entry::<EmbeddedFunction, ProgramAndMetadata>()?.is_some() {
                     return Err(serde::de::Error::invalid_length(2, &self));
                 }
                 Ok(EmbeddedFunctionCall {
