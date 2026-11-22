@@ -2555,8 +2555,7 @@ impl<'a> ComputationContext<'a> {
                             let expected_len = at_to_index - at_from_index;
                             if result_elements.len() != expected_len {
                                 return Err(anyhow!(
-                                    "can not get slice by range {}..{}: expected result of length \
-                                     {}, found result of len {} from\n{:?}",
+                                    "can not get slice by range {}..{}: expected result of length {}, found result of len {} from\n{:?}",
                                     at_from_index,
                                     at_to_index,
                                     expected_len,
@@ -2682,8 +2681,7 @@ impl<'a> ComputationContext<'a> {
                         }
                     }
                     panic!(
-                        "no case from {cases:#?} matches computed value \
-                         {computed_match_unrolled_lazy_cell:#?} of type {:#?}",
+                        "no case from {cases:#?} matches computed value {computed_match_unrolled_lazy_cell:#?} of type {:#?}",
                         computed_match.type_kind
                     );
                 }

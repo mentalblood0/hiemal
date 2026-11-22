@@ -179,7 +179,7 @@ impl ProgramAndMetadata {
                         unsafe { Arc::get_mut_unchecked(&mut user_function) }.write_external_names(available_functions);
                         let mut user_function_external_constants_names_without_argument = user_function.external_constants_names.clone();
                         match &argument.program {
-                            Program::Object(arguments) if arguments.len() > 1 => {
+                            Program::Object(arguments) => {
                                 for argument_name in arguments.keys() {
                                     user_function_external_constants_names_without_argument.remove(argument_name);
                                 }

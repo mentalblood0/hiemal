@@ -9,7 +9,8 @@ functions:
             found: { constant: found }
   tests report:
     match:
-      filter: _
+      filter:
+        [key-value pairs]: { constant: tests }
       through:
         match:
           [get]:
@@ -20,8 +21,8 @@ functions:
           - [{ object: { error: any } }, true]
     as: _
     cases:
-      - [[], ok]
-      - [any, _]
+      - [ [], ok ]
+      - [ any, { [object from]: _ } ]
   is match:
     match:
       [match regex]:
@@ -147,12 +148,12 @@ constants:
               - [any, _]
 compute:
   [tests report]:
-    [key-value pairs]:
+    tests:
       test caching:
         [assert equal]:
           found:
             [tests report]:
-              [key-value pairs]:
+              tests:
                 test A:
                   [assert equal]:
                     found: { [parse]: { YAML: "lalala" } }
@@ -162,10 +163,10 @@ compute:
                     found: { [parse]: { YAML: "null" } }
                     expected: lalala
           expected:
-            - - test B
-              - error:
-                  expected: lalala
-                  found: null
+            test B:
+              error:
+                expected: lalala
+                found: null
       test match regex all:
         [assert equal]:
           found:

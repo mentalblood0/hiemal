@@ -337,6 +337,39 @@ impl Compiler {
         .into())
     }
 
+    fn hash_with_context(
+        &self,
+        program_with_hash: &ProgramAndMetadata,
+        compilation_context: &CompilationContext,
+        global_compilation_context: &mut GlobalCompilationContext,
+    ) -> Option<u128> {
+        if program_with_hash.value_only {
+            Some(program_with_hash.hash)
+        } else {
+            let hashing_start = std::time::Instant::now();
+            let mut hasher = gxhash::GxHasher::default();
+            program_with_hash.hash.hash(&mut hasher);
+            for constant_name in program_with_hash.external_constants_names.iter() {
+                ContextElement {
+                    name: constant_name.as_str(),
+                    content: ContextElementContent::Constant(&*compilation_context.available_constants.get(constant_name)?),
+                }
+                .hash(&mut hasher);
+            }
+            for function_name in program_with_hash.external_functions_names.iter() {
+                ContextElement {
+                    name: function_name.as_str(),
+                    content: ContextElementContent::Function(compilation_context.available_functions.get(function_name)?.hash),
+                }
+                .hash(&mut hasher);
+            }
+            let result = hasher.finish_u128();
+            let time_spent_on_hashing = hashing_start.elapsed();
+            global_compilation_context.time_spent_on_hashing += time_spent_on_hashing;
+            Some(result)
+        }
+    }
+
     fn compile_with_context(
         &self,
         program_with_hash: &ProgramAndMetadata,
@@ -346,32 +379,10 @@ impl Compiler {
         if program_with_hash.compiles_easily && !program_with_hash.value_only {
             self.compile_with_context_without_cache(program_with_hash, compilation_context, global_compilation_context)
         } else {
-            let instantiated_program_hash = if program_with_hash.value_only {
-                program_with_hash.hash
-            } else {
-                let hashing_start = std::time::Instant::now();
-                let mut hasher = gxhash::GxHasher::default();
-                program_with_hash.hash.hash(&mut hasher);
-                for constant_name in program_with_hash.external_constants_names.iter() {
-                    ContextElement {
-                        name: constant_name.as_str(),
-                        content: ContextElementContent::Constant(&compilation_context.available_constants.get(constant_name).unwrap()),
-                    }
-                    .hash(&mut hasher);
-                }
-                for function_name in program_with_hash.external_functions_names.iter() {
-                    ContextElement {
-                        name: function_name.as_str(),
-                        content: ContextElementContent::Function(compilation_context.available_functions.get(function_name).unwrap().hash),
-                    }
-                    .hash(&mut hasher);
-                }
-                let result = hasher.finish_u128();
-                let time_spent_on_hashing = hashing_start.elapsed();
-                global_compilation_context.time_spent_on_hashing += time_spent_on_hashing;
-                result
-            };
-            if let Some((cached_compilation_result, saved_compilation_time)) = global_compilation_context.compiled_programs_cache.get(&instantiated_program_hash) {
+            let instantiated_program_hash_option = self.hash_with_context(program_with_hash, compilation_context, global_compilation_context);
+            if let Some(instantiated_program_hash) = instantiated_program_hash_option
+                && let Some((cached_compilation_result, saved_compilation_time)) = global_compilation_context.compiled_programs_cache.get(&instantiated_program_hash)
+            {
                 global_compilation_context.compiled_programs_cache_hits += 1;
                 global_compilation_context.saved_compilation_time += *saved_compilation_time;
                 Ok(cached_compilation_result.clone())
@@ -380,7 +391,15 @@ impl Compiler {
                 let compilation_start = std::time::Instant::now();
                 let result = self.compile_with_context_without_cache(program_with_hash, compilation_context, global_compilation_context)?;
                 let compilation_duration = compilation_start.elapsed();
-                global_compilation_context.compiled_programs_cache.insert(instantiated_program_hash, (result.clone(), compilation_duration));
+                if let Some(instantiated_program_hash) = instantiated_program_hash_option {
+                    global_compilation_context.compiled_programs_cache.insert(instantiated_program_hash, (result.clone(), compilation_duration));
+                } else {
+                    return Err(compilation_context.error(
+                        &"no error",
+                        &"error about usage of undefined constant or function, because hash of subprogram and context were not computed because some external names \
+                          this subprogram uses were not found in the context",
+                    ));
+                }
                 Ok(result)
             }
         }
@@ -1276,32 +1295,64 @@ impl Compiler {
                                 compilation_context,
                                 global_compilation_context,
                                 function_call,
-                                Some(&|compiled_argument_resolved_type, _| match &compiled_argument_resolved_type.kind {
-                                    TypeKind::Tuple(argument_elements_types) => {
-                                        if argument_elements_types.iter().all(|key_and_value_tuple_type| {
-                                            matches!(key_and_value_tuple_type.kind.as_tuple().unwrap()[0].kind, TypeKind::LiteralString(_))
-                                        }) {
-                                            Ok(TypeKind::Object(
-                                                BTreeMap::from_iter(argument_elements_types.iter().map(|key_and_value_tuple_type| {
-                                                    (
-                                                        key_and_value_tuple_type.kind.as_tuple().unwrap()[0].kind.as_literal_string().unwrap().to_string().into(),
-                                                        key_and_value_tuple_type.kind.as_tuple().unwrap()[1].clone(),
-                                                    )
-                                                }))
-                                                .into(),
-                                            )
-                                            .into())
+                                Some(&|compiled_argument_resolved_type, _| {
+                                    let argument_type_variants: Box<dyn Iterator<Item = &Type>> =
+                                        if let TypeKind::Union(union_elements) = &compiled_argument_resolved_type.kind {
+                                            Box::new(union_elements.iter())
                                         } else {
-                                            Ok(TypeKind::GenericObject(Box::new(Type::from(BTreeSet::from_iter(
-                                                argument_elements_types
-                                                    .iter()
-                                                    .map(|key_and_value_tuple_type| key_and_value_tuple_type.kind.as_tuple().unwrap()[1].clone()),
-                                            ))))
-                                            .into())
-                                        }
+                                            Box::new(std::iter::once(compiled_argument_resolved_type))
+                                        };
+                                    let mut result_union_types = BTreeSet::new();
+                                    for argument_type_variant in argument_type_variants {
+                                        match &argument_type_variant.kind {
+                                            TypeKind::Tuple(argument_elements_types) => {
+                                                if argument_elements_types.iter().all(|key_and_value_tuple_type| {
+                                                    matches!(key_and_value_tuple_type.kind.as_tuple().unwrap()[0].kind, TypeKind::LiteralString(_))
+                                                }) {
+                                                    result_union_types.insert(
+                                                        TypeKind::Object(
+                                                            BTreeMap::from_iter(argument_elements_types.iter().map(|key_and_value_tuple_type| {
+                                                                (
+                                                                    key_and_value_tuple_type.kind.as_tuple().unwrap()[0]
+                                                                        .kind
+                                                                        .as_literal_string()
+                                                                        .unwrap()
+                                                                        .to_string()
+                                                                        .into(),
+                                                                    key_and_value_tuple_type.kind.as_tuple().unwrap()[1].clone(),
+                                                                )
+                                                            }))
+                                                            .into(),
+                                                        )
+                                                        .into(),
+                                                    );
+                                                } else {
+                                                    result_union_types.insert(
+                                                        TypeKind::GenericObject(Box::new(Type::from(BTreeSet::from_iter(
+                                                            argument_elements_types
+                                                                .iter()
+                                                                .map(|key_and_value_tuple_type| key_and_value_tuple_type.kind.as_tuple().unwrap()[1].clone()),
+                                                        ))))
+                                                        .into(),
+                                                    );
+                                                }
+                                            }
+                                            TypeKind::Array(argument_element_type) => {
+                                                let argument_element_type_variants: Box<dyn Iterator<Item = &Type>> =
+                                                    if let TypeKind::Union(union_elements) = &argument_element_type.kind {
+                                                        Box::new(union_elements.iter())
+                                                    } else {
+                                                        Box::new(std::iter::once(&**argument_element_type))
+                                                    };
+                                                for argument_element_type_variant in argument_element_type_variants {
+                                                    result_union_types
+                                                        .insert(TypeKind::GenericObject(argument_element_type_variant.kind.as_tuple().unwrap()[1].clone().into()).into());
+                                                }
+                                            }
+                                            _ => panic!(),
+                                        };
                                     }
-                                    TypeKind::Array(argument_element_type) => Ok(TypeKind::GenericObject(argument_element_type.clone()).into()),
-                                    _ => panic!(),
+                                    Ok(Type::from(result_union_types))
                                 }),
                             )?,
                             EmbeddedFunction::CompileRegex => self.compile_embedded_function_call(
@@ -1551,27 +1602,23 @@ impl Compiler {
                                 let mut body_compilation_context = compilation_context.with_additional_path([PathSegment::UserFunctionCall(user_function_name.clone())]);
                                 let arguments_iterator = match &function_call.argument.program {
                                     Program::Object(function_arguments) => {
-                                        let arguments_iterator: Box<dyn Iterator<Item = (Arc<String>, Arc<ProgramAndMetadata>)>> = if function_arguments.len() > 1 {
-                                            Box::new(function_arguments.iter().map(|(key, value_with_hash)| (key.clone(), value_with_hash.clone())))
-                                        } else {
-                                            Box::new([(DEFAULT_ARGUMENT_NAME.clone(), function_call.argument.clone())].into_iter())
-                                        };
+                                        let arguments_iterator: Box<dyn Iterator<Item = (Arc<String>, Arc<ProgramAndMetadata>)>> =
+                                            Box::new(function_arguments.iter().map(|(key, value_with_hash)| (key.clone(), value_with_hash.clone())));
                                         arguments_iterator
                                     }
                                     _ => Box::new([(DEFAULT_ARGUMENT_NAME.clone(), function_call.argument.clone())].into_iter()),
                                 };
                                 let mut new_constants_definitions = Vec::new();
                                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-                                for (function_argument_name, function_argument_body) in arguments_iterator {
+                                for (argument_name, argument) in arguments_iterator {
                                     let argument_compilation_context = compilation_context.with_additional_path([
                                         PathSegment::UserFunctionCall(user_function_name.clone()),
-                                        PathSegment::Argument(function_argument_name.clone()),
+                                        PathSegment::Argument(argument_name.clone()),
                                     ]);
-                                    let compiled_constant =
-                                        self.compile_with_context(&function_argument_body, &argument_compilation_context, global_compilation_context)?;
+                                    let compiled_constant = self.compile_with_context(&argument, &argument_compilation_context, global_compilation_context)?;
                                     result_external_constants_name_clustered_indices.append(&mut compiled_constant.external_constants_name_clustered_indices.clone());
                                     let constant_definition = self.define_constant(
-                                        function_argument_name.clone(),
+                                        argument_name.clone(),
                                         compiled_constant.node.r#type.clone(),
                                         &mut body_compilation_context,
                                         global_compilation_context,
