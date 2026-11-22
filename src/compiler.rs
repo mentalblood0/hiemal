@@ -16,7 +16,7 @@ use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     embedded_functions::{EMBEDDED_FUNCTIONS, EmbeddedFunction},
     intermediate_representation::{self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction},
-    program::{Condition, EmbeddedFunctionCall, Match, Path, PathSegment, Program, ProgramAndMetadata, UserFunctionCall},
+    program::{Condition, Constant, EmbeddedFunctionCall, Match, Path, PathSegment, Program, ProgramAndMetadata, UserFunctionCall},
     r#type::{Capability, Embedded, Type, TypeKind, TypeProperties},
     value::Value,
 };
@@ -209,8 +209,7 @@ impl Compiler {
             ))
         } else {
             eprintln!(
-                "compiled subprograms cache:\n  hits: {}\n  misses: {}\n  time spent on hashing: \
-                 {:?}\n  saved compilation time: {:?}",
+                "compiled subprograms cache:\n  hits: {}\n  misses: {}\n  time spent on hashing: {:?}\n  saved compilation time: {:?}",
                 global_compilation_context.compiled_programs_cache_hits,
                 global_compilation_context.compiled_programs_cache_misses,
                 global_compilation_context.time_spent_on_hashing,
@@ -533,7 +532,7 @@ impl Compiler {
                         }
                         .into()
                     }
-                    Program::Constant { constant: constant_name } => {
+                    Program::Constant(Constant { constant: constant_name }) => {
                         if let Some(constant_type) = compilation_context.available_constants.get(constant_name) {
                             let name_clustered_constant_index =
                                 *global_compilation_context.constants_names_to_name_clustered_constants_indices.get(constant_name).unwrap();
@@ -556,14 +555,6 @@ impl Compiler {
                             ));
                         }
                     }
-                    Program::DefaultArgument(_) => self.compile_with_context(
-                        &Program::Constant {
-                            constant: DEFAULT_ARGUMENT_NAME.to_string().into(),
-                        }
-                        .into(),
-                        compilation_context,
-                        global_compilation_context,
-                    )?,
                     Program::EmbeddedFunctionCall(embedded_function_call) => match embedded_function_call.embedded_function {
                         EmbeddedFunction::Sort => self.compile_embedded_function_call(
                             compilation_context,
@@ -689,14 +680,7 @@ impl Compiler {
                                                     if let Some(element_type) = elements_types.get(index) {
                                                         result.insert(Type::from(element_type.kind.clone()));
                                                     } else {
-                                                        return Err(compilation_context.error(
-                                                            &elements_types,
-                                                            &format!(
-                                                                "tuple with at least {} \
-                                                                     elements",
-                                                                index + 1
-                                                            ),
-                                                        ));
+                                                        return Err(compilation_context.error(&elements_types, &format!("tuple with at least {} elements", index + 1)));
                                                     }
                                                 }
                                                 _ => panic!(),
@@ -763,13 +747,7 @@ impl Compiler {
                                                     if (from_index <= to_index) && (to_index <= elements_types.len()) {
                                                         result.insert(Type::from(BTreeSet::from_iter(elements_types[from_index..to_index].iter().cloned())));
                                                     } else {
-                                                        return Err(compilation_context.error(
-                                                            &from_type_kind,
-                                                            &format!(
-                                                                "tuple with range \
-                                                                     {from_index}..{to_index}",
-                                                            ),
-                                                        ));
+                                                        return Err(compilation_context.error(&from_type_kind, &format!("tuple with range {from_index}..{to_index}",)));
                                                     }
                                                 }
                                                 _ => panic!(),
@@ -863,13 +841,7 @@ impl Compiler {
                                                     if (from_index <= to_index) && (to_index <= literal_string.len_chars()) {
                                                         result.insert(TypeKind::LiteralString(literal_string.slice(from_index..to_index).into()).into());
                                                     } else {
-                                                        return Err(compilation_context.error(
-                                                            &from_type_kind,
-                                                            &format!(
-                                                                "string with range \
-                                                                     {from_index}..{to_index}",
-                                                            ),
-                                                        ));
+                                                        return Err(compilation_context.error(&from_type_kind, &format!("string with range {from_index}..{to_index}",)));
                                                     }
                                                 }
                                                 _ => panic!(),
@@ -885,7 +857,7 @@ impl Compiler {
                     },
                     Program::Match { r#match, r#as, cases } => {
                         let (r#match, match_constant_name) = match r#match {
-                            Match::Constant(constant_name) => (&Program::Constant { constant: constant_name.clone() }.into(), Some(constant_name)),
+                            Match::Constant(constant_name) => (&Program::Constant(Constant { constant: constant_name.clone() }).into(), Some(constant_name)),
                             Match::Program(program_with_hash) => (&**program_with_hash, None),
                         };
                         let match_compilation_context = compilation_context.with_additional_path([PathSegment::Match]);
@@ -938,7 +910,7 @@ impl Compiler {
                                     }
                                     Condition::Value(condition) => {
                                         let mut case_compilation_context = compilation_context.with_additional_path([PathSegment::Cases, PathSegment::Case(case_index)]);
-                                        let compiled_condition = self.compile_with_context(&condition, &case_compilation_context, global_compilation_context)?;
+                                        let compiled_condition = self.compile_with_context(condition, &case_compilation_context, global_compilation_context)?;
                                         if let Some(refined_match_type_kind) = compiled_match.node.r#type.kind.intersection(&compiled_condition.node.r#type.kind) {
                                             if let Some(match_constant_name) = r#as.as_ref().or(match_constant_name) {
                                                 self.define_constant(

@@ -5,7 +5,7 @@ use bytes::Bytes;
 use enumset::EnumSet;
 use serde::{
     Deserialize, Deserializer, Serialize,
-    de::{MapAccess, Visitor},
+    de::{self, MapAccess, Visitor},
 };
 
 use crate::{
@@ -32,10 +32,7 @@ pub enum Program {
         forbid: Option<EnumSet<Capability>>,
         compute: Arc<ProgramAndMetadata>,
     },
-    Constant {
-        constant: Arc<String>,
-    },
-    DefaultArgument(DefaultArgument),
+    Constant(Constant),
     EmbeddedFunctionCall(EmbeddedFunctionCall),
     UserFunctionCall(UserFunctionCall),
     Match {
@@ -165,11 +162,8 @@ impl ProgramAndMetadata {
                 }
                 self.external_functions_names.extend(compute_external_functions_names_without_functions.iter().cloned());
             }
-            Program::Constant { constant } => {
+            Program::Constant(Constant { constant }) => {
                 self.external_constants_names.insert(constant.clone());
-            }
-            Program::DefaultArgument(_) => {
-                self.external_constants_names.insert(DEFAULT_ARGUMENT_NAME.to_string().into());
             }
             Program::EmbeddedFunctionCall(EmbeddedFunctionCall { argument, .. }) => {
                 unsafe { Arc::get_mut_unchecked(&mut *argument) }.write_external_names(available_functions);
@@ -358,22 +352,9 @@ impl From<Program> for ProgramAndMetadata {
                 }
                 compute.hash.hash(&mut hasher);
             }
-            Program::Constant { constant } => {
+            Program::Constant(Constant { constant }) => {
                 value_only = false;
                 constant.hash(&mut hasher);
-            }
-            Program::DefaultArgument(_) => {
-                value_only = false;
-                return Self {
-                    program: Program::Constant {
-                        constant: DEFAULT_ARGUMENT_NAME.to_string().into(),
-                    },
-                    hash: hasher.finish_u128(),
-                    compiles_easily,
-                    value_only,
-                    external_constants_names: Set::default(),
-                    external_functions_names: Set::default(),
-                };
             }
             Program::EmbeddedFunctionCall(EmbeddedFunctionCall { embedded_function, argument }) => {
                 compiles_easily = false;
@@ -566,11 +547,34 @@ pub enum Condition {
     Value(ProgramAndMetadata),
 }
 
-#[repr(u8)]
-#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
-pub enum DefaultArgument {
-    #[serde(rename = "_")]
-    Underline,
+#[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+pub struct Constant {
+    pub constant: Arc<String>,
+}
+
+impl<'de> Deserialize<'de> for Constant {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Inner {
+            constant: Arc<String>,
+        }
+
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            Str(String),
+            Struct(Inner),
+        }
+
+        match Helper::deserialize(deserializer)? {
+            Helper::Str(s) if s == "_" => Ok(Constant { constant: Arc::new(s) }),
+            Helper::Str(s) => Err(de::Error::invalid_value(de::Unexpected::Str(&s), &"\"_\" or a struct with a `constant` field")),
+            Helper::Struct(inner) => Ok(Constant { constant: inner.constant }),
+        }
+    }
 }
 
 impl Default for Program {
