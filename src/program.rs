@@ -570,7 +570,7 @@ impl<'de> Deserialize<'de> for Constant {
         }
 
         match Helper::deserialize(deserializer)? {
-            Helper::Str(s) if s == "_" => Ok(Constant { constant: Arc::new(s) }),
+            Helper::Str(s) if s == DEFAULT_ARGUMENT_NAME => Ok(Constant { constant: Arc::new(s) }),
             Helper::Str(s) => Err(de::Error::invalid_value(de::Unexpected::Str(&s), &"\"_\" or a struct with a `constant` field")),
             Helper::Struct(inner) => Ok(Constant { constant: inner.constant }),
         }

@@ -1550,27 +1550,22 @@ impl Compiler {
                             let mut new_constants_definitions = Vec::new();
                             let mut result_external_constants_name_clustered_indices = BTreeSet::new();
                             for (function_argument_name, function_argument_body) in arguments_iterator {
-                                if function_argument_name.ends_with(":") {
-                                    body_compilation_context.available_functions.insert(function_argument_name, function_argument_body);
-                                } else {
-                                    let argument_compilation_context = compilation_context.with_additional_path([
-                                        PathSegment::UserFunctionCall(user_function_name.clone()),
-                                        PathSegment::Argument(function_argument_name.clone()),
-                                    ]);
-                                    let compiled_constant =
-                                        self.compile_with_context(&function_argument_body, &argument_compilation_context, global_compilation_context)?;
-                                    result_external_constants_name_clustered_indices.append(&mut compiled_constant.external_constants_name_clustered_indices.clone());
-                                    let constant_definition = self.define_constant(
-                                        function_argument_name.clone(),
-                                        compiled_constant.node.r#type.clone(),
-                                        &mut body_compilation_context,
-                                        global_compilation_context,
-                                    );
-                                    new_constants_definitions.push(intermediate_representation::ConstantDefinition {
-                                        name_clustered_index: constant_definition,
-                                        node: compiled_constant.node.clone(),
-                                    });
-                                }
+                                let argument_compilation_context = compilation_context.with_additional_path([
+                                    PathSegment::UserFunctionCall(user_function_name.clone()),
+                                    PathSegment::Argument(function_argument_name.clone()),
+                                ]);
+                                let compiled_constant = self.compile_with_context(&function_argument_body, &argument_compilation_context, global_compilation_context)?;
+                                result_external_constants_name_clustered_indices.append(&mut compiled_constant.external_constants_name_clustered_indices.clone());
+                                let constant_definition = self.define_constant(
+                                    function_argument_name.clone(),
+                                    compiled_constant.node.r#type.clone(),
+                                    &mut body_compilation_context,
+                                    global_compilation_context,
+                                );
+                                new_constants_definitions.push(intermediate_representation::ConstantDefinition {
+                                    name_clustered_index: constant_definition,
+                                    node: compiled_constant.node.clone(),
+                                });
                             }
                             body_compilation_context.entered_user_functions.insert(function_body_with_hash.hash);
                             let compiled_function = self.compile_with_context(&function_body_with_hash, &body_compilation_context, global_compilation_context)?;

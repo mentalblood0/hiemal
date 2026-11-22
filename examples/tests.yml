@@ -1053,17 +1053,6 @@ compute:
                 next: { sum: [_, 1] }
               at: [0, 3]
           expected: [1, 2, 3]
-      # test function as argument:
-      #   [assert equal]:
-      #     found:
-      #       functions:
-      #         apply:
-      #           ["function:"]: { constant: argument }
-      #       compute:
-      #         [apply]:
-      #           function:: { sum: [_, 1] }
-      #           argument: 1
-      #     expected: 2
       test override function:
         [assert equal]:
           found:
