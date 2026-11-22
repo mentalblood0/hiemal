@@ -12,7 +12,7 @@ functions:
       filter: _
       through:
         match:
-          get:
+          [get]:
             from: _
             at: 1
         cases:
@@ -24,7 +24,7 @@ functions:
       - [any, _]
   is match:
     match:
-      match regex:
+      [match regex]:
         string: { constant: string }
         regex: { constant: regex }
     cases:
@@ -34,7 +34,7 @@ functions:
     fold: { constant : at }
     starting with: { constant: from }
     through:
-      get:
+      [get]:
         from: { constant: accumulator }
         at: { constant: current }
   match regex all:
@@ -42,7 +42,7 @@ functions:
       starting with:
         constants:
           match regex result:
-            match regex:
+            [match regex]:
               string: { constant: string }
               regex: { constant: regex }
         compute:
@@ -75,7 +75,7 @@ functions:
                 compute:
                   constants:
                     match regex result:
-                      match regex:
+                      [match regex]:
                         string: { constant: string }
                         regex: { constant: regex } 
                   compute:
@@ -86,19 +86,19 @@ functions:
                         - string: { constant: string }
                           match regex result:
                             groups:
-                              get:
+                              [get]:
                                 from: { constant: match regex result }
                                 at: groups
                             start:
-                              sum:
+                              [sum]:
                                 - { constant: previous end }
-                                - get:
+                                - [get]:
                                     from: { constant: match regex result }
                                     at: start
                             end:
-                              sum:
+                              [sum]:
                                 - { constant: previous end }
-                                - get:
+                                - [get]:
                                     from: { constant: match regex result }
                                     at: end
       while:
@@ -111,12 +111,12 @@ functions:
       cases:
         - [null, null]
         - - any
-          - get:
+          - [get]:
               from: _
               at: match regex result
 constants:
   constructed regex:
-    compile regex:
+    [compile regex]:
       - word boundary
       - group:
           - repeat: [word character]
@@ -124,42 +124,42 @@ constants:
         name: horror
       - word boundary
   raw regex:
-    compile regex: \b\w{13}\b
+    [compile regex]: \b\w{13}\b
   FizzBuzz:
     map:
       starting with: 1
-      next: { sum: [_, 1] }
+      next: { [sum]: [_, 1] }
     through:
       match:
-        mod: [_, 3]
+        [mod]: [_, 3]
       cases:
         - - 0
           - match:
-              mod: [_, 5]
+              [mod]: [_, 5]
             cases:
               - [0, FizzBuzz]
               - [any, Fizz]
         - - any
           - match:
-              mod: [_, 5]
+              [mod]: [_, 5]
             cases:
               - [0, Buzz]
               - [any, _]
 compute:
   [tests report]:
-    key-value pairs:
+    [key-value pairs]:
       test caching:
         [assert equal]:
           found:
             [tests report]:
-              key-value pairs:
+              [key-value pairs]:
                 test A:
                   [assert equal]:
-                    found: { parse: { YAML: "lalala" } }
+                    found: { [parse]: { YAML: "lalala" } }
                     expected: lalala
                 test B:
                   [assert equal]:
-                    found: { parse: { YAML: "null" } }
+                    found: { [parse]: { YAML: "null" } }
                     expected: lalala
           expected:
             - - test B
@@ -185,7 +185,7 @@ compute:
         [assert equal]:
           found:
             fold:
-              get:
+              [get]:
                 from: { constant: FizzBuzz }
                 at: [0, 20]
             through:
@@ -193,7 +193,7 @@ compute:
               as: _
               cases:
                 - - number
-                  - { sum: [ { constant: accumulator }, _ ] }
+                  - { [sum]: [ { constant: accumulator }, _ ] }
                 - [ any, { constant: accumulator } ]
             starting with: 0
           expected: 112
@@ -207,17 +207,17 @@ compute:
       test length:
         [assert equal]:
           found:
-            - length: [ 1, 2, 3 ]
-            - length: { a: 1, b: 2, c: 3 }
-            - length: lalala
-            - length: { bytes: aa bb cc }
+            - [length]: [ 1, 2, 3 ]
+            - [length]: { a: 1, b: 2, c: 3 }
+            - [length]: lalala
+            - [length]: { bytes: aa bb cc }
           expected: [ 3, 3, 6, 3 ]
       test polymorphic get by key:
         [assert equal]:
           found:
-            get:
+            [get]:
               from:
-                match: { parse: { YAML: "{ a: 1, b: 2 }" } }
+                match: { [parse]: { YAML: "{ a: 1, b: 2 }" } }
                 as: _
                 cases:
                   - - { object: { a: number, b: number } }
@@ -231,9 +231,9 @@ compute:
       test polymorphic get by range:
         [assert equal]:
           found:
-            get:
+            [get]:
               from:
-                match: { parse: { YAML: "[1, 2, 3, 4]" } }
+                match: { [parse]: { YAML: "[1, 2, 3, 4]" } }
                 as: _
                 cases:
                   - - { array: number }
@@ -247,9 +247,9 @@ compute:
       test polymorphic get by index:
         [assert equal]:
           found:
-            get:
+            [get]:
               from:
-                match: { parse: { YAML: "[1, 2]" } }
+                match: { [parse]: { YAML: "[1, 2]" } }
                 as: _
                 cases:
                   - - { tuple: [ number, number ] }
@@ -263,7 +263,7 @@ compute:
       test FizzBuzz:
         [assert equal]:
           found:
-            get:
+            [get]:
               from: { constant: FizzBuzz }
               at: [0, 20]
           expected: [1, 2, Fizz, 4, Buzz, Fizz, 7, 8, Fizz, Buzz, 11, Fizz, 13, 14, FizzBuzz, 16, 17, Fizz, 19, Buzz]
@@ -272,7 +272,7 @@ compute:
           found:
             match:
               starting with: 1
-              next: {sum: [_, 1]}
+              next: {[sum]: [_, 1]}
             cases:
               - [{array: number}, true]
               - [any, false]
@@ -280,7 +280,7 @@ compute:
       test object from:
         [assert equal]:
           found:
-            object from:
+            [object from]:
               - [a, 1]
               - [b, lalala]
           expected:
@@ -290,7 +290,7 @@ compute:
         [assert equal]:
           found:
             constants:
-              seed: { bytes from string: only first 32 bytes }
+              seed: { [bytes from string]: only first 32 bytes }
             compute:
               map:
                 - ChaCha8
@@ -299,10 +299,10 @@ compute:
                 - Std
                 - Small
               through:
-                random bytes:
+                [random bytes]:
                   generator:
-                    random number generator:
-                      object from:
+                    [random number generator]:
+                      [object from]:
                         - - _
                           - constant: seed
                   amount: 10
@@ -315,17 +315,17 @@ compute:
       test substract:
         [assert equal]:
           found:
-          - substract: [3, 2]
-          - substract:
+          - [substract]: [3, 2]
+          - [substract]:
             - duration: 2ms
             - duration: 3ms
-          - substract:
+          - [substract]:
             - time: 2026-11-08T15:45:50.308478485Z
             - duration: 1ms
-          - substract:
+          - [substract]:
             - time: 2026-11-08T15:45:50.308478485Z
             - time: 2026-11-08T15:45:50.307478485Z
-          - substract:
+          - [substract]:
             - time: 2026-11-08T15:45:50.307478485Z
             - time: 2026-11-08T15:45:50.308478485Z
           expected:
@@ -337,11 +337,11 @@ compute:
       test sum:
         [assert equal]:
           found:
-          - sum: [ 1, 2 ]
-          - sum:
+          - [sum]: [ 1, 2 ]
+          - [sum]:
             - duration: 1ms
             - duration: 2ms
-          - sum:
+          - [sum]:
             - time: 2026-11-08T15:45:50.308478485Z
             - duration: 1ms
           expected:
@@ -351,24 +351,24 @@ compute:
       test file metadata:
         [assert equal]:
           found:
-            get:
-              from: { file metadata: src/embedded_functions.yml }
+            [get]:
+              from: { [file metadata]: src/embedded_functions.yml }
               at: is file
           expected: true
       test glob:
         [assert equal]:
-          found: { glob: src/*.yml }
+          found: { [glob]: src/*.yml }
           expected: [ src/embedded_functions.yml ]
       test sleep:
         [assert equal]:
-          found: { sleep: { duration: 1ms } }
+          found: { [sleep]: { duration: 1ms } }
           expected: { duration: 1ms }
       test loop:
         [assert equal]:
           found:
             starting with: 1
-            loop: { sum: [_, 2] }
-            while: { is sorted: [_, 5] }
+            loop: { [sum]: [_, 2] }
+            while: { [is sorted]: [_, 5] }
           expected: 7
       test hash:
         [assert equal]:
@@ -393,12 +393,12 @@ compute:
                       key: null
                   - BLAKE3:
                       size: 32
-                      key: { bytes from string: first 32 bytes only }
+                      key: { [bytes from string]: first 32 bytes only }
                   - BLAKE3 derive key: some context
                 through:
-                  hash:
+                  [hash]:
                     algorithm: _
-                    data: { bytes from string: hello world }
+                    data: { [bytes from string]: hello world }
               - map:
                   - GxHash128: 0
                   - BLAKE3:
@@ -406,9 +406,9 @@ compute:
                       key: null
                   - BLAKE3:
                       size: 32
-                      key: { bytes from string: first 32 bytes only }
+                      key: { [bytes from string]: first 32 bytes only }
                 through:
-                  hash:
+                  [hash]:
                     algorithm: _
                     file path: examples/arguments.yml
           expected:
@@ -454,13 +454,13 @@ compute:
                 - [ base64 MIME, { constant: binary } ]
                 - [ base64 MIME permissive, { constant: binary } ]
               through:
-                parse:
-                  object from:
-                    - - { get: { from: _, at: 0 } }
-                      - serialize to:
-                          object from:
-                            - - { get: { from: _, at: 0 } }
-                              - { get: { from: _, at: 1 } }
+                [parse]:
+                  [object from]:
+                    - - { [get]: { from: _, at: 0 } }
+                      - [serialize to]:
+                          [object from]:
+                            - - { [get]: { from: _, at: 0 } }
+                              - { [get]: { from: _, at: 1 } }
             expected:
             - { constant: value }
             - { constant: value }
@@ -479,7 +479,7 @@ compute:
       test sort:
         [assert equal]:
           found:
-            sort: [2, 3, 1]
+            [sort]: [2, 3, 1]
           expected: [1, 2, 3]
       test optimize pure literal-typed code:
         [assert equal]:
@@ -493,13 +493,13 @@ compute:
       #     found:
       #       constants:
       #         client:
-      #           HTTP client:
+      #           [HTTP client]:
       #             - error on bad status code: false
       #             - proxy: false
       #       compute:
-      #         get:
+      #         [get]:
       #           from:
-      #             send request:
+      #             [send request]:
       #               client: { constant: client }
       #               request:
       #                 URL: https://httpbingo.org/get
@@ -511,59 +511,59 @@ compute:
       test run command:
         [assert equal]:
           found:
-            run:
+            [run]:
               command: echo
               arguments: [lalala]
           expected:
             exit code: 0
-            standard output: { bytes from string: "lalala\n" }
+            standard output: { [bytes from string]: "lalala\n" }
             standard error: { bytes: "" }
       test sequence while:
         [assert equal]:
           found:
             starting with: 1
-            next: { sum: [_, 2] }
-            while: { is sorted: [_, 5] }
+            next: { [sum]: [_, 2] }
+            while: { [is sorted]: [_, 5] }
           expected: [1, 3, 5]
       test flatten lazy:
         [assert equal]:
           found:
-            get:
+            [get]:
               from:
                 flatten:
                   - [1, 2]
                   - starting with: 1
-                    next: { sum: [_, 1] }
+                    next: { [sum]: [_, 1] }
               at: [0, 5]
           expected: [1, 2, 1, 2, 3]
       test try:
         [assert equal]:
           found:
             try:
-              - read bytes:
+              - [read bytes]:
                   source:
-                    bufferized reader: tests.yml
+                    [bufferized reader]: tests.yml
                   amount: 1
-              - read bytes:
+              - [read bytes]:
                   source:
-                    bufferized reader: nonexistent file
+                    [bufferized reader]: nonexistent file
                   amount: 1
             or: false
           expected: false
       test heterogenous sequence:
         [assert equal]:
           found:
-            get:
+            [get]:
               from:
                 starting with: [0, 1]
                 next:
-                  - sum:
-                      - get:
+                  - [sum]:
+                      - [get]:
                           from: _
                           at: 0
                       - 1
                   - match:
-                      get:
+                      [get]:
                         from: _
                         at: 1
                     cases:
@@ -578,7 +578,7 @@ compute:
       test exponentiate:
         [assert equal]:
           found:
-            exponentiate:
+            [exponentiate]:
               base: 4
               exponent: 1/2
               precision: 64
@@ -587,17 +587,17 @@ compute:
       test round:
         [assert equal]:
           found:
-            round: 1.4
+            [round]: 1.4
           expected: 1
       test divide:
         [assert equal]:
           found:
-            divide: [20, 6]
+            [divide]: [20, 6]
           expected: 10/3
       test mod:
         [assert equal]:
           found:
-            mod: [20, 6]
+            [mod]: [20, 6]
           expected: 2
       test lazy constant:
         [assert equal]:
@@ -614,13 +614,13 @@ compute:
       test get from string:
         [assert equal]:
           found:
-            - get:
+            - [get]:
                 from: abcd
                 at: [ 1, 3 ]
-            - get:
+            - [get]:
                 from: abcd
                 at: [ 1, null ]
-            - get:
+            - [get]:
                 from: abcd
                 at: [ null ,3 ]
           expected: [ bc, bcd, abc ]
@@ -636,18 +636,18 @@ compute:
               - remove file
             compute:
               pipe:
-                - write bytes:
+                - [write bytes]:
                     target:
-                      bufferized writer:
+                      [bufferized writer]:
                         path: test files.txt
                         mode: create
                     content: { bytes: 62 62 }
-                - read bytes:
+                - [read bytes]:
                     source:
-                      bufferized reader: test files.txt
+                      [bufferized reader]: test files.txt
                     amount: 1
                 - - _
-                  - remove file: test files.txt
+                  - [remove file]: test files.txt
               as: _
           expected:
             - { bytes: "62" }
@@ -655,15 +655,15 @@ compute:
       test pipe lazy:
         [assert equal]:
           found:
-            get:
+            [get]:
               from:
                 pipe:
                   - starting with: 0
-                    next: { sum: [_, 1] }
+                    next: { [sum]: [_, 1] }
                   - starting with: 0
-                    next: { sum: [_, { get: { from: { constant: input }, at: 10 } } ] }
+                    next: { [sum]: [_, { [get]: { from: { constant: input }, at: 10 } } ] }
                   - starting with: 0
-                    next: { sum: [_, { get: { from: { constant: input }, at: 10 } } ] }
+                    next: { [sum]: [_, { [get]: { from: { constant: input }, at: 10 } } ] }
                 as: input
               at: 1
           expected: 100
@@ -671,9 +671,9 @@ compute:
         [assert equal]:
           found:
             pipe:
-              - { sum: [1, 2] }
-              - { sum: [_, 3] }
-              - { sum: [_, 4] }
+              - { [sum]: [1, 2] }
+              - { [sum]: [_, 3] }
+              - { [sum]: [_, 4] }
             as: _
           expected: 10
       test user functions caching:
@@ -700,10 +700,10 @@ compute:
                 - 2026-08-10 14:26:30.012  DEBUG  api.v2.handler - Processing request [endpoint=/users]
                 - 2026-08-10 14:27:15.678  ERROR  auth.service - ERROR invalid token (ERR-401) [user_id=abc123]
               through:
-                match regex:
+                [match regex]:
                   string: _
                   regex:
-                    compile regex:
+                    [compile regex]:
                       - start of string
                       - name: timestamp
                         group:
@@ -766,12 +766,12 @@ compute:
                                 - [string, non-whitespace character]
                               through:
                                 - name:
-                                    concat:
+                                    [concat]:
                                       - extra_data_value_
-                                      - { get: { from: _, at: 0 } }
+                                      - { [get]: { from: _, at: 0 } }
                                   group:
                                     - repeat:
-                                        - { get: { from: _, at: 1 } }
+                                        - { [get]: { from: _, at: 1 } }
                                       min: 1
                           - { repeat: [whitespace character], min: 0 }
                           - raw string: "]"
@@ -829,7 +829,7 @@ compute:
         [assert equal]:
           found:
             match:
-              match regex:
+              [match regex]:
                 string: I categorically deny having triskaidekaphobia.
                 regex: { constant: constructed regex }
             as: match regex result
@@ -857,14 +857,14 @@ compute:
             match:
               [get by path]:
                 from:
-                  match: { parse: { YAML: "s" } }
+                  match: { [parse]: { YAML: "s" } }
                   cases:
                     - [number, { a: [1, 2, { b: s, t: 1 }] }]
                     - - any
                       - a:
                           - 1
                           - 2
-                          - match: { parse: { YAML: "s" } }
+                          - match: { [parse]: { YAML: "s" } }
                             cases:
                               - [number, { b: null, p: s }]
                               - [any, { b: 3, t: s }]
@@ -878,12 +878,12 @@ compute:
         [assert equal]:
           found:
             flatten:
-              match: { parse: { YAML: "[1]" } }
+              match: { [parse]: { YAML: "[1]" } }
               cases:
                 - [string, [[1, 2], [3, 4, 5]]]
                 - - any
                   - - [1, a, 3]
-                    - match: { parse: { YAML: "[2]" } }
+                    - match: { [parse]: { YAML: "[2]" } }
                       cases:
                         - [string, [1]]
                         - [any, [b]]
@@ -893,13 +893,13 @@ compute:
       #   [assert equal]:
       #     found:
       #       fold:
-      #         match: { parse: { YAML: "lalala" } }
+      #         match: { [parse]: { YAML: "lalala" } }
       #         cases:
       #           - [number, [a, b, c]]
       #           - [any, [4, 5, 6]]
       #       starting with: 0
       #       through:
-      #         sum:
+      #         [sum]:
       #           - constant: accumulator
       #           - match: current
       #             cases:
@@ -910,13 +910,13 @@ compute:
         [assert equal]:
           found:
             filter:
-              match: { parse: { YAML: "[1]" } }
+              match: { [parse]: { YAML: "[1]" } }
               cases:
                 - [number, [1, 2, 3]]
                 - [{ array: number }, [s]]
                 - [any, [1]]
             through:
-              is sorted:
+              [is sorted]:
                 - 0
                 - match: _
                   cases:
@@ -926,10 +926,10 @@ compute:
       test lazy object:
         [assert equal]:
           found:
-            get:
+            [get]:
               from:
                 first:
-                  get:
+                  [get]:
                     from:
                       filter:
                         starting with: 1
@@ -942,9 +942,9 @@ compute:
       test lazy tuple:
         [assert equal]:
           found:
-            get:
+            [get]:
               from:
-                - get:
+                - [get]:
                     from:
                       filter:
                         starting with: 1
@@ -957,25 +957,25 @@ compute:
       test filter simple:
         [assert equal]:
           found:
-            get:
+            [get]:
               from:
                 filter:
                   starting with: 1
-                  next: { sum: [_, 1] }
-                through: { is sorted: [5, _] }
+                  next: { [sum]: [_, 1] }
+                through: { [is sorted]: [5, _] }
               at: [0, 3]
           expected: [5, 6, 7]
       test map union:
         [assert equal]:
           found:
             map:
-              match: { parse: { YAML: "[1]" } }
+              match: { [parse]: { YAML: "[1]" } }
               cases:
                 - [number, [1, 2, 3]]
                 - [{ array: number }, [s]]
                 - [any, [1]]
             through:
-              sum:
+              [sum]:
                 - 1
                 - match: _
                   cases:
@@ -985,16 +985,16 @@ compute:
       test sum map:
         [assert equal]:
           found:
-            sum:
+            [sum]:
               map: [1, 2, 3]
-              through: { sum: [_, 1] }
+              through: { [sum]: [_, 1] }
           expected: 9
       test is sorted map:
         [assert equal]:
           found:
-            is sorted:
+            [is sorted]:
               map: [1, 2, 3]
-              through: { sum: [_, 1] }
+              through: { [sum]: [_, 1] }
           expected: true
       test map lazy slices intersections:
         constants:
@@ -1007,50 +1007,50 @@ compute:
                 numbers:
                   map:
                     starting with: 1
-                    next: { sum: [_, 1] }
-                  through: { sum: [_, 2] }
+                    next: { [sum]: [_, 1] }
+                  through: { [sum]: [_, 2] }
               compute:
-                get:
+                [get]:
                   from:
                     map:
                       starting with: 1
-                      next: { sum: [_, 1] }
+                      next: { [sum]: [_, 1] }
                     through:
-                      get:
+                      [get]:
                         from: { constant: numbers }
-                        at: [_, { sum: [_, { constant: slice length }] }]
+                        at: [_, { [sum]: [_, { constant: slice length }] }]
                   at: [1, { constant: slices amount }]
             expected:
-              get:
+              [get]:
                 from:
                   map:
                     starting with: 4
-                    next: { sum: [_, 1] }
+                    next: { [sum]: [_, 1] }
                   through:
-                    get:
+                    [get]:
                       from:
                         starting with: _
-                        next: { sum: [_, 1] }
+                        next: { [sum]: [_, 1] }
                       at: [0, { constant: slice length }]
                 at: [1, { constant: slices amount }]
       test map lazy:
         [assert equal]:
           found:
-            get:
+            [get]:
               from:
                 map:
                   starting with: 1
-                  next: { sum: [_, 1] }
-                through: { sum: [_, 2] }
+                  next: { [sum]: [_, 1] }
+                through: { [sum]: [_, 2] }
               at: [2, 5]
           expected: [5, 6, 7]
       test sequence simple:
         [assert equal]:
           found:
-            get:
+            [get]:
               from:
                 starting with: 1
-                next: { sum: [_, 1] }
+                next: { [sum]: [_, 1] }
               at: [0, 3]
           expected: [1, 2, 3]
       test override function:
@@ -1060,14 +1060,14 @@ compute:
               f: _
             compute:
               functions:
-                f: { sum: [_, 1] }
+                f: { [sum]: [_, 1] }
               compute:
                 [f]: 1
           expected: 2
       test heterogenous branching:
         [assert equal]:
           found:
-            match: { is sorted: [1, 2, 3] }
+            match: { [is sorted]: [1, 2, 3] }
             cases:
               - [true, 1]
               - [false, string]
@@ -1087,7 +1087,7 @@ compute:
               cases:
                 - [
                     number,
-                    sum: [{ constant: accumulator }, { constant: current }],
+                    [sum]: [{ constant: accumulator }, { constant: current }],
                   ]
                 - [string, 0]
           expected: 7
@@ -1097,13 +1097,13 @@ compute:
             fold: [1, 2, 3]
             starting with: 0
             through:
-              sum: [{ constant: accumulator }, { constant: current }]
+              [sum]: [{ constant: accumulator }, { constant: current }]
           expected: 6
       test map object:
         [assert equal]:
           found:
             map:
-              key-value pairs: { first: 1, second: string, third: [1, 2, 3] }
+              [key-value pairs]: { first: 1, second: string, third: [1, 2, 3] }
             through:
               match: _
               as: _
@@ -1111,10 +1111,10 @@ compute:
                 - [{ tuple: [string, number] }, it's a number]
                 - [{ tuple: [string, string] }, it's a string]
                 - - { tuple: [string, { array: number }] }
-                  - map: { get: { from: _, at: 1 } }
+                  - map: { [get]: { from: _, at: 1 } }
                     as: element from matched
                     through:
-                      sum: [{ constant: element from matched }, 1]
+                      [sum]: [{ constant: element from matched }, 1]
           expected: [it's a number, it's a string, [2, 3, 4]]
       test map tuple and array:
         [assert equal]:
@@ -1129,12 +1129,12 @@ compute:
                   - map: _
                     as: element from matched
                     through:
-                      sum: [{ constant: element from matched }, 1]
+                      [sum]: [{ constant: element from matched }, 1]
           expected: [it's a number, it's a string, it's a number, [2, 3, 4]]
       test numbers:
         [assert equal]:
           found:
-            sum:
+            [sum]:
               - 1234
               - 1234.1234
               - "1234"
@@ -1148,7 +1148,7 @@ compute:
           found:
             functions:
               f:
-                sum:
+                [sum]:
                   - constant: a
                   - constant: b
                   - constant: c
@@ -1165,7 +1165,7 @@ compute:
           found:
             functions:
               f:
-                get:
+                [get]:
                   from: _
                   at: 1
             compute:
@@ -1174,7 +1174,7 @@ compute:
       test match by type refined branch:
         [assert equal]:
           found:
-            match: { parse: { YAML: "0x1A" } }
+            match: { [parse]: { YAML: "0x1A" } }
             cases:
               - [number, true]
               - [string, it's a string]
@@ -1183,7 +1183,7 @@ compute:
       test match by type any branch:
         [assert equal]:
           found:
-            match: { parse: { YAML: "[]" } }
+            match: { [parse]: { YAML: "[]" } }
             cases:
               - [number, it's a number]
               - [string, it's a string]
@@ -1193,7 +1193,7 @@ compute:
         [assert equal]:
           found:
             match:
-              match: { parse: { YAML: "[]" } }
+              match: { [parse]: { YAML: "[]" } }
               as: _
               cases:
                 - [number, _]
@@ -1207,10 +1207,10 @@ compute:
       test match by value:
         [assert equal]:
           found:
-            match: { parse: { YAML: "[1, 2, 3]" } }
+            match: { [parse]: { YAML: "[1, 2, 3]" } }
             cases:
               - [number, it's a number]
               - [string, it's a string]
-              - [[1, { sum: [1, 1] }, 3], true]
+              - [[1, { [sum]: [1, 1] }, 3], true]
               - [any, it's something else]
           expected: true

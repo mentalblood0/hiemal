@@ -16,7 +16,7 @@ use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     embedded_functions::{EMBEDDED_FUNCTIONS, EmbeddedFunction},
     intermediate_representation::{self, Case, Content, IntermediateRepresentation, Node, Throughs, UserFunction},
-    program::{Condition, Constant, EmbeddedFunctionCall, Match, Path, PathSegment, Program, ProgramAndMetadata, UserFunctionCall},
+    program::{Condition, Constant, Function, FunctionCall, Match, Path, PathSegment, Program, ProgramAndMetadata},
     r#type::{Capability, Embedded, Type, TypeKind, TypeProperties},
     value::Value,
 };
@@ -253,15 +253,16 @@ impl Compiler {
         &self,
         compilation_context: &CompilationContext,
         global_compilation_context: &mut GlobalCompilationContext,
-        embedded_function_call: &EmbeddedFunctionCall,
+        embedded_function_call: &FunctionCall,
         get_result_type_from_argument_resolved_type_option: Option<&dyn Fn(&Type, u8) -> Result<Type>>,
     ) -> Result<Arc<NodeAndMetadata>> {
-        let argument_compilation_context = compilation_context.with_additional_path([PathSegment::EmbeddedFunctionCall(embedded_function_call.embedded_function)]);
+        let argument_compilation_context =
+            compilation_context.with_additional_path([PathSegment::EmbeddedFunctionCall(*embedded_function_call.function.as_embedded().unwrap())]);
         let compiled_argument = self.compile_with_context(&embedded_function_call.argument, &argument_compilation_context, global_compilation_context)?;
-        if embedded_function_call.embedded_function == EmbeddedFunction::SerializeTo && !compiled_argument.node.r#type.properties.is_serializable {
+        if embedded_function_call.function.as_embedded().unwrap() == &EmbeddedFunction::SerializeTo && !compiled_argument.node.r#type.properties.is_serializable {
             return Err(compilation_context.error(&compiled_argument.node.r#type, &"serializable value"));
         }
-        let (signature, variant_index, _) = EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize]
+        let (signature, variant_index, _) = EMBEDDED_FUNCTIONS[*embedded_function_call.function.as_embedded().unwrap() as usize]
             .iter()
             .enumerate()
             .find_map(|(signature_index, signature)| {
@@ -275,7 +276,7 @@ impl Compiler {
                 argument_compilation_context.error(
                     &compiled_argument.node.r#type,
                     &Type::from(BTreeSet::from_iter(
-                        EMBEDDED_FUNCTIONS[embedded_function_call.embedded_function as usize].iter().map(|signature| signature.argument.clone().into()),
+                        EMBEDDED_FUNCTIONS[*embedded_function_call.function.as_embedded().unwrap() as usize].iter().map(|signature| signature.argument.clone().into()),
                     )),
                 )
             })?;
@@ -324,7 +325,7 @@ impl Compiler {
                         None
                     },
                     embedded_function_call: intermediate_representation::EmbeddedFunctionCall {
-                        embedded_function: embedded_function_call.embedded_function,
+                        embedded_function: *embedded_function_call.function.as_embedded().unwrap(),
                         variant_index,
                         argument: compiled_argument.node.clone(),
                     },
@@ -555,306 +556,6 @@ impl Compiler {
                             ));
                         }
                     }
-                    Program::EmbeddedFunctionCall(embedded_function_call) => match embedded_function_call.embedded_function {
-                        EmbeddedFunction::Sort => self.compile_embedded_function_call(
-                            compilation_context,
-                            global_compilation_context,
-                            embedded_function_call,
-                            Some(&|compiled_argument_resolved_type, _| {
-                                if let TypeKind::Tuple(argument_elements_types) = &compiled_argument_resolved_type.kind {
-                                    Ok(TypeKind::Tuple(
-                                        std::iter::repeat_n(
-                                            TypeKind::Union(BTreeSet::from_iter(argument_elements_types.iter().cloned()).into()).into(),
-                                            argument_elements_types.len(),
-                                        )
-                                        .collect::<Vec<_>>()
-                                        .into(),
-                                    )
-                                    .into())
-                                } else {
-                                    Ok(compiled_argument_resolved_type.clone())
-                                }
-                            }),
-                        )?,
-                        EmbeddedFunction::KeyValuePairs => self.compile_embedded_function_call(
-                            compilation_context,
-                            global_compilation_context,
-                            embedded_function_call,
-                            Some(&|compiled_argument_resolved_type, _| {
-                                if let TypeKind::Object(argument_object_values_types) = &compiled_argument_resolved_type.kind {
-                                    Ok(TypeKind::Tuple(
-                                        argument_object_values_types
-                                            .values()
-                                            .map(|value| TypeKind::Tuple(vec![TypeKind::String.into(), value.clone()].into()).into())
-                                            .collect::<Vec<_>>()
-                                            .into(),
-                                    )
-                                    .into())
-                                } else {
-                                    Err(compilation_context.error(&compiled_argument_resolved_type, &"object"))
-                                }
-                            }),
-                        )?,
-                        EmbeddedFunction::ObjectFrom => self.compile_embedded_function_call(
-                            compilation_context,
-                            global_compilation_context,
-                            embedded_function_call,
-                            Some(&|compiled_argument_resolved_type, _| match &compiled_argument_resolved_type.kind {
-                                TypeKind::Tuple(argument_elements_types) => {
-                                    if argument_elements_types
-                                        .iter()
-                                        .all(|key_and_value_tuple_type| matches!(key_and_value_tuple_type.kind.as_tuple().unwrap()[0].kind, TypeKind::LiteralString(_)))
-                                    {
-                                        Ok(TypeKind::Object(
-                                            BTreeMap::from_iter(argument_elements_types.iter().map(|key_and_value_tuple_type| {
-                                                (
-                                                    key_and_value_tuple_type.kind.as_tuple().unwrap()[0].kind.as_literal_string().unwrap().to_string().into(),
-                                                    key_and_value_tuple_type.kind.as_tuple().unwrap()[1].clone(),
-                                                )
-                                            }))
-                                            .into(),
-                                        )
-                                        .into())
-                                    } else {
-                                        Ok(TypeKind::GenericObject(Box::new(Type::from(BTreeSet::from_iter(
-                                            argument_elements_types.iter().map(|key_and_value_tuple_type| key_and_value_tuple_type.kind.as_tuple().unwrap()[1].clone()),
-                                        ))))
-                                        .into())
-                                    }
-                                }
-                                TypeKind::Array(argument_element_type) => Ok(TypeKind::GenericObject(argument_element_type.clone()).into()),
-                                _ => panic!(),
-                            }),
-                        )?,
-                        EmbeddedFunction::CompileRegex => self.compile_embedded_function_call(
-                            compilation_context,
-                            global_compilation_context,
-                            embedded_function_call,
-                            Some(&|compiled_argument_resolved_type, _| {
-                                if let TypeKind::LiteralString(regex_literal_string) = &compiled_argument_resolved_type.kind {
-                                    Regex::new(&regex_literal_string.to_string())
-                                        .with_context(|| compilation_context.error(&regex_literal_string.to_string(), &"correct regex"))?;
-                                };
-                                Ok(TypeKind::Embedded(Embedded::CompiledRegex).into())
-                            }),
-                        )?,
-                        EmbeddedFunction::Get => self.compile_embedded_function_call(
-                            compilation_context,
-                            global_compilation_context,
-                            embedded_function_call,
-                            Some(&|compiled_argument_resolved_type, variant_index| {
-                                let at_type_kind = &compiled_argument_resolved_type.kind.as_object().unwrap().get(&"at".to_string()).unwrap().kind;
-                                let from_type_kind = &compiled_argument_resolved_type.kind.as_object().unwrap().get(&"from".to_string()).unwrap().kind;
-                                let error_type_properties = TypeProperties {
-                                    capabilities: Capability::Error.into(),
-                                    is_computable: true,
-                                    is_serializable: true,
-                                    is_pure: true,
-                                };
-                                match variant_index {
-                                    0 => {
-                                        let from_type_kind_variants: Vec<&TypeKind> = match &from_type_kind {
-                                            TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
-                                            _ => vec![&from_type_kind],
-                                        };
-
-                                        let at_type_kind_variants: Vec<&TypeKind> = match &at_type_kind {
-                                            TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
-                                            _ => vec![&at_type_kind],
-                                        };
-                                        let combinations =
-                                            from_type_kind_variants.iter().flat_map(|&from| at_type_kind_variants.iter().map(move |&at| (from, at))).collect::<Vec<_>>();
-                                        let mut result = BTreeSet::new();
-                                        for (from_type_kind, at_type_kind) in combinations {
-                                            match (from_type_kind, at_type_kind) {
-                                                (TypeKind::Array(element_type), _) => {
-                                                    result.insert(error_type_properties.unified_recursively(*element_type.clone()));
-                                                }
-                                                (TypeKind::Tuple(elements_types), TypeKind::Number) => {
-                                                    result.insert(
-                                                        error_type_properties.unified_recursively(Type::from(BTreeSet::from_iter(elements_types.iter().cloned()))),
-                                                    );
-                                                }
-                                                (TypeKind::Tuple(elements_types), TypeKind::LiteralNumber(index_rational)) => {
-                                                    let index = index_rational.trunc().to_f64().value() as usize;
-                                                    if let Some(element_type) = elements_types.get(index) {
-                                                        result.insert(Type::from(element_type.kind.clone()));
-                                                    } else {
-                                                        return Err(compilation_context.error(&elements_types, &format!("tuple with at least {} elements", index + 1)));
-                                                    }
-                                                }
-                                                _ => panic!(),
-                                            }
-                                        }
-                                        Ok(Type::from(result))
-                                    }
-                                    1 => {
-                                        let at_range_from_type_kind = &at_type_kind.as_tuple().unwrap()[0].kind;
-                                        let at_range_to_type_kind = &at_type_kind.as_tuple().unwrap()[1].kind;
-                                        let from_type_kind_variants: Vec<&TypeKind> = match &from_type_kind {
-                                            TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
-                                            _ => vec![&from_type_kind],
-                                        };
-
-                                        let at_range_from_type_kind_variants: Vec<&TypeKind> = match &at_range_from_type_kind {
-                                            TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
-                                            _ => vec![&at_range_from_type_kind],
-                                        };
-                                        let at_range_to_type_kind_variants: Vec<&TypeKind> = match &at_range_to_type_kind {
-                                            TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
-                                            _ => vec![&at_range_to_type_kind],
-                                        };
-                                        let mut combinations = Vec::with_capacity(
-                                            from_type_kind_variants.len() * at_range_from_type_kind_variants.len() * at_range_to_type_kind_variants.len(),
-                                        );
-                                        for from_type_kind_variant in &from_type_kind_variants {
-                                            for at_range_from_type_kind_variant in &at_range_from_type_kind_variants {
-                                                for at_range_to_type_kind_variant in &at_range_to_type_kind_variants {
-                                                    combinations.push((*from_type_kind_variant, *at_range_from_type_kind_variant, *at_range_to_type_kind_variant));
-                                                }
-                                            }
-                                        }
-                                        let mut result = BTreeSet::new();
-                                        for (from_type_kind, at_range_from_type_kind, at_range_to_type_kind) in combinations {
-                                            match (from_type_kind, at_range_from_type_kind, at_range_to_type_kind) {
-                                                (TypeKind::Array(element_type), TypeKind::Number, _) | (TypeKind::Array(element_type), _, TypeKind::Number) => {
-                                                    result.insert(error_type_properties.unified_recursively(Type::from(TypeKind::Array(element_type.clone()))));
-                                                }
-                                                (
-                                                    TypeKind::Array(element_type),
-                                                    TypeKind::LiteralNumber(from_index_rational),
-                                                    TypeKind::LiteralNumber(to_index_rational),
-                                                ) => {
-                                                    let from_index = from_index_rational.trunc().to_f64().value() as usize;
-                                                    let to_index = to_index_rational.trunc().to_f64().value() as usize;
-                                                    result.insert(
-                                                        error_type_properties.unified_recursively(Type::from(vec![*element_type.clone(); to_index - from_index])),
-                                                    );
-                                                }
-                                                (
-                                                    TypeKind::Tuple(elements_types),
-                                                    TypeKind::Number | TypeKind::LiteralNumber(_),
-                                                    TypeKind::Number | TypeKind::LiteralNumber(_),
-                                                ) => {
-                                                    let from_index = at_range_from_type_kind
-                                                        .as_literal_number()
-                                                        .map(|from_index_rational| from_index_rational.trunc().to_f64().value() as usize)
-                                                        .unwrap_or(0);
-                                                    let to_index = at_range_to_type_kind
-                                                        .as_literal_number()
-                                                        .map(|to_index_rational| to_index_rational.trunc().to_f64().value() as usize)
-                                                        .unwrap_or(elements_types.len());
-                                                    if (from_index <= to_index) && (to_index <= elements_types.len()) {
-                                                        result.insert(Type::from(BTreeSet::from_iter(elements_types[from_index..to_index].iter().cloned())));
-                                                    } else {
-                                                        return Err(compilation_context.error(&from_type_kind, &format!("tuple with range {from_index}..{to_index}",)));
-                                                    }
-                                                }
-                                                _ => panic!(),
-                                            }
-                                        }
-                                        Ok(Type::from(result))
-                                    }
-                                    2 => {
-                                        let from_type_kind_variants: Vec<&TypeKind> = match &from_type_kind {
-                                            TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
-                                            _ => vec![&from_type_kind],
-                                        };
-
-                                        let at_type_kind_variants: Vec<&TypeKind> = match &at_type_kind {
-                                            TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
-                                            _ => vec![&at_type_kind],
-                                        };
-                                        let combinations =
-                                            from_type_kind_variants.iter().flat_map(|&from| at_type_kind_variants.iter().map(move |&at| (from, at))).collect::<Vec<_>>();
-                                        let mut result = BTreeSet::new();
-                                        for (from_type_kind, at_type_kind) in combinations {
-                                            match (from_type_kind, at_type_kind) {
-                                                (TypeKind::GenericObject(element_type), _) => {
-                                                    result.insert(error_type_properties.unified_recursively(*element_type.clone()));
-                                                }
-                                                (TypeKind::Object(inner_types), TypeKind::String | TypeKind::GenericLiteralString) => {
-                                                    result.insert(
-                                                        error_type_properties.unified_recursively(Type::from(BTreeSet::from_iter(inner_types.values().cloned()))),
-                                                    );
-                                                }
-                                                (TypeKind::Object(inner_types), TypeKind::LiteralString(key_rope)) => {
-                                                    let key = key_rope.to_string();
-                                                    if let Some(element_type) = inner_types.get(&key) {
-                                                        result.insert(Type::from(element_type.kind.clone()));
-                                                    } else {
-                                                        return Err(compilation_context.error(&inner_types, &format!("object with key {key:?}",)));
-                                                    }
-                                                }
-                                                _ => panic!(),
-                                            }
-                                        }
-                                        Ok(Type::from(result))
-                                    }
-                                    3 => {
-                                        let at_range_from_type_kind = &at_type_kind.as_tuple().unwrap()[0].kind;
-                                        let at_range_to_type_kind = &at_type_kind.as_tuple().unwrap()[1].kind;
-                                        let from_type_kind_variants: Vec<&TypeKind> = match &from_type_kind {
-                                            TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
-                                            _ => vec![&from_type_kind],
-                                        };
-
-                                        let at_range_from_type_kind_variants: Vec<&TypeKind> = match &at_range_from_type_kind {
-                                            TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
-                                            _ => vec![&at_range_from_type_kind],
-                                        };
-                                        let at_range_to_type_kind_variants: Vec<&TypeKind> = match &at_range_to_type_kind {
-                                            TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
-                                            _ => vec![&at_range_to_type_kind],
-                                        };
-                                        let mut combinations = Vec::with_capacity(
-                                            from_type_kind_variants.len() * at_range_from_type_kind_variants.len() * at_range_to_type_kind_variants.len(),
-                                        );
-                                        for from_type_kind_variant in &from_type_kind_variants {
-                                            for at_range_from_type_kind_variant in &at_range_from_type_kind_variants {
-                                                for at_range_to_type_kind_variant in &at_range_to_type_kind_variants {
-                                                    combinations.push((*from_type_kind_variant, *at_range_from_type_kind_variant, *at_range_to_type_kind_variant));
-                                                }
-                                            }
-                                        }
-                                        let mut result = BTreeSet::new();
-                                        for (from_type_kind, at_range_from_type_kind, at_range_to_type_kind) in combinations {
-                                            match (from_type_kind, at_range_from_type_kind, at_range_to_type_kind) {
-                                                (TypeKind::String, _, _)
-                                                | (TypeKind::LiteralString(_), TypeKind::Number, _)
-                                                | (TypeKind::LiteralString(_), _, TypeKind::Number) => {
-                                                    result.insert(error_type_properties.unified_recursively(TypeKind::String.into()));
-                                                }
-                                                (
-                                                    TypeKind::LiteralString(literal_string),
-                                                    TypeKind::LiteralNumber(_) | TypeKind::Null,
-                                                    TypeKind::LiteralNumber(_) | TypeKind::Null,
-                                                ) => {
-                                                    let from_index = at_range_from_type_kind
-                                                        .as_literal_number()
-                                                        .map(|from_index_rational| from_index_rational.trunc().to_f64().value() as usize)
-                                                        .unwrap_or(0);
-                                                    let to_index = at_range_to_type_kind
-                                                        .as_literal_number()
-                                                        .map(|to_index_rational| to_index_rational.trunc().to_f64().value() as usize)
-                                                        .unwrap_or(literal_string.len_chars());
-                                                    if (from_index <= to_index) && (to_index <= literal_string.len_chars()) {
-                                                        result.insert(TypeKind::LiteralString(literal_string.slice(from_index..to_index).into()).into());
-                                                    } else {
-                                                        return Err(compilation_context.error(&from_type_kind, &format!("string with range {from_index}..{to_index}",)));
-                                                    }
-                                                }
-                                                _ => panic!(),
-                                            }
-                                        }
-                                        Ok(Type::from(result))
-                                    }
-                                    _ => panic!(),
-                                }
-                            }),
-                        )?,
-                        _ => self.compile_embedded_function_call(compilation_context, global_compilation_context, embedded_function_call, None)?,
-                    },
                     Program::Match { r#match, r#as, cases } => {
                         let (r#match, match_constant_name) = match r#match {
                             Match::Constant(constant_name) => (&Program::Constant(Constant { constant: constant_name.clone() }).into(), Some(constant_name)),
@@ -1530,74 +1231,390 @@ impl Compiler {
                         }
                         .into()
                     }
-                    Program::UserFunctionCall(UserFunctionCall { user_function_name, argument }) => {
-                        if let Some(function_body_with_hash) = compilation_context.available_functions.get(user_function_name) {
-                            if compilation_context.entered_user_functions.contains(&function_body_with_hash.hash) {
-                                return Err(compilation_context.error(user_function_name, &"non-recursive function call"));
-                            }
-                            let mut body_compilation_context = compilation_context.with_additional_path([PathSegment::UserFunctionCall(user_function_name.clone())]);
-                            let arguments_iterator = match &argument.program {
-                                Program::Object(function_arguments) => {
-                                    let arguments_iterator: Box<dyn Iterator<Item = (Arc<String>, Arc<ProgramAndMetadata>)>> = if function_arguments.len() > 1 {
-                                        Box::new(function_arguments.iter().map(|(key, value_with_hash)| (key.clone(), value_with_hash.clone())))
+                    Program::FunctionCall(function_call) => match &function_call.function {
+                        Function::Embedded(embedded_function) => match embedded_function {
+                            EmbeddedFunction::Sort => self.compile_embedded_function_call(
+                                compilation_context,
+                                global_compilation_context,
+                                function_call,
+                                Some(&|compiled_argument_resolved_type, _| {
+                                    if let TypeKind::Tuple(argument_elements_types) = &compiled_argument_resolved_type.kind {
+                                        Ok(TypeKind::Tuple(
+                                            std::iter::repeat_n(
+                                                TypeKind::Union(BTreeSet::from_iter(argument_elements_types.iter().cloned()).into()).into(),
+                                                argument_elements_types.len(),
+                                            )
+                                            .collect::<Vec<_>>()
+                                            .into(),
+                                        )
+                                        .into())
                                     } else {
-                                        Box::new([(DEFAULT_ARGUMENT_NAME.to_string().into(), argument.clone())].into_iter())
+                                        Ok(compiled_argument_resolved_type.clone())
+                                    }
+                                }),
+                            )?,
+                            EmbeddedFunction::KeyValuePairs => self.compile_embedded_function_call(
+                                compilation_context,
+                                global_compilation_context,
+                                function_call,
+                                Some(&|compiled_argument_resolved_type, _| {
+                                    if let TypeKind::Object(argument_object_values_types) = &compiled_argument_resolved_type.kind {
+                                        Ok(TypeKind::Tuple(
+                                            argument_object_values_types
+                                                .values()
+                                                .map(|value| TypeKind::Tuple(vec![TypeKind::String.into(), value.clone()].into()).into())
+                                                .collect::<Vec<_>>()
+                                                .into(),
+                                        )
+                                        .into())
+                                    } else {
+                                        Err(compilation_context.error(&compiled_argument_resolved_type, &"object"))
+                                    }
+                                }),
+                            )?,
+                            EmbeddedFunction::ObjectFrom => self.compile_embedded_function_call(
+                                compilation_context,
+                                global_compilation_context,
+                                function_call,
+                                Some(&|compiled_argument_resolved_type, _| match &compiled_argument_resolved_type.kind {
+                                    TypeKind::Tuple(argument_elements_types) => {
+                                        if argument_elements_types.iter().all(|key_and_value_tuple_type| {
+                                            matches!(key_and_value_tuple_type.kind.as_tuple().unwrap()[0].kind, TypeKind::LiteralString(_))
+                                        }) {
+                                            Ok(TypeKind::Object(
+                                                BTreeMap::from_iter(argument_elements_types.iter().map(|key_and_value_tuple_type| {
+                                                    (
+                                                        key_and_value_tuple_type.kind.as_tuple().unwrap()[0].kind.as_literal_string().unwrap().to_string().into(),
+                                                        key_and_value_tuple_type.kind.as_tuple().unwrap()[1].clone(),
+                                                    )
+                                                }))
+                                                .into(),
+                                            )
+                                            .into())
+                                        } else {
+                                            Ok(TypeKind::GenericObject(Box::new(Type::from(BTreeSet::from_iter(
+                                                argument_elements_types
+                                                    .iter()
+                                                    .map(|key_and_value_tuple_type| key_and_value_tuple_type.kind.as_tuple().unwrap()[1].clone()),
+                                            ))))
+                                            .into())
+                                        }
+                                    }
+                                    TypeKind::Array(argument_element_type) => Ok(TypeKind::GenericObject(argument_element_type.clone()).into()),
+                                    _ => panic!(),
+                                }),
+                            )?,
+                            EmbeddedFunction::CompileRegex => self.compile_embedded_function_call(
+                                compilation_context,
+                                global_compilation_context,
+                                function_call,
+                                Some(&|compiled_argument_resolved_type, _| {
+                                    if let TypeKind::LiteralString(regex_literal_string) = &compiled_argument_resolved_type.kind {
+                                        Regex::new(&regex_literal_string.to_string())
+                                            .with_context(|| compilation_context.error(&regex_literal_string.to_string(), &"correct regex"))?;
                                     };
-                                    arguments_iterator
+                                    Ok(TypeKind::Embedded(Embedded::CompiledRegex).into())
+                                }),
+                            )?,
+                            EmbeddedFunction::Get => self.compile_embedded_function_call(
+                                compilation_context,
+                                global_compilation_context,
+                                function_call,
+                                Some(&|compiled_argument_resolved_type, variant_index| {
+                                    let at_type_kind = &compiled_argument_resolved_type.kind.as_object().unwrap().get(&"at".to_string()).unwrap().kind;
+                                    let from_type_kind = &compiled_argument_resolved_type.kind.as_object().unwrap().get(&"from".to_string()).unwrap().kind;
+                                    let error_type_properties = TypeProperties {
+                                        capabilities: Capability::Error.into(),
+                                        is_computable: true,
+                                        is_serializable: true,
+                                        is_pure: true,
+                                    };
+                                    match variant_index {
+                                        0 => {
+                                            let from_type_kind_variants: Vec<&TypeKind> = match &from_type_kind {
+                                                TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
+                                                _ => vec![&from_type_kind],
+                                            };
+
+                                            let at_type_kind_variants: Vec<&TypeKind> = match &at_type_kind {
+                                                TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
+                                                _ => vec![&at_type_kind],
+                                            };
+                                            let combinations = from_type_kind_variants
+                                                .iter()
+                                                .flat_map(|&from| at_type_kind_variants.iter().map(move |&at| (from, at)))
+                                                .collect::<Vec<_>>();
+                                            let mut result = BTreeSet::new();
+                                            for (from_type_kind, at_type_kind) in combinations {
+                                                match (from_type_kind, at_type_kind) {
+                                                    (TypeKind::Array(element_type), _) => {
+                                                        result.insert(error_type_properties.unified_recursively(*element_type.clone()));
+                                                    }
+                                                    (TypeKind::Tuple(elements_types), TypeKind::Number) => {
+                                                        result.insert(
+                                                            error_type_properties.unified_recursively(Type::from(BTreeSet::from_iter(elements_types.iter().cloned()))),
+                                                        );
+                                                    }
+                                                    (TypeKind::Tuple(elements_types), TypeKind::LiteralNumber(index_rational)) => {
+                                                        let index = index_rational.trunc().to_f64().value() as usize;
+                                                        if let Some(element_type) = elements_types.get(index) {
+                                                            result.insert(Type::from(element_type.kind.clone()));
+                                                        } else {
+                                                            return Err(
+                                                                compilation_context.error(&elements_types, &format!("tuple with at least {} elements", index + 1))
+                                                            );
+                                                        }
+                                                    }
+                                                    _ => panic!(),
+                                                }
+                                            }
+                                            Ok(Type::from(result))
+                                        }
+                                        1 => {
+                                            let at_range_from_type_kind = &at_type_kind.as_tuple().unwrap()[0].kind;
+                                            let at_range_to_type_kind = &at_type_kind.as_tuple().unwrap()[1].kind;
+                                            let from_type_kind_variants: Vec<&TypeKind> = match &from_type_kind {
+                                                TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
+                                                _ => vec![&from_type_kind],
+                                            };
+
+                                            let at_range_from_type_kind_variants: Vec<&TypeKind> = match &at_range_from_type_kind {
+                                                TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
+                                                _ => vec![&at_range_from_type_kind],
+                                            };
+                                            let at_range_to_type_kind_variants: Vec<&TypeKind> = match &at_range_to_type_kind {
+                                                TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
+                                                _ => vec![&at_range_to_type_kind],
+                                            };
+                                            let mut combinations = Vec::with_capacity(
+                                                from_type_kind_variants.len() * at_range_from_type_kind_variants.len() * at_range_to_type_kind_variants.len(),
+                                            );
+                                            for from_type_kind_variant in &from_type_kind_variants {
+                                                for at_range_from_type_kind_variant in &at_range_from_type_kind_variants {
+                                                    for at_range_to_type_kind_variant in &at_range_to_type_kind_variants {
+                                                        combinations.push((*from_type_kind_variant, *at_range_from_type_kind_variant, *at_range_to_type_kind_variant));
+                                                    }
+                                                }
+                                            }
+                                            let mut result = BTreeSet::new();
+                                            for (from_type_kind, at_range_from_type_kind, at_range_to_type_kind) in combinations {
+                                                match (from_type_kind, at_range_from_type_kind, at_range_to_type_kind) {
+                                                    (TypeKind::Array(element_type), TypeKind::Number, _) | (TypeKind::Array(element_type), _, TypeKind::Number) => {
+                                                        result.insert(error_type_properties.unified_recursively(Type::from(TypeKind::Array(element_type.clone()))));
+                                                    }
+                                                    (
+                                                        TypeKind::Array(element_type),
+                                                        TypeKind::LiteralNumber(from_index_rational),
+                                                        TypeKind::LiteralNumber(to_index_rational),
+                                                    ) => {
+                                                        let from_index = from_index_rational.trunc().to_f64().value() as usize;
+                                                        let to_index = to_index_rational.trunc().to_f64().value() as usize;
+                                                        result.insert(
+                                                            error_type_properties.unified_recursively(Type::from(vec![*element_type.clone(); to_index - from_index])),
+                                                        );
+                                                    }
+                                                    (
+                                                        TypeKind::Tuple(elements_types),
+                                                        TypeKind::Number | TypeKind::LiteralNumber(_),
+                                                        TypeKind::Number | TypeKind::LiteralNumber(_),
+                                                    ) => {
+                                                        let from_index = at_range_from_type_kind
+                                                            .as_literal_number()
+                                                            .map(|from_index_rational| from_index_rational.trunc().to_f64().value() as usize)
+                                                            .unwrap_or(0);
+                                                        let to_index = at_range_to_type_kind
+                                                            .as_literal_number()
+                                                            .map(|to_index_rational| to_index_rational.trunc().to_f64().value() as usize)
+                                                            .unwrap_or(elements_types.len());
+                                                        if (from_index <= to_index) && (to_index <= elements_types.len()) {
+                                                            result.insert(Type::from(BTreeSet::from_iter(elements_types[from_index..to_index].iter().cloned())));
+                                                        } else {
+                                                            return Err(
+                                                                compilation_context.error(&from_type_kind, &format!("tuple with range {from_index}..{to_index}",))
+                                                            );
+                                                        }
+                                                    }
+                                                    _ => panic!(),
+                                                }
+                                            }
+                                            Ok(Type::from(result))
+                                        }
+                                        2 => {
+                                            let from_type_kind_variants: Vec<&TypeKind> = match &from_type_kind {
+                                                TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
+                                                _ => vec![&from_type_kind],
+                                            };
+
+                                            let at_type_kind_variants: Vec<&TypeKind> = match &at_type_kind {
+                                                TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
+                                                _ => vec![&at_type_kind],
+                                            };
+                                            let combinations = from_type_kind_variants
+                                                .iter()
+                                                .flat_map(|&from| at_type_kind_variants.iter().map(move |&at| (from, at)))
+                                                .collect::<Vec<_>>();
+                                            let mut result = BTreeSet::new();
+                                            for (from_type_kind, at_type_kind) in combinations {
+                                                match (from_type_kind, at_type_kind) {
+                                                    (TypeKind::GenericObject(element_type), _) => {
+                                                        result.insert(error_type_properties.unified_recursively(*element_type.clone()));
+                                                    }
+                                                    (TypeKind::Object(inner_types), TypeKind::String | TypeKind::GenericLiteralString) => {
+                                                        result.insert(
+                                                            error_type_properties.unified_recursively(Type::from(BTreeSet::from_iter(inner_types.values().cloned()))),
+                                                        );
+                                                    }
+                                                    (TypeKind::Object(inner_types), TypeKind::LiteralString(key_rope)) => {
+                                                        let key = key_rope.to_string();
+                                                        if let Some(element_type) = inner_types.get(&key) {
+                                                            result.insert(Type::from(element_type.kind.clone()));
+                                                        } else {
+                                                            return Err(compilation_context.error(&inner_types, &format!("object with key {key:?}",)));
+                                                        }
+                                                    }
+                                                    _ => panic!(),
+                                                }
+                                            }
+                                            Ok(Type::from(result))
+                                        }
+                                        3 => {
+                                            let at_range_from_type_kind = &at_type_kind.as_tuple().unwrap()[0].kind;
+                                            let at_range_to_type_kind = &at_type_kind.as_tuple().unwrap()[1].kind;
+                                            let from_type_kind_variants: Vec<&TypeKind> = match &from_type_kind {
+                                                TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
+                                                _ => vec![&from_type_kind],
+                                            };
+
+                                            let at_range_from_type_kind_variants: Vec<&TypeKind> = match &at_range_from_type_kind {
+                                                TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
+                                                _ => vec![&at_range_from_type_kind],
+                                            };
+                                            let at_range_to_type_kind_variants: Vec<&TypeKind> = match &at_range_to_type_kind {
+                                                TypeKind::Union(variants) => variants.iter().map(|r#type| &r#type.kind).collect(),
+                                                _ => vec![&at_range_to_type_kind],
+                                            };
+                                            let mut combinations = Vec::with_capacity(
+                                                from_type_kind_variants.len() * at_range_from_type_kind_variants.len() * at_range_to_type_kind_variants.len(),
+                                            );
+                                            for from_type_kind_variant in &from_type_kind_variants {
+                                                for at_range_from_type_kind_variant in &at_range_from_type_kind_variants {
+                                                    for at_range_to_type_kind_variant in &at_range_to_type_kind_variants {
+                                                        combinations.push((*from_type_kind_variant, *at_range_from_type_kind_variant, *at_range_to_type_kind_variant));
+                                                    }
+                                                }
+                                            }
+                                            let mut result = BTreeSet::new();
+                                            for (from_type_kind, at_range_from_type_kind, at_range_to_type_kind) in combinations {
+                                                match (from_type_kind, at_range_from_type_kind, at_range_to_type_kind) {
+                                                    (TypeKind::String, _, _)
+                                                    | (TypeKind::LiteralString(_), TypeKind::Number, _)
+                                                    | (TypeKind::LiteralString(_), _, TypeKind::Number) => {
+                                                        result.insert(error_type_properties.unified_recursively(TypeKind::String.into()));
+                                                    }
+                                                    (
+                                                        TypeKind::LiteralString(literal_string),
+                                                        TypeKind::LiteralNumber(_) | TypeKind::Null,
+                                                        TypeKind::LiteralNumber(_) | TypeKind::Null,
+                                                    ) => {
+                                                        let from_index = at_range_from_type_kind
+                                                            .as_literal_number()
+                                                            .map(|from_index_rational| from_index_rational.trunc().to_f64().value() as usize)
+                                                            .unwrap_or(0);
+                                                        let to_index = at_range_to_type_kind
+                                                            .as_literal_number()
+                                                            .map(|to_index_rational| to_index_rational.trunc().to_f64().value() as usize)
+                                                            .unwrap_or(literal_string.len_chars());
+                                                        if (from_index <= to_index) && (to_index <= literal_string.len_chars()) {
+                                                            result.insert(TypeKind::LiteralString(literal_string.slice(from_index..to_index).into()).into());
+                                                        } else {
+                                                            return Err(
+                                                                compilation_context.error(&from_type_kind, &format!("string with range {from_index}..{to_index}",))
+                                                            );
+                                                        }
+                                                    }
+                                                    _ => panic!(),
+                                                }
+                                            }
+                                            Ok(Type::from(result))
+                                        }
+                                        _ => panic!(),
+                                    }
+                                }),
+                            )?,
+                            _ => self.compile_embedded_function_call(compilation_context, global_compilation_context, function_call, None)?,
+                        },
+                        Function::User(user_function_name) => {
+                            if let Some(function_body_with_hash) = compilation_context.available_functions.get(user_function_name) {
+                                if compilation_context.entered_user_functions.contains(&function_body_with_hash.hash) {
+                                    return Err(compilation_context.error(&user_function_name, &"non-recursive function call"));
                                 }
-                                _ => Box::new([(DEFAULT_ARGUMENT_NAME.to_string().into(), argument.clone())].into_iter()),
-                            };
-                            let mut new_constants_definitions = Vec::new();
-                            let mut result_external_constants_name_clustered_indices = BTreeSet::new();
-                            for (function_argument_name, function_argument_body) in arguments_iterator {
-                                let argument_compilation_context = compilation_context.with_additional_path([
-                                    PathSegment::UserFunctionCall(user_function_name.clone()),
-                                    PathSegment::Argument(function_argument_name.clone()),
-                                ]);
-                                let compiled_constant = self.compile_with_context(&function_argument_body, &argument_compilation_context, global_compilation_context)?;
-                                result_external_constants_name_clustered_indices.append(&mut compiled_constant.external_constants_name_clustered_indices.clone());
-                                let constant_definition = self.define_constant(
-                                    function_argument_name.clone(),
-                                    compiled_constant.node.r#type.clone(),
-                                    &mut body_compilation_context,
-                                    global_compilation_context,
-                                );
-                                new_constants_definitions.push(intermediate_representation::ConstantDefinition {
-                                    name_clustered_index: constant_definition,
-                                    node: compiled_constant.node.clone(),
+                                let mut body_compilation_context = compilation_context.with_additional_path([PathSegment::UserFunctionCall(user_function_name.clone())]);
+                                let arguments_iterator = match &function_call.argument.program {
+                                    Program::Object(function_arguments) => {
+                                        let arguments_iterator: Box<dyn Iterator<Item = (Arc<String>, Arc<ProgramAndMetadata>)>> = if function_arguments.len() > 1 {
+                                            Box::new(function_arguments.iter().map(|(key, value_with_hash)| (key.clone(), value_with_hash.clone())))
+                                        } else {
+                                            Box::new([(DEFAULT_ARGUMENT_NAME.to_string().into(), function_call.argument.clone())].into_iter())
+                                        };
+                                        arguments_iterator
+                                    }
+                                    _ => Box::new([(DEFAULT_ARGUMENT_NAME.to_string().into(), function_call.argument.clone())].into_iter()),
+                                };
+                                let mut new_constants_definitions = Vec::new();
+                                let mut result_external_constants_name_clustered_indices = BTreeSet::new();
+                                for (function_argument_name, function_argument_body) in arguments_iterator {
+                                    let argument_compilation_context = compilation_context.with_additional_path([
+                                        PathSegment::UserFunctionCall(user_function_name.clone()),
+                                        PathSegment::Argument(function_argument_name.clone()),
+                                    ]);
+                                    let compiled_constant =
+                                        self.compile_with_context(&function_argument_body, &argument_compilation_context, global_compilation_context)?;
+                                    result_external_constants_name_clustered_indices.append(&mut compiled_constant.external_constants_name_clustered_indices.clone());
+                                    let constant_definition = self.define_constant(
+                                        function_argument_name.clone(),
+                                        compiled_constant.node.r#type.clone(),
+                                        &mut body_compilation_context,
+                                        global_compilation_context,
+                                    );
+                                    new_constants_definitions.push(intermediate_representation::ConstantDefinition {
+                                        name_clustered_index: constant_definition,
+                                        node: compiled_constant.node.clone(),
+                                    });
+                                }
+                                body_compilation_context.entered_user_functions.insert(function_body_with_hash.hash);
+                                let compiled_function = self.compile_with_context(&function_body_with_hash, &body_compilation_context, global_compilation_context)?;
+                                let function_index = global_compilation_context.user_functions_definitions.len();
+                                global_compilation_context.user_functions_definitions.push(UserFunctionCallDefinition {
+                                    external_constants_name_clustered_indices: Vec::from_iter(
+                                        compiled_function.external_constants_name_clustered_indices.iter().cloned(),
+                                    ),
+                                    node: compiled_function.node.clone(),
                                 });
+                                result_external_constants_name_clustered_indices.append(&mut compiled_function.external_constants_name_clustered_indices.clone());
+                                let arguments_is_pure = compiled_function.node.r#type.properties.capabilities.is_empty();
+                                return Ok(Arc::new(NodeAndMetadata {
+                                    external_constants_name_clustered_indices: result_external_constants_name_clustered_indices.clone(),
+                                    node: Node {
+                                        content: Content::UserFunctionCall {
+                                            arguments: new_constants_definitions,
+                                            body: function_index,
+                                            arguments_is_pure,
+                                        },
+                                        r#type: compiled_function.node.r#type.clone(),
+                                    }
+                                    .into(),
+                                }));
+                            } else {
+                                return Err(compilation_context.error(
+                                    &user_function_name,
+                                    &BTreeMap::from_iter([(
+                                        &"one of available functions names",
+                                        &compilation_context.available_functions.keys().collect::<Vec<_>>(),
+                                    )]),
+                                ));
                             }
-                            body_compilation_context.entered_user_functions.insert(function_body_with_hash.hash);
-                            let compiled_function = self.compile_with_context(&function_body_with_hash, &body_compilation_context, global_compilation_context)?;
-                            let function_index = global_compilation_context.user_functions_definitions.len();
-                            global_compilation_context.user_functions_definitions.push(UserFunctionCallDefinition {
-                                external_constants_name_clustered_indices: Vec::from_iter(compiled_function.external_constants_name_clustered_indices.iter().cloned()),
-                                node: compiled_function.node.clone(),
-                            });
-                            result_external_constants_name_clustered_indices.append(&mut compiled_function.external_constants_name_clustered_indices.clone());
-                            let arguments_is_pure = compiled_function.node.r#type.properties.capabilities.is_empty();
-                            return Ok(Arc::new(NodeAndMetadata {
-                                external_constants_name_clustered_indices: result_external_constants_name_clustered_indices.clone(),
-                                node: Node {
-                                    content: Content::UserFunctionCall {
-                                        arguments: new_constants_definitions,
-                                        body: function_index,
-                                        arguments_is_pure,
-                                    },
-                                    r#type: compiled_function.node.r#type.clone(),
-                                }
-                                .into(),
-                            }));
-                        } else {
-                            return Err(compilation_context.error(
-                                user_function_name,
-                                &BTreeMap::from_iter([(
-                                    &"one of available functions names",
-                                    &compilation_context.available_functions.keys().collect::<Vec<_>>(),
-                                )]),
-                            ));
                         }
-                    }
+                    },
                     Program::Object(object) => match object.len() {
                         0 => {
                             return Ok(NodeAndMetadata {

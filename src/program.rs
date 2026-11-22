@@ -5,7 +5,7 @@ use bytes::Bytes;
 use enumset::EnumSet;
 use serde::{
     Deserialize, Deserializer, Serialize,
-    de::{self, MapAccess, Visitor},
+    de::{self, IgnoredAny, MapAccess, Visitor},
 };
 
 use crate::{
@@ -33,8 +33,7 @@ pub enum Program {
         compute: Arc<ProgramAndMetadata>,
     },
     Constant(Constant),
-    EmbeddedFunctionCall(EmbeddedFunctionCall),
-    UserFunctionCall(UserFunctionCall),
+    FunctionCall(FunctionCall),
     Match {
         r#match: Match,
         #[serde(default = "default_match_as")]
@@ -165,33 +164,35 @@ impl ProgramAndMetadata {
             Program::Constant(Constant { constant }) => {
                 self.external_constants_names.insert(constant.clone());
             }
-            Program::EmbeddedFunctionCall(EmbeddedFunctionCall { argument, .. }) => {
-                unsafe { Arc::get_mut_unchecked(&mut *argument) }.write_external_names(available_functions);
-                self.external_constants_names.extend(argument.external_constants_names.iter().cloned());
-                self.external_functions_names.extend(argument.external_functions_names.iter().cloned());
-            }
-            Program::UserFunctionCall(UserFunctionCall { user_function_name, argument }) => {
-                self.external_functions_names.insert(user_function_name.clone());
-                if let Some(mut user_function) = available_functions.get(&*user_function_name).cloned() {
+            Program::FunctionCall(FunctionCall { function, argument }) => match &function {
+                Function::Embedded(_) => {
                     unsafe { Arc::get_mut_unchecked(&mut *argument) }.write_external_names(available_functions);
                     self.external_constants_names.extend(argument.external_constants_names.iter().cloned());
                     self.external_functions_names.extend(argument.external_functions_names.iter().cloned());
-                    unsafe { Arc::get_mut_unchecked(&mut user_function) }.write_external_names(available_functions);
-                    let mut user_function_external_constants_names_without_argument = user_function.external_constants_names.clone();
-                    match &argument.program {
-                        Program::Object(arguments) => {
-                            for argument_name in arguments.keys() {
-                                user_function_external_constants_names_without_argument.remove(argument_name);
+                }
+                Function::User(user_function_name) => {
+                    self.external_functions_names.insert(user_function_name.clone());
+                    if let Some(mut user_function) = available_functions.get(user_function_name).cloned() {
+                        unsafe { Arc::get_mut_unchecked(&mut *argument) }.write_external_names(available_functions);
+                        self.external_constants_names.extend(argument.external_constants_names.iter().cloned());
+                        self.external_functions_names.extend(argument.external_functions_names.iter().cloned());
+                        unsafe { Arc::get_mut_unchecked(&mut user_function) }.write_external_names(available_functions);
+                        let mut user_function_external_constants_names_without_argument = user_function.external_constants_names.clone();
+                        match &argument.program {
+                            Program::Object(arguments) if arguments.len() > 1 => {
+                                for argument_name in arguments.keys() {
+                                    user_function_external_constants_names_without_argument.remove(argument_name);
+                                }
+                            }
+                            _ => {
+                                user_function_external_constants_names_without_argument.remove(&DEFAULT_ARGUMENT_NAME.to_string().into());
                             }
                         }
-                        _ => {
-                            user_function_external_constants_names_without_argument.remove(&DEFAULT_ARGUMENT_NAME.to_string().into());
-                        }
+                        self.external_constants_names.extend(user_function_external_constants_names_without_argument.iter().cloned());
+                        self.external_functions_names.extend(user_function.external_functions_names.iter().cloned());
                     }
-                    self.external_constants_names.extend(user_function_external_constants_names_without_argument.iter().cloned());
-                    self.external_functions_names.extend(user_function.external_functions_names.iter().cloned());
                 }
-            }
+            },
             Program::Match { r#match, r#as, cases } => {
                 match r#match {
                     Match::Constant(constant) => {
@@ -356,16 +357,10 @@ impl From<Program> for ProgramAndMetadata {
                 value_only = false;
                 constant.hash(&mut hasher);
             }
-            Program::EmbeddedFunctionCall(EmbeddedFunctionCall { embedded_function, argument }) => {
+            Program::FunctionCall(FunctionCall { function, argument }) => {
                 compiles_easily = false;
                 value_only = false;
-                embedded_function.hash(&mut hasher);
-                argument.hash.hash(&mut hasher);
-            }
-            Program::UserFunctionCall(UserFunctionCall { user_function_name, argument }) => {
-                compiles_easily = false;
-                value_only = false;
-                user_function_name.hash(&mut hasher);
+                function.hash(&mut hasher);
                 argument.hash.hash(&mut hasher);
             }
             Program::Match { r#match, r#as, cases } => {
@@ -589,19 +584,36 @@ impl Default for ProgramAndMetadata {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub struct EmbeddedFunctionCall {
-    pub embedded_function: EmbeddedFunction,
-    pub argument: Arc<ProgramAndMetadata>,
+#[derive(Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[serde(untagged)]
+pub enum Function {
+    Embedded(EmbeddedFunction),
+    User(Arc<String>),
+}
+
+impl Function {
+    pub fn as_embedded(&self) -> Option<&EmbeddedFunction> {
+        match self {
+            Function::Embedded(result) => Some(result),
+            _ => None,
+        }
+    }
+
+    pub fn as_user(&self) -> Option<&Arc<String>> {
+        match self {
+            Function::User(result) => Some(result),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub struct UserFunctionCall {
-    pub user_function_name: Arc<String>,
+pub struct FunctionCall {
+    pub function: Function,
     pub argument: Arc<ProgramAndMetadata>,
 }
 
-impl<'de> Deserialize<'de> for UserFunctionCall {
+impl<'de> Deserialize<'de> for FunctionCall {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -609,67 +621,28 @@ impl<'de> Deserialize<'de> for UserFunctionCall {
         struct UserFunctionCallVisitor;
 
         impl<'de> Visitor<'de> for UserFunctionCallVisitor {
-            type Value = UserFunctionCall;
+            type Value = FunctionCall;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a with a single key-value pair where key is a one-string tuple and value is a program")
+                formatter.write_str("a map with a single key-value pair where key is a one-string tuple and value is a program")
             }
 
             fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
             where
                 M: MapAccess<'de>,
             {
-                let (name, argument) = match access.next_entry::<(Arc<String>,), Arc<ProgramAndMetadata>>()? {
+                let (function, argument) = match access.next_entry::<(Function,), Arc<ProgramAndMetadata>>()? {
                     Some(((key,), value)) => (key, value),
                     Option::None => return Err(serde::de::Error::invalid_length(0, &self)),
                 };
-                if access.next_entry::<(Arc<String>,), Arc<ProgramAndMetadata>>()?.is_some() {
+                if access.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {
                     return Err(serde::de::Error::invalid_length(2, &self));
                 }
-                Ok(UserFunctionCall {
-                    user_function_name: name,
-                    argument,
-                })
+                Ok(FunctionCall { function, argument })
             }
         }
 
         deserializer.deserialize_map(UserFunctionCallVisitor)
-    }
-}
-
-impl<'de> Deserialize<'de> for EmbeddedFunctionCall {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct EFVisitor;
-
-        impl<'de> Visitor<'de> for EFVisitor {
-            type Value = EmbeddedFunctionCall;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a map with a single key-value pair")
-            }
-
-            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
-            where
-                M: MapAccess<'de>,
-            {
-                let (name, argument) = match access.next_entry()? {
-                    Some((key, value)) => (key, value),
-                    Option::None => return Err(serde::de::Error::invalid_length(0, &self)),
-                };
-                if access.next_entry::<EmbeddedFunction, ProgramAndMetadata>()?.is_some() {
-                    return Err(serde::de::Error::invalid_length(2, &self));
-                }
-                Ok(EmbeddedFunctionCall {
-                    embedded_function: name,
-                    argument,
-                })
-            }
-        }
-
-        deserializer.deserialize_map(EFVisitor)
     }
 }
 
