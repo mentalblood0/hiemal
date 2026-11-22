@@ -13,11 +13,9 @@ use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
 use dashu::Rational;
 use glob::glob;
-use gxhash::HashMap;
 use parking_lot::{Mutex, RwLock};
 use rand::prelude::*;
 use regex::{Regex, escape};
-use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use ureq::{
     ProxyProtocol,
@@ -259,31 +257,13 @@ struct IntermediateValueAndMetadata {
 
 #[derive(Clone, Debug)]
 struct ComputationContext<'a> {
-    computer_config: &'a ComputerConfig,
     intermediate_representation: &'a IntermediateRepresentation,
-    functions_results_cache: &'a Arc<RwLock<HashMap<u128, Arc<IntermediateValueAndMetadata>>>>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ComputerConfig {
-    pub user_functions_caching: bool,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Computer {
-    pub config: ComputerConfig,
-}
-
-impl Computer {
-    pub fn compute(&self, intermediate_representation: &IntermediateRepresentation) -> Result<Arc<Option<Value>>> {
-        let computation_context = ComputationContext {
-            computer_config: &self.config,
-            intermediate_representation,
-            functions_results_cache: &Arc::new(RwLock::new(HashMap::default())),
-        };
-        let constants = Constants::from_iter(std::iter::repeat_n(None, intermediate_representation.unique_constants_names_count));
-        computation_context.unroll_intermediate_value(&computation_context.compute_node(&intermediate_representation.root, &constants)?)
-    }
+pub fn compute(intermediate_representation: &IntermediateRepresentation) -> Result<Arc<Option<Value>>> {
+    let computation_context = ComputationContext { intermediate_representation };
+    let constants = Constants::from_iter(std::iter::repeat_n(None, intermediate_representation.unique_constants_names_count));
+    computation_context.unroll_intermediate_value(&computation_context.compute_node(&intermediate_representation.root, &constants)?)
 }
 
 fn concrete_or_else<F>(concrete: &TypeKind, or_else: F) -> TypeKind
@@ -2607,11 +2587,7 @@ impl<'a> ComputationContext<'a> {
                     }
                 }
             },
-            Content::UserFunctionCall {
-                arguments,
-                body,
-                arguments_is_pure,
-            } => {
+            Content::UserFunctionCall { arguments, body } => {
                 let mut result_constants = constants.clone();
                 for (constant_name_clustered_index, computed_constant) in arguments.iter().map(|constant_definition| constant_definition.name_clustered_index).zip(
                     self.compute_nodes(
@@ -2623,25 +2599,7 @@ impl<'a> ComputationContext<'a> {
                     result_constants[constant_name_clustered_index] = Some(computed_constant);
                 }
                 let user_function = &self.intermediate_representation.user_functions[*body];
-                if self.computer_config.user_functions_caching && *arguments_is_pure {
-                    let function_call_identifier = {
-                        let mut hasher = gxhash::GxHasher::default();
-                        for constant_name_clustered_index in &user_function.external_constants_name_clustered_indices {
-                            result_constants[*constant_name_clustered_index].as_ref().unwrap().hash(&mut hasher);
-                        }
-                        body.hash(&mut hasher);
-                        hasher.finish_u128()
-                    };
-                    if let Some(cached_function_result) = self.functions_results_cache.read().get(&function_call_identifier) {
-                        Ok(cached_function_result.clone())
-                    } else {
-                        let result = self.compute_node(&user_function.node, &result_constants)?;
-                        self.functions_results_cache.write().insert(function_call_identifier, result.clone());
-                        Ok(result)
-                    }
-                } else {
-                    self.compute_node(&user_function.node, &result_constants)
-                }
+                self.compute_node(user_function, &result_constants)
             }
             Content::Match {
                 r#match,

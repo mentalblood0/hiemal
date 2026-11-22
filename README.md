@@ -12,7 +12,6 @@
 - pass-by-value, strings and containers are cheap to clone
 - parallel execution
 - lazy evaluation: constants, arrays/tuples, objects, sequence, flatten, map and filter
-- pure user functions results caching
 - numbers are arbitrary size rational
 - typechecked runtime regex building
 

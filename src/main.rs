@@ -5,17 +5,9 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use hiemal::{
-    compiler::Compiler,
-    computer::{Computer, ComputerConfig},
-    embedded_functions::EMBEDDED_FUNCTIONS,
-    time_it,
-};
+use hiemal::{compiler::compile, computer::compute, embedded_functions::EMBEDDED_FUNCTIONS, time_it};
 
 pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) -> Result<()> {
-    let computer = Computer {
-        config: ComputerConfig { user_functions_caching: false },
-    };
     if let Some(file_path) = file_path_option {
         let program_bytes = time_it!("read", { std::fs::read(file_path)? });
         let program_hash = time_it!("hashed", { gxhash::gxhash128(&program_bytes, 0) });
@@ -26,23 +18,15 @@ pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) ->
                     &mut lz4_flex::frame::FrameDecoder::new(&mut BufReader::new(cached_intermediate_representation_file)),
                     bincode::config::standard(),
                 )
-                .with_context(|| {
-                    format!(
-                        "Can not decode cached intermediate representation from \
-                         {cached_intermediate_representation_path:?}"
-                    )
-                })?
+                .with_context(|| format!("Can not decode cached intermediate representation from {cached_intermediate_representation_path:?}"))?
             })
         } else {
             let mut program: hiemal::program::ProgramAndMetadata = time_it!("parsed", { serde_saphyr::from_slice(&program_bytes)? });
             time_it!("computed external names", {
                 program.write_external_names(&mut BTreeMap::default());
             });
-            let compiler = Compiler {
-                metaprograms_computer: computer.clone(),
-            };
             let _ = &*EMBEDDED_FUNCTIONS;
-            let result = time_it!("compiled", { compiler.compile(&program)? });
+            let result = time_it!("compiled", { compile(&program)? });
             time_it!("cached", {
                 if let Some(parent) = cached_intermediate_representation_path.parent() {
                     std::fs::create_dir_all(parent)?;
@@ -50,25 +34,18 @@ pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) ->
                 let mut encoder = lz4_flex::frame::FrameEncoder::new(
                     std::fs::OpenOptions::new().create(true).truncate(true).write(true).open(&cached_intermediate_representation_path)?,
                 );
-                bincode::serde::encode_into_std_write(&result, &mut encoder, bincode::config::standard()).with_context(|| {
-                    format!(
-                        "Can not encode intermediate representation to \
-                         {cached_intermediate_representation_path:?}"
-                    )
-                })?;
-                encoder.finish().with_context(|| {
-                    format!(
-                        "Can not finish compress-write of intermediate representation to \
-                         {cached_intermediate_representation_path:?}"
-                    )
-                })?;
+                bincode::serde::encode_into_std_write(&result, &mut encoder, bincode::config::standard())
+                    .with_context(|| format!("Can not encode intermediate representation to {cached_intermediate_representation_path:?}"))?;
+                encoder
+                    .finish()
+                    .with_context(|| format!("Can not finish compress-write of intermediate representation to {cached_intermediate_representation_path:?}"))?;
                 result
             })
         };
         let _ = &*EMBEDDED_FUNCTIONS;
         serde_saphyr::to_io_writer(
             output_writer,
-            &time_it!("computed", { computer.compute(&intermediate_representation).context("Can not compute program")? }),
+            &time_it!("computed", { compute(&intermediate_representation).context("Can not compute program")? }),
         )
         .context("Can not output result of the program computation")?;
     }

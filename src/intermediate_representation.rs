@@ -40,7 +40,7 @@ pub enum Value {
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct IntermediateRepresentation {
     pub root: Arc<Node>,
-    pub user_functions: Vec<UserFunction>,
+    pub user_functions: Vec<Arc<Node>>,
     pub unique_constants_names_count: usize,
 }
 
@@ -79,7 +79,6 @@ pub enum Content {
     UserFunctionCall {
         arguments: Vec<ConstantDefinition>,
         body: usize,
-        arguments_is_pure: bool,
     },
     Match {
         r#match: Arc<Node>,
@@ -152,12 +151,6 @@ pub struct EmbeddedFunctionCall {
     pub embedded_function: EmbeddedFunction,
     pub variant_index: u8,
     pub argument: Arc<Node>,
-}
-
-#[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
-pub struct UserFunction {
-    pub external_constants_name_clustered_indices: Vec<usize>,
-    pub node: Arc<Node>,
 }
 
 #[derive(Debug, Clone, Ord, PartialEq, PartialOrd, Eq, Serialize, Deserialize, Hash)]
