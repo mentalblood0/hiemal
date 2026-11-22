@@ -1554,11 +1554,11 @@ impl Compiler {
                                         let arguments_iterator: Box<dyn Iterator<Item = (Arc<String>, Arc<ProgramAndMetadata>)>> = if function_arguments.len() > 1 {
                                             Box::new(function_arguments.iter().map(|(key, value_with_hash)| (key.clone(), value_with_hash.clone())))
                                         } else {
-                                            Box::new([(DEFAULT_ARGUMENT_NAME.to_string().into(), function_call.argument.clone())].into_iter())
+                                            Box::new([(DEFAULT_ARGUMENT_NAME.clone(), function_call.argument.clone())].into_iter())
                                         };
                                         arguments_iterator
                                     }
-                                    _ => Box::new([(DEFAULT_ARGUMENT_NAME.to_string().into(), function_call.argument.clone())].into_iter()),
+                                    _ => Box::new([(DEFAULT_ARGUMENT_NAME.clone(), function_call.argument.clone())].into_iter()),
                                 };
                                 let mut new_constants_definitions = Vec::new();
                                 let mut result_external_constants_name_clustered_indices = BTreeSet::new();

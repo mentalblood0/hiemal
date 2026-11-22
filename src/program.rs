@@ -185,7 +185,7 @@ impl ProgramAndMetadata {
                                 }
                             }
                             _ => {
-                                user_function_external_constants_names_without_argument.remove(&DEFAULT_ARGUMENT_NAME.to_string().into());
+                                user_function_external_constants_names_without_argument.remove(&DEFAULT_ARGUMENT_NAME);
                             }
                         }
                         self.external_constants_names.extend(user_function_external_constants_names_without_argument.iter().cloned());
@@ -499,11 +499,11 @@ pub fn default_match_as() -> Option<Arc<String>> {
 }
 
 pub fn default_map_as() -> Arc<String> {
-    DEFAULT_ARGUMENT_NAME.to_string().into()
+    DEFAULT_ARGUMENT_NAME.clone()
 }
 
 pub fn default_filter_as() -> Arc<String> {
-    DEFAULT_ARGUMENT_NAME.to_string().into()
+    DEFAULT_ARGUMENT_NAME.clone()
 }
 
 pub fn default_fold_as() -> Arc<String> {
@@ -511,7 +511,7 @@ pub fn default_fold_as() -> Arc<String> {
 }
 
 pub fn default_sequence_as() -> Arc<String> {
-    DEFAULT_ARGUMENT_NAME.to_string().into()
+    DEFAULT_ARGUMENT_NAME.clone()
 }
 
 pub fn default_sequence_while() -> Option<Arc<ProgramAndMetadata>> {
@@ -565,7 +565,7 @@ impl<'de> Deserialize<'de> for Constant {
         }
 
         match Helper::deserialize(deserializer)? {
-            Helper::Str(s) if s == DEFAULT_ARGUMENT_NAME => Ok(Constant { constant: Arc::new(s) }),
+            Helper::Str(s) if s == **DEFAULT_ARGUMENT_NAME => Ok(Constant { constant: Arc::new(s) }),
             Helper::Str(s) => Err(de::Error::invalid_value(de::Unexpected::Str(&s), &"\"_\" or a struct with a `constant` field")),
             Helper::Struct(inner) => Ok(Constant { constant: inner.constant }),
         }
