@@ -410,7 +410,7 @@ fn compile_with_context_without_cache(
                         let element_compilation_context = compilation_context.with_additional_path([PathSegment::ArrayIndex(element_index)]);
                         let compiled_element = compile_with_context(element, &element_compilation_context, global_compilation_context)?;
                         result_elements_types.push(compiled_element.r#type.clone());
-                        result_content.push(compiled_element.clone());
+                        result_content.push(compiled_element);
                     }
                     Node {
                         content: Content::Tuple(result_content),
@@ -445,7 +445,7 @@ fn compile_with_context_without_cache(
                         constants_name_clustered_indices.push(constant_definition);
                         new_constants.push(intermediate_representation::ConstantDefinition {
                             name_clustered_index: constant_definition,
-                            node: compiled_constant.clone(),
+                            node: compiled_constant,
                         });
                     }
                     for (function_name, function_body) in functions.iter() {
@@ -666,7 +666,7 @@ fn compile_with_context_without_cache(
                                     );
                                     let compiled_through = compile_with_context(through, &through_compilation_context, global_compilation_context)?;
                                     result_union_types.insert(map_concrete_type.with_kind(TypeKind::Array(Box::new(compiled_through.r#type.clone()))));
-                                    Throughs::Array(compiled_through.clone())
+                                    Throughs::Array(compiled_through)
                                 }
                                 _ => {
                                     return Err(map_compilation_context.error(map_concrete_type, &"tuple or array"));
@@ -674,13 +674,14 @@ fn compile_with_context_without_cache(
                             },
                         ));
                     }
+                    let r#type = Type::from(result_union_types).with_unified_properties_from(&compiled_map.r#type);
                     Node {
                         content: Content::Map(Arc::new(intermediate_representation::Map {
-                            map: compiled_map.clone(),
+                            map: compiled_map,
                             map_concrete_type_and_throughs,
                             map_constant_name_clustered_index,
                         })),
-                        r#type: Type::from(result_union_types).with_unified_properties_from(&compiled_map.r#type),
+                        r#type,
                     }
                     .into()
                 }
@@ -693,9 +694,10 @@ fn compile_with_context_without_cache(
                         &TypeKind::Array(Box::new(TypeKind::Array(Box::new(TypeKind::Any.into())).into())),
                         compilation_context,
                     )?;
+                    let r#type = compiled_flatten.r#type.flatten()?;
                     Node {
-                        content: Content::Flatten(compiled_flatten.clone()),
-                        r#type: compiled_flatten.r#type.flatten()?,
+                        content: Content::Flatten(compiled_flatten),
+                        r#type,
                     }
                     .into()
                 }
@@ -749,7 +751,7 @@ fn compile_with_context_without_cache(
                                     let compiled_through = compile_with_context(through, &through_compilation_context, global_compilation_context)?;
                                     assert_type(&compiled_through.r#type, &TypeKind::Bool, compilation_context)?;
                                     result_union_types.insert(filter_concrete_type.clone());
-                                    Throughs::Array(compiled_through.clone())
+                                    Throughs::Array(compiled_through)
                                 }
                                 _ => {
                                     return Err(filter_compilation_context.error(filter_concrete_type, &"tuple or array"));
@@ -757,13 +759,14 @@ fn compile_with_context_without_cache(
                             },
                         ));
                     }
+                    let r#type = Type::from(result_union_types).with_unified_properties_from(&compiled_filter.r#type);
                     Node {
                         content: Content::Filter(Arc::new(intermediate_representation::Filter {
-                            filter: compiled_filter.clone(),
+                            filter: compiled_filter,
                             filter_concrete_type_and_throughs,
                             filter_constant_name_clustered_index,
                         })),
-                        r#type: Type::from(result_union_types).with_unified_properties_from(&compiled_filter.r#type),
+                        r#type,
                     }
                     .into()
                 }
@@ -857,10 +860,10 @@ fn compile_with_context_without_cache(
                     };
                     Node {
                         content: Content::Fold {
-                            fold: compiled_fold.clone(),
+                            fold: compiled_fold,
                             fold_constant_name_clustered_index: fold_constant_name_clustered_index.unwrap(),
                             accumulating_in_constant_name_clustered_index: accumulating_in_constant_name_clustered_index.unwrap(),
-                            starting_with: compiled_starting_with.clone(),
+                            starting_with: compiled_starting_with,
                             throughs,
                             throughs_cycle_start_index,
                         },
@@ -938,7 +941,7 @@ fn compile_with_context_without_cache(
                     Node {
                         content: Content::Sequence(
                             intermediate_representation::Sequence {
-                                starting_with: compiled_starting_with.clone(),
+                                starting_with: compiled_starting_with,
                                 current_constant_name_clustered_index,
                                 nexts,
                                 nexts_cycle_start_index,
@@ -1019,7 +1022,7 @@ fn compile_with_context_without_cache(
                     };
                     Node {
                         content: Content::Loop {
-                            starting_with: compiled_starting_with.clone(),
+                            starting_with: compiled_starting_with,
                             current_constant_name_clustered_index,
                             nexts,
                             nexts_cycle_start_index,
@@ -1453,19 +1456,20 @@ fn compile_with_context_without_cache(
                                 );
                                 new_constants_definitions.push(intermediate_representation::ConstantDefinition {
                                     name_clustered_index: constant_definition,
-                                    node: compiled_constant.clone(),
+                                    node: compiled_constant,
                                 });
                             }
                             body_compilation_context.entered_user_functions.insert(function_body_with_hash.hash);
                             let compiled_function = compile_with_context(&function_body_with_hash, &body_compilation_context, global_compilation_context)?;
                             let function_index = global_compilation_context.user_functions_definitions.len();
-                            global_compilation_context.user_functions_definitions.push(compiled_function.clone());
+                            let r#type = compiled_function.r#type.clone();
+                            global_compilation_context.user_functions_definitions.push(compiled_function);
                             return Ok(Node {
                                 content: Content::UserFunctionCall {
                                     arguments: new_constants_definitions,
                                     body: function_index,
                                 },
-                                r#type: compiled_function.r#type.clone(),
+                                r#type,
                             }
                             .into());
                         } else {
@@ -1494,7 +1498,7 @@ fn compile_with_context_without_cache(
                             let object_value_compilation_context = compilation_context.with_additional_path([PathSegment::ObjectKey(object_key.clone())]);
                             let compiled_object_value = compile_with_context(object_value, &object_value_compilation_context, global_compilation_context)?;
                             result_inner_types.insert(object_key.clone(), compiled_object_value.r#type.clone());
-                            result_content.insert(object_key.clone(), compiled_object_value.clone());
+                            result_content.insert(object_key.clone(), compiled_object_value);
                         }
                         let result_inner_types_arc = Arc::new(result_inner_types);
                         Node {
