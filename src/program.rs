@@ -566,7 +566,7 @@ impl Define {
     }
 }
 
-pub type UserFunctionPath = Vec<Arc<String>>;
+pub type UserFunctionPath = Vec<String>;
 
 #[repr(u8)]
 #[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
