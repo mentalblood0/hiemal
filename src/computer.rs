@@ -718,47 +718,47 @@ impl<'a> ComputationContext<'a> {
         }
     }
 
-    fn process_in_parallel<I, F, O>(&self, mut input: &[(usize, I)], function: &F, output: &Mutex<Vec<O>>) -> Result<()>
+    fn process_in_parallel<I, F, O>(&self, input: &[(usize, I)], function: &F, output: &Mutex<Vec<O>>) -> Result<()>
     where
         I: Send + Sync + Clone,
         F: Fn(I) -> Result<O> + Send + Sync,
         O: Send + Sync,
     {
-        while !input.is_empty()
-            && (input.len() < 2 || {
-                let mut threads_left_to_spawn_lock_guard = THREADS_LEFT_TO_SPAWN.lock();
-                if *threads_left_to_spawn_lock_guard == 0u8 {
-                    true
-                } else {
-                    *threads_left_to_spawn_lock_guard -= 1;
-                    false
-                }
-            })
-        {
-            if input.len() == 1 {
+        match input.len() {
+            0 => {}
+            1 => {
                 let (element_index, input_element) = input[0].clone();
                 let node_result = function(input_element)?;
                 output.lock()[element_index] = node_result;
-                return Ok(());
-            } else {
-                let left_half = input.split_off(..input.len().div_ceil(2)).unwrap();
-                for (element_index, input_element) in left_half.iter().cloned() {
-                    let node_result = function(input_element)?;
-                    output.lock()[element_index] = node_result;
+            }
+            _ => {
+                let mid = input.len().div_ceil(2);
+                let (left_half, right_half) = input.split_at(mid);
+
+                let can_spawn = {
+                    let mut threads_left = THREADS_LEFT_TO_SPAWN.lock();
+                    if *threads_left > 0 {
+                        *threads_left -= 1;
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if can_spawn {
+                    let (left_result, right_result) = std::thread::scope(|scope| {
+                        let right_handle = scope.spawn(|| self.process_in_parallel(right_half, function, output));
+                        let left_result = self.process_in_parallel(left_half, function, output);
+                        let right_result = right_handle.join().map_err(|error| anyhow!("Thread panicked: {error:#?}"));
+                        *THREADS_LEFT_TO_SPAWN.lock() += 1;
+                        (left_result, right_result)
+                    });
+                    left_result?;
+                    right_result??;
+                } else {
+                    self.process_in_parallel(left_half, function, output)?;
+                    self.process_in_parallel(right_half, function, output)?;
                 }
             }
-        }
-        if !input.is_empty() {
-            let left_half = input.split_off(..input.len().div_ceil(2)).unwrap();
-            let (left_half_result, right_half_result) = std::thread::scope(|scope| {
-                let left_half_join_handle = scope.spawn(|| self.process_in_parallel(left_half, function, output));
-                let right_half_result = self.process_in_parallel(input, function, output);
-                let left_half_result = left_half_join_handle.join().map_err(|error| anyhow!("Thread panicked: {error:#?}"));
-                *THREADS_LEFT_TO_SPAWN.lock() += 1;
-                (left_half_result, right_half_result)
-            });
-            left_half_result??;
-            right_half_result?;
         }
         Ok(())
     }
