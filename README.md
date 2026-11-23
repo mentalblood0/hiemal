@@ -40,23 +40,23 @@ See [embedded functions specification](src/embedded_functions.yml)
 ```yaml
 constants:
   c: 1
-compute:
-  {constant: c}
+compute: { constant: c }
 ```
 
 ```yaml
 functions:
-  f:: _
+  f: _
 compute:
-  f:: 1
+  - [f]: 1
+  - [f]: { _: 1 }
 ```
 
 #### functions constants allow forbid compute
 
 ```yaml
 functions:
-  f::
-    sum:
+  f:
+    [sum]:
       - constant: a
       - constant: b
       - constant: c
@@ -64,19 +64,9 @@ functions:
 constants:
   c: 3
 compute:
-  f::
+  [f]:
     a: 1
     b: 2
-```
-
-```yaml
-functions:
-  apply::
-    function:: { constant: argument }
-compute:
-  apply::
-    function:: { sum: [_, 1] }
-    argument: 1
 ```
 
 ```yaml
@@ -88,18 +78,18 @@ allow:
   - remove file
 compute:
   pipe:
-    - write bytes:
+    - [write bytes]:
         target:
-          bufferized writer:
+          [bufferized writer]:
             path: test files.txt
             mode: create
         content: { bytes: 62 62 }
-    - read bytes:
+    - [read bytes]:
         source:
-          bufferized reader: test files.txt
+          [bufferized reader]: test files.txt
         amount: 1
     - - _
-      - remove file: test files.txt
+      - [remove file]: test files.txt
   as: _
 ```
 
@@ -108,15 +98,15 @@ forbid:
   - remove file
 compute:
   pipe:
-    - write bytes:
+    - [write bytes]:
         target:
-          bufferized writer:
+          [bufferized writer]:
             path: test files.txt
             mode: create
         content: { bytes: 62 62 }
-    - read bytes:
+    - [read bytes]:
         source:
-          bufferized reader: test files.txt
+          [bufferized reader]: test files.txt
         amount: 1
   as: _
 ```
@@ -125,9 +115,9 @@ compute:
 allow:
   - read file
 compute:
-  read bytes:
+  [read bytes]:
     source:
-      bufferized reader: test files.txt
+      [bufferized reader]: test files.txt
     amount: 1
 ```
 
@@ -180,48 +170,50 @@ match: { parse yaml: "[1, 2, 3]" }
 cases:
   - [number, it's a number]
   - [string, it's a string]
-  - [[1, { sum: [1, 1] }, 3], true]
+  - [[1, { [sum]: [1, 1] }, 3], true]
   - [any, it's something else]
 ```
 
 #### starting with as next while
 
 ```yaml
-from:
-  starting with: 1
-  next: { sum: [_, 1] }
-at: [[0, 3]]
+[get]:
+  from:
+    starting with: 1
+    next: { [sum]: [_, 1] }
+  at: [0, 3]
 ```
 
 ```yaml
-from:
-  starting with: [0, 1]
-  next:
-    - sum:
-        - from: _
-          at: [0]
-        - 1
-    - match:
-        from: _
-        at: [1]
-      cases:
-        - [number, s]
-        - [string, 1]
-at: [[0, 4]]
+[get]:
+  from:
+    starting with: [0, 1]
+    next:
+      - [sum]:
+          - from: _
+            at: [0]
+          - 1
+      - match:
+          from: _
+          at: [1]
+        cases:
+          - [number, s]
+          - [string, 1]
+  at: [0, 4]
 ```
 
 ```yaml
 starting with: 1
-next: { sum: [_, 2] }
-while: { is sorted: [_, 5] }
+next: { [sum]: [_, 2] }
+while: { [is sorted]: [_, 5] }
 ```
 
 #### starting with as loop while
 
 ```yaml
 starting with: 1
-loop: { sum: [_, 2] }
-while: { is sorted: [_, 5] }
+loop: { [sum]: [_, 2] }
+while: { [is sorted]: [_, 5] }
 ```
 
 #### map as through
@@ -242,7 +234,7 @@ through:
 
 ```yaml
 map:
-  key-value pairs: { first: 1, second: string, third: [1, 2, 3] }
+  [key-value pairs]: { first: 1, second: string, third: [1, 2, 3] }
 through:
   match: _
   cases:
@@ -252,18 +244,18 @@ through:
       - map: { from: _, at: [1] }
         as: element from matched
         through:
-          sum: [{ constant: element from matched }, 1]
+          [sum]: [{ constant: element from matched }, 1]
 ```
 
 ```yaml
 map:
-  match: { parse yaml: "[1]" }
+  match: { [parse yaml]: "[1]" }
   cases:
     - [number, [1, 2, 3]]
     - [{ array: number }, [s]]
     - [any, [1]]
 through:
-  sum:
+  [sum]:
     - 1
     - match: _
       cases:
@@ -274,23 +266,24 @@ through:
 #### filter as through
 
 ```yaml
-from:
-  filter:
-    starting with: 1
-    next: { sum: [_, 1] }
-  through: { is sorted: [5, _] }
-at: [[0, 3]]
+[get]:
+  from:
+    filter:
+      starting with: 1
+      next: { sum: [_, 1] }
+    through: { [is sorted]: [5, _] }
+  at: [0, 3]
 ```
 
 ```yaml
 filter:
-  match: { parse yaml: "[1]" }
+  match: { [parse yaml]: "[1]" }
   cases:
     - [number, [1, 2, 3]]
     - [{ array: number }, [s]]
     - [any, [1]]
 through:
-  is sorted:
+  [is sorted]:
     - 0
     - match: _
       cases:
@@ -304,7 +297,7 @@ through:
 fold: [1, 2, 3]
 starting with: 0
 through:
-  sum: [{ constant: accumulator }, { constant: current }]
+  [sum]: [{ constant: accumulator }, { constant: current }]
 ```
 
 ```yaml
@@ -325,27 +318,26 @@ constants:
   FizzBuzz:
     map:
       starting with: 1
-      next: { sum: [_, 1] }
+      next: { [sum]: [_, 1] }
     through:
       match:
-        mod: [_, 3]
+        [mod]: [_, 3]
       cases:
         - - 0
           - match:
-              mod: [_, 5]
+              [mod]: [_, 5]
             cases:
               - [0, FizzBuzz]
               - [any, Fizz]
         - - any
           - match:
-              mod: [_, 5]
+              [mod]: [_, 5]
             cases:
               - [0, Buzz]
               - [any, _]
 compute:
-found:
   fold:
-    get:
+    [get]:
       from: { constant: FizzBuzz }
       at: [0, 20]
   through:
@@ -353,7 +345,7 @@ found:
     as: _
     cases:
       - - number
-        - { sum: [ { constant: accumulator }, _ ] }
+        - { [sum]: [ { constant: accumulator }, _ ] }
       - [ any, { constant: accumulator } ]
   starting with: 0
 ```
@@ -362,9 +354,9 @@ found:
 
 ```yaml
 pipe:
-  - { sum: [1, 2] }
-  - { sum: [_, 3] }
-  - { sum: [_, 4] }
+  - { [sum]: [1, 2] }
+  - { [sum]: [_, 3] }
+  - { [sum]: [_, 4] }
 as: _
 ```
 
@@ -372,11 +364,11 @@ as: _
 from:
   pipe:
     - starting with: 0
-      next: { sum: [_, 1] }
+      next: { [sum]: [_, 1] }
     - starting with: 0
-      next: { sum: [_, { from: { constant: input }, at: [10], default: 0 }] }
+      next: { [sum]: [_, { from: { constant: input }, at: [10], default: 0 }] }
     - starting with: 0
-      next: { sum: [_, { from: { constant: input }, at: [10], default: 0 }] }
+      next: { [sum]: [_, { from: { constant: input }, at: [10], default: 0 }] }
   as: input
 at: [1]
 ```
@@ -385,8 +377,14 @@ at: [1]
 
 ```yaml
 try:
-  - read bytes from file: tests.yml
-  - read bytes from file: nonexistent file
+  - [read bytes]:
+      source:
+        [bufferized reader]: tests.yml
+      amount: all
+  - [read bytes]:
+      source:
+        [bufferized reader]: nonexistent file
+      amount: all
 as: error
 or: { constant: error }
 ```
