@@ -16,7 +16,7 @@ use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     embedded_functions::{EMBEDDED_FUNCTIONS, EmbeddedFunction},
     intermediate_representation::{self, Case, Content, IntermediateRepresentation, Node, Throughs},
-    program::{Condition, Constant, Function, FunctionCall, Match, Path, PathSegment, Program, ProgramAndMetadata},
+    program::{Condition, Constant, Function, FunctionCall, Match, Path, PathSegment, Program, ProgramAndMetadata, UserFunctionPath},
     r#type::{Capability, Embedded, Type, TypeKind, TypeProperties},
     value::Value,
 };
@@ -24,7 +24,7 @@ use crate::{
 #[derive(Clone, Default)]
 struct CompilationContext {
     path: Path,
-    available_functions: Object<String, ProgramAndMetadata>,
+    available_functions: Object<UserFunctionPath, ProgramAndMetadata>,
     available_constants: Object<String, Type>,
     entered_user_functions: SetRaw<u128>,
 }
@@ -167,18 +167,6 @@ struct GlobalCompilationContext {
     saved_compilation_time: std::time::Duration,
 }
 
-#[derive(Hash)]
-enum ContextElementContent<'a> {
-    Constant(&'a Type),
-    Function(u128),
-}
-
-#[derive(Hash)]
-struct ContextElement<'a> {
-    name: &'a str,
-    content: ContextElementContent<'a>,
-}
-
 pub fn compile(program_and_metadata: &ProgramAndMetadata) -> Result<Arc<IntermediateRepresentation>> {
     let mut global_compilation_context = GlobalCompilationContext::default();
     let compilation_context = CompilationContext::default();
@@ -314,18 +302,12 @@ fn hash_with_context(
         let mut hasher = gxhash::GxHasher::default();
         program_with_hash.hash.hash(&mut hasher);
         for constant_name in program_with_hash.external_constants_names.iter() {
-            ContextElement {
-                name: constant_name.as_str(),
-                content: ContextElementContent::Constant(&*compilation_context.available_constants.get(constant_name)?),
-            }
-            .hash(&mut hasher);
+            constant_name.hash(&mut hasher);
+            compilation_context.available_constants.get(constant_name)?.hash(&mut hasher);
         }
         for function_name in program_with_hash.external_functions_names.iter() {
-            ContextElement {
-                name: function_name.as_str(),
-                content: ContextElementContent::Function(compilation_context.available_functions.get(function_name)?.hash),
-            }
-            .hash(&mut hasher);
+            function_name.hash(&mut hasher);
+            compilation_context.available_functions.get(function_name)?.hash.hash(&mut hasher);
         }
         let result = hasher.finish_u128();
         let time_spent_on_hashing = hashing_start.elapsed();
@@ -418,12 +400,7 @@ fn compile_with_context_without_cache(
                     }
                     .into()
                 }
-                Program::Scope {
-                    define,
-                    compute,
-                    allow,
-                    forbid,
-                } => {
+                Program::Scope { define, compute, allow, forbid } => {
                     if allow.is_some() && forbid.is_some() {
                         return Err(compilation_context.error(&BTreeMap::from_iter([("allow", &allow), ("forbid", &forbid)]), &"either `allow` or `forbid`"));
                     }
@@ -1098,7 +1075,7 @@ fn compile_with_context_without_cache(
                     .into()
                 }
                 Program::FunctionCall(function_call) => match &function_call.function {
-                    Function::Embedded(embedded_function) => match embedded_function {
+                    Function::Embedded((embedded_function,)) => match embedded_function {
                         EmbeddedFunction::Sort => compile_embedded_function_call(
                             compilation_context,
                             global_compilation_context,

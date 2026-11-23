@@ -148,6 +148,14 @@ define:
 compute:
   [tests report]:
     tests:
+      test non-trivial function path:
+        [assert equal]:
+          found:
+            define:
+              [a, b, c, f]: _
+            compute:
+              [a, b, c, f]: 1
+          expected: 1
       test caching:
         [assert equal]:
           found:

@@ -122,11 +122,11 @@ pub struct ProgramAndMetadata {
     pub compiles_easily: bool,
     pub value_only: bool,
     pub external_constants_names: Set<String>,
-    pub external_functions_names: Set<String>,
+    pub external_functions_names: Set<UserFunctionPath>,
 }
 
 impl ProgramAndMetadata {
-    pub fn write_external_names(&mut self, available_functions: &mut BTreeMap<Arc<String>, Arc<ProgramAndMetadata>>) {
+    pub fn write_external_names(&mut self, available_functions: &mut BTreeMap<Arc<UserFunctionPath>, Arc<ProgramAndMetadata>>) {
         match &mut self.program {
             Program::Tuple(elements) => {
                 for element in elements {
@@ -334,7 +334,11 @@ impl From<Program> for ProgramAndMetadata {
             Program::Scope { define, allow, forbid, compute } => {
                 compiles_easily = false;
                 value_only = false;
-                for (name, body) in define.functions().chain(define.constants()) {
+                for (name, body) in define.functions() {
+                    name.hash(&mut hasher);
+                    body.hash.hash(&mut hasher);
+                }
+                for (name, body) in define.constants() {
                     name.hash(&mut hasher);
                     body.hash.hash(&mut hasher);
                 }
@@ -541,20 +545,20 @@ impl Define {
         })
     }
 
-    pub fn functions(&self) -> impl Iterator<Item = (&Arc<String>, &std::sync::Arc<ProgramAndMetadata>)> {
+    pub fn functions(&self) -> impl Iterator<Item = (&Arc<UserFunctionPath>, &std::sync::Arc<ProgramAndMetadata>)> {
         self.0.iter().filter_map(|(defined_name, value)| {
-            if let DefinedName::Function((name,)) = defined_name {
-                Some((name, value))
+            if let DefinedName::Function(user_function_path) = defined_name {
+                Some((user_function_path, value))
             } else {
                 Option::None
             }
         })
     }
 
-    pub fn functions_mut(&mut self) -> impl Iterator<Item = (&Arc<String>, &mut std::sync::Arc<ProgramAndMetadata>)> {
+    pub fn functions_mut(&mut self) -> impl Iterator<Item = (&Arc<UserFunctionPath>, &mut std::sync::Arc<ProgramAndMetadata>)> {
         self.0.iter_mut().filter_map(|(defined_name, value)| {
-            if let DefinedName::Function((name,)) = defined_name {
-                Some((name, value))
+            if let DefinedName::Function(user_function_path) = defined_name {
+                Some((user_function_path, value))
             } else {
                 Option::None
             }
@@ -562,11 +566,13 @@ impl Define {
     }
 }
 
+pub type UserFunctionPath = Vec<Arc<String>>;
+
 #[repr(u8)]
 #[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum DefinedName {
-    Function((Arc<String>,)),
+    Function(Arc<UserFunctionPath>),
     Constant(Arc<String>),
 }
 
@@ -631,19 +637,19 @@ impl Default for ProgramAndMetadata {
 #[derive(Deserialize, Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum Function {
-    Embedded(EmbeddedFunction),
-    User(Arc<String>),
+    Embedded((EmbeddedFunction,)),
+    User(Arc<UserFunctionPath>),
 }
 
 impl Function {
     pub fn as_embedded(&self) -> Option<&EmbeddedFunction> {
         match self {
-            Function::Embedded(result) => Some(result),
+            Function::Embedded((result,)) => Some(result),
             _ => None,
         }
     }
 
-    pub fn as_user(&self) -> Option<&Arc<String>> {
+    pub fn as_user(&self) -> Option<&Arc<UserFunctionPath>> {
         match self {
             Function::User(result) => Some(result),
             _ => None,
@@ -675,8 +681,8 @@ impl<'de> Deserialize<'de> for FunctionCall {
             where
                 M: MapAccess<'de>,
             {
-                let (function, argument) = match access.next_entry::<(Function,), Arc<ProgramAndMetadata>>()? {
-                    Some(((key,), value)) => (key, value),
+                let (function, argument) = match access.next_entry::<Function, Arc<ProgramAndMetadata>>()? {
+                    Some((key, value)) => (key, value),
                     Option::None => return Err(serde::de::Error::invalid_length(0, &self)),
                 };
                 if access.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {
@@ -751,7 +757,7 @@ pub enum PathSegment {
     #[serde(rename = "regex")]
     Regex,
     #[serde(rename = "user function call")]
-    UserFunctionCall(Arc<String>),
+    UserFunctionCall(Arc<UserFunctionPath>),
     #[serde(rename = "object key")]
     ObjectKey(Arc<String>),
 }
