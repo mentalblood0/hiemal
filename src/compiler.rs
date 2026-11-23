@@ -419,8 +419,7 @@ fn compile_with_context_without_cache(
                     .into()
                 }
                 Program::Scope {
-                    functions,
-                    constants,
+                    define,
                     compute,
                     allow,
                     forbid,
@@ -429,10 +428,10 @@ fn compile_with_context_without_cache(
                         return Err(compilation_context.error(&BTreeMap::from_iter([("allow", &allow), ("forbid", &forbid)]), &"either `allow` or `forbid`"));
                     }
                     let mut compute_compilation_context = compilation_context.with_additional_path([PathSegment::Compute]);
-                    let mut new_constants = Vec::with_capacity(constants.len());
-                    let mut constants_name_clustered_indices = Vec::with_capacity(constants.len());
+                    let mut new_constants = Vec::new();
+                    let mut constants_name_clustered_indices = Vec::new();
                     let mut result_type_properties = TypeProperties::default();
-                    for (constant_name, constant_compute_body) in constants.iter() {
+                    for (constant_name, constant_compute_body) in define.constants() {
                         let constant_compilation_context =
                             compilation_context.with_additional_path([PathSegment::Constants, PathSegment::Constant(constant_name.clone())]);
                         let compiled_constant = compile_with_context(constant_compute_body, &constant_compilation_context, global_compilation_context)?;
@@ -448,7 +447,7 @@ fn compile_with_context_without_cache(
                             node: compiled_constant,
                         });
                     }
-                    for (function_name, function_body) in functions.iter() {
+                    for (function_name, function_body) in define.functions() {
                         compute_compilation_context.available_functions.insert(function_name.clone(), function_body.clone());
                     }
                     let compiled_compute = compile_with_context(compute, &compute_compilation_context, global_compilation_context)?;

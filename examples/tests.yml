@@ -1,5 +1,5 @@
-functions:
-  assert equal:
+define:
+  [assert equal]:
     match: found
     cases:
       - [{ constant: expected }, ok]
@@ -7,7 +7,7 @@ functions:
         - error:
             expected: { constant: expected }
             found: { constant: found }
-  tests report:
+  [tests report]:
     match:
       filter:
         [key-value pairs]: { constant: tests }
@@ -23,7 +23,7 @@ functions:
     cases:
       - [ [], ok ]
       - [ any, { [object from]: _ } ]
-  is match:
+  [is match]:
     match:
       [match regex]:
         string: { constant: string }
@@ -31,17 +31,17 @@ functions:
     cases:
       - [null, false]
       - [any, true]
-  get by path:
+  [get by path]:
     fold: { constant : at }
     starting with: { constant: from }
     through:
       [get]:
         from: { constant: accumulator }
         at: { constant: current }
-  match regex all:
+  [match regex all]:
     map:
       starting with:
-        constants:
+        define:
           match regex result:
             [match regex]:
               string: { constant: string }
@@ -59,13 +59,13 @@ functions:
         cases:
           - [null, null]
           - - any
-            - constants:
+            - define:
                 previous end:
                   [get by path]:
                     from: { constant: previous }
                     at: [match regex result, end]
               compute:
-                constants:
+                define:
                   string:
                     [get by path]:
                       from: { constant: previous }
@@ -74,7 +74,7 @@ functions:
                         - - { constant: previous end }
                           - null
                 compute:
-                  constants:
+                  define:
                     match regex result:
                       [match regex]:
                         string: { constant: string }
@@ -115,7 +115,6 @@ functions:
           - [get]:
               from: _
               at: match regex result
-constants:
   constructed regex:
     [compile regex]:
       - word boundary
@@ -290,7 +289,7 @@ compute:
       test random:
         [assert equal]:
           found:
-            constants:
+            define:
               seed: { [bytes from string]: only first 32 bytes }
             compute:
               map:
@@ -433,7 +432,7 @@ compute:
             - bytes: 3a 65 55 5d 6d 29 b0 72 bc e5 f8 d5 a7 a1 54 8a 0c da 51 8e 5f 3f 90 b6 ba 29 48 b6 fd df 12 19 8e ed 61 17 e8 c0 02 9b 32 06 b6 c3 96 b1 9e 26 3c f4 e0 00 08 a6 ad fe 70 15 d0 49 31 50 18 36 72 db 92 d0 47 b9 49 e8 68 2d 24 02 23 6c a3 88 af 7e 06 e4 d1 6b a3 de 17 3f a0 8f 43 9f 52 31 bd 1b 35 0e
             - bytes: 55 27 1c 6a 4b e1 98 2d 15 2a 84 ac 5c 25 f0 d8 95 0d 43 f5 05 65 ef 21 90 b9 0f 78 bb 2b 1e 82
       test serialize to and parse:
-        constants:
+        define:
           value: [1, 2, { lalala: null }, 3]
           binary: { bytes: 25 30 91 e6 54 89 1f 5e 27 00 ce d9 79 e4 1e f3 }
         compute:
@@ -492,7 +491,7 @@ compute:
       # test send request:
       #   [assert equal]:
       #     found:
-      #       constants:
+      #       define:
       #         client:
       #           [HTTP client]:
       #             - error on bad status code: false
@@ -606,7 +605,7 @@ compute:
             forbid:
               - read file
             compute:
-              constants:
+              define:
                 _:
                   read bytes from file: p
               compute:
@@ -680,18 +679,18 @@ compute:
       test user functions caching:
         [assert equal]:
           found:
-            functions:
-              f: { constant: _ }
+            define:
+              [f]: { constant: _ }
             compute:
-              - constants: { x: 1 }
+              - define: { x: 1 }
                 compute: { [f]: x }
-              - constants: { x: 2 }
+              - define: { x: 2 }
                 compute: { [f]: x }
           expected: [x, x]
       test match regex complex:
         [assert equal]:
           found:
-            constants:
+            define:
               log levels: [INFO, WARN, ERROR, DEBUG]
             compute:
               map:
@@ -998,13 +997,13 @@ compute:
               through: { [sum]: [_, 1] }
           expected: true
       test map lazy slices intersections:
-        constants:
+        define:
           slice length: 4
           slices amount: 100
         compute:
           [assert equal]:
             found:
-              constants:
+              define:
                 numbers:
                   map:
                     starting with: 1
@@ -1057,11 +1056,11 @@ compute:
       test override function:
         [assert equal]:
           found:
-            functions:
-              f: _
+            define:
+              [f]: _
             compute:
-              functions:
-                f: { [sum]: [_, 1] }
+              define:
+                [f]: { [sum]: [_, 1] }
               compute:
                 [f]: 1
           expected: 2
@@ -1147,14 +1146,13 @@ compute:
       test compound context:
         [assert equal]:
           found:
-            functions:
-              f:
+            define:
+              [f]:
                 [sum]:
                   - constant: a
                   - constant: b
                   - constant: c
                   - 4
-            constants:
               c: 3
             compute:
               [f]:
@@ -1164,8 +1162,8 @@ compute:
       test from at default argument:
         [assert equal]:
           found:
-            functions:
-              f:
+            define:
+              [f]:
                 [get]:
                   from: _
                   at: 1

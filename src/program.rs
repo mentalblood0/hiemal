@@ -23,9 +23,7 @@ pub enum Program {
     Tuple(Vec<Arc<ProgramAndMetadata>>),
     Scope {
         #[serde(default)]
-        functions: BTreeMap<Arc<String>, Arc<ProgramAndMetadata>>,
-        #[serde(default)]
-        constants: BTreeMap<Arc<String>, Arc<ProgramAndMetadata>>,
+        define: Define,
         #[serde(default, rename = "allow")]
         allow: Option<EnumSet<Capability>>,
         #[serde(default, rename = "forbid")]
@@ -137,26 +135,24 @@ impl ProgramAndMetadata {
                     self.external_functions_names.extend(element.external_functions_names.iter().cloned());
                 }
             }
-            Program::Scope {
-                functions, constants, compute, ..
-            } => {
-                for constant in constants.values_mut() {
+            Program::Scope { define, compute, .. } => {
+                for (_, constant) in define.constants_mut() {
                     unsafe { Arc::get_mut_unchecked(&mut *constant) }.write_external_names(available_functions);
                     self.external_constants_names.extend(constant.external_constants_names.iter().cloned());
                     self.external_functions_names.extend(constant.external_functions_names.iter().cloned());
                 }
-                available_functions.extend(functions.iter().map(|(key, value)| (key.clone(), value.clone())));
+                available_functions.extend(define.functions().map(|(key, value)| (key.clone(), value.clone())));
                 unsafe { Arc::get_mut_unchecked(&mut *compute) }.write_external_names(available_functions);
-                for function_name in functions.keys() {
+                for function_name in define.functions().map(|(name, _)| name) {
                     available_functions.remove(function_name);
                 }
                 let mut compute_external_constants_names_without_constants = compute.external_constants_names.clone();
-                for constant_name in constants.keys() {
+                for constant_name in define.constants().map(|(name, _)| name) {
                     compute_external_constants_names_without_constants.remove(constant_name);
                 }
                 self.external_constants_names.extend(compute_external_constants_names_without_constants.iter().cloned());
                 let mut compute_external_functions_names_without_functions = compute.external_functions_names.clone();
-                for function_name in functions.keys() {
+                for function_name in define.functions().map(|(name, _)| name) {
                     compute_external_functions_names_without_functions.remove(function_name);
                 }
                 self.external_functions_names.extend(compute_external_functions_names_without_functions.iter().cloned());
@@ -335,16 +331,10 @@ impl From<Program> for ProgramAndMetadata {
                     element.hash.hash(&mut hasher);
                 }
             }
-            Program::Scope {
-                functions,
-                constants,
-                allow,
-                forbid,
-                compute,
-            } => {
+            Program::Scope { define, allow, forbid, compute } => {
                 compiles_easily = false;
                 value_only = false;
-                for (name, body) in functions.iter().chain(constants.iter()) {
+                for (name, body) in define.functions().chain(define.constants()) {
                     name.hash(&mut hasher);
                     body.hash.hash(&mut hasher);
                 }
@@ -524,6 +514,60 @@ pub fn default_pipe_as() -> Option<Arc<String>> {
 
 pub fn default_try_as() -> Arc<String> {
     "error".to_string().into()
+}
+
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash, Default)]
+#[serde(transparent)]
+pub struct Define(pub BTreeMap<DefinedName, Arc<ProgramAndMetadata>>);
+
+impl Define {
+    pub fn constants(&self) -> impl Iterator<Item = (&Arc<String>, &std::sync::Arc<ProgramAndMetadata>)> {
+        self.0.iter().filter_map(|(defined_name, value)| {
+            if let DefinedName::Constant(name) = defined_name {
+                Some((name, value))
+            } else {
+                Option::None
+            }
+        })
+    }
+
+    pub fn constants_mut(&mut self) -> impl Iterator<Item = (&Arc<String>, &mut std::sync::Arc<ProgramAndMetadata>)> {
+        self.0.iter_mut().filter_map(|(defined_name, value)| {
+            if let DefinedName::Constant(name) = defined_name {
+                Some((name, value))
+            } else {
+                Option::None
+            }
+        })
+    }
+
+    pub fn functions(&self) -> impl Iterator<Item = (&Arc<String>, &std::sync::Arc<ProgramAndMetadata>)> {
+        self.0.iter().filter_map(|(defined_name, value)| {
+            if let DefinedName::Function((name,)) = defined_name {
+                Some((name, value))
+            } else {
+                Option::None
+            }
+        })
+    }
+
+    pub fn functions_mut(&mut self) -> impl Iterator<Item = (&Arc<String>, &mut std::sync::Arc<ProgramAndMetadata>)> {
+        self.0.iter_mut().filter_map(|(defined_name, value)| {
+            if let DefinedName::Function((name,)) = defined_name {
+                Some((name, value))
+            } else {
+                Option::None
+            }
+        })
+    }
+}
+
+#[repr(u8)]
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+#[serde(untagged)]
+pub enum DefinedName {
+    Function((Arc<String>,)),
+    Constant(Arc<String>),
 }
 
 #[repr(u8)]
