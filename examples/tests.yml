@@ -148,6 +148,14 @@ define:
 compute:
   [tests report]:
     tests:
+      test export:
+        [assert equal]:
+          found:
+            define:
+              [[export], f]: _
+            compute:
+              [f]: 1
+          expected: 1
       test non-trivial function path:
         [assert equal]:
           found:

@@ -2,10 +2,10 @@ use core::todo;
 use std::{collections::BTreeMap, hash::Hash, sync::Arc};
 
 use bytes::Bytes;
-use enumset::EnumSet;
+use enumset::{EnumSet, EnumSetType};
 use serde::{
     Deserialize, Deserializer, Serialize,
-    de::{self, IgnoredAny, MapAccess, Visitor},
+    de::{self, IgnoredAny, MapAccess, SeqAccess, Visitor, value::SeqDeserializer},
 };
 
 use crate::{
@@ -141,9 +141,9 @@ impl ProgramAndMetadata {
                     self.external_constants_names.extend(constant.external_constants_names.iter().cloned());
                     self.external_functions_names.extend(constant.external_functions_names.iter().cloned());
                 }
-                available_functions.extend(define.functions().map(|(key, value)| (key.clone(), value.clone())));
+                available_functions.extend(define.functions().map(|(key, value)| (key.path.clone(), value.clone())));
                 unsafe { Arc::get_mut_unchecked(&mut *compute) }.write_external_names(available_functions);
-                for function_name in define.functions().map(|(name, _)| name) {
+                for function_name in define.functions().map(|(name, _)| &name.path) {
                     available_functions.remove(function_name);
                 }
                 let mut compute_external_constants_names_without_constants = compute.external_constants_names.clone();
@@ -152,7 +152,7 @@ impl ProgramAndMetadata {
                 }
                 self.external_constants_names.extend(compute_external_constants_names_without_constants.iter().cloned());
                 let mut compute_external_functions_names_without_functions = compute.external_functions_names.clone();
-                for function_name in define.functions().map(|(name, _)| name) {
+                for function_name in define.functions().map(|(name, _)| &name.path) {
                     compute_external_functions_names_without_functions.remove(function_name);
                 }
                 self.external_functions_names.extend(compute_external_functions_names_without_functions.iter().cloned());
@@ -545,7 +545,7 @@ impl Define {
         })
     }
 
-    pub fn functions(&self) -> impl Iterator<Item = (&Arc<UserFunctionPath>, &std::sync::Arc<ProgramAndMetadata>)> {
+    pub fn functions(&self) -> impl Iterator<Item = (&Arc<UserFunctionTagsAndPath>, &std::sync::Arc<ProgramAndMetadata>)> {
         self.0.iter().filter_map(|(defined_name, value)| {
             if let DefinedName::Function(user_function_path) = defined_name {
                 Some((user_function_path, value))
@@ -555,7 +555,7 @@ impl Define {
         })
     }
 
-    pub fn functions_mut(&mut self) -> impl Iterator<Item = (&Arc<UserFunctionPath>, &mut std::sync::Arc<ProgramAndMetadata>)> {
+    pub fn functions_mut(&mut self) -> impl Iterator<Item = (&Arc<UserFunctionTagsAndPath>, &mut std::sync::Arc<ProgramAndMetadata>)> {
         self.0.iter_mut().filter_map(|(defined_name, value)| {
             if let DefinedName::Function(user_function_path) = defined_name {
                 Some((user_function_path, value))
@@ -566,13 +566,81 @@ impl Define {
     }
 }
 
+#[derive(EnumSetType, Serialize, Deserialize, Debug, PartialOrd, Ord, Hash)]
+#[enumset(serialize_repr = "list")]
+pub enum UserFunctionTag {
+    #[serde(rename = "export")]
+    Export,
+}
+
 pub type UserFunctionPath = Vec<String>;
+
+#[derive(Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+pub struct UserFunctionTagsAndPath {
+    pub tags: EnumSet<UserFunctionTag>,
+    pub path: Arc<UserFunctionPath>,
+}
+
+impl<'de> Deserialize<'de> for UserFunctionTagsAndPath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Peeks at just the first element of the sequence and decides
+        // whether it's a tag list or a plain path segment.
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum FirstElement {
+            Tags(EnumSet<UserFunctionTag>),
+            Segment(String),
+        }
+
+        struct TagsAndPathVisitor;
+
+        impl<'de> Visitor<'de> for TagsAndPathVisitor {
+            type Value = UserFunctionTagsAndPath;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a sequence of path segments, optionally preceded by a sequence of tags")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut tags = EnumSet::new();
+                let mut segments: Vec<String> = Vec::new();
+
+                // 1. First element is either the tag list or the first segment.
+                match seq.next_element::<FirstElement>()? {
+                    Some(FirstElement::Tags(t)) => tags = t,
+                    Some(FirstElement::Segment(s)) => segments.push(s),
+                    None => {} // empty input
+                }
+
+                // 2. Everything after the tag list (or after the first
+                //    segment) is a path segment.
+                while let Some(segment) = seq.next_element::<String>()? {
+                    segments.push(segment);
+                }
+
+                // 3. Re-feed the collected segments into UserFunctionPath's
+                //    own Deserialize impl (whatever representation it uses).
+                let path = UserFunctionPath::deserialize(SeqDeserializer::<_, A::Error>::new(segments.into_iter()))?;
+
+                Ok(UserFunctionTagsAndPath { tags, path: Arc::new(path) })
+            }
+        }
+
+        deserializer.deserialize_seq(TagsAndPathVisitor)
+    }
+}
 
 #[repr(u8)]
 #[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
 pub enum DefinedName {
-    Function(Arc<UserFunctionPath>),
+    Function(Arc<UserFunctionTagsAndPath>),
     Constant(Arc<String>),
 }
 

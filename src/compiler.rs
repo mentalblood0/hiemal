@@ -16,7 +16,7 @@ use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     embedded_functions::{EMBEDDED_FUNCTIONS, EmbeddedFunction},
     intermediate_representation::{self, Case, Content, IntermediateRepresentation, Node, Throughs},
-    program::{Condition, Constant, Function, FunctionCall, Match, Path, PathSegment, Program, ProgramAndMetadata, UserFunctionPath},
+    program::{Condition, Constant, Function, FunctionCall, Match, Path, PathSegment, Program, ProgramAndMetadata, UserFunctionPath, UserFunctionTag},
     r#type::{Capability, Embedded, Type, TypeKind, TypeProperties},
     value::Value,
 };
@@ -156,9 +156,15 @@ fn assert_type(got_type: &Type, expected_type_kind: &TypeKind, compilation_conte
     }
 }
 
+struct ExportedFunction {
+    compilation_context: CompilationContext,
+    body: Arc<ProgramAndMetadata>,
+}
+
 #[derive(Default)]
 struct GlobalCompilationContext {
-    user_functions_definitions: Vec<Arc<Node>>,
+    user_functions_calls: Vec<Arc<Node>>,
+    exported_functions: HashMap<Arc<UserFunctionPath>, ExportedFunction>,
     constants_names_to_name_clustered_constants_indices: HashMap<Arc<String>, usize>,
     compiled_programs_cache: HashMap<u128, (Arc<Node>, std::time::Duration)>,
     compiled_programs_cache_misses: usize,
@@ -188,7 +194,7 @@ pub fn compile(program_and_metadata: &ProgramAndMetadata) -> Result<Arc<Intermed
         );
         Ok(Arc::new(IntermediateRepresentation {
             root: compiled_program,
-            user_functions: global_compilation_context.user_functions_definitions,
+            user_functions: global_compilation_context.user_functions_calls,
             unique_constants_names_count: global_compilation_context.constants_names_to_name_clustered_constants_indices.len(),
         }))
     }
@@ -424,8 +430,17 @@ fn compile_with_context_without_cache(
                             node: compiled_constant,
                         });
                     }
-                    for (function_name, function_body) in define.functions() {
-                        compute_compilation_context.available_functions.insert(function_name.clone(), function_body.clone());
+                    for (function_tags_and_path, function_body) in define.functions() {
+                        if function_tags_and_path.tags.contains(UserFunctionTag::Export) {
+                            global_compilation_context.exported_functions.insert(
+                                function_tags_and_path.path.clone(),
+                                ExportedFunction {
+                                    compilation_context: compilation_context.clone(),
+                                    body: function_body.clone(),
+                                },
+                            );
+                        }
+                        compute_compilation_context.available_functions.insert(function_tags_and_path.path.clone(), function_body.clone());
                     }
                     let compiled_compute = compile_with_context(compute, &compute_compilation_context, global_compilation_context)?;
                     result_type_properties.unify(&compiled_compute.r#type.properties);
@@ -1437,9 +1452,9 @@ fn compile_with_context_without_cache(
                             }
                             body_compilation_context.entered_user_functions.insert(function_body_with_hash.hash);
                             let compiled_function = compile_with_context(&function_body_with_hash, &body_compilation_context, global_compilation_context)?;
-                            let function_index = global_compilation_context.user_functions_definitions.len();
+                            let function_index = global_compilation_context.user_functions_calls.len();
                             let r#type = compiled_function.r#type.clone();
-                            global_compilation_context.user_functions_definitions.push(compiled_function);
+                            global_compilation_context.user_functions_calls.push(compiled_function);
                             return Ok(Node {
                                 content: Content::UserFunctionCall {
                                     arguments: new_constants_definitions,
