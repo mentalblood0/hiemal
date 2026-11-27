@@ -1,5 +1,4 @@
 #![allow(clippy::mutable_key_type)]
-#![feature(get_mut_unchecked)]
 pub mod compiler;
 pub mod computer;
 pub mod containers;

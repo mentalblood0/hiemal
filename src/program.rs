@@ -16,6 +16,12 @@ use crate::{
     value::{Value, deserialize_bytes},
 };
 
+#[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash, Default)]
+#[serde(transparent)]
+pub struct Module {
+    pub defines: Vec<Define>,
+}
+
 #[repr(u8)]
 #[derive(Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 #[serde(untagged)]
@@ -125,24 +131,28 @@ pub struct ProgramAndMetadata {
     pub external_functions_names: Set<UserFunctionPath>,
 }
 
+unsafe fn arc_get_mut_unchecked<T: ?Sized>(arc: &mut Arc<T>) -> &mut T {
+    unsafe { &mut *(Arc::as_ptr(arc) as *mut T) }
+}
+
 impl ProgramAndMetadata {
     pub fn write_external_names(&mut self, available_functions: &mut BTreeMap<Arc<UserFunctionPath>, Arc<ProgramAndMetadata>>) {
         match &mut self.program {
             Program::Tuple(elements) => {
                 for element in elements {
-                    unsafe { Arc::get_mut_unchecked(&mut *element) }.write_external_names(available_functions);
+                    unsafe { arc_get_mut_unchecked(&mut *element) }.write_external_names(available_functions);
                     self.external_constants_names.extend(element.external_constants_names.iter().cloned());
                     self.external_functions_names.extend(element.external_functions_names.iter().cloned());
                 }
             }
             Program::Scope { define, compute, .. } => {
                 for (_, constant) in define.constants_mut() {
-                    unsafe { Arc::get_mut_unchecked(&mut *constant) }.write_external_names(available_functions);
+                    unsafe { arc_get_mut_unchecked(&mut *constant) }.write_external_names(available_functions);
                     self.external_constants_names.extend(constant.external_constants_names.iter().cloned());
                     self.external_functions_names.extend(constant.external_functions_names.iter().cloned());
                 }
                 available_functions.extend(define.functions().map(|(key, value)| (key.path.clone(), value.clone())));
-                unsafe { Arc::get_mut_unchecked(&mut *compute) }.write_external_names(available_functions);
+                unsafe { arc_get_mut_unchecked(&mut *compute) }.write_external_names(available_functions);
                 for function_name in define.functions().map(|(name, _)| &name.path) {
                     available_functions.remove(function_name);
                 }
@@ -162,17 +172,17 @@ impl ProgramAndMetadata {
             }
             Program::FunctionCall(FunctionCall { function, argument }) => match &function {
                 Function::Embedded(_) => {
-                    unsafe { Arc::get_mut_unchecked(&mut *argument) }.write_external_names(available_functions);
+                    unsafe { arc_get_mut_unchecked(&mut *argument) }.write_external_names(available_functions);
                     self.external_constants_names.extend(argument.external_constants_names.iter().cloned());
                     self.external_functions_names.extend(argument.external_functions_names.iter().cloned());
                 }
                 Function::User(user_function_name) => {
                     self.external_functions_names.insert(user_function_name.clone());
                     if let Some(mut user_function) = available_functions.get(user_function_name).cloned() {
-                        unsafe { Arc::get_mut_unchecked(&mut *argument) }.write_external_names(available_functions);
+                        unsafe { arc_get_mut_unchecked(&mut *argument) }.write_external_names(available_functions);
                         self.external_constants_names.extend(argument.external_constants_names.iter().cloned());
                         self.external_functions_names.extend(argument.external_functions_names.iter().cloned());
-                        unsafe { Arc::get_mut_unchecked(&mut user_function) }.write_external_names(available_functions);
+                        unsafe { arc_get_mut_unchecked(&mut user_function) }.write_external_names(available_functions);
                         let mut user_function_external_constants_names_without_argument = user_function.external_constants_names.clone();
                         match &argument.program {
                             Program::Object(arguments) => {
@@ -195,7 +205,7 @@ impl ProgramAndMetadata {
                         self.external_constants_names.insert(constant.clone());
                     }
                     Match::Program(program_and_metadata) => {
-                        unsafe { Arc::get_mut_unchecked(&mut *program_and_metadata) }.write_external_names(available_functions);
+                        unsafe { arc_get_mut_unchecked(&mut *program_and_metadata) }.write_external_names(available_functions);
                         self.external_constants_names.extend(program_and_metadata.external_constants_names.iter().cloned());
                         self.external_functions_names.extend(program_and_metadata.external_functions_names.iter().cloned());
                     }
@@ -214,16 +224,16 @@ impl ProgramAndMetadata {
                 }
             }
             Program::Map { map: source, r#as, through } | Program::Filter { filter: source, r#as, through } => {
-                unsafe { Arc::get_mut_unchecked(&mut *source) }.write_external_names(available_functions);
+                unsafe { arc_get_mut_unchecked(&mut *source) }.write_external_names(available_functions);
                 self.external_constants_names.extend(source.external_constants_names.iter().cloned());
                 self.external_functions_names.extend(source.external_functions_names.iter().cloned());
-                unsafe { Arc::get_mut_unchecked(&mut *through) }.write_external_names(available_functions);
+                unsafe { arc_get_mut_unchecked(&mut *through) }.write_external_names(available_functions);
                 self.external_constants_names
                     .extend(through.external_constants_names.iter().filter(|through_external_constant_name| through_external_constant_name != &r#as).cloned());
                 self.external_functions_names.extend(through.external_functions_names.iter().cloned());
             }
             Program::Flatten { flatten } => {
-                unsafe { Arc::get_mut_unchecked(&mut *flatten) }.write_external_names(available_functions);
+                unsafe { arc_get_mut_unchecked(&mut *flatten) }.write_external_names(available_functions);
                 self.external_constants_names.extend(flatten.external_constants_names.iter().cloned());
                 self.external_functions_names.extend(flatten.external_functions_names.iter().cloned());
             }
@@ -234,13 +244,13 @@ impl ProgramAndMetadata {
                 accumulating_in,
                 through,
             } => {
-                unsafe { Arc::get_mut_unchecked(&mut *starting_with) }.write_external_names(available_functions);
+                unsafe { arc_get_mut_unchecked(&mut *starting_with) }.write_external_names(available_functions);
                 self.external_constants_names.extend(starting_with.external_constants_names.iter().cloned());
                 self.external_functions_names.extend(starting_with.external_functions_names.iter().cloned());
-                unsafe { Arc::get_mut_unchecked(&mut *source) }.write_external_names(available_functions);
+                unsafe { arc_get_mut_unchecked(&mut *source) }.write_external_names(available_functions);
                 self.external_constants_names.extend(source.external_constants_names.iter().cloned());
                 self.external_functions_names.extend(source.external_functions_names.iter().cloned());
-                unsafe { Arc::get_mut_unchecked(&mut *through) }.write_external_names(available_functions);
+                unsafe { arc_get_mut_unchecked(&mut *through) }.write_external_names(available_functions);
                 self.external_constants_names.extend(
                     through
                         .external_constants_names
@@ -265,15 +275,15 @@ impl ProgramAndMetadata {
                 r#loop: next,
                 r#while,
             } => {
-                unsafe { Arc::get_mut_unchecked(&mut *starting_with) }.write_external_names(available_functions);
+                unsafe { arc_get_mut_unchecked(&mut *starting_with) }.write_external_names(available_functions);
                 self.external_constants_names.extend(starting_with.external_constants_names.iter().cloned());
                 self.external_functions_names.extend(starting_with.external_functions_names.iter().cloned());
-                unsafe { Arc::get_mut_unchecked(&mut *next) }.write_external_names(available_functions);
+                unsafe { arc_get_mut_unchecked(&mut *next) }.write_external_names(available_functions);
                 self.external_constants_names
                     .extend(next.external_constants_names.iter().filter(|next_external_constant_name| next_external_constant_name != &r#as).cloned());
                 self.external_functions_names.extend(next.external_functions_names.iter().cloned());
                 if let Some(r#while) = r#while {
-                    unsafe { Arc::get_mut_unchecked(&mut *r#while) }.write_external_names(available_functions);
+                    unsafe { arc_get_mut_unchecked(&mut *r#while) }.write_external_names(available_functions);
                     self.external_constants_names
                         .extend(r#while.external_constants_names.iter().filter(|next_external_constant_name| next_external_constant_name != &r#as).cloned());
                     self.external_functions_names.extend(r#while.external_functions_names.iter().cloned());
@@ -282,7 +292,7 @@ impl ProgramAndMetadata {
             Program::Pipe { pipe, r#as } => {
                 let mut is_first = true;
                 for element in pipe {
-                    unsafe { Arc::get_mut_unchecked(&mut *element) }.write_external_names(available_functions);
+                    unsafe { arc_get_mut_unchecked(&mut *element) }.write_external_names(available_functions);
                     self.external_constants_names.extend(
                         element
                             .external_constants_names
@@ -295,16 +305,16 @@ impl ProgramAndMetadata {
                 }
             }
             Program::Try { r#try, r#as, or } => {
-                unsafe { Arc::get_mut_unchecked(&mut *r#try) }.write_external_names(available_functions);
+                unsafe { arc_get_mut_unchecked(&mut *r#try) }.write_external_names(available_functions);
                 self.external_constants_names.extend(r#try.external_constants_names.iter().cloned());
                 self.external_functions_names.extend(r#try.external_functions_names.iter().cloned());
-                unsafe { Arc::get_mut_unchecked(&mut *or) }.write_external_names(available_functions);
+                unsafe { arc_get_mut_unchecked(&mut *or) }.write_external_names(available_functions);
                 self.external_constants_names.extend(or.external_constants_names.iter().filter(|or_external_constant_name| or_external_constant_name != &r#as).cloned());
                 self.external_functions_names.extend(or.external_functions_names.iter().cloned());
             }
             Program::Object(object) => {
                 for program_and_metadata in object.values_mut() {
-                    unsafe { Arc::get_mut_unchecked(&mut *program_and_metadata) }.write_external_names(available_functions);
+                    unsafe { arc_get_mut_unchecked(&mut *program_and_metadata) }.write_external_names(available_functions);
                     self.external_constants_names.extend(program_and_metadata.external_constants_names.iter().cloned());
                     self.external_functions_names.extend(program_and_metadata.external_functions_names.iter().cloned());
                 }
