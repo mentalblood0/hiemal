@@ -135,6 +135,18 @@ unsafe fn arc_get_mut_unchecked<T: ?Sized>(arc: &mut Arc<T>) -> &mut T {
     unsafe { &mut *(Arc::as_ptr(arc) as *mut T) }
 }
 
+impl Module {
+    pub fn write_external_names(&mut self) {
+        let mut available_functions = BTreeMap::new();
+        for define in self.defines.iter_mut() {
+            for (_, constant) in define.constants_mut() {
+                unsafe { arc_get_mut_unchecked(&mut *constant) }.write_external_names(&mut available_functions);
+            }
+            available_functions.extend(define.functions().map(|(key, value)| (key.path.clone(), value.clone())));
+        }
+    }
+}
+
 impl ProgramAndMetadata {
     pub fn write_external_names(&mut self, available_functions: &mut BTreeMap<Arc<UserFunctionPath>, Arc<ProgramAndMetadata>>) {
         match &mut self.program {
@@ -596,8 +608,6 @@ impl<'de> Deserialize<'de> for UserFunctionTagsAndPath {
     where
         D: Deserializer<'de>,
     {
-        // Peeks at just the first element of the sequence and decides
-        // whether it's a tag list or a plain path segment.
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum FirstElement {
@@ -621,21 +631,14 @@ impl<'de> Deserialize<'de> for UserFunctionTagsAndPath {
                 let mut tags = EnumSet::new();
                 let mut segments: Vec<String> = Vec::new();
 
-                // 1. First element is either the tag list or the first segment.
                 match seq.next_element::<FirstElement>()? {
                     Some(FirstElement::Tags(t)) => tags = t,
                     Some(FirstElement::Segment(s)) => segments.push(s),
-                    None => {} // empty input
+                    Option::None => {}
                 }
-
-                // 2. Everything after the tag list (or after the first
-                //    segment) is a path segment.
                 while let Some(segment) = seq.next_element::<String>()? {
                     segments.push(segment);
                 }
-
-                // 3. Re-feed the collected segments into UserFunctionPath's
-                //    own Deserialize impl (whatever representation it uses).
                 let path = UserFunctionPath::deserialize(SeqDeserializer::<_, A::Error>::new(segments.into_iter()))?;
 
                 Ok(UserFunctionTagsAndPath { tags, path: Arc::new(path) })
@@ -777,6 +780,8 @@ impl<'de> Deserialize<'de> for FunctionCall {
 #[repr(u8)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, PartialEq, Eq, Ord, Default, Hash)]
 pub enum PathSegment {
+    #[serde(rename = "define")]
+    Define(usize),
     #[serde(rename = "array index")]
     ArrayIndex(usize),
     #[serde(rename = "match")]

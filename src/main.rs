@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use hiemal::{compiler::compile, computer::compute, embedded_functions::EMBEDDED_FUNCTIONS, time_it};
+use hiemal::{compiler::compile_program, computer::compute, embedded_functions::EMBEDDED_FUNCTIONS, time_it};
 
 pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) -> Result<()> {
     if let Some(file_path) = file_path_option {
@@ -26,7 +26,7 @@ pub fn run(file_path_option: &Option<String>, output_writer: &mut impl Write) ->
                 program.write_external_names(&mut BTreeMap::default());
             });
             let _ = &*EMBEDDED_FUNCTIONS;
-            let result = time_it!("compiled", { compile(&program)? });
+            let result = time_it!("compiled", { compile_program(&program)? });
             time_it!("cached", {
                 if let Some(parent) = cached_intermediate_representation_path.parent() {
                     std::fs::create_dir_all(parent)?;

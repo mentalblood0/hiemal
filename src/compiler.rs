@@ -16,7 +16,9 @@ use crate::{
     default_argument_name::DEFAULT_ARGUMENT_NAME,
     embedded_functions::{EMBEDDED_FUNCTIONS, EmbeddedFunction},
     intermediate_representation::{self, Case, Content, IntermediateRepresentation, Node, Throughs},
-    program::{Condition, Constant, Function, FunctionCall, Match, Path, PathSegment, Program, ProgramAndMetadata, UserFunctionPath, UserFunctionTag},
+    program::{
+        Condition, Constant, DefinedName, Function, FunctionCall, Match, Module, Path, PathSegment, Program, ProgramAndMetadata, UserFunctionPath, UserFunctionTag,
+    },
     r#type::{Capability, Embedded, Type, TypeKind, TypeProperties},
     value::Value,
 };
@@ -173,7 +175,45 @@ struct GlobalCompilationContext {
     saved_compilation_time: std::time::Duration,
 }
 
-pub fn compile(program_and_metadata: &ProgramAndMetadata) -> Result<Arc<IntermediateRepresentation>> {
+fn compile_module(module: &Module, global_compilation_context: &mut GlobalCompilationContext) -> Result<HashMap<Arc<UserFunctionPath>, ExportedFunction>> {
+    let mut result = HashMap::default();
+    let mut current_compilation_context = CompilationContext::default();
+    for (define_index, define) in module.defines.iter().enumerate() {
+        current_compilation_context.path.0 = vec![PathSegment::Define(define_index)];
+        for (user_function_tags_and_path, body) in define.functions() {
+            current_compilation_context.available_functions.insert(user_function_tags_and_path.path.clone(), body.clone());
+            if user_function_tags_and_path.tags.contains(UserFunctionTag::Export) {
+                result.insert(
+                    user_function_tags_and_path.path.clone(),
+                    ExportedFunction {
+                        compilation_context: current_compilation_context.clone(),
+                        body: body.clone(),
+                    },
+                );
+            }
+        }
+        {
+            let mut compiled_constants = Vec::new();
+            for (constant_name, program_and_metadata) in define.constants() {
+                compiled_constants.push((
+                    constant_name,
+                    compile_with_context(program_and_metadata, &current_compilation_context, global_compilation_context)?,
+                ));
+            }
+            for (name, compiled_constant) in compiled_constants {
+                define_constant(
+                    name.clone(),
+                    compiled_constant.r#type.clone(),
+                    &mut current_compilation_context,
+                    global_compilation_context,
+                );
+            }
+        }
+    }
+    Ok(result)
+}
+
+pub fn compile_program(program_and_metadata: &ProgramAndMetadata) -> Result<Arc<IntermediateRepresentation>> {
     let mut global_compilation_context = GlobalCompilationContext::default();
     let compilation_context = CompilationContext::default();
     let compiled_program = compile_with_context(program_and_metadata, &compilation_context, &mut global_compilation_context)?;
@@ -323,14 +363,14 @@ fn hash_with_context(
 }
 
 fn compile_with_context(
-    program_with_hash: &ProgramAndMetadata,
+    program_and_metadata: &ProgramAndMetadata,
     compilation_context: &CompilationContext,
     global_compilation_context: &mut GlobalCompilationContext,
 ) -> Result<Arc<Node>> {
-    if program_with_hash.compiles_easily && !program_with_hash.value_only {
-        compile_with_context_without_cache(program_with_hash, compilation_context, global_compilation_context)
+    if program_and_metadata.compiles_easily && !program_and_metadata.value_only {
+        compile_with_context_without_cache(program_and_metadata, compilation_context, global_compilation_context)
     } else {
-        let instantiated_program_hash_option = hash_with_context(program_with_hash, compilation_context, global_compilation_context);
+        let instantiated_program_hash_option = hash_with_context(program_and_metadata, compilation_context, global_compilation_context);
         if let Some(instantiated_program_hash) = instantiated_program_hash_option
             && let Some((cached_compilation_result, saved_compilation_time)) = global_compilation_context.compiled_programs_cache.get(&instantiated_program_hash)
         {
@@ -340,7 +380,7 @@ fn compile_with_context(
         } else {
             global_compilation_context.compiled_programs_cache_misses += 1;
             let compilation_start = std::time::Instant::now();
-            let result = compile_with_context_without_cache(program_with_hash, compilation_context, global_compilation_context)?;
+            let result = compile_with_context_without_cache(program_and_metadata, compilation_context, global_compilation_context)?;
             let compilation_duration = compilation_start.elapsed();
             if let Some(instantiated_program_hash) = instantiated_program_hash_option {
                 global_compilation_context.compiled_programs_cache.insert(instantiated_program_hash, (result.clone(), compilation_duration));
@@ -538,7 +578,7 @@ fn compile_with_context_without_cache(
                                 }
                                 Condition::Value(condition) => {
                                     let mut case_compilation_context = compilation_context.with_additional_path([PathSegment::Cases, PathSegment::Case(case_index)]);
-                                    let compiled_condition = compile_with_context(condition, &case_compilation_context, global_compilation_context)?;
+                                    let compiled_condition = compile_with_context(&condition, &case_compilation_context, global_compilation_context)?;
                                     if let Some(refined_match_type_kind) = compiled_match.r#type.kind.intersection(&compiled_condition.r#type.kind) {
                                         if let Some(match_constant_name) = r#as.as_ref().or(match_constant_name) {
                                             define_constant(
@@ -864,7 +904,7 @@ fn compile_with_context_without_cache(
                 }
                 Program::Metaprogram { metaprogram } => {
                     let metaprogram_compilation_context = compilation_context.with_additional_path([PathSegment::Metaprogram]);
-                    let compiled_metaprogram = Arc::new(compile(metaprogram).with_context(|| metaprogram_compilation_context.error(&"", &"valid metaprogram"))?);
+                    let compiled_metaprogram = Arc::new(compile_program(metaprogram).with_context(|| metaprogram_compilation_context.error(&"", &"valid metaprogram"))?);
                     compile_with_context(
                         &serde_saphyr::from_str(&serde_saphyr::to_string(
                             &compute(&compiled_metaprogram).with_context(|| metaprogram_compilation_context.error(&"", &"computable metaprogram"))?,
